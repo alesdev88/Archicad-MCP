@@ -1,5 +1,3 @@
-import json
-
 from fastmcp import Client
 
 from archicad_mcp.server import build_server
@@ -10,12 +8,4 @@ async def test_server_builds_and_lists_tools():
     async with Client(mcp) as client:
         tools = await client.list_tools()
         names = {t.name for t in tools}
-        assert "ping" in names
-
-
-async def test_ping_tool_answers():
-    mcp = build_server(mode="full")
-    async with Client(mcp) as client:
-        result = await client.call_tool("ping", {})
-        payload = json.loads(result.content[0].text)
-        assert payload == {"status": "ok", "server": "archicad-mcp"}
+        assert "list_rules" in names
