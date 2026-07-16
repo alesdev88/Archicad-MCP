@@ -131,3 +131,24 @@ async def test_archicad_down_gives_actionable_error(monkeypatch, tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "audit_delivery_readiness")
     assert payload["error"].startswith("No running Archicad")
+
+
+async def test_api_error_during_command_becomes_tool_error(monkeypatch, tmp_path):
+    """Archicad answers the probe but a command errors (e.g. no project open):
+    the StandardAPIError must be wrapped in the {"error": ...} envelope, not
+    leaked as a protocol-level ToolError."""
+    from multiconn_archicad.errors import StandardAPIError
+
+    def no_project(_parameters):
+        raise StandardAPIError(message="No open project", code=-402)
+
+    official = dict(api_replays.OFFICIAL)
+    official["API.GetAllElements"] = no_project
+    core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    conn = ArchicadConnection(19723, core=core)
+    monkeypatch.setattr(server_mod, "get_connection", lambda port: conn)
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "get_model_summary")
+    assert "error" in payload
+    assert "No open project" in payload["error"]
+    assert "project" in payload["error"].lower()
