@@ -35,8 +35,8 @@ class LoadedRules:
 def _load_yaml_file(path: Path, out: LoadedRules) -> None:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        out.errors.append(f"{path.name}: not valid YAML ({exc})")
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        out.errors.append(f"{path.name}: could not read or parse ({exc})")
         return
     if data is None:
         return
@@ -48,7 +48,7 @@ def _load_yaml_file(path: Path, out: LoadedRules) -> None:
             out.errors.append(f"{path.name}: rule entry is not a mapping: {cfg!r}")
             continue
         type_name = cfg.get("type")
-        rule_cls = RULE_TYPES.get(type_name)
+        rule_cls = RULE_TYPES.get(type_name) if isinstance(type_name, str) else None
         if rule_cls is None:
             out.errors.append(f"{path.name}: unknown rule type {type_name!r} "
                               f"(known: {sorted(RULE_TYPES)})")

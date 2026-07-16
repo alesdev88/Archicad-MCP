@@ -65,3 +65,20 @@ def test_none_dir_loads_bundled_examples():
     assert loaded.errors == []
     assert loaded.rules, "bundled examples must provide at least one rule"
     assert loaded.source == "bundled examples"
+
+
+def test_non_utf8_file_reports_error_and_does_not_raise(tmp_path):
+    (tmp_path / "latin.yaml").write_bytes(b"- id: caf\xe9\n  type: zone-number-required\n")
+    loaded = load_rules(tmp_path)
+    assert len(loaded.errors) == 1
+    assert loaded.rules == []
+
+
+def test_non_string_rule_type_reports_error_and_does_not_raise(tmp_path):
+    (tmp_path / "bad-type.yaml").write_text(textwrap.dedent("""\
+        - id: weird
+          type: [property-required]
+    """))
+    loaded = load_rules(tmp_path)
+    assert len(loaded.errors) == 1
+    assert loaded.rules == []
