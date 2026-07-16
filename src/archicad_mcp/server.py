@@ -231,6 +231,45 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         except ArchicadUnavailableError as exc:
             return _tool_error(exc)
 
+    from archicad_mcp.core import attributes as _attributes
+    from archicad_mcp.core import issues as _issues
+    from archicad_mcp.core import project as _project
+    from archicad_mcp.core import publish as _publish
+
+    @mcp.tool(description="Project info: Archicad version, project name, stories, "
+                          "hotlinks, geolocation presence (Tapir enriches).")
+    def get_project_info(port: int | None = None) -> dict:
+        try:
+            return _project.get_project_info(_conn(port))
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="List attribute names by type: Layer, BuildingMaterial, "
+                          "Composite, Surface, Profile, ZoneCategory.")
+    def list_attributes(attribute_type: str, port: int | None = None) -> dict:
+        try:
+            return _attributes.list_attributes(_conn(port), attribute_type)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Manage Archicad issues (Tapir): action = list | create | "
+                          "comment | attach | export_bcf | import_bcf.")
+    def manage_issues(action: str, name: str | None = None, issue_id: str | None = None,
+                      comment: str | None = None, guids: list[str] | None = None,
+                      bcf_path: str | None = None, port: int | None = None) -> dict:
+        try:
+            return _issues.manage_issues(_conn(port), action, name, issue_id,
+                                         comment, guids, bcf_path)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).")
+    def publish(publisher_set_name: str, port: int | None = None) -> dict:
+        try:
+            return _publish.publish(_conn(port), publisher_set_name)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
