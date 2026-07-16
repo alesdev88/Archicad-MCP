@@ -94,17 +94,39 @@ Refresh Tapir schemas after add-on updates: `uv run python scripts/sync_tapir_de
 
 ## Known issues
 
-Wide property queries against very large models can crash Archicad's API
-bridge (observed: a `GetPropertyValuesOfElementsCommand::ComposeResult` abort
-in Archicad 29.0 build 4006), which risks losing unsaved work in the host app.
-The server chunks these requests to cap the per-request response size, but
-chunking is a mitigation for an Archicad-side fragility, not a guaranteed cure.
-Prefer test models and targeted queries (filter by story, layer, or type)
-rather than whole-model property sweeps when working with large projects.
+**Wide property queries can crash Archicad.** Reading properties across a whole
+large model has repeatedly crashed Archicad's API bridge (a
+`GetPropertyValuesOfElementsCommand::ComposeResult` abort, observed on Archicad
+29.0 build 4006 with a ~16k-element model), losing unsaved work in the host app.
+This is an Archicad-side fault the server can trigger but cannot prevent, and
+chunking alone did **not** stop it. So the server now **refuses** a property
+fetch spanning more than `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default
+5000) with an actionable error rather than risk the crash. Consequences:
+
+- `get_model_summary` returns `by_type` only by default (safe); pass
+  `include_layer_story=true` for the per-element breakdown (refused on very
+  large models).
+- `audit_delivery_readiness` on a large unfiltered model will hit the ceiling.
+  Scope rules with `applies_to` / query filters, or raise the env var if you
+  accept the risk. (Fetch-time scoping to a rule's `applies_to` types is the
+  planned improvement so large-model audits work without lifting the ceiling.)
+
+**Live verification still incomplete.** The built-in property-name constants in
+`extract.py` (`General_LayerName`, `General_HomeStoryNumber`, `Zone_ZoneNumber`,
+`Zone_ZoneName`) have **not** been confirmed against a live model — the live
+canary (`test_builtin_property_names_resolve`) has not yet passed, so
+layer/story/zone extraction should be treated as unverified until it does. Run
+it against a **small** non-sensitive model:
+
+```bash
+ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
+```
 
 ## Development
 
 ```bash
 uv sync && uv run pytest          # offline suite
-uv run pytest -m live -v          # against a running Archicad (test models only!)
+# Live: open a SMALL non-sensitive test model, then pin the port explicitly.
+# Never run live tests against a client or teamwork project.
+ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
 ```

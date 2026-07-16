@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import os
 from typing import Iterable
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
 
+# NOTE: these built-in property names are NOT yet confirmed against a live
+# model — the live canary test_builtin_property_names_resolve has not passed.
+# If layer/story/zone extraction comes back empty, verify the real names via
+# API.GetAllPropertyNames on a small model and correct these four constants.
 BUILTIN_LAYER = "General_LayerName"
 BUILTIN_STORY = "General_HomeStoryNumber"
 BUILTIN_ZONE_NUMBER = "Zone_ZoneNumber"
@@ -15,6 +20,20 @@ BUILTIN_ZONE_NAME = "Zone_ZoneName"
 # GetPropertyValuesOfElementsCommand::ComposeResult (observed AC 29.0 build
 # 4006); chunking caps the per-request response size to reduce that risk.
 PROPERTY_FETCH_CHUNK = 500
+
+# Hard ceiling on how many elements a single property fetch may span. The
+# ComposeResult crash above is server-side and unrecoverable mid-session:
+# chunking alone did NOT prevent it on a 16k-element model, because a single
+# un-composable property on any element in any chunk still aborts Archicad.
+# So we refuse — with an actionable error — rather than risk crashing the
+# user's Archicad. Scope the query first (query_elements / rule applies_to),
+# or raise the ceiling deliberately via ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS.
+MAX_PROPERTY_FETCH_ELEMENTS = int(
+    os.environ.get("ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS", "5000"))
+
+
+class PropertyFetchTooWideError(ArchicadUnavailableError):
+    """Raised before a property fetch that could crash Archicad's API bridge."""
 
 
 def _property_name_payload(name: str) -> dict:
@@ -61,10 +80,18 @@ def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str,
 
     Requests are chunked into PROPERTY_FETCH_CHUNK-sized element batches to cap
     the per-request response size (a wide query on a large model can crash the
-    Archicad API bridge); the per-chunk results are merged.
+    Archicad API bridge); the per-chunk results are merged. If the element set
+    exceeds MAX_PROPERTY_FETCH_ELEMENTS this refuses rather than risk a crash.
     """
     if not guids or not names:
         return {g: {} for g in guids}
+    if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
+        raise PropertyFetchTooWideError(
+            f"Refusing to read properties across {len(guids)} elements "
+            f"(limit {MAX_PROPERTY_FETCH_ELEMENTS}). Wide property queries have "
+            "crashed Archicad's API on large models. Scope the query first "
+            "(query_elements by type/layer/story, or a rule's applies_to), or "
+            "raise ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS if you accept the risk.")
     ids = resolve_property_ids(conn, names)
     resolved = [n for n in names if n in ids]
     property_payload = [{"propertyId": ids[n]} for n in resolved]
@@ -90,21 +117,23 @@ def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str,
 def _fetch_classifications(conn, guids: list[str]) -> dict[str, dict[str, str | None]]:
     systems = conn.official("API.GetAllClassificationSystems").get("classificationSystems", [])
     system_names = {s["classificationSystemId"]["guid"]: s["name"] for s in systems}
-    response = conn.official("API.GetClassificationsOfElements", {
-        "elements": element_payload(guids),
-        "classificationSystemIds": [{"classificationSystemId": {"guid": g}}
-                                    for g in system_names],
-    })
+    system_payload = [{"classificationSystemId": {"guid": g}} for g in system_names]
     out: dict[str, dict[str, str | None]] = {}
-    for guid, row in zip(guids, response.get("elementClassifications", [])):
-        per_system: dict[str, str | None] = {}
-        for item in row.get("classificationIds", []):
-            cid = item.get("classificationId", {})
-            system_guid = cid.get("classificationSystemId", {}).get("guid")
-            name = system_names.get(system_guid, system_guid or "?")
-            inner = cid.get("classificationId")
-            per_system[name] = inner.get("guid") if inner else None
-        out[guid] = per_system
+    for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
+        chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
+        response = conn.official("API.GetClassificationsOfElements", {
+            "elements": element_payload(chunk),
+            "classificationSystemIds": system_payload,
+        })
+        for guid, row in zip(chunk, response.get("elementClassifications", [])):
+            per_system: dict[str, str | None] = {}
+            for item in row.get("classificationIds", []):
+                cid = item.get("classificationId", {})
+                system_guid = cid.get("classificationSystemId", {}).get("guid")
+                name = system_names.get(system_guid, system_guid or "?")
+                inner = cid.get("classificationId")
+                per_system[name] = inner.get("guid") if inner else None
+            out[guid] = per_system
     return out
 
 
@@ -120,18 +149,20 @@ def _fetch_layer_names(conn) -> tuple[str, ...]:
 def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
     if not conn.tapir_available():
         return None
-    try:
-        response = conn.tapir("GetIFCPropertiesOfElements",
-                              {"elements": element_payload(guids)})
-    except ArchicadUnavailableError:
-        return None
     out: dict[str, dict[str, object]] = {}
-    for item in response.get("elements", []):
-        guid = item.get("elementId", {}).get("guid", "")
-        props = {}
-        for p in item.get("properties", []):
-            props[f"{p.get('propertySetName')}.{p.get('name')}"] = p.get("value")
-        out[guid] = props
+    for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
+        chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
+        try:
+            response = conn.tapir("GetIFCPropertiesOfElements",
+                                  {"elements": element_payload(chunk)})
+        except ArchicadUnavailableError:
+            return None
+        for item in response.get("elements", []):
+            guid = item.get("elementId", {}).get("guid", "")
+            props = {}
+            for p in item.get("properties", []):
+                props[f"{p.get('propertySetName')}.{p.get('name')}"] = p.get("value")
+            out[guid] = props
     return out
 
 

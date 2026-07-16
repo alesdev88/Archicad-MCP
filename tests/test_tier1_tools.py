@@ -125,13 +125,22 @@ async def test_run_rule_unknown_id_is_actionable(fake_archicad, tmp_path):
     assert "nope" in payload["error"] and "zones-numbered" in payload["error"]
 
 
-async def test_get_model_summary_aggregates_only(fake_archicad, tmp_path):
+async def test_get_model_summary_default_is_type_only_and_safe(fake_archicad, tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "get_model_summary")
     assert payload["by_type"] == {"Wall": 2, "Zone": 1}
+    # Default must NOT fetch per-element properties (the call that crashes AC).
+    assert "by_layer" not in payload and "by_story" not in payload
+    assert not any(c == "API.GetPropertyValuesOfElements"
+                   for c, _ in fake_archicad.calls)
+    assert "elements" not in payload  # aggregates only, no raw dumps
+
+
+async def test_get_model_summary_layer_story_opt_in(fake_archicad, tmp_path):
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "get_model_summary", {"include_layer_story": True})
     assert payload["by_layer"] == {"A-WALL": 1, "Sketch": 1, "A-ZONE": 1}
     assert payload["by_story"] == {"1": 2, "2": 1}
-    assert "elements" not in payload  # aggregates only, no raw dumps
 
 
 async def test_highlight_failures_calls_tapir(fake_archicad, tmp_path):

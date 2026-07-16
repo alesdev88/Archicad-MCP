@@ -1,8 +1,12 @@
 """Live tests against a running Archicad 29 with a NON-SENSITIVE test model open.
 
-Run manually:  uv run pytest -m live -v
-Never run against a client project (privacy rule).
+Run manually:  ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
+Never run against a client project (privacy rule). With several instances
+running, the port MUST be given explicitly — auto-picking the first instance
+could hit a live teamwork project.
 """
+import os
+
 import pytest
 
 from archicad_mcp.connection import discover_instances, get_connection
@@ -19,9 +23,19 @@ pytestmark = pytest.mark.live
 
 @pytest.fixture(scope="module")
 def conn():
+    port_env = os.environ.get("ARCHICAD_MCP_LIVE_PORT")
+    if port_env:
+        return get_connection(int(port_env))
     instances = discover_instances()
     if not instances:
         pytest.skip("no running Archicad instance")
+    if len(instances) > 1:
+        pytest.skip("multiple Archicad instances running; "
+                    "set ARCHICAD_MCP_LIVE_PORT to choose the test model")
+    if instances[0].project_name and "teamwork" in str(
+            get_connection(instances[0].port).tapir("GetProjectInfo")
+            .get("projectLocation", "")).lower():
+        pytest.skip("refusing to run live tests against a teamwork project")
     return get_connection(instances[0].port)
 
 

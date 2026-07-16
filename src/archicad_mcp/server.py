@@ -97,20 +97,28 @@ def build_server(
                 inst["project_name"] = None
         return {"instances": instances}
 
-    @mcp.tool(description="Aggregate element counts by type, story, and layer. "
-                          "Returns counts only, never element data.")
+    @mcp.tool(description="Aggregate element counts. by_type is always returned "
+                          "(cheap and safe). Set include_layer_story=true to also "
+                          "break down by layer and story — that reads a property "
+                          "across every element and is refused on very large models "
+                          "(can crash Archicad). Counts only, never element data.")
     @_guarded
-    def get_model_summary(port: int | None = None) -> dict:
+    def get_model_summary(include_layer_story: bool = False,
+                          port: int | None = None) -> dict:
         conn = get_connection(port if port is not None else default_port)
-        snapshot = build_snapshot(
-            conn, needs=frozenset({"elements", "properties"}))
+        needs = frozenset({"elements", "properties"}) if include_layer_story \
+            else frozenset({"elements"})
+        snapshot = build_snapshot(conn, needs=needs)
         by_type = Counter(e.element_type for e in snapshot.elements)
-        by_layer = Counter(e.layer for e in snapshot.elements if e.layer)
-        by_story = Counter(str(e.story) for e in snapshot.elements
-                           if e.story is not None)
-        return {"element_count": len(snapshot.elements),
-                "by_type": dict(by_type), "by_layer": dict(by_layer),
-                "by_story": dict(by_story)}
+        result = {"element_count": len(snapshot.elements),
+                  "by_type": dict(by_type)}
+        if include_layer_story:
+            by_layer = Counter(e.layer for e in snapshot.elements if e.layer)
+            by_story = Counter(str(e.story) for e in snapshot.elements
+                               if e.story is not None)
+            result["by_layer"] = dict(by_layer)
+            result["by_story"] = dict(by_story)
+        return result
 
     @mcp.tool(description="List loaded QA rules (id, type, severity, tags) and any "
                           "rule-file load errors.")

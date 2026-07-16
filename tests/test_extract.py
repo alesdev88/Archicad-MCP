@@ -1,3 +1,4 @@
+import pytest
 from archicad_mcp import extract
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import build_snapshot, fetch_property_values, resolve_property_ids
@@ -82,3 +83,29 @@ def test_fetch_property_values_chunks_requests(monkeypatch):
     assert result["w-1"]["General_LayerName"] == "A-WALL"
     assert result["w-2"]["General_LayerName"] == "Sketch"
     assert result["z-1"]["General_LayerName"] == "A-ZONE"
+
+
+def test_classification_and_ifc_fetches_are_chunked(monkeypatch):
+    import archicad_mcp.extract as extract_mod
+    monkeypatch.setattr(extract_mod, "PROPERTY_FETCH_CHUNK", 2)
+    conn = make_conn()
+    snap = build_snapshot(conn, needs=frozenset({"elements", "classifications", "ifc"}))
+    classification_calls = [c for c, _ in conn._core.calls
+                            if c == "API.GetClassificationsOfElements"]
+    ifc_calls = [c for c, _ in conn._core.calls if c == "GetIFCPropertiesOfElements"]
+    assert len(classification_calls) == 2  # 3 elements, chunk=2
+    assert len(ifc_calls) == 2
+    by_guid = {e.guid: e for e in snap.elements}
+    assert by_guid["w-1"].classifications == {"ARCHICAD Classification": "c-wall"}
+    assert snap.ifc_properties["w-1"] == {"Pset_WallCommon.FireRating": "EI60"}
+
+
+def test_property_fetch_refuses_when_too_wide(monkeypatch):
+    import archicad_mcp.extract as extract_mod
+    from archicad_mcp.extract import PropertyFetchTooWideError, fetch_property_values
+    monkeypatch.setattr(extract_mod, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
+    conn = make_conn()
+    with pytest.raises(PropertyFetchTooWideError, match="Refusing to read properties"):
+        fetch_property_values(conn, ["a", "b", "c"], ["General_LayerName"])
+    # No API call must have been issued before the refusal.
+    assert not any(c == "API.GetPropertyValuesOfElements" for c, _ in conn._core.calls)
