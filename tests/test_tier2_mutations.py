@@ -86,7 +86,20 @@ async def test_selection_get_uses_official_api(core):
     assert payload == {"guids": ["w-1"]}
 
 
-async def test_selection_set(core):
+async def test_selection_set_replaces_current(core):
+    # core fixture seeds the current selection as [w-1]
     payload = await call("manage_selection", {"action": "set", "guids": ["w-2"]})
     assert payload == {"selected": 1}
-    assert any(c == "ChangeSelectionOfElements" for c, _ in core.calls)
+    change = [params for cmd, params in core.calls if cmd == "ChangeSelectionOfElements"]
+    assert len(change) == 1  # one call does both remove + add
+    params = change[0]
+    assert params["addElementsToSelection"] == [{"elementId": {"guid": "w-2"}}]
+    # the pre-existing selection is removed so "set" replaces rather than appends
+    assert params["removeElementsFromSelection"] == [{"elementId": {"guid": "w-1"}}]
+
+
+async def test_selection_clear_removes_current(core):
+    payload = await call("manage_selection", {"action": "clear"})
+    assert payload == {"cleared": 1}
+    change = [params for cmd, params in core.calls if cmd == "ChangeSelectionOfElements"]
+    assert change[0]["removeElementsFromSelection"] == [{"elementId": {"guid": "w-1"}}]

@@ -11,8 +11,13 @@ def manage_selection(conn: ArchicadConnection, action: str,
         return {"guids": [e["elementId"]["guid"] for e in response.get("elements", [])]}
     if action == "set":
         guids = guids or []
-        conn.tapir("ChangeSelectionOfElements",
-                   {"addElementsToSelection": element_payload(guids)})
+        # "set" replaces the selection: remove whatever is currently selected and
+        # add the requested elements in one ChangeSelectionOfElements call.
+        current = conn.official("API.GetSelectedElements").get("elements", [])
+        conn.tapir("ChangeSelectionOfElements", {
+            "addElementsToSelection": element_payload(guids),
+            "removeElementsFromSelection": current,
+        })
         return {"selected": len(guids)}
     if action == "clear":
         current = conn.official("API.GetSelectedElements").get("elements", [])
