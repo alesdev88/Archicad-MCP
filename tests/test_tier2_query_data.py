@@ -84,3 +84,36 @@ async def test_set_element_data_commit(core):
     assert payload == {"dry_run": False, "applied": 1}
     call_names = [c for c, _ in core.calls]
     assert "API.SetPropertyValuesOfElements" in call_names
+
+
+async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
+    official = dict(api_replays.OFFICIAL)
+    official["API.SetPropertyValuesOfElements"] = {
+        "executionResults": [{"success": True}, {"success": False}]}
+    fake_core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    monkeypatch.setattr(server_mod, "get_connection",
+                        lambda port: ArchicadConnection(19723, core=fake_core))
+    payload = await call("set_element_data", {"changes": [
+        {"guid": "w-1", "property": "OFFICE/Fire Rating", "value": "EI30"},
+        {"guid": "w-2", "property": "General_HomeStoryNumber", "value": 3}],
+        "dry_run": False})
+    assert payload["applied"] == 1
+    assert payload["failed"] == 1
+    assert "skipped" not in payload
+
+
+async def test_set_element_data_commit_skips_unresolved_property(monkeypatch):
+    official = dict(api_replays.OFFICIAL)
+    official["API.GetPropertyIds"] = {
+        "properties": [{"error": {"code": 1, "message": "not found"}}]}
+    official["API.SetPropertyValuesOfElements"] = {"executionResults": []}
+    fake_core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    monkeypatch.setattr(server_mod, "get_connection",
+                        lambda port: ArchicadConnection(19723, core=fake_core))
+    payload = await call("set_element_data", {"changes": [
+        {"guid": "w-1", "property": "NoSuch/Property", "value": "x"}],
+        "dry_run": False})
+    assert payload == {"dry_run": False, "applied": 0,
+                       "skipped": [{"guid": "w-1", "property": "NoSuch/Property"}]}
+    call_names = [c for c, _ in fake_core.calls]
+    assert "API.SetPropertyValuesOfElements" not in call_names
