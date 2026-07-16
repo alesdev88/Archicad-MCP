@@ -270,6 +270,31 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         except ArchicadUnavailableError as exc:
             return _tool_error(exc)
 
+    from archicad_mcp.gateway import execute as _gateway
+    from archicad_mcp.gateway.registry import build_registry
+
+    registry = build_registry()
+
+    @mcp.tool(description="Catalog of ALL available Archicad API commands (official "
+                          "JSON API + Tapir), optionally filtered by group.")
+    def list_api_commands(group: str | None = None) -> dict:
+        return _gateway.list_api_commands(registry, group)
+
+    @mcp.tool(description="Full description and input schema for one API command. "
+                          "Call before execute_api_command.")
+    def describe_api_command(name: str) -> dict:
+        return _gateway.describe_api_command(registry, name)
+
+    @mcp.tool(description="Execute any Archicad API command by name (official 'API.*' "
+                          "or Tapir). Params validated against the bundled schema "
+                          "where available. Prefer the dedicated tools when one exists.")
+    def execute_api_command(name: str, params: dict | None = None,
+                            port: int | None = None) -> dict:
+        try:
+            return _gateway.execute_api_command(registry, _conn(port), name, params)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
