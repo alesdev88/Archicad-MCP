@@ -106,17 +106,23 @@ fetch spanning more than `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default
 - `get_model_summary` returns `by_type` only by default (safe); pass
   `include_layer_story=true` for the per-element breakdown (refused on very
   large models).
-- `audit_delivery_readiness` on a large unfiltered model will hit the ceiling.
-  Scope rules with `applies_to` / query filters, or raise the env var if you
-  accept the risk. (Fetch-time scoping to a rule's `applies_to` types is the
-  planned improvement so large-model audits work without lifting the ceiling.)
+- `audit_delivery_readiness` now scopes its property fetch to the element types
+  the rules target (a rule's `applies_to`), so a typed audit (e.g. fire-rating
+  on walls) reads only those elements. An audit is refused only when a rule
+  targets *all* elements and the model exceeds the ceiling — scope that rule, or
+  raise the env var.
 
-**Live verification still incomplete.** The built-in property-name constants in
-`extract.py` (`General_LayerName`, `General_HomeStoryNumber`, `Zone_ZoneNumber`,
-`Zone_ZoneName`) have **not** been confirmed against a live model — the live
-canary (`test_builtin_property_names_resolve`) has not yet passed, so
-layer/story/zone extraction should be treated as unverified until it does. Run
-it against a **small** non-sensitive model:
+**Built-in property names — verified.** Confirmed against a live Archicad 29.0
+model (2026-07-16): the layer name is `ModelView_LayerName` (there is no
+`General_LayerName`), zone number/name are `Zone_ZoneNumber` / `Zone_ZoneName`,
+and an element's **story is not a property** — it comes from Tapir
+`GetDetailsOfElements.floorIndex` (a 0-based index, so `query_elements(story=…)`
+and `get_model_summary` breakdowns key on floorIndex).
+
+**Not yet validated live:** the write path (`set_element_data` commit), element
+create/move/delete, issues/publish, and a full whole-model audit (its value
+sweep can trigger the crash above, so validate on a **small** model). Run the
+read-only live canary against a small non-sensitive model, port pinned:
 
 ```bash
 ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v

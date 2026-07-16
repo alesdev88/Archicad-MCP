@@ -41,10 +41,14 @@ def filter_by_tag(rules: Sequence[Rule], tag: str | None) -> list[Rule]:
     return [r for r in rules if tag in r.tags]
 
 
-# Element-level data needs that trigger a per-element property fetch (the
-# crash-prone GetPropertyValuesOfElements sweep). Rules needing only zones/layers
-# don't drive it.
-_ELEMENT_FETCH_NEEDS = frozenset({"properties", "classifications", "ifc"})
+# Element-level data needs that trigger a per-element fetch over the snapshot's
+# element set — including the crash-prone GetPropertyValuesOfElements sweep.
+# "layers" is here because an element's layer is read as a per-element property,
+# so a layer rule reads snapshot.elements and MUST widen the scope like any other
+# element rule (a layer rule targeting all elements forces a full fetch). A rule
+# that reads snapshot.elements while declaring none of these needs would be
+# invisible to scope narrowing; builtins all declare one.
+_ELEMENT_FETCH_NEEDS = frozenset({"properties", "classifications", "ifc", "layers"})
 
 
 def element_type_scope(rules: Sequence[Rule]) -> frozenset[str] | None:

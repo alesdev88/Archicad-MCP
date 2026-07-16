@@ -28,8 +28,15 @@ PROPERTY_FETCH_CHUNK = 500
 # So we refuse — with an actionable error — rather than risk crashing the
 # user's Archicad. Scope the query first (query_elements / rule applies_to),
 # or raise the ceiling deliberately via ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS.
-MAX_PROPERTY_FETCH_ELEMENTS = int(
-    os.environ.get("ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS", "5000"))
+def _int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        return int(raw) if raw not in (None, "") else default
+    except ValueError:
+        return default
+
+
+MAX_PROPERTY_FETCH_ELEMENTS = _int_env("ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS", 5000)
 
 
 class PropertyFetchTooWideError(ArchicadUnavailableError):

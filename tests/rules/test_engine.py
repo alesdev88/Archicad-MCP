@@ -101,3 +101,27 @@ def test_element_type_scope_none_for_zone_only_rules():
     from archicad_mcp.rules.builtin.zone_checks import ZoneNumberRequiredRule
     zone_rule = ZoneNumberRequiredRule.from_config({"id": "z", "type": "zone-number-required"})
     assert element_type_scope([zone_rule]) is None
+
+
+def test_element_type_scope_layer_rule_all_forces_none():
+    """A layer-compliance rule reads snapshot.elements via the per-element layer
+    property; if it targets all elements it must disable narrowing so it isn't
+    starved of the non-scoped elements."""
+    from archicad_mcp.rules.engine import element_type_scope
+    from archicad_mcp.rules.builtin.layer_compliance import LayerComplianceRule
+    from archicad_mcp.rules.builtin.property_required import PropertyRequiredRule
+    wall_prop = PropertyRequiredRule.from_config(
+        {"id": "w", "type": "property-required", "property": "P",
+         "applies_to": {"element_type": "Wall"}})
+    layer_all = LayerComplianceRule.from_config(
+        {"id": "L", "type": "layer-compliance", "allowed": ["A-WALL"]})  # applies_to = all
+    assert element_type_scope([wall_prop, layer_all]) is None
+
+
+def test_element_type_scope_layer_rule_typed_contributes():
+    from archicad_mcp.rules.engine import element_type_scope
+    from archicad_mcp.rules.builtin.layer_compliance import LayerComplianceRule
+    door_layer = LayerComplianceRule.from_config(
+        {"id": "L", "type": "layer-compliance", "allowed": ["A-DOOR"],
+         "applies_to": {"element_type": "Door"}})
+    assert element_type_scope([door_layer]) == frozenset({"Door"})
