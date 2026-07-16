@@ -10,6 +10,12 @@ BUILTIN_STORY = "General_HomeStoryNumber"
 BUILTIN_ZONE_NUMBER = "Zone_ZoneNumber"
 BUILTIN_ZONE_NAME = "Zone_ZoneName"
 
+# Max element GUIDs per GetPropertyValuesOfElements request. Wide property
+# queries against large models have crashed Archicad's API bridge inside
+# GetPropertyValuesOfElementsCommand::ComposeResult (observed AC 29.0 build
+# 4006); chunking caps the per-request response size to reduce that risk.
+PROPERTY_FETCH_CHUNK = 500
+
 
 def _property_name_payload(name: str) -> dict:
     """User-defined properties are addressed 'Group/Name'; everything else BuiltIn."""
@@ -51,25 +57,33 @@ def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
 
 
 def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, object]]:
-    """guid -> {property name -> value or None}."""
+    """guid -> {property name -> value or None}.
+
+    Requests are chunked into PROPERTY_FETCH_CHUNK-sized element batches to cap
+    the per-request response size (a wide query on a large model can crash the
+    Archicad API bridge); the per-chunk results are merged.
+    """
     if not guids or not names:
         return {g: {} for g in guids}
     ids = resolve_property_ids(conn, names)
     resolved = [n for n in names if n in ids]
-    response = conn.official("API.GetPropertyValuesOfElements", {
-        "elements": element_payload(guids),
-        "properties": [{"propertyId": ids[n]} for n in resolved],
-    })
+    property_payload = [{"propertyId": ids[n]} for n in resolved]
     out: dict[str, dict[str, object]] = {}
-    rows = response.get("propertyValuesForElements", [])
-    for guid, row in zip(guids, rows):
-        values: dict[str, object] = {}
-        for name, cell in zip(resolved, row.get("propertyValues", [])):
-            pv = cell.get("propertyValue")
-            values[name] = pv.get("value") if pv else None
-        for name in names:
-            values.setdefault(name, None)
-        out[guid] = values
+    for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
+        chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
+        response = conn.official("API.GetPropertyValuesOfElements", {
+            "elements": element_payload(chunk),
+            "properties": property_payload,
+        })
+        rows = response.get("propertyValuesForElements", [])
+        for guid, row in zip(chunk, rows):
+            values: dict[str, object] = {}
+            for name, cell in zip(resolved, row.get("propertyValues", [])):
+                pv = cell.get("propertyValue")
+                values[name] = pv.get("value") if pv else None
+            for name in names:
+                values.setdefault(name, None)
+            out[guid] = values
     return out
 
 

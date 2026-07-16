@@ -92,6 +92,16 @@ public repos.
 `execute_api_command` — the complete official + Tapir command surface.
 Refresh Tapir schemas after add-on updates: `uv run python scripts/sync_tapir_defs.py`.
 
+## Known issues
+
+Wide property queries against very large models can crash Archicad's API
+bridge (observed: a `GetPropertyValuesOfElementsCommand::ComposeResult` abort
+in Archicad 29.0 build 4006), which risks losing unsaved work in the host app.
+The server chunks these requests to cap the per-request response size, but
+chunking is a mitigation for an Archicad-side fragility, not a guaranteed cure.
+Prefer test models and targeted queries (filter by story, layer, or type)
+rather than whole-model property sweeps when working with large projects.
+
 ## Development
 
 ```bash

@@ -1,5 +1,6 @@
+from archicad_mcp import extract
 from archicad_mcp.connection import ArchicadConnection
-from archicad_mcp.extract import build_snapshot, resolve_property_ids
+from archicad_mcp.extract import build_snapshot, fetch_property_values, resolve_property_ids
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
 
@@ -62,3 +63,22 @@ def test_minimal_needs_makes_no_extra_calls():
     called = {c for c, _ in conn._core.calls}
     assert "API.GetPropertyValuesOfElements" not in called
     assert "API.GetClassificationsOfElements" not in called
+
+
+def test_fetch_property_values_chunks_requests(monkeypatch):
+    """Wide property queries crash Archicad's API bridge; guids are split into
+    PROPERTY_FETCH_CHUNK-sized batches and the results merged."""
+    monkeypatch.setattr(extract, "PROPERTY_FETCH_CHUNK", 2)
+    conn = make_conn()
+    result = fetch_property_values(conn, ["w-1", "w-2", "z-1"], ["General_LayerName"])
+
+    value_calls = [params for cmd, params in conn._core.calls
+                   if cmd == "API.GetPropertyValuesOfElements"]
+    # 3 elements at chunk size 2 -> two requests
+    assert len(value_calls) == 2
+    assert [e["elementId"]["guid"] for e in value_calls[0]["elements"]] == ["w-1", "w-2"]
+    assert [e["elementId"]["guid"] for e in value_calls[1]["elements"]] == ["z-1"]
+    # merged output spans both chunks
+    assert result["w-1"]["General_LayerName"] == "A-WALL"
+    assert result["w-2"]["General_LayerName"] == "Sketch"
+    assert result["z-1"]["General_LayerName"] == "A-ZONE"
