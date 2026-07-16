@@ -151,7 +151,45 @@ def build_server(
 
 
 def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
-    """Tier 2 + 3 tools. Extended in later tasks."""
+    from archicad_mcp.core import element_data as _element_data
+    from archicad_mcp.core import query as _query
+
+    def _conn(port: int | None):
+        return get_connection(port if port is not None else default_port)
+
+    @mcp.tool(description="Query elements with AND-combined filters: element_type, "
+                          "layer, story, classification_system, selection_only. "
+                          "Returns GUIDs and counts.")
+    def query_elements(element_type: str | None = None, layer: str | None = None,
+                       story: int | None = None, classification_system: str | None = None,
+                       selection_only: bool = False, port: int | None = None) -> dict:
+        try:
+            return _query.query_elements(_conn(port), element_type, layer, story,
+                                         classification_system, selection_only)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Read type, layer, requested properties (address user "
+                          "properties as 'Group/Name') and optionally classifications "
+                          "for the given element GUIDs.")
+    def get_element_data(guids: list[str], properties: list[str] | None = None,
+                         include_classifications: bool = False,
+                         port: int | None = None) -> dict:
+        try:
+            return _element_data.get_element_data(_conn(port), guids, properties,
+                                                  include_classifications)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Write element property values. DRY-RUN BY DEFAULT: returns "
+                          "planned changes (current -> new) without touching the model. "
+                          "Pass dry_run=false to commit.")
+    def set_element_data(changes: list[dict], dry_run: bool = True,
+                         port: int | None = None) -> dict:
+        try:
+            return _element_data.set_element_data(_conn(port), changes, dry_run)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
 
 
 def main() -> None:

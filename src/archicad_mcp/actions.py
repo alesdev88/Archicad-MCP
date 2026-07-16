@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.extract import element_payload
 
 _HIGHLIGHT_COLOR = [50, 255, 100, 100]      # green-ish, semi-transparent
 _OTHER_COLOR = [0, 0, 255, 128]
-
-
-def _element_payload(guids: list[str]) -> list[dict]:
-    return [{"elementId": {"guid": g}} for g in guids]
 
 
 def highlight_elements(conn: ArchicadConnection, guids: list[str]) -> dict:
     if not guids:
         return {"highlighted": 0}
     conn.tapir("HighlightElements", {
-        "elements": _element_payload(guids),
+        "elements": element_payload(guids),
         "highlightedColors": [_HIGHLIGHT_COLOR for _ in guids],
         "wireframe3D": True,
         "nonHighlightedColor": _OTHER_COLOR,
@@ -30,7 +27,7 @@ def create_issues(conn: ArchicadConnection, rule_id: str, message: str,
     if issue_id and guids:
         conn.tapir("AttachElementsToIssue", {
             "issueId": issue_id,
-            "elements": _element_payload(guids),
+            "elements": element_payload(guids),
             "type": "Highlight",
         })
         attached = len(guids)

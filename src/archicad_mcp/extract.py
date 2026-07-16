@@ -37,12 +37,12 @@ def get_all_element_ids(conn: ArchicadConnection) -> list[str]:
     return [e["elementId"]["guid"] for e in response.get("elements", [])]
 
 
-def _element_payload(guids: list[str]) -> list[dict]:
+def element_payload(guids: list[str]) -> list[dict]:
     return [{"elementId": {"guid": g}} for g in guids]
 
 
 def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
-    response = conn.official("API.GetTypesOfElements", {"elements": _element_payload(guids)})
+    response = conn.official("API.GetTypesOfElements", {"elements": element_payload(guids)})
     out = {}
     for item in response.get("types", []):
         t = item.get("typeOfElement", {})
@@ -57,7 +57,7 @@ def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str,
     ids = resolve_property_ids(conn, names)
     resolved = [n for n in names if n in ids]
     response = conn.official("API.GetPropertyValuesOfElements", {
-        "elements": _element_payload(guids),
+        "elements": element_payload(guids),
         "properties": [{"propertyId": ids[n]} for n in resolved],
     })
     out: dict[str, dict[str, object]] = {}
@@ -77,7 +77,7 @@ def _fetch_classifications(conn, guids: list[str]) -> dict[str, dict[str, str | 
     systems = conn.official("API.GetAllClassificationSystems").get("classificationSystems", [])
     system_names = {s["classificationSystemId"]["guid"]: s["name"] for s in systems}
     response = conn.official("API.GetClassificationsOfElements", {
-        "elements": _element_payload(guids),
+        "elements": element_payload(guids),
         "classificationSystemIds": [{"classificationSystemId": {"guid": g}}
                                     for g in system_names],
     })
@@ -108,7 +108,7 @@ def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
         return None
     try:
         response = conn.tapir("GetIFCPropertiesOfElements",
-                              {"elements": _element_payload(guids)})
+                              {"elements": element_payload(guids)})
     except ArchicadUnavailableError:
         return None
     out: dict[str, dict[str, object]] = {}
