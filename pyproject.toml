@@ -1,0 +1,34 @@
+[project]
+name = "archicad-mcp"
+version = "0.1.0"
+description = "MCP server for Archicad 29: delivery-readiness QA rules plus full official + Tapir API access"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "fastmcp>=3.0,<4",
+    "multiconn_archicad>=0.6",
+    "pydantic>=2.7",
+    "pyyaml>=6",
+    "jsonschema>=4.21",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+archicad-mcp = "archicad_mcp.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/archicad_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["live: requires a running Archicad 29 instance with a model open"]
+addopts = "-m 'not live'"

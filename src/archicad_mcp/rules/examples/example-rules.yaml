@@ -1,0 +1,20 @@
+# Generic, public-safe example rules. Real office standards live OUTSIDE the
+# repo in a local rules directory (--rules-dir / ARCHICAD_MCP_RULES_DIR).
+- id: zones-have-numbers
+  type: zone-number-required
+  severity: error
+  tags: [delivery]
+
+- id: walls-classified
+  type: classification-required
+  system: "ARCHICAD Classification"
+  applies_to: { element_type: Wall }
+  severity: warning
+  tags: [delivery]
+
+- id: walls-fire-rating-ifc
+  type: ifc-property-required
+  property: "Pset_WallCommon.FireRating"
+  applies_to: { element_type: Wall }
+  severity: warning
+  tags: [ifc-delivery]
