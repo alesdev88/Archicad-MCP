@@ -71,7 +71,13 @@ def build_server(
                 raise ArchicadUnavailableError(
                     f"Unknown rule '{rule_id}'. Loaded rules: {known}.")
             return rules
-        return filter_by_tag(rules, ruleset)
+        matched = filter_by_tag(rules, ruleset)
+        if ruleset is not None and not matched:
+            tags = sorted({t for r in loaded.rules for t in r.tags})
+            known = ", ".join(tags) or "no tags defined"
+            raise ArchicadUnavailableError(
+                f"Unknown ruleset tag '{ruleset}'. Known tags: {known}.")
+        return matched
 
     def _verdict_for(rules, request_port: int | None) -> Verdict:
         conn = get_connection(request_port if request_port is not None else default_port)

@@ -87,6 +87,17 @@ async def test_audit_with_ruleset_tag_filters(fake_archicad, tmp_path):
     assert [r["rule"] for r in payload["results"]] == ["walls-fire-ifc"]
 
 
+async def test_audit_unknown_ruleset_tag_errors_not_perfect_score(fake_archicad, tmp_path):
+    """A typo'd ruleset tag must error (listing known tags), never yield an empty
+    score:100/pass:true false-positive verdict."""
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "audit_delivery_readiness", {"ruleset": "no-such-tag"})
+    assert "error" in payload
+    assert "no-such-tag" in payload["error"]
+    assert "ifc-delivery" in payload["error"]  # the known tag is listed
+    assert "score" not in payload and "pass" not in payload
+
+
 async def test_run_rule_single(fake_archicad, tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "run_rule", {"rule_id": "zones-numbered"})
