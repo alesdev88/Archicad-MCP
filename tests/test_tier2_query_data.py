@@ -95,7 +95,7 @@ async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
                         lambda port: ArchicadConnection(19723, core=fake_core))
     payload = await call("set_element_data", {"changes": [
         {"guid": "w-1", "property": "OFFICE/Fire Rating", "value": "EI30"},
-        {"guid": "w-2", "property": "General_HomeStoryNumber", "value": 3}],
+        {"guid": "w-2", "property": "OFFICE/Status", "value": "Approved"}],
         "dry_run": False})
     assert payload["applied"] == 1
     assert payload["failed"] == 1

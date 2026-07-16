@@ -16,8 +16,7 @@ GET_TYPES = {"types": [
 ]}
 
 GET_ALL_PROPERTY_NAMES = {"properties": [
-    {"type": "BuiltIn", "nonLocalizedName": "General_LayerName"},
-    {"type": "BuiltIn", "nonLocalizedName": "General_HomeStoryNumber"},
+    {"type": "BuiltIn", "nonLocalizedName": "ModelView_LayerName"},
     {"type": "BuiltIn", "nonLocalizedName": "Zone_ZoneNumber"},
     {"type": "BuiltIn", "nonLocalizedName": "Zone_ZoneName"},
     {"type": "UserDefined", "localizedName": ["OFFICE", "Fire Rating"]},
@@ -37,12 +36,9 @@ def get_property_values(parameters):
     """Values keyed (element guid, property guid). NotAvailable errors for the zone's
     wall-only props mirror real API behavior."""
     values = {
-        ("w-1", "pid-General_LayerName"): "A-WALL",
-        ("w-2", "pid-General_LayerName"): "Sketch",
-        ("z-1", "pid-General_LayerName"): "A-ZONE",
-        ("w-1", "pid-General_HomeStoryNumber"): 1,
-        ("w-2", "pid-General_HomeStoryNumber"): 2,
-        ("z-1", "pid-General_HomeStoryNumber"): 1,
+        ("w-1", "pid-ModelView_LayerName"): "A-WALL",
+        ("w-2", "pid-ModelView_LayerName"): "Sketch",
+        ("z-1", "pid-ModelView_LayerName"): "A-ZONE",
         ("w-1", "pid-OFFICE/Fire Rating"): "EI60",
         ("z-1", "pid-Zone_ZoneNumber"): "101",
         ("z-1", "pid-Zone_ZoneName"): "Office",
@@ -109,8 +105,18 @@ OFFICIAL = {
     "API.GetLayerAttributes": GET_LAYER_ATTRIBUTES,
 }
 
+# Shape verified against live AC 29.0: each detail carries floorIndex + layerIndex.
+def get_details_of_elements(parameters):
+    floors = {"w-1": 0, "w-2": 1, "z-1": 0}
+    return {"detailsOfElements": [
+        {"floorIndex": floors.get(el["elementId"]["guid"]), "layerIndex": 3,
+         "type": "Wall"}
+        for el in parameters["elements"]]}
+
+
 TAPIR = {
     "GetIFCPropertiesOfElements": TAPIR_IFC_PROPERTIES,
+    "GetDetailsOfElements": get_details_of_elements,
     "GetProjectInfo": {"projectName": "Test House", "untitled": False, "teamwork": False},
     "GetAddOnVersion": {"version": "1.8.2"},
 }

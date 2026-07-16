@@ -6,12 +6,12 @@ from typing import Iterable
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
 
-# NOTE: these built-in property names are NOT yet confirmed against a live
-# model — the live canary test_builtin_property_names_resolve has not passed.
-# If layer/story/zone extraction comes back empty, verify the real names via
-# API.GetAllPropertyNames on a small model and correct these four constants.
-BUILTIN_LAYER = "General_LayerName"
-BUILTIN_STORY = "General_HomeStoryNumber"
+# Verified against a live Archicad 29.0 model (2026-07-16):
+#   layer name  -> ModelView_LayerName  (NOT General_LayerName, which does not exist)
+#   zone number -> Zone_ZoneNumber, zone name -> Zone_ZoneName  (confirmed)
+# There is no built-in "home story number" property; an element's story comes
+# from Tapir GetDetailsOfElements.floorIndex instead (see _fetch_floor_indices).
+BUILTIN_LAYER = "ModelView_LayerName"
 BUILTIN_ZONE_NUMBER = "Zone_ZoneNumber"
 BUILTIN_ZONE_NAME = "Zone_ZoneName"
 
@@ -166,6 +166,31 @@ def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
     return out
 
 
+def _fetch_floor_indices(conn, guids: list[str]) -> dict[str, int | None]:
+    """guid -> home-story (floor) index, via Tapir GetDetailsOfElements.
+
+    Archicad exposes no built-in story-number property; floorIndex on the
+    element detail is the reliable source. Returns {} if Tapir is unavailable.
+    """
+    if not guids or not conn.tapir_available():
+        return {}
+    if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
+        raise PropertyFetchTooWideError(
+            f"Refusing to read element details across {len(guids)} elements "
+            f"(limit {MAX_PROPERTY_FETCH_ELEMENTS}). Scope the query first, or "
+            "raise ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS if you accept the risk.")
+    out: dict[str, int | None] = {}
+    for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
+        chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
+        try:
+            response = conn.tapir("GetDetailsOfElements", {"elements": element_payload(chunk)})
+        except ArchicadUnavailableError:
+            return {}
+        for guid, item in zip(chunk, response.get("detailsOfElements", [])):
+            out[guid] = item.get("floorIndex") if isinstance(item, dict) else None
+    return out
+
+
 def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                    property_names: frozenset[str] = frozenset()) -> ModelSnapshot:
     elements: tuple[ElementInfo, ...] = ()
@@ -180,20 +205,21 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
     if "elements" in needs and guids:
         prop_names = set(property_names)
         if needs & {"properties", "layers"}:
-            prop_names |= {BUILTIN_LAYER, BUILTIN_STORY}
+            prop_names |= {BUILTIN_LAYER}
         values = (fetch_property_values(conn, guids, sorted(prop_names))
                   if "properties" in needs or "layers" in needs else {g: {} for g in guids})
         classif = (_fetch_classifications(conn, guids)
                    if "classifications" in needs else {g: {} for g in guids})
+        floors = _fetch_floor_indices(conn, guids) if "story" in needs else {}
         elements = tuple(
             ElementInfo(
                 guid=g,
                 element_type=types.get(g, ""),
                 layer=values.get(g, {}).get(BUILTIN_LAYER),
-                story=values.get(g, {}).get(BUILTIN_STORY),
+                story=floors.get(g),
                 classifications=classif.get(g, {}),
                 properties={k: v for k, v in values.get(g, {}).items()
-                            if k not in (BUILTIN_LAYER, BUILTIN_STORY)},
+                            if k != BUILTIN_LAYER},
             )
             for g in guids
         )

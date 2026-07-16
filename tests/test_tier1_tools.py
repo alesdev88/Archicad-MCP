@@ -140,7 +140,8 @@ async def test_get_model_summary_layer_story_opt_in(fake_archicad, tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "get_model_summary", {"include_layer_story": True})
     assert payload["by_layer"] == {"A-WALL": 1, "Sketch": 1, "A-ZONE": 1}
-    assert payload["by_story"] == {"1": 2, "2": 1}
+    # story from floorIndex fixture: w-1=0, z-1=0, w-2=1
+    assert payload["by_story"] == {"0": 2, "1": 1}
 
 
 async def test_highlight_failures_calls_tapir(fake_archicad, tmp_path):

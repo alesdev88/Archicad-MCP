@@ -106,7 +106,7 @@ def build_server(
     def get_model_summary(include_layer_story: bool = False,
                           port: int | None = None) -> dict:
         conn = get_connection(port if port is not None else default_port)
-        needs = frozenset({"elements", "properties"}) if include_layer_story \
+        needs = frozenset({"elements", "properties", "story"}) if include_layer_story \
             else frozenset({"elements"})
         snapshot = build_snapshot(conn, needs=needs)
         by_type = Counter(e.element_type for e in snapshot.elements)

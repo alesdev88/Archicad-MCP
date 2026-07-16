@@ -15,8 +15,8 @@ def make_conn(tapir=True):
 
 
 def test_resolve_property_ids_builtin_and_user():
-    ids = resolve_property_ids(make_conn(), ["General_LayerName", "OFFICE/Fire Rating"])
-    assert ids["General_LayerName"] == {"guid": "pid-General_LayerName"}
+    ids = resolve_property_ids(make_conn(), ["ModelView_LayerName", "OFFICE/Fire Rating"])
+    assert ids["ModelView_LayerName"] == {"guid": "pid-ModelView_LayerName"}
     assert ids["OFFICE/Fire Rating"] == {"guid": "pid-OFFICE/Fire Rating"}
 
 
@@ -31,6 +31,22 @@ def test_snapshot_elements_types_layers_properties():
     assert by_guid["w-1"].properties["OFFICE/Fire Rating"] == "EI60"
     assert by_guid["w-2"].properties["OFFICE/Fire Rating"] is None  # not available -> None
     assert set(snap.layers) == {"A-WALL", "A-ZONE"}
+
+
+def test_snapshot_story_from_floor_index():
+    snap = build_snapshot(make_conn(),
+                          needs=frozenset({"elements", "story"}))
+    by_guid = {e.guid: e for e in snap.elements}
+    assert by_guid["w-1"].story == 0
+    assert by_guid["w-2"].story == 1
+    # story must come from Tapir details, never a (non-existent) property.
+    # BUILTIN_STORY was removed; General_HomeStoryNumber does not exist in AC.
+
+
+def test_snapshot_story_omitted_without_story_need():
+    conn = make_conn()
+    build_snapshot(conn, needs=frozenset({"elements", "properties"}))
+    assert not any(c == "GetDetailsOfElements" for c, _ in conn._core.calls)
 
 
 def test_snapshot_classifications():
@@ -71,7 +87,7 @@ def test_fetch_property_values_chunks_requests(monkeypatch):
     PROPERTY_FETCH_CHUNK-sized batches and the results merged."""
     monkeypatch.setattr(extract, "PROPERTY_FETCH_CHUNK", 2)
     conn = make_conn()
-    result = fetch_property_values(conn, ["w-1", "w-2", "z-1"], ["General_LayerName"])
+    result = fetch_property_values(conn, ["w-1", "w-2", "z-1"], ["ModelView_LayerName"])
 
     value_calls = [params for cmd, params in conn._core.calls
                    if cmd == "API.GetPropertyValuesOfElements"]
@@ -80,9 +96,9 @@ def test_fetch_property_values_chunks_requests(monkeypatch):
     assert [e["elementId"]["guid"] for e in value_calls[0]["elements"]] == ["w-1", "w-2"]
     assert [e["elementId"]["guid"] for e in value_calls[1]["elements"]] == ["z-1"]
     # merged output spans both chunks
-    assert result["w-1"]["General_LayerName"] == "A-WALL"
-    assert result["w-2"]["General_LayerName"] == "Sketch"
-    assert result["z-1"]["General_LayerName"] == "A-ZONE"
+    assert result["w-1"]["ModelView_LayerName"] == "A-WALL"
+    assert result["w-2"]["ModelView_LayerName"] == "Sketch"
+    assert result["z-1"]["ModelView_LayerName"] == "A-ZONE"
 
 
 def test_classification_and_ifc_fetches_are_chunked(monkeypatch):
@@ -106,6 +122,6 @@ def test_property_fetch_refuses_when_too_wide(monkeypatch):
     monkeypatch.setattr(extract_mod, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
     conn = make_conn()
     with pytest.raises(PropertyFetchTooWideError, match="Refusing to read properties"):
-        fetch_property_values(conn, ["a", "b", "c"], ["General_LayerName"])
+        fetch_property_values(conn, ["a", "b", "c"], ["ModelView_LayerName"])
     # No API call must have been issued before the refusal.
     assert not any(c == "API.GetPropertyValuesOfElements" for c, _ in conn._core.calls)

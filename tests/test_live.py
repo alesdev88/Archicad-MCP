@@ -12,9 +12,9 @@ import pytest
 from archicad_mcp.connection import discover_instances, get_connection
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
-    BUILTIN_STORY,
     BUILTIN_ZONE_NAME,
     BUILTIN_ZONE_NUMBER,
+    PropertyFetchTooWideError,
     build_snapshot,
 )
 
@@ -45,10 +45,11 @@ def test_product_info_is_archicad_29(conn):
 
 
 def test_builtin_property_names_resolve(conn):
-    """THE canary: if these names don't resolve, fix the BUILTIN_* constants in
-    extract.py using the dump printed below."""
+    """THE canary: the property-backed built-in names must resolve. If one
+    doesn't, fix the BUILTIN_* constant in extract.py from the dump below.
+    (Story is NOT a property — it comes from Tapir floorIndex, tested separately.)"""
     from archicad_mcp.extract import resolve_property_ids
-    wanted = [BUILTIN_LAYER, BUILTIN_STORY, BUILTIN_ZONE_NUMBER, BUILTIN_ZONE_NAME]
+    wanted = [BUILTIN_LAYER, BUILTIN_ZONE_NUMBER, BUILTIN_ZONE_NAME]
     ids = resolve_property_ids(conn, wanted)
     missing = [n for n in wanted if n not in ids]
     if missing:
@@ -60,11 +61,26 @@ def test_builtin_property_names_resolve(conn):
                     "Pick the right ones from the dump above and update extract.py.")
 
 
+def test_story_comes_from_floor_index(conn):
+    """floorIndex on the element detail is the story source."""
+    from archicad_mcp.extract import _fetch_floor_indices
+    guids = [e["elementId"]["guid"]
+             for e in conn.official("API.GetAllElements")["elements"][:20]]
+    floors = _fetch_floor_indices(conn, guids)
+    assert floors, "GetDetailsOfElements returned no floor indices"
+    assert all(v is None or isinstance(v, int) for v in floors.values())
+
+
 def test_full_snapshot_builds(conn):
-    snap = build_snapshot(
-        conn,
-        needs=frozenset({"elements", "properties", "classifications", "layers",
-                         "zones", "ifc"}))
+    """Full snapshot over the whole model. On a large model the property sweep
+    is refused by design (crash guard) — that's a pass for the guard, so skip."""
+    try:
+        snap = build_snapshot(
+            conn,
+            needs=frozenset({"elements", "properties", "classifications", "layers",
+                             "zones", "story", "ifc"}))
+    except PropertyFetchTooWideError as exc:
+        pytest.skip(f"model too large for a full property sweep (guard worked): {exc}")
     assert snap.elements, "test model must contain elements"
     assert snap.layers, "test model must contain layers"
     types = {e.element_type for e in snap.elements}

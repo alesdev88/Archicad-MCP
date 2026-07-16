@@ -5,7 +5,7 @@ from collections import Counter
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
-    BUILTIN_STORY,
+    _fetch_floor_indices,
     fetch_property_values,
 )
 
@@ -37,12 +37,13 @@ def query_elements(conn: ArchicadConnection, element_type: str | None = None,
     if element_type is not None:
         guids = [g for g in guids if types.get(g) == element_type]
 
-    if layer is not None or story is not None:
-        values = fetch_property_values(conn, guids, [BUILTIN_LAYER, BUILTIN_STORY])
-        if layer is not None:
-            guids = [g for g in guids if values.get(g, {}).get(BUILTIN_LAYER) == layer]
-        if story is not None:
-            guids = [g for g in guids if values.get(g, {}).get(BUILTIN_STORY) == story]
+    if layer is not None:
+        values = fetch_property_values(conn, guids, [BUILTIN_LAYER])
+        guids = [g for g in guids if values.get(g, {}).get(BUILTIN_LAYER) == layer]
+
+    if story is not None:
+        floors = _fetch_floor_indices(conn, guids)
+        guids = [g for g in guids if floors.get(g) == story]
 
     if classification_system is not None:
         from archicad_mcp.extract import _fetch_classifications
