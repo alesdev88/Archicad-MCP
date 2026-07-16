@@ -63,6 +63,21 @@ async def test_list_instances(fake_archicad, tmp_path):
     assert payload["instances"][0]["tapir_available"] is True
 
 
+async def test_list_instances_masks_project_name_in_verdicts_mode(fake_archicad, tmp_path):
+    """Verdicts mode promises no project info leaves; project_name must be None."""
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "list_instances")
+    inst = payload["instances"][0]
+    assert inst["project_name"] is None
+    assert inst["tapir_version"] == "1.8.2"  # non-identifying fields still present
+
+
+async def test_list_instances_keeps_project_name_in_full_mode(fake_archicad, tmp_path):
+    mcp = build_server(mode="full", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "list_instances")
+    assert payload["instances"][0]["project_name"] == "Test House"
+
+
 async def test_list_rules_reports_loaded_rules(tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "list_rules")
