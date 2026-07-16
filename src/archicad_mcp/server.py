@@ -18,6 +18,7 @@ from archicad_mcp.connection import (
 from archicad_mcp.extract import build_snapshot
 from archicad_mcp.rules.engine import (
     data_needs,
+    element_type_scope,
     filter_by_tag,
     property_needs,
     run_rules,
@@ -81,7 +82,8 @@ def build_server(
 
     def _verdict_for(rules, request_port: int | None) -> Verdict:
         conn = get_connection(request_port if request_port is not None else default_port)
-        snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules))
+        snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules),
+                                  element_types=element_type_scope(rules))
         return run_rules(rules, snapshot)
 
     # ---------- Tier 1: verdict tools (both modes) ----------

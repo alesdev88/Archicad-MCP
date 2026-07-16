@@ -192,15 +192,30 @@ def _fetch_floor_indices(conn, guids: list[str]) -> dict[str, int | None]:
 
 
 def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
-                   property_names: frozenset[str] = frozenset()) -> ModelSnapshot:
+                   property_names: frozenset[str] = frozenset(),
+                   element_types: frozenset[str] | None = None) -> ModelSnapshot:
+    """Build a ModelSnapshot fetching only what `needs` demands.
+
+    When `element_types` is given, the per-element data (types, properties,
+    classifications, story, ifc) is fetched only for elements of those types —
+    the extractor still lists all element ids and their types once (cheap), then
+    narrows before the expensive/crash-prone property sweep. `None` means no
+    narrowing (fetch every element). Zones and the layer name list are
+    independent of this filter.
+    """
     elements: tuple[ElementInfo, ...] = ()
     layers: tuple[str, ...] = ()
     zones: tuple[ZoneInfo, ...] = ()
     ifc: dict[str, dict[str, object]] | None = None
 
     want_elements = bool(needs & {"elements", "properties", "classifications", "ifc", "zones"})
-    guids = get_all_element_ids(conn) if want_elements else []
-    types = _fetch_types(conn, guids) if guids else {}
+    all_guids = get_all_element_ids(conn) if want_elements else []
+    types = _fetch_types(conn, all_guids) if all_guids else {}
+
+    if element_types is None:
+        guids = all_guids
+    else:
+        guids = [g for g in all_guids if types.get(g) in element_types]
 
     if "elements" in needs and guids:
         prop_names = set(property_names)
@@ -228,7 +243,9 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
         layers = _fetch_layer_names(conn)
 
     if "zones" in needs:
-        zone_guids = [g for g in guids if types.get(g) == "Zone"]
+        # Zones are found across ALL elements, independent of element_types
+        # (which scopes the element-property sweep, not zone discovery).
+        zone_guids = [g for g in all_guids if types.get(g) == "Zone"]
         zone_values = fetch_property_values(
             conn, zone_guids, [BUILTIN_ZONE_NUMBER, BUILTIN_ZONE_NAME])
         zones = tuple(

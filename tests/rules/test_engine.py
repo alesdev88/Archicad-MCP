@@ -70,3 +70,34 @@ def test_filter_by_tag():
     r2 = StubRule("r2")
     assert filter_by_tag([r1, r2], "ifc-delivery") == [r1]
     assert filter_by_tag([r1, r2], None) == [r1, r2]
+
+
+def test_element_type_scope_narrows_to_applies_to_types():
+    from archicad_mcp.rules.engine import element_type_scope
+    from archicad_mcp.rules.builtin.property_required import PropertyRequiredRule
+    from archicad_mcp.rules.builtin.zone_checks import ZoneNumberRequiredRule
+    wall_rule = PropertyRequiredRule.from_config(
+        {"id": "w", "type": "property-required", "property": "Fire Rating",
+         "applies_to": {"element_type": "Wall"}})
+    zone_rule = ZoneNumberRequiredRule.from_config(
+        {"id": "z", "type": "zone-number-required"})
+    # zone rule needs only zones -> doesn't widen the element-property scope
+    assert element_type_scope([wall_rule, zone_rule]) == frozenset({"Wall"})
+
+
+def test_element_type_scope_none_when_a_rule_targets_all():
+    from archicad_mcp.rules.engine import element_type_scope
+    from archicad_mcp.rules.builtin.property_required import PropertyRequiredRule
+    wall_rule = PropertyRequiredRule.from_config(
+        {"id": "w", "type": "property-required", "property": "P",
+         "applies_to": {"element_type": "Wall"}})
+    all_rule = PropertyRequiredRule.from_config(
+        {"id": "a", "type": "property-required", "property": "P"})  # applies_to = all
+    assert element_type_scope([wall_rule, all_rule]) is None
+
+
+def test_element_type_scope_none_for_zone_only_rules():
+    from archicad_mcp.rules.engine import element_type_scope
+    from archicad_mcp.rules.builtin.zone_checks import ZoneNumberRequiredRule
+    zone_rule = ZoneNumberRequiredRule.from_config({"id": "z", "type": "zone-number-required"})
+    assert element_type_scope([zone_rule]) is None

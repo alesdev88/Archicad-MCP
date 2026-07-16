@@ -125,3 +125,22 @@ def test_property_fetch_refuses_when_too_wide(monkeypatch):
         fetch_property_values(conn, ["a", "b", "c"], ["ModelView_LayerName"])
     # No API call must have been issued before the refusal.
     assert not any(c == "API.GetPropertyValuesOfElements" for c, _ in conn._core.calls)
+
+
+def test_build_snapshot_scopes_property_fetch_to_element_types():
+    conn = make_conn()
+    snap = build_snapshot(conn, needs=frozenset({"elements", "properties"}),
+                          element_types=frozenset({"Wall"}))
+    # Only the two walls end up in the snapshot; the zone is excluded.
+    assert {e.guid for e in snap.elements} == {"w-1", "w-2"}
+    value_calls = [p for c, p in conn._core.calls if c == "API.GetPropertyValuesOfElements"]
+    fetched = {e["elementId"]["guid"] for call in value_calls for e in call["elements"]}
+    assert fetched == {"w-1", "w-2"}  # zone z-1 never fetched
+
+
+def test_build_snapshot_zones_ignore_element_type_scope():
+    conn = make_conn()
+    snap = build_snapshot(conn, needs=frozenset({"zones"}),
+                          element_types=frozenset({"Wall"}))
+    # Zone discovery must not be narrowed by an element-property scope.
+    assert [z.guid for z in snap.zones] == ["z-1"]

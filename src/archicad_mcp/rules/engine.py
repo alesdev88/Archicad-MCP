@@ -39,3 +39,31 @@ def filter_by_tag(rules: Sequence[Rule], tag: str | None) -> list[Rule]:
     if tag is None:
         return list(rules)
     return [r for r in rules if tag in r.tags]
+
+
+# Element-level data needs that trigger a per-element property fetch (the
+# crash-prone GetPropertyValuesOfElements sweep). Rules needing only zones/layers
+# don't drive it.
+_ELEMENT_FETCH_NEEDS = frozenset({"properties", "classifications", "ifc"})
+
+
+def element_type_scope(rules: Sequence[Rule]) -> frozenset[str] | None:
+    """The element types a per-element property fetch can be restricted to.
+
+    Returns a set of element-type names when every rule that drives an
+    element-property fetch targets a specific type (via applies_to), so the
+    extractor need only pull those elements instead of the whole model.
+    Returns None when the fetch cannot be narrowed — any such rule targets all
+    elements (applies_to is absent, None, or "*") — so the caller must fetch
+    everything (and the fetch ceiling may then refuse an oversized model).
+    """
+    types: set[str] = set()
+    for rule in rules:
+        if not (rule.needs & _ELEMENT_FETCH_NEEDS):
+            continue
+        applies_to = getattr(rule, "applies_to", None)
+        element_type = getattr(applies_to, "element_type", None)
+        if element_type in (None, "*"):
+            return None
+        types.add(element_type)
+    return frozenset(types) if types else None
