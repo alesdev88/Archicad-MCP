@@ -191,6 +191,46 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         except ArchicadUnavailableError as exc:
             return _tool_error(exc)
 
+    from archicad_mcp.core import create as _create
+    from archicad_mcp.core import mutate as _mutate
+    from archicad_mcp.core import selection as _selection
+
+    @mcp.tool(description="Create elements (column/slab/zone/polyline/object/mesh) via "
+                          "Tapir. DRY-RUN BY DEFAULT: shows the exact command and payload. "
+                          "Pass dry_run=false to create. Other types: use execute_api_command.")
+    def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
+                        port: int | None = None) -> dict:
+        try:
+            return _create.create_elements(_conn(port), element_type, items, dry_run)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
+                          "confirm=true.")
+    def move_elements(guids: list[str], vector: dict, confirm: bool = False,
+                      port: int | None = None) -> dict:
+        try:
+            return _mutate.move_elements(_conn(port), guids, vector, confirm)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true.")
+    def delete_elements(guids: list[str], confirm: bool = False,
+                        port: int | None = None) -> dict:
+        try:
+            return _mutate.delete_elements(_conn(port), guids, confirm)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
+    @mcp.tool(description="Get, set, or clear the current element selection in Archicad. "
+                          "action: 'get' | 'set' | 'clear'.")
+    def manage_selection(action: str, guids: list[str] | None = None,
+                         port: int | None = None) -> dict:
+        try:
+            return _selection.manage_selection(_conn(port), action, guids)
+        except ArchicadUnavailableError as exc:
+            return _tool_error(exc)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
