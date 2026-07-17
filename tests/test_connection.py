@@ -84,3 +84,52 @@ def test_dead_archicad_is_not_reported_as_missing_tapir():
         conn.tapir_available()
     with pytest.raises(ArchicadUnavailableError, match="not responding"):
         conn.tapir("GetStories")
+
+
+def test_instance_with_no_open_project_is_reported_not_hidden():
+    """Live-verified: Archicad refuses even GetProductInfo (code 4001) when no
+    project is open. It must still be listed, with project_open=False."""
+    from multiconn_archicad.errors import StandardAPIError
+
+    class NoProjectCore:
+        def post_command(self, *a, **k):
+            raise StandardAPIError(message="Invalid program status (no open project)",
+                                   code=4001)
+
+    info = probe_port(19723, core=NoProjectCore())
+    assert info is not None, "a project-less instance must still be discovered"
+    assert info.project_open is False
+    assert info.port == 19723
+
+
+def test_discovery_survives_a_project_less_instance(monkeypatch):
+    """One project-less instance must not break discovery of the healthy ones."""
+    from archicad_mcp.connection import InstanceInfo, discover_instances
+
+    def fake_probe(port, core=None):
+        if port == 19723:
+            return InstanceInfo(19723, 0, 0, None, False, None, project_open=False)
+        if port == 19724:
+            return InstanceInfo(19724, 29, 4006, "Test", True, "1.5.3")
+        return None
+
+    monkeypatch.setattr("archicad_mcp.connection.probe_port", fake_probe)
+    found = discover_instances()
+    assert [i.port for i in found] == [19723, 19724]
+
+
+def test_get_connection_prefers_the_instance_with_a_project(monkeypatch):
+    from archicad_mcp.connection import InstanceInfo, get_connection
+    two = [InstanceInfo(19723, 0, 0, None, False, None, project_open=False),
+           InstanceInfo(19724, 29, 4006, "Test", True, "1.5.3")]
+    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda: two)
+    monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None: two[1])
+    assert get_connection(None).port == 19724  # not an ambiguous-port error
+
+
+def test_get_connection_on_project_less_port_is_actionable(monkeypatch):
+    from archicad_mcp.connection import InstanceInfo, get_connection
+    info = InstanceInfo(19723, 0, 0, None, False, None, project_open=False)
+    monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None: info)
+    with pytest.raises(ArchicadUnavailableError, match="no project is open"):
+        get_connection(19723)

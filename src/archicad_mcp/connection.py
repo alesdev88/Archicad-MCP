@@ -26,6 +26,11 @@ class ArchicadUnavailableError(Exception):
     """str(exc) is a user-facing, actionable message."""
 
 
+# Live-verified: Archicad answers on its port with a project-less status error
+# (API.GetProductInfo itself fails) when it is running but no project is open.
+NO_OPEN_PROJECT_CODE = 4001
+
+
 @dataclass
 class InstanceInfo:
     port: int
@@ -34,6 +39,7 @@ class InstanceInfo:
     project_name: str | None
     tapir_available: bool
     tapir_version: str | None
+    project_open: bool = True
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -108,6 +114,13 @@ def probe_port(port: int, core=None) -> InstanceInfo | None:
         product = conn.official("API.GetProductInfo")
     except (APIConnectionError, RequestError, CommandTimeoutError):
         return None
+    except APIErrorBase:
+        # Archicad is there but has no project open (it refuses even
+        # GetProductInfo). Report the instance rather than hiding it — and
+        # never let one project-less instance break discovery of the others.
+        return InstanceInfo(port=port, version=0, build=0, project_name=None,
+                            tapir_available=False, tapir_version=None,
+                            project_open=False)
     tapir = conn.tapir_available()
     project_name = None
     tapir_version = None
@@ -137,16 +150,33 @@ def discover_instances() -> list[InstanceInfo]:
     return found
 
 
+def _require_open_project(info: InstanceInfo) -> None:
+    if not info.project_open:
+        raise ArchicadUnavailableError(
+            f"Archicad is running on port {info.port} but no project is open. "
+            "Open a project and retry.")
+
+
 def get_connection(port: int | None) -> ArchicadConnection:
     if port is not None:
-        if probe_port(port) is None:
+        info = probe_port(port)
+        if info is None:
             raise ArchicadUnavailableError(
                 f"No Archicad answering on port {port}. Is it running with a project open?")
+        _require_open_project(info)
         return ArchicadConnection(port)
     instances = discover_instances()
     if not instances:
         raise ArchicadUnavailableError(
             "No running Archicad found. Start Archicad 29 and open a project.")
+    # Prefer instances that actually have a project open; a project-less one
+    # can't answer anything useful and shouldn't force a 'pick a port' error.
+    with_project = [i for i in instances if i.project_open]
+    if len(with_project) == 1:
+        return ArchicadConnection(with_project[0].port)
+    if not with_project:
+        _require_open_project(instances[0])
+    instances = with_project
     if len(instances) > 1:
         ports = ", ".join(str(i.port) for i in instances)
         raise ArchicadUnavailableError(

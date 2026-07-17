@@ -11,6 +11,7 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp import actions
 from archicad_mcp.connection import (
+    NO_OPEN_PROJECT_CODE,
     ArchicadUnavailableError,
     discover_instances,
     get_connection,
@@ -39,8 +40,8 @@ def _tool_error(exc: Exception) -> dict:
         # Only suggest "open a project" for the error that actually means it —
         # appending it to every API error (e.g. a schema rejection) misleads.
         message = f"Archicad API error: {exc.message}"
-        if getattr(exc, "code", None) == -402:
-            message += ". Is a project open in Archicad? Open one and retry."
+        if getattr(exc, "code", None) == NO_OPEN_PROJECT_CODE:
+            message += ". Open a project in Archicad and retry."
         return {"error": message}
     return {"error": str(exc)}
 

@@ -207,11 +207,11 @@ async def test_api_error_hint_only_for_no_project_open(monkeypatch, tmp_path):
                             lambda port: ArchicadConnection(19723, core=core))
         return build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
 
-    mcp = make(-402, "No project is open")
+    mcp = make(4001, "Invalid program status (no open project)")
     payload = await call(mcp, "get_model_summary")
-    assert "Is a project open" in payload["error"]
+    assert "Open a project" in payload["error"]
 
     mcp = make(4002, "Invalid command parameters (JSON schema)")
     payload = await call(mcp, "get_model_summary")
-    assert "Is a project open" not in payload["error"]
+    assert "Open a project" not in payload["error"]
     assert "Invalid command parameters" in payload["error"]

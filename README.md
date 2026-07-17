@@ -141,6 +141,11 @@ properties need an `EnumValueId`, not a plain value; `set_element_data` reports
 them as `skipped` with a reason. Set them via `execute_api_command` with the
 enum's id.
 
+**Tapir version matters.** IFC commands (`GetIFCPropertiesOfElements`) only
+exist in newer Tapir releases — 1.4.0 does not have them and IFC rules skip.
+Verified working on **Tapir 1.5.3**. The server probes per-command availability,
+so an older add-on degrades instead of erroring.
+
 **`publish` is still unvalidated** — the test model had no publisher sets.
 
 Run the read-only live canary against a small non-sensitive model, port pinned:
