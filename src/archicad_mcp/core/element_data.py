@@ -4,6 +4,7 @@ from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     _fetch_classifications,
+    _fetch_types,
     element_payload,
     fetch_property_values,
     resolve_property_ids,
@@ -14,9 +15,7 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
                      properties: list[str] | None = None,
                      include_classifications: bool = False) -> dict:
     properties = properties or []
-    response = conn.official("API.GetTypesOfElements", {"elements": element_payload(guids)})
-    types = {t["typeOfElement"]["elementId"]["guid"]: t["typeOfElement"]["elementType"]
-             for t in response.get("types", [])}
+    types = _fetch_types(conn, guids)
     values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *properties])
     classif = _fetch_classifications(conn, guids) if include_classifications else {}
     elements = []

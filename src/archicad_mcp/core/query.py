@@ -21,10 +21,8 @@ def _all_guids(conn: ArchicadConnection) -> list[str]:
 
 
 def _types_for(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
-    from archicad_mcp.extract import element_payload
-    response = conn.official("API.GetTypesOfElements", {"elements": element_payload(guids)})
-    return {t["typeOfElement"]["elementId"]["guid"]: t["typeOfElement"]["elementType"]
-            for t in response.get("types", [])}
+    from archicad_mcp.extract import _fetch_types
+    return _fetch_types(conn, guids)
 
 
 def query_elements(conn: ArchicadConnection, element_type: str | None = None,

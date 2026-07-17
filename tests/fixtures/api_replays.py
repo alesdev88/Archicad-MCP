@@ -9,7 +9,8 @@ E = [{"elementId": {"guid": g}} for g in ("w-1", "w-2", "z-1")]
 
 GET_ALL_ELEMENTS = {"elements": E}
 
-GET_TYPES = {"types": [
+# Live-verified key: the API returns "typesOfElements" (not "types").
+GET_TYPES = {"typesOfElements": [
     {"typeOfElement": {"elementId": {"guid": "w-1"}, "elementType": "Wall"}},
     {"typeOfElement": {"elementId": {"guid": "w-2"}, "elementType": "Wall"}},
     {"typeOfElement": {"elementId": {"guid": "z-1"}, "elementType": "Zone"}},

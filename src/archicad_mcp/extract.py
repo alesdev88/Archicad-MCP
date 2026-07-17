@@ -74,9 +74,10 @@ def element_payload(guids: list[str]) -> list[dict]:
 
 
 def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
+    # Live-verified shape: {"typesOfElements": [{"typeOfElement": {...}}]}
     response = conn.official("API.GetTypesOfElements", {"elements": element_payload(guids)})
     out = {}
-    for item in response.get("types", []):
+    for item in response.get("typesOfElements", []):
         t = item.get("typeOfElement", {})
         out[t.get("elementId", {}).get("guid", "")] = t.get("elementType", "")
     return out

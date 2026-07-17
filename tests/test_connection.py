@@ -69,3 +69,18 @@ def test_get_connection_multiple_instances(monkeypatch):
     monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda: two)
     with pytest.raises(ArchicadUnavailableError, match="19723"):
         get_connection(None)
+
+
+def test_dead_archicad_is_not_reported_as_missing_tapir():
+    """A transport failure means Archicad is gone, not that Tapir is absent."""
+    from multiconn_archicad.errors import APIConnectionError
+
+    class DeadCore:
+        def post_command(self, *a, **k):
+            raise APIConnectionError(message="Server disconnected", code=None)
+
+    conn = ArchicadConnection(19723, core=DeadCore())
+    with pytest.raises(ArchicadUnavailableError, match="not responding"):
+        conn.tapir_available()
+    with pytest.raises(ArchicadUnavailableError, match="not responding"):
+        conn.tapir("GetStories")

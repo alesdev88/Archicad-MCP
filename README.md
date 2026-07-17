@@ -94,14 +94,23 @@ Refresh Tapir schemas after add-on updates: `uv run python scripts/sync_tapir_de
 
 ## Known issues
 
-**Wide property queries can crash Archicad.** Reading properties across a whole
-large model has repeatedly crashed Archicad's API bridge (a
-`GetPropertyValuesOfElementsCommand::ComposeResult` abort, observed on Archicad
-29.0 build 4006 with a ~16k-element model), losing unsaved work in the host app.
-This is an Archicad-side fault the server can trigger but cannot prevent, and
-chunking alone did **not** stop it. So the server now **refuses** a property
-fetch spanning more than `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default
-5000) with an actionable error rather than risk the crash. Consequences:
+**Reading property values can crash Archicad — this is the big one.**
+`GetPropertyValuesOfElements` has crashed Archicad 29.0 build 4006 three times
+during development (`ComposeResult` abort, taking unsaved work with it). It is
+**not** a volume problem: the third crash was a **single property on a single
+element** (a user-defined property read on a freshly created slab). Reading
+built-in properties (e.g. `ModelView_LayerName`) across thousands of real
+elements worked fine, so the trigger appears to be *a specific
+property/element combination* — most likely a property that is not applicable to
+that element, which the API aborts on instead of returning a per-element error.
+
+This is an Archicad-side fault the server can trigger but **cannot prevent**.
+The element ceiling below limits blast radius; it does **not** make property
+reads safe. Treat any `get_element_data` / `set_element_data` / audit against a
+model you care about as capable of crashing it, and save first.
+
+The server refuses a property fetch spanning more than
+`ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default 5000). Consequences:
 
 - `get_model_summary` returns `by_type` only by default (safe); pass
   `include_layer_story=true` for the per-element breakdown (refused on very
@@ -119,10 +128,15 @@ and an element's **story is not a property** — it comes from Tapir
 `GetDetailsOfElements.floorIndex` (a 0-based index, so `query_elements(story=…)`
 and `get_model_summary` breakdowns key on floorIndex).
 
-**Not yet validated live:** the write path (`set_element_data` commit), element
-create/move/delete, issues/publish, and a full whole-model audit (its value
-sweep can trigger the crash above, so validate on a **small** model). Run the
-read-only live canary against a small non-sensitive model, port pinned:
+**Live-validated (Archicad 29.0/4006, 16k-element model):** instance discovery,
+`get_model_summary`, `query_elements` (type + story filters), `get_element_data`
+(built-in properties + classifications), `manage_selection` (get/set/clear —
+`set` replaces), `create_elements` → `move_elements` → `delete_elements` with
+their dry-run and confirm guards, and the tier-3 gateway (231 commands).
+
+**Still not validated live:** `set_element_data` commit (its dry-run read
+crashed Archicad — see above), `manage_issues`, `publish`, and a full audit. Run
+the read-only live canary against a small non-sensitive model, port pinned:
 
 ```bash
 ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
