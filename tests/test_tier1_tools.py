@@ -188,3 +188,30 @@ async def test_api_error_during_command_becomes_tool_error(monkeypatch, tmp_path
     assert "error" in payload
     assert "No open project" in payload["error"]
     assert "project" in payload["error"].lower()
+
+
+async def test_api_error_hint_only_for_no_project_open(monkeypatch, tmp_path):
+    """The 'open a project' hint must not be pinned onto unrelated API errors
+    (a schema rejection is not a missing project)."""
+    from multiconn_archicad.errors import StandardAPIError
+
+    def make(code, message):
+        official = dict(api_replays.OFFICIAL)
+
+        def boom(_p=None):
+            raise StandardAPIError(message=message, code=code)
+
+        official["API.GetAllElements"] = boom
+        core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+        monkeypatch.setattr(server_mod, "get_connection",
+                            lambda port: ArchicadConnection(19723, core=core))
+        return build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+
+    mcp = make(-402, "No project is open")
+    payload = await call(mcp, "get_model_summary")
+    assert "Is a project open" in payload["error"]
+
+    mcp = make(4002, "Invalid command parameters (JSON schema)")
+    payload = await call(mcp, "get_model_summary")
+    assert "Is a project open" not in payload["error"]
+    assert "Invalid command parameters" in payload["error"]

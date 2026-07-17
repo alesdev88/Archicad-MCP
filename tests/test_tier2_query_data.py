@@ -113,7 +113,10 @@ async def test_set_element_data_commit_skips_unresolved_property(monkeypatch):
     payload = await call("set_element_data", {"changes": [
         {"guid": "w-1", "property": "NoSuch/Property", "value": "x"}],
         "dry_run": False})
-    assert payload == {"dry_run": False, "applied": 0,
-                       "skipped": [{"guid": "w-1", "property": "NoSuch/Property"}]}
+    assert payload["dry_run"] is False and payload["applied"] == 0
+    assert len(payload["skipped"]) == 1
+    skipped = payload["skipped"][0]
+    assert skipped["guid"] == "w-1" and skipped["property"] == "NoSuch/Property"
+    assert "resolve" in skipped["reason"]  # says WHY it was dropped
     call_names = [c for c, _ in fake_core.calls]
     assert "API.SetPropertyValuesOfElements" not in call_names

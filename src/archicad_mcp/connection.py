@@ -14,8 +14,12 @@ from multiconn_archicad.errors import (
 
 PORT_RANGE = range(19723, 19744)
 
-_TAPIR_PROBE = {"addOnCommandId": {"commandNamespace": "TapirCommand",
-                                   "commandName": "GetAddOnVersion"}}
+def _tapir_probe(command: str = "GetAddOnVersion") -> dict:
+    return {"addOnCommandId": {"commandNamespace": "TapirCommand",
+                               "commandName": command}}
+
+
+_TAPIR_PROBE = _tapir_probe()
 
 
 class ArchicadUnavailableError(Exception):
@@ -40,6 +44,7 @@ class ArchicadConnection:
         self.port = port
         self._core = core if core is not None else CoreCommands(Port(port))
         self._tapir_available: bool | None = None
+        self._command_availability: dict[str, bool] = {}
 
     def official(self, command: str, parameters: dict | None = None) -> dict:
         return self._core.post_command(command, parameters)
@@ -64,6 +69,27 @@ class ArchicadConnection:
             except APIErrorBase:
                 self._tapir_available = False
         return self._tapir_available
+
+    def tapir_command_available(self, command: str) -> bool:
+        """True when THIS Tapir command is registered in the running add-on.
+
+        Tapir gains commands over releases, so an installed add-on can be older
+        than the bundled command definitions (e.g. 1.4.0 has no
+        GetIFCPropertiesOfElements). Callers that can degrade should ask here
+        rather than discover it via a 4010 error mid-fetch.
+        """
+        if not self.tapir_available():
+            return False
+        cached = self._command_availability.get(command)
+        if cached is None:
+            try:
+                response = self.official("API.IsAddOnCommandAvailable",
+                                         _tapir_probe(command))
+                cached = bool(response.get("available"))
+            except APIErrorBase:
+                cached = False
+            self._command_availability[command] = cached
+        return cached
 
     def tapir(self, command: str, parameters: dict | None = None) -> dict:
         if not self.tapir_available():

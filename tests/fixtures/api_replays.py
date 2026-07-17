@@ -33,9 +33,22 @@ def get_property_ids(parameters):
     return {"properties": out}
 
 
+# Property pairs that are genuinely NOT applicable to the element — the API
+# returns an error cell (no type) for these. Everything else is available and
+# carries a type even when unset (live-verified: an unset property comes back
+# as {"type": ..., "status": "userUndefined"} with no value).
+_UNAVAILABLE = {
+    ("z-1", "pid-OFFICE/Fire Rating"),   # wall-only property on a zone
+    ("z-1", "pid-OFFICE/Status"),
+}
+
+
 def get_property_values(parameters):
-    """Values keyed (element guid, property guid). NotAvailable errors for the zone's
-    wall-only props mirror real API behavior."""
+    """Values keyed (element guid, property guid).
+
+    Mirrors the live AC 29 shape: cells carry `type` and `status` alongside
+    `value`; unset-but-available properties still report their type.
+    """
     values = {
         ("w-1", "pid-ModelView_LayerName"): "A-WALL",
         ("w-2", "pid-ModelView_LayerName"): "Sketch",
@@ -50,9 +63,13 @@ def get_property_values(parameters):
         for prop in parameters["properties"]:
             key = (el["elementId"]["guid"], prop["propertyId"]["guid"])
             if key in values:
-                row.append({"propertyValue": {"value": values[key], "status": "normal"}})
-            else:
+                row.append({"propertyValue": {"type": "string", "status": "normal",
+                                              "value": values[key]}})
+            elif key in _UNAVAILABLE:
                 row.append({"error": {"code": 1, "message": "Property not available"}})
+            else:
+                row.append({"propertyValue": {"type": "string",
+                                              "status": "userUndefined"}})
         result.append({"propertyValues": row})
     return {"propertyValuesForElements": result}
 

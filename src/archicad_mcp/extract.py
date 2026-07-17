@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Iterable
 
+from multiconn_archicad.errors import APIErrorBase
+
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
 
@@ -83,8 +85,12 @@ def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
     return out
 
 
-def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, object]]:
-    """guid -> {property name -> value or None}.
+def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, dict]]:
+    """guid -> {property name -> the raw propertyValue dict (or {})}.
+
+    The raw cell carries `type` ("string", "singleEnum", …) and `status`
+    ("normal", "userUndefined", …) alongside `value`. Writers need the type,
+    because API.SetPropertyValuesOfElements requires a fully-typed value.
 
     Requests are chunked into PROPERTY_FETCH_CHUNK-sized element batches to cap
     the per-request response size (a wide query on a large model can crash the
@@ -112,14 +118,20 @@ def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str,
         })
         rows = response.get("propertyValuesForElements", [])
         for guid, row in zip(chunk, rows):
-            values: dict[str, object] = {}
+            cells: dict[str, dict] = {}
             for name, cell in zip(resolved, row.get("propertyValues", [])):
-                pv = cell.get("propertyValue")
-                values[name] = pv.get("value") if pv else None
+                cells[name] = cell.get("propertyValue") or {}
             for name in names:
-                values.setdefault(name, None)
-            out[guid] = values
+                cells.setdefault(name, {})
+            out[guid] = cells
     return out
+
+
+def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, object]]:
+    """guid -> {property name -> value or None}. Thin view over the raw cells."""
+    cells = fetch_property_cells(conn, guids, names)
+    return {guid: {name: cell.get("value") for name, cell in per_name.items()}
+            for guid, per_name in cells.items()}
 
 
 def _fetch_classifications(conn, guids: list[str]) -> dict[str, dict[str, str | None]]:
@@ -155,7 +167,10 @@ def _fetch_layer_names(conn) -> tuple[str, ...]:
 
 
 def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
-    if not conn.tapir_available():
+    # Tapir may be installed but predate the IFC commands (1.4.0 has no
+    # GetIFCPropertiesOfElements) — ask before calling, so IFC rules skip
+    # instead of erroring the whole snapshot with a 4010.
+    if not conn.tapir_command_available("GetIFCPropertiesOfElements"):
         return None
     out: dict[str, dict[str, object]] = {}
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
@@ -163,7 +178,7 @@ def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
         try:
             response = conn.tapir("GetIFCPropertiesOfElements",
                                   {"elements": element_payload(chunk)})
-        except ArchicadUnavailableError:
+        except (ArchicadUnavailableError, APIErrorBase):
             return None
         for item in response.get("elements", []):
             guid = item.get("elementId", {}).get("guid", "")

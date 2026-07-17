@@ -37,7 +37,10 @@ class IfcPropertyRequiredRule:
             return RuleResult(
                 rule_id=self.rule_id, passed=False, severity=self.severity,
                 message="IFC data not available",
-                skipped=True, skip_reason="Tapir add-on required for IFC checks",
+                skipped=True,
+                skip_reason="IFC data unavailable: the Tapir add-on is missing "
+                            "or too old for GetIFCPropertiesOfElements "
+                            "(needs a release that ships the IFC commands)",
             )
         failing = tuple(
             e.guid for e in snapshot.elements

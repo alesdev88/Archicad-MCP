@@ -144,3 +144,31 @@ def test_build_snapshot_zones_ignore_element_type_scope():
                           element_types=frozenset({"Wall"}))
     # Zone discovery must not be narrowed by an element-property scope.
     assert [z.guid for z in snap.zones] == ["z-1"]
+
+
+def test_ifc_skipped_when_tapir_too_old_for_ifc_commands():
+    """Tapir 1.4.0 is installed but has no GetIFCPropertiesOfElements: the
+    snapshot must degrade to ifc_properties=None, not raise a 4010."""
+    from multiconn_archicad.errors import StandardAPIError
+
+    official = dict(api_replays.OFFICIAL)
+
+    def availability(params):
+        cmd = params["addOnCommandId"]["commandName"]
+        return {"available": cmd != "GetIFCPropertiesOfElements"}
+
+    official["API.IsAddOnCommandAvailable"] = availability
+    tapir = dict(api_replays.TAPIR)
+
+    def unregistered(_params):
+        raise StandardAPIError(
+            message="Archicad does not have the registered Add-On command with "
+                    "the name : TapirCommand.GetIFCPropertiesOfElements",
+            code=4010)
+
+    tapir["GetIFCPropertiesOfElements"] = unregistered
+    conn = ArchicadConnection(19723, core=FakeCore(official=official, tapir=tapir))
+
+    snap = build_snapshot(conn, needs=frozenset({"elements", "ifc"}))
+    assert snap.ifc_properties is None  # skipped, not crashed
+    assert not any(c == "GetIFCPropertiesOfElements" for c, _ in conn._core.calls)

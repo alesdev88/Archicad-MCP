@@ -61,4 +61,4 @@ def test_ifc_rule_skips_without_tapir():
         {"id": "ifc-fire", "type": "ifc-property-required", "property": "P.X"})
     result = rule.check(ModelSnapshot(elements=(ElementInfo(guid="w-1"),), ifc_properties=None))
     assert result.skipped is True
-    assert result.skip_reason == "Tapir add-on required for IFC checks"
+    assert "too old" in result.skip_reason and "Tapir" in result.skip_reason

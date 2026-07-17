@@ -128,15 +128,22 @@ and an element's **story is not a property** — it comes from Tapir
 `GetDetailsOfElements.floorIndex` (a 0-based index, so `query_elements(story=…)`
 and `get_model_summary` breakdowns key on floorIndex).
 
-**Live-validated (Archicad 29.0/4006, 16k-element model):** instance discovery,
-`get_model_summary`, `query_elements` (type + story filters), `get_element_data`
-(built-in properties + classifications), `manage_selection` (get/set/clear —
-`set` replaces), `create_elements` → `move_elements` → `delete_elements` with
-their dry-run and confirm guards, and the tier-3 gateway (231 commands).
+**Live-validated end-to-end (Archicad 29.0/4006):** instance discovery,
+`get_model_summary`, `query_elements` (type + story filters), `get_element_data`,
+`set_element_data` (dry-run → commit → read-back), `manage_selection`
+(`set` replaces), `create_elements` → `move_elements` → `delete_elements` with
+their dry-run/confirm guards, `audit_delivery_readiness` / `run_rule` /
+`highlight_failures` / `create_issues_from_failures` / `verify_ifc_export_readiness`,
+`manage_issues`, and the tier-3 gateway (231 commands, including writes).
 
-**Still not validated live:** `set_element_data` commit (its dry-run read
-crashed Archicad — see above), `manage_issues`, `publish`, and a full audit. Run
-the read-only live canary against a small non-sensitive model, port pinned:
+**Writing enum properties is not supported.** `singleEnum` / `multiEnum`
+properties need an `EnumValueId`, not a plain value; `set_element_data` reports
+them as `skipped` with a reason. Set them via `execute_api_command` with the
+enum's id.
+
+**`publish` is still unvalidated** — the test model had no publisher sets.
+
+Run the read-only live canary against a small non-sensitive model, port pinned:
 
 ```bash
 ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
