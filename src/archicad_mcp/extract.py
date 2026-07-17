@@ -27,7 +27,7 @@ PROPERTY_FETCH_CHUNK = 500
 # ComposeResult crash above is server-side and unrecoverable mid-session:
 # chunking alone did NOT prevent it on a 16k-element model, because a single
 # un-composable property on any element in any chunk still aborts Archicad.
-# So we refuse — with an actionable error — rather than risk crashing the
+# So we refuse, with an actionable error, rather than risk crashing the
 # user's Archicad. Scope the query first (query_elements / rule applies_to),
 # or raise the ceiling deliberately via ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS.
 def _int_env(name: str, default: int) -> int:
@@ -168,7 +168,7 @@ def _fetch_layer_names(conn) -> tuple[str, ...]:
 
 def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
     # Tapir may be installed but predate the IFC commands (1.4.0 has no
-    # GetIFCPropertiesOfElements) — ask before calling, so IFC rules skip
+    # GetIFCPropertiesOfElements), so ask before calling and let IFC rules skip
     # instead of erroring the whole snapshot with a 4010.
     if not conn.tapir_command_available("GetIFCPropertiesOfElements"):
         return None
@@ -220,8 +220,8 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
     """Build a ModelSnapshot fetching only what `needs` demands.
 
     When `element_types` is given, the per-element data (types, properties,
-    classifications, story, ifc) is fetched only for elements of those types —
-    the extractor still lists all element ids and their types once (cheap), then
+    classifications, story, ifc) is fetched only for elements of those types.
+    The extractor still lists all element ids and their types once (cheap), then
     narrows before the expensive/crash-prone property sweep. `None` means no
     narrowing (fetch every element). Zones and the layer name list are
     independent of this filter.

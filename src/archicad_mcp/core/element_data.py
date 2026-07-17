@@ -11,7 +11,7 @@ from archicad_mcp.extract import (
     resolve_property_ids,
 )
 
-# Enum-valued properties need an EnumValueId, not a plain scalar — writing them
+# Enum-valued properties need an EnumValueId, not a plain scalar. Writing them
 # is out of scope for this tool; the gateway can do it with an explicit id.
 _ENUM_TYPES = frozenset({"singleEnum", "multiEnum"})
 

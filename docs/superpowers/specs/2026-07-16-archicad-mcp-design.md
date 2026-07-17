@@ -1,7 +1,9 @@
-# Archicad 29 MCP Server — Design
+# Archicad 29 MCP Server: Design
 
 **Date:** 2026-07-16 (revised same day: full API surface added)
-**Status:** Approved (pending user review of this document)
+**Status:** Implemented. This is the design as approved; see the
+[README](../../../README.md) and [known issues](../../known-issues.md) for what
+actually shipped and what live testing later disproved.
 **Repo:** https://github.com/alesdev88/Archicad-MCP.git
 
 ## Purpose
@@ -10,9 +12,9 @@ A cross-platform (macOS + Windows) MCP server that connects AI clients (Claude
 Desktop, Claude Code, any MCP client) to a running Archicad 29 instance. It
 serves two audiences with one server:
 
-1. **Delivery-readiness QA** — a rules engine that runs BIM QA checks locally
+1. **Delivery-readiness QA.** A rules engine that runs BIM QA checks locally
    and returns verdicts (the durable, office-standards product).
-2. **Full API access** — the complete official JSON API + Tapir command
+2. **Full API access.** The complete official JSON API + Tapir command
    surface, including element creation and modification, exposed through a
    small, well-designed tool set (the office requirement: "basically all API
    calls").
@@ -41,14 +43,14 @@ rules layer is the only part no vendor will ever ship.
 ## Architecture
 
 ```text
-MCP layer          FastMCP over stdio — ~22 tools in three tiers,
+MCP layer          FastMCP over stdio: ~22 tools in three tiers,
                    registration filtered by --mode
     ↓
 Rules engine       pure library: rule types, YAML loader, plugin hook, verdicts
-(tier 1 brain)     — zero imports from MCP or transport code
+(tier 1 brain)     zero imports from MCP or transport code
     ↓
 Core ops + gateway curated query/write/create operations; command registry
-(tiers 2–3)        for the full official + Tapir surface
+(tiers 2-3)        for the full official + Tapir surface
     ↓
 Transport          multiconn_archicad → running Archicad (official API + Tapir)
                    extractors build ModelSnapshot; actions do write-back
@@ -61,12 +63,12 @@ transport replacement (official Graphisoft MCP).
 
 ## Tool surface (three tiers, ~22 tools)
 
-### Tier 1 — Verdict tools (8) — available in both modes
+### Tier 1: Verdict tools (8), available in both modes
 
 | Tool | Does | Needs Tapir |
 |---|---|---|
 | `list_instances` | Running Archicad instances, open project, version, Tapir availability. Required first call | no |
-| `get_model_summary` | Element counts by type / story / layer — aggregates only | no |
+| `get_model_summary` | Element counts by type / story / layer; aggregates only | no |
 | `list_rules` | Loaded rules with descriptions, sources, load errors | no |
 | `run_rule(rule_id)` | One rule → verdict + failing GUIDs | no |
 | `audit_delivery_readiness(ruleset?)` | All rules (or those tagged with the ruleset tag) → scored verdict | no (IFC rules skipped without Tapir) |
@@ -74,7 +76,7 @@ transport replacement (official Graphisoft MCP).
 | `highlight_failures(rule_id)` | Highlight failing elements in Archicad | yes |
 | `create_issues_from_failures(rule_id)` | Create Archicad issues from failures | yes |
 
-### Tier 2 — Curated core tools (11) — `full` mode only
+### Tier 2: Curated core tools (11), `full` mode only
 
 Hand-designed, composable, covering the common 90% of API use
 (the Autodesk `query_model` lesson):
@@ -83,7 +85,7 @@ Hand-designed, composable, covering the common 90% of API use
 |---|---|---|
 | `query_elements(filters)` | One query language: type / story / layer / classification / zone / current selection → GUIDs + counts | no |
 | `get_element_data(guids, ...)` | Properties, classifications, details, bounding boxes for given elements | no |
-| `set_element_data(...)` | Property/classification/detail writes; `dry_run=true` default — logs intended changes without committing | no |
+| `set_element_data(...)` | Property/classification/detail writes; `dry_run=true` default, logs intended changes without committing | no |
 | `create_elements(type, specs)` | Unified creation: columns, slabs, zones, walls, objects, doors, windows, stairs, texts, meshes... | yes |
 | `move_elements(guids, vector)` | Move; `dry_run` default, explicit `confirm` to execute | yes |
 | `delete_elements(guids, confirm)` | Delete; refuses without explicit `confirm=true` | yes |
@@ -93,7 +95,7 @@ Hand-designed, composable, covering the common 90% of API use
 | `manage_issues(action, ...)` | Create / list / comment / attach elements / BCF export-import | yes |
 | `publish(publisher_set)` | Fire a publisher set | yes |
 
-### Tier 3 — API gateway (3) — `full` mode only
+### Tier 3: API gateway (3), `full` mode only
 
 | Tool | Does |
 |---|---|
@@ -111,23 +113,25 @@ Multi-instance: if exactly one Archicad instance is running it is
 auto-selected; if several, tools return the list and require a `port`
 parameter.
 
-## Privacy: launch modes
+## Launch modes
 
 `--mode verdicts|full` (or `ARCHICAD_MCP_MODE`):
 
-- **`verdicts`** — only tier 1 registered. Results contain rule ids, booleans,
-  counts, GUIDs, severities, rule messages — never element names, property
-  values, or project info (enforced structurally: the `Verdict`/`RuleResult`
-  types have no fields for raw data). Safe for client models with a cloud LLM
-  under the office amber-tier rule.
-- **`full`** — all tiers. Raw model data flows to the LLM by design. For
+- **`verdicts`**: only tier 1 registered. Rule results contain rule ids,
+  booleans, counts, GUIDs, severities, and rule messages; the
+  `Verdict`/`RuleResult` types have no fields for raw model data, and
+  `list_instances` blanks the project name.
+- **`full`**: all tiers. Raw model data flows to the LLM by design. For
   non-sensitive test models, or workflows where the office explicitly accepts
   the exposure. `full` is the default when `--mode` is not given.
 
-The README states this trade-off plainly — unlike existing servers whose
-"no data leaves your computer" claims cover only tool discovery.
+**This mode is not a data boundary, and the original spec was wrong to imply it
+was.** The structural argument only covers the rules path. `get_model_summary`
+is also tier 1, does not return a `Verdict`, and emits element counts by type
+plus layer names when called with `include_layer_story=true`. Describe the flag
+by which tools it registers, not as a confidentiality guarantee.
 
-Evaluation and testing run on **non-sensitive test models only** — never a
+Evaluation and testing run on **non-sensitive test models only**, never a
 client project.
 
 ## Components
@@ -149,7 +153,7 @@ Archicad-MCP/                      (public repo)
 │   ├── gateway/                   tier-3
 │   │   ├── registry.py            command catalog (official + Tapir defs)
 │   │   └── execute.py             validated pass-through execution
-│   └── rules/                     the engine — importable, transport-free
+│   └── rules/                     the engine: importable, transport-free
 │       ├── types.py               ModelSnapshot, RuleResult, Verdict
 │       ├── engine.py              run rules, aggregate scoring
 │       ├── loader.py              YAML + Python plugin discovery
@@ -179,7 +183,7 @@ instances and an optional `custom_rules.py` plugin:
 ```
 
 Rules may carry `tags`; `audit_delivery_readiness(ruleset)` filters by tag, so
-rulesets are just tags — no separate ruleset file format. Without a rules dir,
+rulesets are just tags, with no separate ruleset file format. Without a rules dir,
 bundled generic example rules load so the server works out of the box. Office
 rule files reach colleagues via the internal file share, never the public repo.
 
@@ -225,7 +229,7 @@ failures.
 
 ## Testing
 
-- **Rules engine:** pytest against JSON fixture `ModelSnapshot`s — offline,
+- **Rules engine:** pytest against JSON fixture `ModelSnapshot`s: offline,
   the bulk of the suite. TDD.
 - **Core tools:** mocked `multiconn_archicad` transport; dry-run output
   asserted exactly; destructive-op guards tested.
@@ -255,7 +259,7 @@ add-on install pointer; the privacy-mode explanation.
 
 ## Watch list (from research, unchanged)
 
-- Graphisoft official MCP ("coming soon") — may overtake tiers 2–3; the rules
+- Graphisoft official MCP ("coming soon") may overtake tiers 2-3; the rules
   engine and tool shapes survive.
-- Archicad v30 — API churn lands in `extract.py`/`connection.py`/definitions.
-- Tapir releases — run `sync_tapir_defs.py` on add-on updates.
+- Archicad v30: API churn lands in `extract.py`/`connection.py`/definitions.
+- Tapir releases: run `sync_tapir_defs.py` on add-on updates.

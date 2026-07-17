@@ -33,7 +33,7 @@ def get_property_ids(parameters):
     return {"properties": out}
 
 
-# Property pairs that are genuinely NOT applicable to the element — the API
+# Property pairs that are genuinely NOT applicable to the element. The API
 # returns an error cell (no type) for these. Everything else is available and
 # carries a type even when unset (live-verified: an unset property comes back
 # as {"type": ..., "status": "userUndefined"} with no value).

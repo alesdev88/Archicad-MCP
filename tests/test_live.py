@@ -2,7 +2,7 @@
 
 Run manually:  ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
 Never run against a client project (privacy rule). With several instances
-running, the port MUST be given explicitly — auto-picking the first instance
+running, the port MUST be given explicitly. Auto-picking the first instance
 could hit a live teamwork project.
 """
 import os
@@ -47,7 +47,7 @@ def test_product_info_is_archicad_29(conn):
 def test_builtin_property_names_resolve(conn):
     """THE canary: the property-backed built-in names must resolve. If one
     doesn't, fix the BUILTIN_* constant in extract.py from the dump below.
-    (Story is NOT a property — it comes from Tapir floorIndex, tested separately.)"""
+    (Story is NOT a property; it comes from Tapir floorIndex, tested separately.)"""
     from archicad_mcp.extract import resolve_property_ids
     wanted = [BUILTIN_LAYER, BUILTIN_ZONE_NUMBER, BUILTIN_ZONE_NAME]
     ids = resolve_property_ids(conn, wanted)
@@ -73,7 +73,7 @@ def test_story_comes_from_floor_index(conn):
 
 def test_full_snapshot_builds(conn):
     """Full snapshot over the whole model. On a large model the property sweep
-    is refused by design (crash guard) — that's a pass for the guard, so skip."""
+    is refused by design (crash guard), which is a pass for the guard, so skip."""
     try:
         snap = build_snapshot(
             conn,

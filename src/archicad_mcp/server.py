@@ -37,8 +37,8 @@ _HANDLED_ERRORS = (ArchicadUnavailableError, APIErrorBase)
 
 def _tool_error(exc: Exception) -> dict:
     if isinstance(exc, APIErrorBase):
-        # Only suggest "open a project" for the error that actually means it —
-        # appending it to every API error (e.g. a schema rejection) misleads.
+        # Only suggest "open a project" for the error that actually means it.
+        # Appending it to every API error (e.g. a schema rejection) misleads.
         message = f"Archicad API error: {exc.message}"
         if getattr(exc, "code", None) == NO_OPEN_PROJECT_CODE:
             message += ". Open a project in Archicad and retry."
@@ -106,7 +106,7 @@ def build_server(
 
     @mcp.tool(description="Aggregate element counts. by_type is always returned "
                           "(cheap and safe). Set include_layer_story=true to also "
-                          "break down by layer and story — that reads a property "
+                          "break down by layer and story, which reads a property "
                           "across every element and is refused on very large models "
                           "(can crash Archicad). Counts only, never element data.")
     @_guarded

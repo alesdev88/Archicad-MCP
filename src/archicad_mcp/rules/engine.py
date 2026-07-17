@@ -42,7 +42,7 @@ def filter_by_tag(rules: Sequence[Rule], tag: str | None) -> list[Rule]:
 
 
 # Element-level data needs that trigger a per-element fetch over the snapshot's
-# element set — including the crash-prone GetPropertyValuesOfElements sweep.
+# element set, including the crash-prone GetPropertyValuesOfElements sweep.
 # "layers" is here because an element's layer is read as a per-element property,
 # so a layer rule reads snapshot.elements and MUST widen the scope like any other
 # element rule (a layer rule targeting all elements forces a full fetch). A rule
@@ -57,8 +57,8 @@ def element_type_scope(rules: Sequence[Rule]) -> frozenset[str] | None:
     Returns a set of element-type names when every rule that drives an
     element-property fetch targets a specific type (via applies_to), so the
     extractor need only pull those elements instead of the whole model.
-    Returns None when the fetch cannot be narrowed — any such rule targets all
-    elements (applies_to is absent, None, or "*") — so the caller must fetch
+    Returns None when the fetch cannot be narrowed. Any such rule targets all
+    elements (applies_to is absent, None, or "*"), so the caller must fetch
     everything (and the fetch ceiling may then refuse an oversized model).
     """
     types: set[str] = set()

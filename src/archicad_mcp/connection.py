@@ -60,7 +60,7 @@ class ArchicadConnection:
 
         Only a command-level failure means "add-on absent". A transport failure
         means Archicad itself is gone (closed or crashed) and must surface as
-        such — reporting that as "Tapir not installed" sends people off
+        such. Reporting that as "Tapir not installed" sends people off
         reinstalling a working add-on.
         """
         if self._tapir_available is None:
@@ -69,7 +69,7 @@ class ArchicadConnection:
                 self._tapir_available = bool(response.get("available"))
             except (APIConnectionError, RequestError, CommandTimeoutError) as exc:
                 raise ArchicadUnavailableError(
-                    f"Archicad is not responding on port {self.port} — it may have "
+                    f"Archicad is not responding on port {self.port}. It may have "
                     "been closed or crashed. Restart it and reopen the project."
                 ) from exc
             except APIErrorBase:
@@ -116,7 +116,7 @@ def probe_port(port: int, core=None) -> InstanceInfo | None:
         return None
     except APIErrorBase:
         # Archicad is there but has no project open (it refuses even
-        # GetProductInfo). Report the instance rather than hiding it — and
+        # GetProductInfo). Report the instance rather than hiding it, and
         # never let one project-less instance break discovery of the others.
         return InstanceInfo(port=port, version=0, build=0, project_name=None,
                             tapir_available=False, tapir_version=None,
