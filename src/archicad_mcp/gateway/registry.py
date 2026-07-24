@@ -19,6 +19,9 @@ class CommandInfo:
     group: str
     description: str
     input_schema: dict | None
+    # The Tapir add-on version a command was first included in (Tapir stamps each
+    # command with a "since" version). None for official API commands.
+    version: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,7 +67,8 @@ def build_registry() -> dict[str, CommandInfo]:
             resolved = _resolve_refs(schema, definitions) if schema is not None else None
             registry[cmd["name"]] = CommandInfo(
                 name=cmd["name"], kind="tapir", group=group["name"],
-                description=cmd.get("description", ""), input_schema=resolved)
+                description=cmd.get("description", ""), input_schema=resolved,
+                version=cmd.get("version"))
 
     for name in typing.get_args(AddonCommandType):
         if name in registry:

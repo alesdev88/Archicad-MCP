@@ -5,10 +5,10 @@ versus which are reachable only through the generic execute_api_command gateway)
 
 Run it to refresh the page whenever the bundled definitions change:
 
-    .venv/bin/python scripts/build_dashboard.py
+    uv run python scripts/build_dashboard.py
 
 Output: docs/api-dashboard.html (open it directly, or serve the folder with
-`python -m http.server` and browse to /docs/api-dashboard.html).
+`python3 -m http.server` and browse to /docs/api-dashboard.html).
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from archicad_mcp.gateway.registry import build_registry
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "api-dashboard.html"
 DEFS = ROOT / "src" / "archicad_mcp" / "gateway" / "definitions" / "command_definitions.js"
+VERSION_FILE = ROOT / "src" / "archicad_mcp" / "gateway" / "definitions" / "tapir_version.json"
 TAPIR_REPO = "ENZYME-APD/tapir-archicad-automation"
 
 # Underlying API command -> the dedicated MCP tool(s) that surface it.
@@ -147,15 +148,25 @@ def _defs_sync_date() -> str | None:
 def tapir_info() -> dict:
     """The Tapir version the bundled command definitions correspond to, plus the
     coordinates the page uses to check GitHub for a newer release at view time.
-    Tapir stamps every command with a semver 'version'; the highest one present is
-    the add-on version the definitions were generated from (it matches the release
-    tag), so the page can compare it against releases/latest with no version file."""
-    text = DEFS.read_text(encoding="utf-8")
-    triples = re.findall(r'"version":\s*"(\d+)\.(\d+)\.(\d+)"', text)
-    highest = max((tuple(map(int, t)) for t in triples), default=None)
+    The authoritative version is recorded by sync_tapir_defs.py into
+    tapir_version.json (the release tag the definitions were pulled from). We fall
+    back to the highest per-command 'since' stamp only for definitions synced
+    before that file existed -- that stamp tracks the newest command ever added,
+    so it under-reports releases that changed no command (e.g. 1.5.5)."""
+    meta = {}
+    try:
+        meta = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    version = meta.get("version")
+    if not version:
+        text = DEFS.read_text(encoding="utf-8")
+        triples = re.findall(r'"version":\s*"(\d+)\.(\d+)\.(\d+)"', text)
+        highest = max((tuple(map(int, t)) for t in triples), default=None)
+        version = ".".join(map(str, highest)) if highest else None
     return {
-        "bundled_version": ".".join(map(str, highest)) if highest else None,
-        "synced": _defs_sync_date(),
+        "bundled_version": version,
+        "synced": meta.get("synced") or _defs_sync_date(),
         "repo": TAPIR_REPO,
         "api": f"https://api.github.com/repos/{TAPIR_REPO}/releases/latest",
         "releases": f"https://github.com/{TAPIR_REPO}/releases",
@@ -279,9 +290,12 @@ h1{margin:2px 0 0;font-size:25px;font-weight:640;letter-spacing:-.015em;line-hei
 .tspin{width:10px;height:10px;border:1.6px solid currentColor;border-right-color:transparent;
   border-radius:50%;display:inline-block;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.recheck{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+.tbtns{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
+.recheck{font-family:var(--mono);font-size:10.5px;color:var(--muted);
   background:var(--sheet);border:1px solid var(--line);border-radius:2px;padding:4px 9px;cursor:pointer}
 .recheck:hover{color:var(--ink);border-color:var(--line-strong)}
+.recheck.update{color:var(--ink);border-color:var(--line-strong);font-weight:600}
+.recheck.update:hover{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 50%,var(--line))}
 
 /* Controls */
 .controls{position:sticky;top:0;z-index:20;margin:14px 0 20px;padding:12px 14px;
@@ -350,6 +364,7 @@ h1{margin:2px 0 0;font-size:25px;font-weight:640;letter-spacing:-.015em;line-hei
 .tag.wrap{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
 .tag.gw{color:var(--faint)}
 .tag.schema{color:var(--muted)}
+.tag.ver{color:var(--faint);border-style:dashed;border-color:var(--line)}
 .markbox{width:11px;height:11px;border:1.5px solid var(--faint);border-radius:2px;flex:none}
 .markbox.fc{background:var(--ok);border-color:var(--ok)}
 /* detail */
@@ -424,7 +439,11 @@ footer a{color:var(--muted)}
       <span class="tk">Tapir add-on</span>
       <span class="tv" id="tv"></span>
       <span class="tstatus checking" id="tstatus"><span class="tspin"></span> checking GitHub...</span>
-      <button class="recheck" id="recheck" type="button" hidden>recheck</button>
+      <span class="tbtns">
+        <button class="recheck" id="recheck" type="button" hidden>recheck</button>
+        <button class="recheck update" id="update" type="button"
+          title="Copy the update command to your clipboard">update</button>
+      </span>
     </div>
   </header>
 
@@ -465,7 +484,7 @@ footer a{color:var(--muted)}
   <footer>
     <span>Generated from the bundled command definitions.</span>
     <span>Official JSON API docs: <a href="https://archicadapi.graphisoft.com/JSONInterfaceDocumentation/" target="_blank" rel="noopener">archicadapi.graphisoft.com</a></span>
-    <span>Refresh: <span style="color:var(--muted)">python scripts/build_dashboard.py</span></span>
+    <span>Refresh: <span style="color:var(--muted)">uv run python scripts/build_dashboard.py</span></span>
   </footer>
 </div>
 
@@ -491,6 +510,10 @@ const state = {q:"", fam:"all", cov:"all"};
   const tv = document.getElementById("tv");
   const st = document.getElementById("tstatus");
   const recheck = document.getElementById("recheck");
+  const update = document.getElementById("update");
+  const SYNC_CMD = "uv run python scripts/sync_tapir_defs.py";
+  // Sync the definitions AND regenerate this page, so a reload shows the new version.
+  const UPDATE_CMD = SYNC_CMD + " && uv run python scripts/build_dashboard.py";
   const parse = v => String(v||"").replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
   const cmp = (a,b)=>{a=parse(a);b=parse(b);for(let i=0;i<3;i++){const d=(a[i]||0)-(b[i]||0);if(d)return d;}return 0;};
 
@@ -515,13 +538,32 @@ const state = {q:"", fam:"all", cov:"all"};
       if(cmp(T.bundled_version, latest) >= 0){
         set("ok", `&#10003; up to date &middot; latest release ${relLink("v"+latest)}`);
       } else {
-        set("behind", `&#9888; update available &middot; latest ${relLink("v"+latest)} &middot; run <code>python scripts/sync_tapir_defs.py</code>`);
+        set("behind", `&#9888; update available &middot; latest ${relLink("v"+latest)} &middot; click <b>update</b> or run <code>${esc(SYNC_CMD)}</code>`);
       }
     }catch(e){
       recheck.hidden = false;
       set("err", `couldn't reach GitHub (offline or rate-limited) &middot; ${relLink("check releases")}`);
     }
   }
+  async function copyCmd(text){
+    try{ await navigator.clipboard.writeText(text); return true; }catch(_){}
+    try{  // fallback for browsers / contexts without the async clipboard API
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    }catch(_){ return false; }
+  }
+  update.addEventListener("click", async () => {
+    const prevCls = st.className, prevHtml = st.innerHTML;
+    const ok = await copyCmd(UPDATE_CMD);
+    update.textContent = ok ? "copied ✓" : "copy failed";
+    set(ok ? "ok" : "err",
+      `${ok ? "&#10003; command copied &middot; " : ""}paste <code>${esc(UPDATE_CMD)}</code> in your terminal, then reload this page`);
+    setTimeout(() => { update.textContent = "update"; st.className = prevCls; st.innerHTML = prevHtml; }, 5000);
+  });
   recheck.addEventListener("click", check);
   check();
 })();
@@ -553,6 +595,7 @@ function rowHtml(cmd){
     ? `<span class="tag wrap" title="Wrapped by: ${esc(cmd.wrapped_by.join(", "))}">${esc(cmd.wrapped_by[0])}${cmd.wrapped_by.length>1?" +"+(cmd.wrapped_by.length-1):""}</span>`
     : `<span class="tag gw">gateway</span>`;
   const schema = cmd.has_schema ? `<span class="tag schema">schema</span>` : "";
+  const ver = cmd.version ? `<span class="tag ver" title="First included in Tapir v${esc(cmd.version)}">v${esc(cmd.version)}</span>` : "";
   const call = fc
     ? `<code class="call">${esc(cmd.wrapped_by[0])}(...)</code> <span>or</span> <code class="call">execute_api_command("${esc(cmd.name)}", ...)</code>`
     : `<code class="call">execute_api_command("${esc(cmd.name)}", { ...params })</code>`;
@@ -567,7 +610,7 @@ function rowHtml(cmd){
       <span class="markbox ${fc?"fc":""}" title="${fc?"First-class tool":"Gateway-only"}"></span>
       <span class="r-name"><span class="dot ${cmd.kind}" title="${cmd.kind}"></span>${nameHtml(cmd)}</span>
       <span class="r-desc">${esc(cmd.description||"")}</span>
-      <span class="r-right">${schema}${cov}</span>
+      <span class="r-right">${ver}${schema}${cov}</span>
     </div>
     <div class="detail">
       <p>${esc(cmd.description||"No description provided by the add-on.")}</p>
