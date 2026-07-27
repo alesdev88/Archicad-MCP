@@ -12,10 +12,13 @@ from tests.fixtures import api_replays
 
 @pytest.fixture
 def core(monkeypatch):
+    selection = {"elements": [{"elementId": {"guid": "w-1"}}]}
     official = dict(api_replays.OFFICIAL)
-    official["API.GetSelectedElements"] = {"elements": [{"elementId": {"guid": "w-1"}}]}
+    official["API.GetSelectedElements"] = selection
     official["API.SetPropertyValuesOfElements"] = {"executionResults": [{"success": True}]}
-    core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    tapir = dict(api_replays.TAPIR)
+    tapir["GetSelectedElements"] = selection  # the source once Tapir is present
+    core = FakeCore(official=official, tapir=tapir)
     monkeypatch.setattr(server_mod, "get_connection",
                         lambda port: ArchicadConnection(19723, core=core))
     return core
