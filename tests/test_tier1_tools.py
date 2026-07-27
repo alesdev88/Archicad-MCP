@@ -180,7 +180,9 @@ async def test_api_error_during_command_becomes_tool_error(monkeypatch, tmp_path
 
     official = dict(api_replays.OFFICIAL)
     official["API.GetAllElements"] = no_project
-    core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    tapir = dict(api_replays.TAPIR)
+    tapir["GetAllElements"] = no_project  # enumeration goes through Tapir
+    core = FakeCore(official=official, tapir=tapir)
     conn = ArchicadConnection(19723, core=core)
     monkeypatch.setattr(server_mod, "get_connection", lambda port: conn)
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
@@ -202,7 +204,9 @@ async def test_api_error_hint_only_for_no_project_open(monkeypatch, tmp_path):
             raise StandardAPIError(message=message, code=code)
 
         official["API.GetAllElements"] = boom
-        core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+        tapir = dict(api_replays.TAPIR)
+        tapir["GetAllElements"] = boom  # enumeration goes through Tapir
+        core = FakeCore(official=official, tapir=tapir)
         monkeypatch.setattr(server_mod, "get_connection",
                             lambda port: ArchicadConnection(19723, core=core))
         return build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))

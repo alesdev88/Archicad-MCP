@@ -40,6 +40,32 @@ def _int_env(name: str, default: int) -> int:
 
 MAX_PROPERTY_FETCH_ELEMENTS = _int_env("ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS", 5000)
 
+# Max element GUIDs per GetTypesOfElements request. Enumeration now spans the
+# whole plan (63122 elements on a live project, vs the 16221 the official
+# GetAllElements reported), and a single request that wide is the same shape of
+# call that has crashed the API bridge on property reads.
+TYPE_FETCH_CHUNK = 2000
+
+# What an enumeration actually covered. Only Tapir sees the whole plan; the
+# official API.GetAllElements returns model elements only, so every 2D /
+# annotation / viewpoint type is missing from it. Measured live on AC 29.0/4006:
+# official 16221 elements vs Tapir 63122 (26%). Tools say which one they got,
+# because a bare count that silently omits three quarters of the project reads
+# as a verified total.
+COVERAGE_FULL = "whole-plan"
+COVERAGE_PARTIAL = "model-elements-only"
+COVERAGE_PARTIAL_NOTE = (
+    "Without the Tapir add-on only model elements are visible: markers, labels, "
+    "dimensions, section lines and other 2D elements are NOT counted. Install "
+    "Tapir for whole-plan coverage.")
+
+
+def coverage_of(conn: ArchicadConnection) -> dict:
+    """The coverage marker to merge into any whole-model result."""
+    if conn.tapir_available():
+        return {"coverage": COVERAGE_FULL}
+    return {"coverage": COVERAGE_PARTIAL, "coverage_note": COVERAGE_PARTIAL_NOTE}
+
 
 class PropertyFetchTooWideError(ArchicadUnavailableError):
     """Raised before a property fetch that could crash Archicad's API bridge."""
@@ -66,9 +92,45 @@ def resolve_property_ids(conn: ArchicadConnection, names: Iterable[str]) -> dict
     return out
 
 
-def get_all_element_ids(conn: ArchicadConnection) -> list[str]:
-    response = conn.official("API.GetAllElements")
+def _guids_of(response: dict) -> list[str]:
     return [e["elementId"]["guid"] for e in response.get("elements", [])]
+
+
+def get_all_element_ids(conn: ArchicadConnection) -> list[str]:
+    """Every element on the plan, 2D and annotation included.
+
+    Tapir's GetAllElements returns the whole plan; the official
+    API.GetAllElements returns model elements only (see COVERAGE_PARTIAL_NOTE).
+    Falls back to the official command when Tapir is absent -- callers pair the
+    result with coverage_of() so a partial enumeration is never reported as a
+    project total.
+    """
+    if conn.tapir_available():
+        return _guids_of(conn.tapir("GetAllElements"))
+    return _guids_of(conn.official("API.GetAllElements"))
+
+
+def get_element_ids_of_type(conn: ArchicadConnection, element_type: str) -> list[str]:
+    """GUIDs of one element type, without a types sweep over the whole plan.
+
+    Tapir filters server-side, so this costs one request instead of enumerating
+    every element and reading its type back (16k+ reads to answer "how many
+    walls"). Without Tapir there is no such command, so the client-side filter
+    remains -- over model elements only.
+    """
+    if conn.tapir_available():
+        return _guids_of(conn.tapir("GetElementsByType", {"elementType": element_type}))
+    guids = _guids_of(conn.official("API.GetAllElements"))
+    types = _fetch_types(conn, guids) if guids else {}
+    return [g for g in guids if types.get(g) == element_type]
+
+
+def get_selected_element_ids(conn: ArchicadConnection) -> list[str]:
+    """The current selection. Official GetSelectedElements returns [] for a
+    selected marker (a CutPlane, say); Tapir's returns it."""
+    if conn.tapir_available():
+        return _guids_of(conn.tapir("GetSelectedElements"))
+    return _guids_of(conn.official("API.GetSelectedElements"))
 
 
 def element_payload(guids: list[str]) -> list[dict]:
@@ -77,11 +139,15 @@ def element_payload(guids: list[str]) -> list[dict]:
 
 def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
     # Live-verified shape: {"typesOfElements": [{"typeOfElement": {...}}]}
-    response = conn.official("API.GetTypesOfElements", {"elements": element_payload(guids)})
+    # Chunked: see TYPE_FETCH_CHUNK.
     out = {}
-    for item in response.get("typesOfElements", []):
-        t = item.get("typeOfElement", {})
-        out[t.get("elementId", {}).get("guid", "")] = t.get("elementType", "")
+    for start in range(0, len(guids), TYPE_FETCH_CHUNK):
+        chunk = guids[start:start + TYPE_FETCH_CHUNK]
+        response = conn.official("API.GetTypesOfElements",
+                                 {"elements": element_payload(chunk)})
+        for item in response.get("typesOfElements", []):
+            t = item.get("typeOfElement", {})
+            out[t.get("elementId", {}).get("guid", "")] = t.get("elementType", "")
     return out
 
 

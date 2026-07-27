@@ -62,6 +62,43 @@ async def test_project_info_without_tapir(monkeypatch):
     assert "Tapir" in payload["note"]
 
 
+# Observed twice on a live BIMcloud project: Tapir's projectLocation is a
+# teamwork:// URL carrying a full JWT *refresh* token, which then lands in the
+# model's context and in the session transcript.
+TEAMWORK_LOCATION = (
+    "teamwork://john.doe:eyJhbGciOiJIUzI1NiJ9.cmVmcmVzaA.s1gn4tur3"
+    "@bimcloud.example.com:443/PROJ/250023-CVP")
+
+
+def _with_project_info(monkeypatch, info):
+    core = make_core()
+    core.tapir_responses["GetProjectInfo"] = info
+    monkeypatch.setattr(server_mod, "get_connection",
+                        lambda port: ArchicadConnection(19723, core=core))
+    return core
+
+
+async def test_project_info_strips_teamwork_credentials(monkeypatch):
+    _with_project_info(monkeypatch, {
+        "projectName": "250023-CVP", "isTeamwork": True,
+        "projectLocation": TEAMWORK_LOCATION, "projectPath": "PROJ/250023-CVP"})
+    payload = await call("get_project_info")
+    assert "eyJ" not in json.dumps(payload)  # no JWT anywhere in the output
+    assert payload["project"]["projectLocation"] == \
+        "teamwork://bimcloud.example.com:443/PROJ/250023-CVP"
+    # The fields callers actually use survive untouched.
+    assert payload["project"]["projectName"] == "250023-CVP"
+    assert payload["project"]["isTeamwork"] is True
+
+
+async def test_project_info_keeps_a_plain_local_path(monkeypatch):
+    _with_project_info(monkeypatch, {
+        "projectName": "Test House", "isTeamwork": False,
+        "projectLocation": "/Users/tester/Test House.pln"})
+    payload = await call("get_project_info")
+    assert payload["project"]["projectLocation"] == "/Users/tester/Test House.pln"
+
+
 async def test_list_attributes_layers(core):
     payload = await call("list_attributes", {"attribute_type": "Layer"})
     assert payload["names"] == ["A-WALL", "A-ZONE"]

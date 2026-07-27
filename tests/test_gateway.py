@@ -76,6 +76,35 @@ async def test_execute_routes_tapir(core):
     assert payload == {"stories": []}
 
 
+async def test_execute_accepts_params_as_a_json_string(core):
+    """Clients that collapse a nullable object field to an untyped schema send
+    the value as text. That is their bug, but it makes the tool unusable, so
+    the string is parsed rather than rejected."""
+    payload = await call("execute_api_command", {
+        "name": "API.GetTypesOfElements",
+        "params": '{"elements": [{"elementId": {"guid": "w-1"}}]}'})
+    assert payload["typesOfElements"][0]["typeOfElement"]["elementType"] == "Wall"
+    _, params = [c for c in core.calls if c[0] == "API.GetTypesOfElements"][0]
+    assert params == {"elements": [{"elementId": {"guid": "w-1"}}]}
+
+
+async def test_execute_validates_params_parsed_from_a_string(core):
+    """The parsed value still goes through schema validation."""
+    registry = build_registry()
+    name = next(c.name for c in registry.values()
+                if c.kind == "tapir" and c.input_schema
+                and c.input_schema.get("required"))
+    payload = await call("execute_api_command", {"name": name, "params": "{}"})
+    assert "error" in payload and "schema" in payload
+
+
+async def test_execute_rejects_params_string_that_is_not_json(core):
+    payload = await call("execute_api_command", {
+        "name": "API.GetTypesOfElements", "params": "elements=w-1"})
+    assert "params" in payload["error"] and "JSON" in payload["error"]
+    assert not any(c == "API.GetTypesOfElements" for c, _ in core.calls)
+
+
 async def test_execute_validates_tapir_params(core):
     registry = build_registry()
     # pick a Tapir command with a schema declaring required fields

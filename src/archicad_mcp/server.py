@@ -16,7 +16,7 @@ from archicad_mcp.connection import (
     discover_instances,
     get_connection,
 )
-from archicad_mcp.extract import build_snapshot
+from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
     data_needs,
     element_type_scope,
@@ -108,7 +108,10 @@ def build_server(
                           "(cheap and safe). Set include_layer_story=true to also "
                           "break down by layer and story, which reads a property "
                           "across every element and is refused on very large models "
-                          "(can crash Archicad). Counts only, never element data.")
+                          "(can crash Archicad). Counts only, never element data. "
+                          "'coverage' says what element_count spans: 'whole-plan' "
+                          "with the Tapir add-on, 'model-elements-only' without it "
+                          "(then it is NOT a project total).")
     @_guarded
     def get_model_summary(include_layer_story: bool = False,
                           port: int | None = None) -> dict:
@@ -118,7 +121,7 @@ def build_server(
         snapshot = build_snapshot(conn, needs=needs)
         by_type = Counter(e.element_type for e in snapshot.elements)
         result = {"element_count": len(snapshot.elements),
-                  "by_type": dict(by_type)}
+                  "by_type": dict(by_type), **coverage_of(conn)}
         if include_layer_story:
             by_layer = Counter(e.layer for e in snapshot.elements if e.layer)
             by_story = Counter(str(e.story) for e in snapshot.elements
@@ -197,7 +200,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Query elements with AND-combined filters: element_type, "
                           "layer, story, classification_system, selection_only. "
-                          "Returns GUIDs and counts.")
+                          "Returns GUIDs and counts, plus 'coverage': 'whole-plan' "
+                          "with the Tapir add-on, 'model-elements-only' without it "
+                          "(2D elements such as markers, labels and section lines "
+                          "are then invisible, so a count of 0 is not proof of "
+                          "absence).")
     @_guarded
     def query_elements(element_type: str | None = None, layer: str | None = None,
                        story: int | None = None, classification_system: str | None = None,
@@ -305,7 +312,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "or Tapir). Params validated against the bundled schema "
                           "where available. Prefer the dedicated tools when one exists.")
     @_guarded
-    def execute_api_command(name: str, params: dict | None = None,
+    def execute_api_command(name: str, params: dict | str | None = None,
                             port: int | None = None) -> dict:
         return _gateway.execute_api_command(registry, _conn(port), name, params)
 

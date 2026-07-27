@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 
 import jsonschema
 
@@ -28,8 +29,35 @@ def describe_api_command(registry: dict[str, CommandInfo], name: str) -> dict:
     return info.to_dict()
 
 
+def _coerce_params(params: dict | str | None) -> tuple[dict | None, str | None]:
+    """Returns (params, error). Accepts a JSON-encoded object as well as a dict.
+
+    A client that collapses this tool's nullable object field to an untyped
+    schema sends the value as text, and a strict dict-only signature then makes
+    every parameterized command unreachable. Parsing the string is a workaround
+    for that client bug, not an invitation to pass text.
+    """
+    if not isinstance(params, str):
+        return params, None
+    text = params.strip()
+    if not text:
+        return None, None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return None, (f"params arrived as text and is not valid JSON ({exc.msg}). "
+                      "Pass an object, or a JSON-encoded object.")
+    if not isinstance(parsed, dict):
+        return None, (f"params must be a JSON object, got {type(parsed).__name__}. "
+                      "Use describe_api_command to see the expected shape.")
+    return parsed, None
+
+
 def execute_api_command(registry: dict[str, CommandInfo], conn: ArchicadConnection,
-                        name: str, params: dict | None = None) -> dict:
+                        name: str, params: dict | str | None = None) -> dict:
+    params, param_error = _coerce_params(params)
+    if param_error is not None:
+        return {"error": param_error}
     info = registry.get(name)
     if info is None:
         return describe_api_command(registry, name)  # carries the error + suggestions

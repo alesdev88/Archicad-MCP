@@ -9,12 +9,16 @@ E = [{"elementId": {"guid": g}} for g in ("w-1", "w-2", "z-1")]
 
 GET_ALL_ELEMENTS = {"elements": E}
 
+ELEMENT_TYPES = {"w-1": "Wall", "w-2": "Wall", "z-1": "Zone"}
+
+
 # Live-verified key: the API returns "typesOfElements" (not "types").
-GET_TYPES = {"typesOfElements": [
-    {"typeOfElement": {"elementId": {"guid": "w-1"}, "elementType": "Wall"}},
-    {"typeOfElement": {"elementId": {"guid": "w-2"}, "elementType": "Wall"}},
-    {"typeOfElement": {"elementId": {"guid": "z-1"}, "elementType": "Zone"}},
-]}
+def get_types(parameters):
+    """Answers for the requested elements only, so chunked calls stay honest."""
+    return {"typesOfElements": [
+        {"typeOfElement": {"elementId": el["elementId"],
+                           "elementType": ELEMENT_TYPES[el["elementId"]["guid"]]}}
+        for el in parameters["elements"]]}
 
 GET_ALL_PROPERTY_NAMES = {"properties": [
     {"type": "BuiltIn", "nonLocalizedName": "ModelView_LayerName"},
@@ -113,7 +117,7 @@ OFFICIAL = {
     "API.GetProductInfo": {"version": 29, "buildNumber": 5003, "languageCode": "INT"},
     "API.IsAddOnCommandAvailable": {"available": True},
     "API.GetAllElements": GET_ALL_ELEMENTS,
-    "API.GetTypesOfElements": GET_TYPES,
+    "API.GetTypesOfElements": get_types,
     "API.GetAllPropertyNames": GET_ALL_PROPERTY_NAMES,
     "API.GetPropertyIds": get_property_ids,
     "API.GetPropertyValuesOfElements": get_property_values,
@@ -135,6 +139,17 @@ def get_details_of_elements(parameters):
 TAPIR = {
     "GetIFCPropertiesOfElements": TAPIR_IFC_PROPERTIES,
     "GetDetailsOfElements": get_details_of_elements,
-    "GetProjectInfo": {"projectName": "Test House", "untitled": False, "teamwork": False},
+    "GetProjectInfo": {"projectName": "Test House", "isUntitled": False,
+                       "isTeamwork": False,
+                       "projectLocation": "/Users/tester/Test House.pln",
+                       "projectPath": "/Users/tester/Test House.pln"},
     "GetAddOnVersion": {"version": "1.8.2"},
+    # Tapir sees the whole plan; the official API.GetAllElements sees model
+    # elements only. This fixture model has no 2D elements, so both agree --
+    # tests/test_element_coverage.py builds a plan where they differ.
+    "GetAllElements": GET_ALL_ELEMENTS,
+    "GetSelectedElements": {"elements": []},
+    "GetElementsByType": lambda p: {"elements": [
+        {"elementId": {"guid": g}} for g, t in ELEMENT_TYPES.items()
+        if t == p["elementType"]]},
 }

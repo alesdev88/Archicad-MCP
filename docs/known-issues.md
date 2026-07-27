@@ -40,6 +40,58 @@ Consequences:
   *all* elements and the model exceeds the ceiling. Scope the rule, or raise the
   env var.
 
+## Element coverage: the official API sees only model elements
+
+The official `API.GetAllElements` returns **model elements only**. Everything 2D
+(markers, labels, dimensions, section lines, viewpoints) is missing from it.
+Measured on one live project, same instance, same moment:
+
+| Command | Elements returned |
+|---|---|
+| official `API.GetAllElements` | 16221 |
+| Tapir `GetAllElements` | 63122 |
+
+So the official command saw 26% of the project. `query_elements` and
+`get_model_summary` used to be built on it and answered `count: 0` for types
+that existed in the hundreds. A silent `0` is the worst possible output there:
+it reads as "verified absent" and gets acted on.
+
+Enumeration now goes through Tapir (`GetAllElements`, `GetElementsByType`,
+`GetSelectedElements`) and falls back to the official command only when the
+add-on is missing. Both tools report which one they got:
+
+- `coverage: "whole-plan"` with Tapir.
+- `coverage: "model-elements-only"` plus a `coverage_note` without it. In that
+  state `element_count` is **not** a project total and a `count` of 0 is not
+  proof of absence.
+
+Asking for a single type is now one Tapir request instead of enumerating the
+plan and reading back every element's type, so a typed query no longer costs
+16k+ property reads.
+
+**Still marker-blind:** `manage_selection` reads the selection with the official
+`API.GetSelectedElements`, which returns `[]` when a marker (a CutPlane, say) is
+selected. `query_elements(selection_only=true)` does not have this problem.
+
+## Teamwork credentials are stripped from `get_project_info`
+
+On a Teamwork project, Tapir's `GetProjectInfo.projectLocation` is a
+`teamwork://user:<JWT refresh token>@host/path` URL. The token is a live
+credential, and returning it verbatim put it in the model's context and in the
+session transcript. The tool now drops the `user:token` segment and keeps the
+host and project path, with a regex backstop that redacts any JWT-shaped string
+surviving in another field.
+
+## `execute_api_command` tolerates `params` sent as text
+
+Some MCP clients collapse a nullable object field (`dict | None`) to an untyped
+schema and then send the value as a JSON string, which made every parameterized
+command unreachable with `Input should be a valid dictionary`. The server emits
+a correct schema, so this is a client-side defect, but `params` is now accepted
+as either an object or a JSON-encoded object. The parsed value still goes
+through schema validation. A string that is not JSON gets an explicit error and
+no command is sent.
+
 ## Writing enum properties is not supported
 
 `singleEnum` and `multiEnum` properties need an `EnumValueId`, not a plain value.
@@ -102,6 +154,10 @@ Live-run against Archicad 29.0/4006:
 - The tier-3 gateway (231 commands, writes included)
 
 Not validated: `publish`.
+
+Not yet re-verified live: the Tapir-backed enumeration, the `coverage` field and
+the `projectLocation` scrub above. They are covered by unit tests against
+recorded API shapes, not by a live run.
 
 ## Running the live canary
 

@@ -116,6 +116,19 @@ def test_classification_and_ifc_fetches_are_chunked(monkeypatch):
     assert snap.ifc_properties["w-1"] == {"Pset_WallCommon.FireRating": "EI60"}
 
 
+def test_type_fetch_is_chunked(monkeypatch):
+    """Enumeration now spans the whole plan (60k+ elements on a real project),
+    so asking for every type in one request would be exactly the kind of wide
+    official call that has crashed the API bridge."""
+    monkeypatch.setattr(extract, "TYPE_FETCH_CHUNK", 2)
+    conn = make_conn()
+    types = extract._fetch_types(conn, ["w-1", "w-2", "z-1"])
+    type_calls = [p for c, p in conn._core.calls if c == "API.GetTypesOfElements"]
+    assert len(type_calls) == 2
+    assert [e["elementId"]["guid"] for e in type_calls[1]["elements"]] == ["z-1"]
+    assert types == {"w-1": "Wall", "w-2": "Wall", "z-1": "Zone"}
+
+
 def test_property_fetch_refuses_when_too_wide(monkeypatch):
     import archicad_mcp.extract as extract_mod
     from archicad_mcp.extract import PropertyFetchTooWideError, fetch_property_values
