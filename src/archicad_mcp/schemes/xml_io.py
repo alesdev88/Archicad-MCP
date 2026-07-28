@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -47,7 +49,24 @@ def dumps_scheme_tree(tree: ET.ElementTree) -> str:
 
 
 def save_scheme_tree(tree: ET.ElementTree, path: Path) -> None:
-    path.write_text(dumps_scheme_tree(tree), encoding="utf-8")
+    # write_text truncates path before writing a byte of the new content, so
+    # a write that fails partway (a full disk, for instance) leaves an
+    # existing destination empty or partial. Writing the full content to a
+    # temporary file first and only then replacing the destination in one
+    # step means the destination is either the old file or the new one,
+    # never something in between. The temporary file must be in the same
+    # directory as path, because os.replace is only guaranteed atomic within
+    # a single filesystem.
+    text = dumps_scheme_tree(tree)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        os.replace(tmp_name, path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def round_trips_exactly(path: Path) -> bool:

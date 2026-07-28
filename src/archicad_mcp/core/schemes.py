@@ -158,12 +158,17 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
         # case-insensitive filesystem, a hard link) resolves to two different
         # strings and slips past it, so the tool reports success while
         # silently overwriting the input. samefile() compares device and
-        # inode instead, which catches both. It requires dest to exist,
-        # which it normally does not yet (the common case, a fresh write), so
-        # that specific failure falls back to the old text comparison.
+        # inode instead, which catches both. It requires dest to be
+        # statable: the common case is a fresh write where dest does not
+        # exist yet (FileNotFoundError), but a dest whose directory exists
+        # and cannot be searched raises PermissionError instead, and other
+        # OSError subtypes are possible too. All of them fall back to the
+        # old text comparison rather than escaping this tool without
+        # @_guarded to catch it, which breaks the "always returns a dict"
+        # contract.
         try:
             same_file = source.samefile(dest)
-        except FileNotFoundError:
+        except OSError:
             same_file = dest.resolve() == source.resolve()
         if same_file:
             return {"error": "Refusing to overwrite the input scheme. Pass a "

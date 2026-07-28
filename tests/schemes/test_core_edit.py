@@ -77,13 +77,38 @@ def test_commit_refuses_to_write_over_the_input(tmp_path):
 # reports success while silently overwriting the input. samefile() compares
 # device and inode instead, which is alias-aware. ---
 
+def _filesystem_is_case_sensitive(directory):
+    """True when directory's filesystem treats two names differing only by
+    case as different files.
+
+    Case sensitivity is a property of the filesystem, not the OS (an exFAT
+    drive mounted on Linux is still case-insensitive, and ubuntu-latest's
+    default ext4 is case-sensitive), so this is checked at runtime in the
+    same directory a test will use rather than guessed from sys.platform.
+    """
+    probe = directory / "case_probe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    try:
+        aliased = probe.with_name(probe.name.upper())
+        return not aliased.exists()
+    finally:
+        probe.unlink()
+
+
 def test_commit_refuses_an_output_that_differs_from_the_input_only_by_case(tmp_path):
     """On a case-insensitive filesystem (macOS's default APFS, which this
     repo runs its tests on), SAMPLE_SCHEME.xml and sample_scheme.xml name the
     exact same file. dest.resolve() == source.resolve() compares the path
     text, sees two different strings, and lets the write through, silently
     destroying the input. This must be refused exactly like passing the
-    input path back unchanged."""
+    input path back unchanged.
+
+    Skipped on a case-sensitive filesystem (CI runs ubuntu-latest, whose
+    default ext4 is case-sensitive), where SAMPLE_SCHEME.xml and
+    sample_scheme.xml are just two different, unrelated files and the
+    aliasing this test is about cannot happen."""
+    if _filesystem_is_case_sensitive(tmp_path):
+        pytest.skip("requires a case-insensitive filesystem")
     scheme, spec = setup_case(tmp_path)
     alias = scheme.with_name("SAMPLE_SCHEME.xml")
     before = scheme.read_bytes()
@@ -107,6 +132,34 @@ def test_commit_refuses_a_hard_link_to_the_input(tmp_path):
     assert "error" in out
     assert "overwrite" in out["error"].lower()
     assert scheme.read_bytes() == before
+
+
+def test_commit_falls_back_when_the_overwrite_guard_cannot_stat_the_output(
+        tmp_path, monkeypatch):
+    """samefile() has to stat both paths, and the guard used to catch only
+    FileNotFoundError from that, on the assumption that a missing dest (the
+    common case: a fresh write) is the only way the stat can fail. A dest
+    whose directory exists but cannot be searched makes stat() raise
+    PermissionError instead, which is a sibling of FileNotFoundError under
+    OSError, not a subclass of it, so it escaped uncaught. This tool is
+    registered without @_guarded, so nothing else would have caught it,
+    breaking the "always returns a dict" contract.
+
+    Patched directly here, rather than through a real unsearchable
+    directory, both because the fix is about the except clause's type, not
+    about any particular OSError subtype, and because POSIX permission bits
+    do not translate to Windows, which is part of this project's CI matrix."""
+    scheme, spec = setup_case(tmp_path)
+    dest = tmp_path / "out.xml"
+
+    def boom(self, other):
+        raise PermissionError("simulated: cannot stat this path")
+
+    monkeypatch.setattr(Path, "samefile", boom)
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+    assert "error" not in out
+    assert out["written"] == str(dest)
+    assert dest.is_file()
 
 
 def test_commit_without_output_defaults_beside_the_input(tmp_path):

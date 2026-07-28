@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from archicad_mcp.schemes.xml_io import (
     dumps_scheme_tree,
     load_scheme_tree,
@@ -39,6 +41,36 @@ def test_save_writes_utf8_bytes(tmp_path):
     out = tmp_path / "out.xml"
     save_scheme_tree(tree, out)
     assert out.read_bytes() == FIXTURE.read_bytes()
+
+
+def test_save_leaves_an_existing_destination_untouched_when_the_write_fails_partway(
+        tmp_path, monkeypatch):
+    """save_scheme_tree used to call path.write_text(...) directly, which
+    opens (and so truncates) the destination before writing a single byte of
+    the new content. A write that fails partway, a full disk being the
+    obvious example, used to leave an existing destination empty or partial.
+    save_scheme_tree now writes to a temporary file in the same directory
+    first and only replaces the destination once that write has fully
+    succeeded, so a failure anywhere in the write step must leave the
+    original destination exactly as it was, and must not leave a temporary
+    file behind either.
+
+    Simulated here by patching the write step (Path.write_text, which is
+    what writes the temporary file) rather than actually filling the disk."""
+    dest = tmp_path / "existing.xml"
+    dest.write_text("existing content that must survive", encoding="utf-8")
+    tree = load_scheme_tree(FIXTURE)
+
+    def boom(self, *args, **kwargs):
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr(Path, "write_text", boom)
+
+    with pytest.raises(OSError):
+        save_scheme_tree(tree, dest)
+
+    assert dest.read_text(encoding="utf-8") == "existing content that must survive"
+    assert list(tmp_path.iterdir()) == [dest]
 
 
 def test_comment_survives_round_trip_byte_exactly(tmp_path):
