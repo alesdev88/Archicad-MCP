@@ -5,6 +5,8 @@ from archicad_mcp.schemes.model import (
     KIND_BUILTIN,
     KIND_GDL_PARAM,
     KIND_PROPERTY,
+    Scheme,
+    _is_element,
     parse_scheme,
 )
 from archicad_mcp.schemes.xml_io import load_scheme_tree
@@ -14,6 +16,52 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme
 
 def load():
     return parse_scheme(load_scheme_tree(FIXTURE))
+
+
+def _item(
+    item_id: str,
+    parent: str,
+    caption: str,
+    *,
+    first_child: str = "0",
+    previous: str = "0",
+    next_: str = "0",
+    index: str = "0",
+) -> str:
+    """A minimal Header_Item fragment: only the fields parse_scheme reads for
+    tree structure (ID_of_Item/Parent/firstChild/previous/next), plus a
+    Caption to tell columns apart, plus Index_of_Columns for the ordering
+    test. Binding fields (ACPropertyGuid, Parameter_Type, ...) are left out
+    on purpose: field_value/_int_field default them to '' / 0, and none of
+    the tests using this helper assert on binding."""
+    return (
+        "<Header_Item>"
+        f'<Index_of_Columns value="{index}"/>'
+        f'<ID_of_Item value="{item_id}"/>'
+        f'<ID_of_Parent value="{parent}"/>'
+        f'<ID_of_firstChild value="{first_child}"/>'
+        f'<ID_of_previous value="{previous}"/>'
+        f'<ID_of_next value="{next_}"/>'
+        f"<Caption>{caption}</Caption>"
+        "</Header_Item>"
+    )
+
+
+def _scheme_xml(*items: str) -> str:
+    """Wrap Header_Item fragments in a minimal Scheme_Settings/Header_Items
+    document, standing in for a full Archicad export."""
+    return (
+        '<Scheme_Settings ID="1" Name="s" Scheme_Type="Element_List" Version="29.0.0">'
+        "<Header_Items>" + "".join(items) + "</Header_Items>"
+        "</Scheme_Settings>"
+    )
+
+
+def _parse_xml(xml: str) -> Scheme:
+    """Parse a bare XML string straight into a Scheme, bypassing the fixture
+    file and xml_io entirely. These tests pin parse_scheme's tree traversal,
+    not the byte-exact round trip xml_io is responsible for."""
+    return parse_scheme(ET.ElementTree(ET.fromstring(xml)))
 
 
 def test_reads_scheme_header():
@@ -31,16 +79,23 @@ def test_columns_exclude_the_root_item():
 
 
 def test_column_order_follows_the_linked_list_not_document_order():
-    # Reverse the XML children; the linked list still dictates the order.
-    tree = load_scheme_tree(FIXTURE)
-    items = tree.getroot().find("Header_Items")
-    children = list(items)
-    for c in children:
-        items.remove(c)
-    for c in reversed(children):
-        items.append(c)
-    s = parse_scheme(tree)
-    assert [c.caption for c in s.columns] == ["Door ID", "Quantity", "Fire Resistance"]
+    """Document order, ID_of_Item order, and Index_of_Columns order are all
+    different from each other and from chain order here, so only an
+    implementation that genuinely walks firstChild/next can get this right.
+
+    chain:    Alpha -> Beta -> Gamma
+    document: Gamma, Beta, Alpha   (physical order below)
+    by id:    Beta(1001), Gamma(2001), Alpha(3001)
+    by index: Gamma(0), Alpha(1), Beta(2)
+    """
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="3001", index="-1"),
+        _item("2001", "9000", "Gamma", previous="1001", next_="0", index="0"),
+        _item("1001", "9000", "Beta", previous="3001", next_="2001", index="2"),
+        _item("3001", "9000", "Alpha", next_="1001", index="1"),
+    )
+    s = _parse_xml(xml)
+    assert [c.caption for c in s.columns] == ["Alpha", "Beta", "Gamma"]
 
 
 def test_recognises_all_three_binding_kinds():
@@ -64,8 +119,26 @@ def test_reads_criteria():
     assert s.criteria[1].property_guid == "432FA53A-B71E-404B-A9D5-F1964237A3EB"
 
 
-def test_comment_in_header_items_not_treated_as_column():
-    """Comments inside Header_Items should not be mistaken for columns."""
+def test_is_element_rejects_comments_and_processing_instructions():
+    """_is_element is what keeps comments/PIs out of item_els, and therefore
+    out of by_id and root_els. It cannot be exercised end to end through
+    parse_scheme: a bare comment or PI has no children, so field_value on it
+    is always "", which can never equal "0" (so it is never picked as a
+    root), and empty string is falsy, so it can never be followed as a
+    traversal id either (the chain walk's `current and ...` guard stops
+    instead of looking it up). Asserting on the predicate directly is the
+    only level at which this guarantee is actually checked."""
+    assert _is_element(ET.Comment("not a column")) is False
+    assert _is_element(ET.ProcessingInstruction("target", "data")) is False
+    assert _is_element(ET.Element("Header_Item")) is True
+
+
+def test_comment_in_header_items_does_not_become_a_column():
+    """Regression pin, not a filter-isolation test: a comment mixed into
+    Header_Items must not crash the parser or change the column count. This
+    holds regardless of _is_element, since a comment's fields are always
+    empty (see test_is_element_rejects_comments_and_processing_instructions
+    for the test that actually isolates the filter)."""
     tree = load_scheme_tree(FIXTURE)
     items_el = tree.getroot().find("Header_Items")
     # Insert a comment as a child alongside the real items
@@ -74,3 +147,70 @@ def test_comment_in_header_items_not_treated_as_column():
     s = parse_scheme(tree)
     # The columns should still be the same 3, not 4
     assert [c.caption for c in s.columns] == ["Door ID", "Quantity", "Fire Resistance"]
+
+
+def test_cycle_in_next_chain_truncates_at_the_repeat():
+    """A cycle in ID_of_next must not hang the parser. The `seen` guard stops
+    the walk the moment it would revisit a node, so the columns collected
+    are exactly those visited once before the repeat, in chain order."""
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001"),
+        _item("1001", "9000", "Alpha", next_="1002"),
+        _item("1002", "9000", "Beta", previous="1001", next_="1003"),
+        _item("1003", "9000", "Gamma", previous="1002", next_="1001"),  # cycles back to Alpha
+    )
+    s = _parse_xml(xml)
+    assert [c.caption for c in s.columns] == ["Alpha", "Beta", "Gamma"]
+
+
+def test_dangling_next_id_truncates_the_rest():
+    """Beta.next points at an id that appears nowhere in the document. Gamma
+    has a valid ID_of_Parent, so it plainly belongs to the scheme, but the
+    chain walk never reaches it: it stops the moment it follows the dangling
+    id and finds nothing in by_id."""
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001"),
+        _item("1001", "9000", "Alpha", next_="1002"),
+        _item("1002", "9000", "Beta", previous="1001", next_="9999"),  # dangling, no such id
+        _item("1003", "9000", "Gamma", previous="1002", next_="0"),
+    )
+    s = _parse_xml(xml)
+    assert [c.caption for c in s.columns] == ["Alpha", "Beta"]
+
+
+def test_missing_root_yields_no_columns_and_no_root_item():
+    """No Header_Item has ID_of_Parent == "0", so there is nothing to anchor
+    the chain walk on. Both root_item and columns come back empty."""
+    xml = _scheme_xml(
+        _item("1001", "9000", "Alpha", next_="1002"),
+        _item("1002", "9000", "Beta", previous="1001", next_="0"),
+    )
+    s = _parse_xml(xml)
+    assert s.root_item is None
+    assert s.columns == []
+
+
+def test_two_roots_picks_the_first_in_document_order():
+    """Two Header_Items both claim ID_of_Parent == "0". Document order breaks
+    the tie (see the comment in model.py above root_els): the first one in
+    the file wins, not the one with the lowest id (an id sort would pick
+    "Second Root", since 1000 < 5000)."""
+    xml = _scheme_xml(
+        _item("5000", "0", "First Root"),
+        _item("1000", "0", "Second Root"),
+    )
+    s = _parse_xml(xml)
+    assert s.root_item.caption == "First Root"
+
+
+def test_item_orphaned_from_the_chain_is_missing_from_columns():
+    """Orphan has a valid ID_of_Parent, so it plainly belongs to this scheme,
+    but nothing's firstChild or next points to it. It is invisible to the
+    chain walk and silently absent from columns."""
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001"),
+        _item("1001", "9000", "Alpha", next_="0"),
+        _item("1002", "9000", "Orphan", next_="0"),
+    )
+    s = _parse_xml(xml)
+    assert [c.caption for c in s.columns] == ["Alpha"]

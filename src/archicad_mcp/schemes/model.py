@@ -127,6 +127,10 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
                  if _is_element(e)]
     by_id = {field_value(e, "ID_of_Item"): e for e in item_els}
 
+    # A well-formed scheme has exactly one root (ID_of_Parent == "0"). If a
+    # malformed file has more than one, document order breaks the tie: we
+    # take the first match, not the one with the lowest id. Documented choice,
+    # not an accident.
     root_els = [e for e in item_els if field_value(e, "ID_of_Parent") == "0"]
     root_item = _column_of(root_els[0]) if root_els else None
 
