@@ -27,6 +27,16 @@ from archicad_mcp.schemes.model import (
 # Built-in fields addressable by name in a spec. Verified live: Quantity is
 # Parameter_Type 1 with Parameter_Index -1003. Extend as more are confirmed;
 # an unknown name is an error rather than a guess.
+#
+# The table stays small on purpose: these codes are undocumented by Archicad
+# and are being mapped empirically, one verified example at a time, so a name
+# is only added here once it has actually been confirmed live. Real schemes
+# carry other built-in columns this table cannot yet name (measured
+# examples: Parameter_Type 0 with Parameter_Index -1561 and -1599). For
+# those, binding_from_bind's builtin branch also accepts a mapping of the
+# raw numbers, e.g. bind: { builtin: { param_type: 0, param_index: -1561 } },
+# so a spec can still express, and a clone can still reproduce, a column
+# this table has no name for.
 BUILTIN_FIELDS: dict[str, tuple[int, int]] = {
     "Quantity": (1, -1003),
 }
@@ -78,10 +88,36 @@ def _duplicate_captions(columns: list[ColumnSpec]) -> list[str]:
     return dupes
 
 
-def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) -> Binding:
+_BIND_KINDS = ("property", "gdl_param", "builtin")
+
+
+def _bind_shape_error(bind: object) -> str | None:
+    """None if bind has the shape every kind requires: a mapping naming
+    exactly one recognised kind. A human-readable error otherwise.
+
+    Shared by load_specs, which only collects this error into its returned
+    list, and binding_from_bind, which raises SpecError from it. Factored out
+    so the 'exactly one key, and it must be a recognised kind' rule cannot
+    drift between the two: load_specs is the up-front check on a spec file,
+    with no resolver or live model available yet; binding_from_bind is the
+    last line of defence for a SchemeSpec built directly rather than loaded
+    from YAML (see test_apply_rejects_duplicate_captions_even_in_a_hand_built_spec
+    for why that path matters). Neither call site inspects the value that
+    goes with the key: that part is kind-specific and stays in
+    binding_from_bind alone.
+    """
     if not isinstance(bind, dict) or len(bind) != 1:
-        raise SpecError(f"bind must name exactly one of property, gdl_param, builtin. "
-                        f"Got: {bind!r}")
+        return f"bind must name exactly one of property, gdl_param, builtin. Got: {bind!r}"
+    kind = next(iter(bind))
+    if kind not in _BIND_KINDS:
+        return f"Unknown bind kind {kind!r}. Use property, gdl_param, or builtin."
+    return None
+
+
+def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) -> Binding:
+    shape_error = _bind_shape_error(bind)
+    if shape_error is not None:
+        raise SpecError(shape_error)
     kind, value = next(iter(bind.items()))
     if kind == "property":
         if _GUID.match(str(value)):
@@ -98,11 +134,28 @@ def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) 
                        desc_name=str(value), param_type=GDL_PARAM_TYPE,
                        param_index=-1604)
     if kind == "builtin":
+        if isinstance(value, dict):
+            # The escape hatch for a builtin column this module cannot name
+            # yet: the raw Parameter_Type/Parameter_Index pair, straight from
+            # a live scheme, instead of a name from the (deliberately small,
+            # see BUILTIN_FIELDS) lookup table.
+            keys_ok = set(value) == {"param_type", "param_index"}
+            types_ok = keys_ok and all(
+                isinstance(value[k], int) and not isinstance(value[k], bool)
+                for k in ("param_type", "param_index"))
+            if not types_ok:
+                raise SpecError(
+                    "builtin as a mapping must have exactly 'param_type' and "
+                    f"'param_index', both integers. Got: {value!r}")
+            return Binding(kind=KIND_BUILTIN, param_type=value["param_type"],
+                           param_index=value["param_index"])
         if value not in BUILTIN_FIELDS:
             known = ", ".join(sorted(BUILTIN_FIELDS)) or "none"
             raise SpecError(f"Unknown built-in field {value!r}. Known: {known}.")
         param_type, param_index = BUILTIN_FIELDS[value]
         return Binding(kind=KIND_BUILTIN, param_type=param_type, param_index=param_index)
+    # _bind_shape_error already restricts kind to _BIND_KINDS; unreachable
+    # unless that tuple ever gains a name with no handler below.
     raise SpecError(f"Unknown bind kind {kind!r}. Use property, gdl_param, or builtin.")
 
 
@@ -124,11 +177,41 @@ def load_specs(path: Path) -> tuple[list[SchemeSpec], list[str]]:
         if not entry.get("id"):
             errors.append(f"{path}: entry {i} is missing 'id'")
             continue
+        # "columns" and "criteria" are both optional and both default to
+        # empty (absent or explicit null collapses to the same thing, since
+        # .get() cannot tell them apart). Anything else that is not a list is
+        # a malformed shape: collected as an error like every other one here,
+        # never left to reach a "for c in <scalar>" loop below and raise an
+        # uncaught TypeError (a truthy scalar such as columns: 5 or
+        # columns: true used to do exactly that).
+        raw_columns = entry.get("columns")
+        if raw_columns is not None and not isinstance(raw_columns, list):
+            errors.append(f"{path}: {entry['id']} has a 'columns' that is not "
+                          f"a list, got {type(raw_columns).__name__}")
+            continue
+        raw_criteria = entry.get("criteria")
+        if raw_criteria is not None and not isinstance(raw_criteria, list):
+            errors.append(f"{path}: {entry['id']} has a 'criteria' that is not "
+                          f"a list, got {type(raw_criteria).__name__}")
+            continue
         columns = []
-        for c in entry.get("columns") or []:
+        for c in raw_columns or []:
             if not isinstance(c, dict) or "caption" not in c or "bind" not in c:
                 errors.append(f"{path}: {entry['id']} has a column without "
                               "'caption' and 'bind'")
+                columns = None
+                break
+            # Only the shape (a mapping naming exactly one recognised kind)
+            # is checked here, via the same rule binding_from_bind uses. The
+            # value that goes with the key (a GUID needing no resolver, a
+            # name needing one, a builtin name or param_type/param_index
+            # mapping) is not resolved at load time: load_specs has no
+            # resolver and no live model, so that stays binding_from_bind's
+            # job, run later from apply_spec.
+            bind_error = _bind_shape_error(c["bind"])
+            if bind_error is not None:
+                errors.append(f"{path}: {entry['id']} column {c['caption']!r} "
+                              f"has an invalid bind: {bind_error}")
                 columns = None
                 break
             columns.append(ColumnSpec(caption=str(c["caption"]), bind=c["bind"],
@@ -147,7 +230,7 @@ def load_specs(path: Path) -> tuple[list[SchemeSpec], list[str]]:
         specs.append(SchemeSpec(spec_id=str(entry["id"]),
                                 template=str(template) if template else None,
                                 name=entry.get("name"),
-                                criteria=entry.get("criteria") or [], columns=columns))
+                                criteria=raw_criteria or [], columns=columns))
     return specs, errors
 
 
@@ -164,6 +247,15 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
             f"{listed}. Captions are the only key used to address a column, so "
             "each one must be unique within a spec. load_specs should have caught "
             "this already; check how this SchemeSpec was constructed.")
+
+    # Resolve every column's binding before anything below is touched. If any
+    # bind is invalid, binding_from_bind raises here, before remove_column,
+    # add_column, retarget_column, or the scheme rename have run a single
+    # time, so a spec with one bad column among many leaves the scheme
+    # exactly as it was, not partially edited. Resolving one at a time inside
+    # the loop further down used to let a spec whose only column had a bad
+    # bind delete every existing column first and raise only afterwards.
+    bindings = [binding_from_bind(col_spec.bind, resolver) for col_spec in spec.columns]
 
     changes: list[str] = []
     # Criteria editing needs the undocumented Param_Type table. Until it exists,
@@ -183,8 +275,7 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
             remove_column(scheme, existing)
             changes.append(f"removed column {existing!r}")
 
-    for target_index, col_spec in enumerate(spec.columns):
-        binding = binding_from_bind(col_spec.bind, resolver)
+    for target_index, (col_spec, binding) in enumerate(zip(spec.columns, bindings)):
         current = {c.caption: c for c in scheme.columns}
         if col_spec.caption in current:
             column = current[col_spec.caption]

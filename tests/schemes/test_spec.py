@@ -15,6 +15,7 @@ from archicad_mcp.schemes.spec import (
     SchemeSpec,
     SpecError,
     apply_spec,
+    binding_from_bind,
     load_specs,
 )
 from archicad_mcp.schemes.xml_io import dumps_scheme_tree, load_scheme_tree
@@ -320,3 +321,192 @@ def test_apply_rejects_duplicate_captions_even_in_a_hand_built_spec():
     with pytest.raises(SpecError):
         apply_spec(spec, scheme)
     assert [c.caption for c in scheme.columns] == before
+
+
+# --- Finding 1: a malformed 'columns' or 'criteria' shape must be collected
+# as an error, never left to reach a "for c in <scalar>" loop and raise an
+# uncaught TypeError. ---
+
+def test_columns_int_scalar_is_reported_not_raised(tmp_path):
+    """columns: 5 is truthy, so the old `entry.get("columns") or []` passed
+    it straight into `for c in columns`, raising an uncaught TypeError
+    instead of being collected like every other malformed shape."""
+    specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: 5\n"))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_columns_true_scalar_is_reported_not_raised(tmp_path):
+    """Confirmed live: columns: true reaches the same loop and raises the
+    same uncaught TypeError, since True is also truthy."""
+    specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: true\n"))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_columns_false_scalar_is_reported_too(tmp_path):
+    """False is falsy, so the old `or []` fallback silently treated it as no
+    columns at all. columns must be a list whenever it is present, regardless
+    of truthiness, so a nonsensical scalar is reported the same way either
+    side of that line."""
+    specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: false\n"))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_columns_absent_still_means_no_columns(tmp_path):
+    """The fix must not turn 'columns' from optional into required: omitting
+    it entirely is still valid and still means zero columns."""
+    specs, errors = load_specs(write_spec(tmp_path, "- id: s\n"))
+    assert errors == []
+    assert specs[0].columns == []
+
+
+def test_criteria_non_list_scalar_is_reported_not_raised(tmp_path):
+    """The same class of bug as columns: criteria is never iterated inside
+    load_specs itself, but a truthy non-list scalar was still stored
+    verbatim on the SchemeSpec (errors == []), only to blow up later in
+    apply_spec's `len(spec.criteria)`. load_specs must catch this at load
+    time the same way it catches a malformed columns shape."""
+    spec_text = "- id: s\n  criteria: 5\n  columns: []\n"
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+# --- Finding 2: a column's bind shape (a mapping naming exactly one
+# recognised kind) must be validated during load_specs, not left until
+# apply_spec calls binding_from_bind. ---
+
+def test_bind_empty_mapping_is_reported_by_load_specs(tmp_path):
+    spec_text = """
+- id: s
+  columns:
+    - caption: "X"
+      bind: {}
+"""
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_bind_two_keys_is_reported_by_load_specs(tmp_path):
+    spec_text = """
+- id: s
+  columns:
+    - caption: "X"
+      bind: { property: "69A58F6F-1111-4000-8000-000000000001", builtin: Quantity }
+"""
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_bind_unrecognised_kind_is_reported_by_load_specs(tmp_path):
+    spec_text = """
+- id: s
+  columns:
+    - caption: "X"
+      bind: { nonsense: "value" }
+"""
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert specs == []
+    assert errors and "s" in errors[0]
+
+
+def test_binding_from_bind_still_rejects_empty_mapping_directly():
+    """binding_from_bind is the last line of defence for a SchemeSpec built
+    directly rather than loaded from YAML (compare
+    test_apply_rejects_duplicate_captions_even_in_a_hand_built_spec). The
+    shared shape check must not remove this."""
+    with pytest.raises(SpecError):
+        binding_from_bind({})
+
+
+def test_binding_from_bind_still_rejects_two_keys_directly():
+    with pytest.raises(SpecError):
+        binding_from_bind({"builtin": "Quantity", "property": "x"})
+
+
+# --- Finding 3: apply_spec must resolve every column's binding before
+# mutating anything, so a spec with one invalid column leaves the scheme
+# completely untouched rather than partially edited. ---
+
+def test_apply_leaves_scheme_completely_untouched_when_a_column_bind_is_invalid(tmp_path):
+    """Confirmed live: a one-column spec with an invalid bind, applied
+    against the three-column fixture, used to remove every existing column
+    (none of them named 'Whatever') before binding_from_bind ever ran for
+    'Whatever' itself, leaving scheme.columns == [] once the SpecError
+    finally fired. Resolving every binding up front must raise before a
+    single column is touched."""
+    spec_text = """
+- id: bad-bind
+  columns:
+    - caption: "Whatever"
+      bind: { builtin: NoSuchField }
+"""
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert errors == []
+    scheme = load_scheme()
+    before_captions = [c.caption for c in scheme.columns]
+    before_bytes = FIXTURE.read_text(encoding="utf-8")
+
+    with pytest.raises(SpecError):
+        apply_spec(specs[0], scheme)
+
+    assert [c.caption for c in scheme.columns] == before_captions
+    assert dumps_scheme_tree(scheme.tree) == before_bytes
+
+
+# --- Finding 4: binding_from_bind's builtin branch also accepts a mapping of
+# the raw Parameter_Type/Parameter_Index numbers, for built-in fields not yet
+# in the small named BUILTIN_FIELDS table. ---
+
+def test_builtin_mapping_form_produces_the_right_binding():
+    binding = binding_from_bind({"builtin": {"param_type": 0, "param_index": -1561}})
+    assert binding.kind == KIND_BUILTIN
+    assert binding.param_type == 0
+    assert binding.param_index == -1561
+
+
+def test_builtin_mapping_missing_a_key_is_an_error():
+    with pytest.raises(SpecError):
+        binding_from_bind({"builtin": {"param_type": 0}})
+
+
+def test_builtin_mapping_with_a_non_integer_value_is_an_error():
+    with pytest.raises(SpecError):
+        binding_from_bind({"builtin": {"param_type": 0, "param_index": "abc"}})
+
+
+def test_builtin_named_form_still_works():
+    binding = binding_from_bind({"builtin": "Quantity"})
+    assert binding.kind == KIND_BUILTIN
+    assert binding.param_type == 1
+    assert binding.param_index == -1003
+
+
+def test_apply_adds_a_column_using_the_builtin_mapping_escape_hatch(tmp_path):
+    """End to end through load_specs and apply_spec: a spec can express a
+    built-in column that BUILTIN_FIELDS has no name for yet, by giving the
+    raw Parameter_Type/Parameter_Index pair instead of a name."""
+    spec_text = """
+- id: s
+  columns:
+    - caption: "Door ID"
+      bind: { property: "69A58F6F-1111-4000-8000-000000000001" }
+    - caption: "Quantity"
+      bind: { builtin: Quantity }
+    - caption: "Fire Resistance"
+      bind: { gdl_param: "Fire Rating Param" }
+    - caption: "Mystery Field"
+      bind: { builtin: { param_type: 0, param_index: -1561 } }
+"""
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert errors == []
+    scheme = load_scheme()
+    apply_spec(specs[0], scheme)
+    by_caption = {c.caption: c.binding for c in scheme.columns}
+    assert by_caption["Mystery Field"].kind == KIND_BUILTIN
+    assert by_caption["Mystery Field"].param_type == 0
+    assert by_caption["Mystery Field"].param_index == -1561
