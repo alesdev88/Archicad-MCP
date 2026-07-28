@@ -130,6 +130,7 @@ class Scheme:
     criteria: list[Criterion] = field(default_factory=list)
     header_items_el: ET.Element | None = field(default=None, repr=False)
     orphans: list[ET.Element] = field(default_factory=list, repr=False)
+    header_comments: list[ET.Element] = field(default_factory=list, repr=False)
 
 
 def binding_of(item_el: ET.Element) -> Binding:
@@ -159,9 +160,9 @@ def _column_of(item_el: ET.Element) -> Column:
 def parse_scheme(tree: ET.ElementTree) -> Scheme:
     root = tree.getroot()
     items_el = root.find("Header_Items")
+    header_children = list(items_el) if items_el is not None else []
     # Filter to only real elements, skipping comments and PIs
-    item_els = [e for e in (list(items_el) if items_el is not None else [])
-                 if is_element(e)]
+    item_els = [e for e in header_children if is_element(e)]
     by_id = {field_value(e, "ID_of_Item"): e for e in item_els}
 
     # A well-formed scheme has exactly one root (ID_of_Parent == "0"). If a
@@ -197,6 +198,18 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
     column_els = {col.element for col in columns}
     orphans = [e for e in item_els if e is not root_el and e not in column_els]
 
+    # Comment and processing-instruction nodes that live directly inside
+    # Header_Items (e.g. a hand-added "<!-- office standard: do not reorder
+    # -->"). is_element's filter keeps them out of item_els, and so out of
+    # orphans too, which means nothing above would ever re-add them once
+    # relink (columns.py) rebuilds Header_Items from scratch. Snapshotting
+    # them here, at parse time, mirrors exactly why orphans is captured now
+    # rather than derived later: after a mutation, deriving "what's a
+    # comment" by walking the current tree cannot distinguish a genuine
+    # comment from anything else relink itself just placed there, so the
+    # snapshot has to be taken before any mutation runs.
+    header_comments = [e for e in header_children if not is_element(e)]
+
     criteria = []
     for c in root.findall("Criteria_Settings/Complex_Criteria/Criterion"):
         criteria.append(Criterion(param_type=_int_field(c, "Param_Type"),
@@ -210,4 +223,4 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
                   name=root.get("Name", ""), scheme_type=root.get("Scheme_Type", ""),
                   version=root.get("Version", ""), root_item=root_item,
                   columns=columns, criteria=criteria, header_items_el=items_el,
-                  orphans=orphans)
+                  orphans=orphans, header_comments=header_comments)

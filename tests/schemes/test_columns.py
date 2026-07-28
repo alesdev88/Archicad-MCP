@@ -367,3 +367,63 @@ def test_orphan_survives_add_remove_and_move_column():
     assert_orphan_untouched()
 
     assert [c.caption for c in scheme.columns] == ["Beta", "Gamma"]
+
+
+# --- Finding 1: a comment or processing instruction living directly inside
+# Header_Items (an office note such as "<!-- do not reorder -->") used to be
+# destroyed by any edit. relink cleared every child of header_items_el and
+# re-appended only the root, the columns, and scheme.orphans; comment and PI
+# nodes are excluded from orphans by the is_element filter in parse_scheme,
+# so nothing re-added them. round_trips_exactly still returns True for such a
+# file (a pure load/save cycle preserves comments fine, see test_xml_io.py),
+# so the guard in edit_schedule_scheme accepts it and the tool reports no
+# error while silently dropping the comment. ---
+
+HEADER_COMMENT_TEXT = " office standard: do not reorder "
+
+
+def _load_with_header_comment(text=HEADER_COMMENT_TEXT):
+    """Load the fixture with a comment inserted as the first child of
+    Header_Items, then parse it fresh. Inserting the comment into an
+    already-parsed Scheme's header_items_el would not do: scheme.header_comments
+    is snapshotted once, at parse time, exactly like scheme.orphans, so the
+    comment must already be in the tree before parse_scheme runs in order to
+    be captured at all."""
+    tree = load_scheme_tree(FIXTURE)
+    items_el = tree.getroot().find("Header_Items")
+    items_el.insert(0, ET.Comment(text))
+    return parse_scheme(tree)
+
+
+def test_comment_in_header_items_survives_add_column():
+    scheme = _load_with_header_comment()
+    add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
+    assert f"<!--{HEADER_COMMENT_TEXT}-->" in dumps_scheme_tree(scheme.tree)
+
+
+def test_comment_in_header_items_survives_remove_column():
+    scheme = _load_with_header_comment()
+    remove_column(scheme, "Quantity")
+    assert f"<!--{HEADER_COMMENT_TEXT}-->" in dumps_scheme_tree(scheme.tree)
+
+
+def test_comment_in_header_items_survives_move_column():
+    scheme = _load_with_header_comment()
+    move_column(scheme, "Fire Resistance", 0)
+    assert f"<!--{HEADER_COMMENT_TEXT}-->" in dumps_scheme_tree(scheme.tree)
+
+
+def test_comment_in_header_items_position_is_not_claimed_to_be_preserved():
+    """relink re-appends header_comments after the columns and orphans rather
+    than restoring them to their original slot: content survives, position
+    does not. Documented here as a pin, not a complaint: asserting the
+    comment merely appears somewhere in Header_Items (the three tests above)
+    would also pass for an implementation that happened to preserve position
+    too, so this checks the specific, weaker guarantee relink actually makes."""
+    scheme = _load_with_header_comment()
+    add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
+    header_children = list(scheme.header_items_el)
+    # Inserted as the first child originally; relink now places it last,
+    # after the root, every column, and every orphan.
+    assert header_children[-1] is scheme.header_comments[0]
+    assert header_children.index(scheme.header_comments[0]) != 0

@@ -73,6 +73,22 @@ def relink(scheme: Scheme) -> None:
     as found (not renumbered, not rewired, not counted in Numbers_of_Columns
     or given an Index_of_Columns), so nothing that was already in the file
     before the mutation is lost.
+
+    A comment or processing-instruction node living directly inside
+    Header_Items (an office note such as "<!-- do not reorder -->") is real
+    content too, for the same reason an orphan is: is_element's filter keeps
+    it out of scheme.columns and out of scheme.orphans, so nothing else in
+    this function would ever put it back once every child is cleared below.
+    Like orphans, this list is captured once by parse_scheme before any
+    mutation runs (see Scheme.header_comments) and must never be rediscovered
+    here afterwards, for the identical reason: post-mutation, there is no way
+    to tell a genuine comment apart from anything relink itself just placed.
+    Position within Header_Items is not preserved, only content: each comment
+    is re-appended after the columns and orphans rather than restored to its
+    original slot, since nothing in this format ties a comment to a stable
+    anchor it could be re-inserted relative to. That is a real loss of
+    fidelity, but silently deleting the comment, which is what used to
+    happen, is the one outcome this must never produce again.
     """
     items_el = scheme.header_items_el
     root_el = scheme.root_item.element
@@ -84,6 +100,8 @@ def relink(scheme: Scheme) -> None:
         items_el.append(col.element)
     for orphan in scheme.orphans:
         items_el.append(orphan)
+    for comment in scheme.header_comments:
+        items_el.append(comment)
 
     set_field(root_el, "Numbers_of_Columns", str(len(scheme.columns)))
     set_field(root_el, "ID_of_firstChild",

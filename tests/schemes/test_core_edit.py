@@ -529,3 +529,27 @@ async def test_tool_converts_missing_archicad_to_an_error_envelope_when_a_name_n
         payload = json.loads(result.content[0].text)
     assert "error" in payload
     assert "No running Archicad" in payload["error"]
+
+
+# --- Finding 1: a comment or processing instruction living directly inside
+# Header_Items (an office note such as "<!-- do not reorder -->") used to be
+# destroyed by any edit: relink cleared every child of Header_Items and
+# re-appended only the root, the columns, and the orphans, so a comment
+# vanished with no error at all (round_trips_exactly still passes for such a
+# file, since a pure load/save cycle never touches it). See
+# test_columns.py's comment-preservation tests for the same guarantee pinned
+# directly against add_column/remove_column/move_column; this is the
+# end-to-end version through the registered tool's own file I/O. ---
+
+def test_comment_in_header_items_survives_a_full_edit_schedule_scheme_run(tmp_path):
+    scheme, spec = setup_case(tmp_path)
+    text = scheme.read_text(encoding="utf-8")
+    text = text.replace(
+        "<Header_Items>", "<Header_Items><!-- office standard: do not reorder -->", 1)
+    scheme.write_text(text, encoding="utf-8")
+
+    dest = tmp_path / "edited.xml"
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+
+    assert "error" not in out
+    assert "office standard: do not reorder" in dest.read_text(encoding="utf-8")
