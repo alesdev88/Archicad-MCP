@@ -16,12 +16,20 @@ from archicad_mcp.schemes.xml_io import load_scheme_tree
 def _load(path: str) -> Scheme | dict:
     """Returns a Scheme, or an {"error": ...} envelope the tool can return as-is."""
     p = Path(path).expanduser()
-    if p.is_dir():
-        return {"error": f"{p} is a directory, not a scheme file. Point this at the "
-                         "exported Scheme_Settings XML file instead."}
-    if not p.is_file():
-        return {"error": f"Scheme file not found: {p}. Export one from Archicad via "
-                         "Document > Schedules > Scheme Settings > Export."}
+    try:
+        # is_dir()/is_file() stat the path themselves. A path longer than the
+        # OS name-length limit makes them raise OSError (ENAMETOOLONG) on
+        # Python 3.12 and 3.13 instead of returning False; this must be caught
+        # here same as the read failure below, or it escapes read_schedule_scheme
+        # uncaught and breaks the "always returns a dict" contract.
+        if p.is_dir():
+            return {"error": f"{p} is a directory, not a scheme file. Point this at the "
+                             "exported Scheme_Settings XML file instead."}
+        if not p.is_file():
+            return {"error": f"Scheme file not found: {p}. Export one from Archicad via "
+                             "Document > Schedules > Scheme Settings > Export."}
+    except OSError as exc:
+        return {"error": f"{p} could not be read: {exc}"}
     try:
         tree = load_scheme_tree(p)
     except ET.ParseError as exc:

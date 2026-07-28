@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,10 @@ def test_directory_path_returns_a_distinct_error_envelope(tmp_path):
     assert "not found" not in out["error"].lower()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
+@pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="POSIX permission semantics, and root bypasses them",
+)
 def test_unreadable_file_returns_an_error_envelope_instead_of_raising(tmp_path):
     unreadable = tmp_path / "unreadable.xml"
     shutil.copy(FIXTURE, unreadable)
@@ -82,3 +86,15 @@ def test_unreadable_file_returns_an_error_envelope_instead_of_raising(tmp_path):
         os.chmod(unreadable, 0o644)
     assert "error" in out
     assert "could not be read" in out["error"]
+
+
+def test_extremely_long_path_returns_an_error_envelope_instead_of_raising():
+    # On Python 3.12 and 3.13, Path.is_dir()/is_file() raise OSError
+    # (ENAMETOOLONG) for a path this long instead of returning False, and
+    # that used to escape _load uncaught. On 3.14+ pathlib swallows it and
+    # is_dir()/is_file() just return False, which the existing "not found"
+    # branch already handles. Either way this path does not exist, so an
+    # error envelope is the correct result on every supported version.
+    long_path = "/" + "a" * 5000
+    out = read_schedule_scheme(long_path)
+    assert "error" in out
