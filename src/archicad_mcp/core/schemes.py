@@ -3,6 +3,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from archicad_mcp.connection import get_connection
 from archicad_mcp.schemes.columns import ColumnNotFound, DuplicateColumnCaption
 from archicad_mcp.schemes.model import (
     KIND_GDL_PARAM,
@@ -12,6 +13,7 @@ from archicad_mcp.schemes.model import (
     parse_scheme,
 )
 from archicad_mcp.schemes.spec import SpecError, apply_spec, load_specs
+from archicad_mcp.schemes.validate import validate_scheme
 from archicad_mcp.schemes.xml_io import (
     load_scheme_tree,
     round_trips_exactly,
@@ -189,3 +191,27 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
     return {"spec_id": spec.spec_id, "dry_run": dry_run, "changes": changes,
             "warnings": warnings, "columns_before": columns_before,
             "columns_after": columns_after, "written": written}
+
+
+def validate_schedule_scheme(path: str, port: int | None = None) -> dict:
+    """Check an exported scheme's property bindings against the open project.
+
+    Unlike read_schedule_scheme and edit_schedule_scheme, this talks to
+    Archicad (Tapir GetAllProperties), and has no try/except of its own for
+    that: get_connection and validate_scheme raise ArchicadUnavailableError
+    or an APIErrorBase on failure, same as any other tool that reaches
+    Archicad. This function's "always returns a dict" contract is completed
+    by @_guarded at the tool layer in server.py, not here, exactly because
+    this is the one schedule tool that carries it.
+    """
+    scheme = _load(path)
+    if isinstance(scheme, dict):
+        return scheme
+    conn = get_connection(port)
+    findings = validate_scheme(conn, scheme)
+    return {
+        "name": scheme.name,
+        "column_count": len(scheme.columns),
+        "ok": not any(f["severity"] == "error" for f in findings),
+        "findings": findings,
+    }

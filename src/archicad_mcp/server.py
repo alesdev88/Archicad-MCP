@@ -315,6 +315,16 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                              output: str | None = None, dry_run: bool = True) -> dict:
         return core_schemes.edit_schedule_scheme(path, spec_path, spec_id, output, dry_run)
 
+    @mcp.tool(description="Check an exported schedule scheme against the open "
+                          "project: do its property bindings still exist, and does "
+                          "any column caption disagree with what it is bound to. "
+                          "Reads property definitions only, not values, so it does "
+                          "not risk the property-read crash.")
+    @_guarded
+    def validate_schedule_scheme(path: str, port: int | None = None) -> dict:
+        return core_schemes.validate_schedule_scheme(
+            path, port if port is not None else default_port)
+
     from archicad_mcp.gateway import execute as _gateway
     from archicad_mcp.gateway.registry import build_registry
 
