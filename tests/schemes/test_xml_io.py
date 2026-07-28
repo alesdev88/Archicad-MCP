@@ -39,10 +39,33 @@ def test_output_ends_with_exactly_one_newline():
 
 
 def test_save_writes_utf8_bytes(tmp_path):
-    tree = load_scheme_tree(FIXTURE)
+    """The sample fixture carries zero non-ASCII bytes, so asserting against
+    it here would not actually prove UTF-8 handling: every character in it
+    already round-trips through plain ASCII, so changing xml_io.py's
+    encoding="utf-8" to encoding="ascii" would leave this test green too.
+    Real Archicad scheme exports from this office carry Slovenian characters
+    (c, s and z with a caron) in a Caption, so this builds a small scheme
+    carrying such a caption and asserts save_scheme_tree writes exactly its
+    UTF-8 encoding to disk, not merely whatever ASCII-safe subset of it an
+    ascii encoder would also happen to produce identically."""
+    caption = "Vzorčna shema vrat: čšž"
+    # Sanity check on the fixture itself: if this ever failed, the assertions
+    # below would be proving nothing about UTF-8 specifically.
+    assert any(b > 0x7F for b in caption.encode("utf-8"))
+    text = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
+        '<Scheme_Settings ID="1" Name="s" Scheme_Type="Element_List" Version="29.0.0">'
+        f"<Header_Items><Header_Item><Caption>{caption}</Caption></Header_Item>"
+        "</Header_Items></Scheme_Settings>\n"
+    )
+    src = tmp_path / "non_ascii_source.xml"
+    src.write_text(text, encoding="utf-8")
+
+    tree = load_scheme_tree(src)
     out = tmp_path / "out.xml"
     save_scheme_tree(tree, out)
-    assert out.read_bytes() == FIXTURE.read_bytes()
+
+    assert out.read_bytes() == text.encode("utf-8")
 
 
 def test_save_leaves_an_existing_destination_untouched_when_the_write_fails_partway(
