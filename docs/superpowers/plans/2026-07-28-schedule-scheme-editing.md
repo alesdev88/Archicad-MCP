@@ -1249,6 +1249,20 @@ def test_template_is_optional(tmp_path):
     specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: []\n"))
     assert errors == []
     assert specs[0].template is None
+
+
+def test_criteria_block_is_reported_as_ignored_not_silently_dropped(tmp_path):
+    spec_text = """
+- id: s
+  criteria:
+    - element_class: Door
+  columns:
+    - caption: "Quantity"
+      bind: { builtin: Quantity }
+"""
+    specs, _ = load_specs(write_spec(tmp_path, spec_text))
+    changes = apply_spec(specs[0], load_scheme())
+    assert any("IGNORED the criteria block" in c for c in changes)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1270,7 +1284,12 @@ from typing import Callable
 
 import yaml
 
-from archicad_mcp.schemes.columns import add_column, remove_column
+from archicad_mcp.schemes.columns import (
+    add_column,
+    move_column,
+    remove_column,
+    retarget_column,
+)
 from archicad_mcp.schemes.model import (
     GDL_PARAM_TYPE,
     KIND_BUILTIN,
@@ -1387,6 +1406,13 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
     log. Criteria are preserved as-is; editing them needs the Param_Type table
     that does not exist yet."""
     changes: list[str] = []
+    # Criteria editing needs the undocumented Param_Type table. Until it exists,
+    # say so rather than silently dropping a criteria: block the user wrote.
+    if spec.criteria:
+        changes.append(
+            f"IGNORED the criteria block ({len(spec.criteria)} entries): criteria "
+            "editing is not implemented yet, so the template's criteria are kept "
+            "unchanged. See docs/scheme-criteria-codes.md.")
     if spec.name is not None and spec.name != scheme.root.get("Name"):
         changes.append(f"renamed scheme to {spec.name!r}")
         scheme.root.set("Name", spec.name)
@@ -1403,11 +1429,9 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
         if col_spec.caption in current:
             column = current[col_spec.caption]
             if column.binding != binding:
-                from archicad_mcp.schemes.columns import retarget_column
                 retarget_column(scheme, col_spec.caption, binding)
                 changes.append(f"retargeted column {col_spec.caption!r}")
             if scheme.columns.index(column) != target_index:
-                from archicad_mcp.schemes.columns import move_column
                 move_column(scheme, col_spec.caption, target_index)
                 changes.append(f"moved column {col_spec.caption!r} to {target_index}")
         else:
@@ -1423,7 +1447,7 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/schemes/test_spec.py -v`
-Expected: 10 passed
+Expected: 11 passed
 
 - [ ] **Step 5: Commit**
 
