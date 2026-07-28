@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<Scheme_Settings ID="9001" Last_Modified="1759741159" Name="Sample Door Scheme" Scheme_Type="Element_List" Version="29.0.0">
+	<View_Settings>
+		<Hide_Main_Header value="true"/>
+		<Separator value=", "/>
+	</View_Settings>
+	<Criteria_Settings>
+		<Complex_Criteria>
+			<Criterion>
+				<Param_Type value="88"/>
+				<Relation_Index value="1"/>
+				<ACPropertyGuid value="00000000-0000-0000-0000-000000000000"/>
+				<UniValue>
+					<HasVariant>true</HasVariant>
+					<Variant Type="GuidVariant">
+						<Value>D8F07689-9CFA-4FBE-AEB4-0A60B8E667EE</Value>
+					</Variant>
+				</UniValue>
+				<AndNext value="1"/>
+				<ExtendedElem_ElemClassId value="D8F07689-9CFA-4FBE-AEB4-0A60B8E667EE"/>
+			</Criterion>
+			<Criterion>
+				<Param_Type value="232"/>
+				<Relation_Index value="12"/>
+				<ACPropertyGuid value="432FA53A-B71E-404B-A9D5-F1964237A3EB"/>
+				<UniValue>
+					<HasVariant>true</HasVariant>
+				</UniValue>
+				<AndNext value="0"/>
+				<ExtendedElem_ElemClassId value="00000000-0000-0000-0000-000000000000"/>
+			</Criterion>
+		</Complex_Criteria>
+	</Criteria_Settings>
+	<Header_Items>
+		<Header_Item>
+			<Numbers_of_Columns value="3"/>
+			<Index_of_Columns value="-1"/>
+			<ID_of_Item value="1000"/>
+			<ID_of_Parent value="0"/>
+			<ID_of_firstChild value="1001"/>
+			<ID_of_previous value="0"/>
+			<ID_of_next value="0"/>
+			<Caption>Sample Door Scheme</Caption>
+			<Width_of_cell_portrait value="30"/>
+			<Parameter_Type value="0"/>
+			<Parameter_Index value="0"/>
+			<Parameter_Name value=""/>
+			<Parameter_Desc_Name/>
+			<ACPropertyGuid value="00000000-0000-0000-0000-000000000000"/>
+			<ACPropertyName value=""/>
+			<UniqueID value="AAAAAAAA-0000-0000-0000-000000000000"/>
+		</Header_Item>
+		<Header_Item>
+			<Numbers_of_Columns value="0"/>
+			<Index_of_Columns value="0"/>
+			<ID_of_Item value="1001"/>
+			<ID_of_Parent value="1000"/>
+			<ID_of_firstChild value="0"/>
+			<ID_of_previous value="0"/>
+			<ID_of_next value="1002"/>
+			<Caption>Door ID</Caption>
+			<Width_of_cell_portrait value="30"/>
+			<Parameter_Type value="0"/>
+			<Parameter_Index value="0"/>
+			<Parameter_Name value=""/>
+			<Parameter_Desc_Name/>
+			<ACPropertyGuid value="69A58F6F-1111-4000-8000-000000000001"/>
+			<ACPropertyName value="Door ID"/>
+			<UniqueID value="BBBBBBBB-0000-0000-0000-000000000001"/>
+		</Header_Item>
+		<Header_Item>
+			<Numbers_of_Columns value="0"/>
+			<Index_of_Columns value="1"/>
+			<ID_of_Item value="1002"/>
+			<ID_of_Parent value="1000"/>
+			<ID_of_firstChild value="0"/>
+			<ID_of_previous value="1001"/>
+			<ID_of_next value="1003"/>
+			<Caption>Quantity</Caption>
+			<Width_of_cell_portrait value="30"/>
+			<Parameter_Type value="1"/>
+			<Parameter_Index value="-1003"/>
+			<Parameter_Name value=""/>
+			<Parameter_Desc_Name/>
+			<ACPropertyGuid value="00000000-0000-0000-0000-000000000000"/>
+			<ACPropertyName value=""/>
+			<UniqueID value="BBBBBBBB-0000-0000-0000-000000000002"/>
+		</Header_Item>
+		<Header_Item>
+			<Numbers_of_Columns value="0"/>
+			<Index_of_Columns value="2"/>
+			<ID_of_Item value="1003"/>
+			<ID_of_Parent value="1000"/>
+			<ID_of_firstChild value="0"/>
+			<ID_of_previous value="1002"/>
+			<ID_of_next value="0"/>
+			<Caption>Fire Resistance</Caption>
+			<Width_of_cell_portrait value="30"/>
+			<Parameter_Type value="180"/>
+			<Parameter_Index value="-1604"/>
+			<Parameter_Name value=""/>
+			<Parameter_Desc_Name>Fire Resistance</Parameter_Desc_Name>
+			<ACPropertyGuid value="00000000-0000-0000-0000-000000000000"/>
+			<ACPropertyName value="Fire Rating Param"/>
+			<UniqueID value="BBBBBBBB-0000-0000-0000-000000000003"/>
+		</Header_Item>
+	</Header_Items>
+	<DimensionSettings>
+		<DimensionSetting value="0"/>
+	</DimensionSettings>
+	<FieldCustomDataStore>
+		<NumberOf value="0"/>
+	</FieldCustomDataStore>
+</Scheme_Settings>
