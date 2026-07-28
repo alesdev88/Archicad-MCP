@@ -5,6 +5,7 @@ import pytest
 
 from archicad_mcp.schemes.columns import (
     ColumnNotFound,
+    DuplicateColumnCaption,
     add_column,
     move_column,
     relink,
@@ -14,7 +15,9 @@ from archicad_mcp.schemes.columns import (
 )
 from archicad_mcp.schemes.model import (
     KIND_BUILTIN,
+    KIND_GDL_PARAM,
     KIND_PROPERTY,
+    NULL_GUID,
     Binding,
     field_value,
     parse_scheme,
@@ -202,3 +205,126 @@ def test_removing_every_column_leaves_a_valid_scheme():
     assert scheme.columns == []
     assert_chain_is_intact(scheme)
     assert field_value(scheme.root_item.element, "ID_of_firstChild") == "0"
+
+
+def test_removing_down_to_a_single_column_leaves_the_chain_intact():
+    """No existing test calls assert_chain_is_intact with exactly one column
+    left: the closest is test_removing_every_column_leaves_a_valid_scheme,
+    which goes all the way to zero. Pinned separately because a single
+    remaining column is the case where ID_of_previous and ID_of_next are
+    both "0" on the very same element, which is easy to get backwards."""
+    scheme = load()
+    remove_column(scheme, "Door ID")
+    remove_column(scheme, "Quantity")
+    assert [c.caption for c in scheme.columns] == ["Fire Resistance"]
+    assert_chain_is_intact(scheme)
+    sole = scheme.columns[0]
+    assert field_value(sole.element, "ID_of_previous") == "0"
+    assert field_value(sole.element, "ID_of_next") == "0"
+    assert field_value(scheme.root_item.element, "ID_of_firstChild") == sole.item_id
+
+
+def test_retarget_column_to_builtin():
+    """Fire Resistance starts as a GDL parameter, so it carries a real
+    ACPropertyName and Parameter_Desc_Name. Retargeting to builtin must clear
+    both. test_retarget_column already covers retargeting to a property; this
+    and test_retarget_column_to_gdl_param cover the other two target kinds
+    _apply_binding can produce."""
+    scheme = load()
+    retarget_column(scheme, "Fire Resistance",
+                    Binding(kind=KIND_BUILTIN, param_type=7, param_index=-1010))
+    col = reparse(scheme).columns[2]
+    assert col.binding.kind == KIND_BUILTIN
+    assert col.binding.param_type == 7
+    assert col.binding.param_index == -1010
+    assert field_value(col.element, "ACPropertyGuid") == NULL_GUID
+    assert field_value(col.element, "ACPropertyName") == ""
+    assert field_value(col.element, "Parameter_Type") == "7"
+    assert field_value(col.element, "Parameter_Index") == "-1010"
+    assert field_value(col.element, "Parameter_Desc_Name") == ""
+
+
+def test_retarget_column_to_gdl_param():
+    """Door ID starts as a property binding, so it carries a real
+    ACPropertyGuid. Retargeting to a GDL parameter must clear the guid back
+    to NULL_GUID, since that field belongs to the property binding, not to
+    GDL: this is the "stale GUID" _apply_binding's docstring warns about."""
+    scheme = load()
+    retarget_column(scheme, "Door ID",
+                    Binding(kind=KIND_GDL_PARAM, property_name="Custom Param",
+                            desc_name="Custom Desc"))
+    col = reparse(scheme).columns[0]
+    assert col.binding.kind == KIND_GDL_PARAM
+    assert col.binding.property_name == "Custom Param"
+    assert col.binding.desc_name == "Custom Desc"
+    assert field_value(col.element, "ACPropertyGuid") == NULL_GUID
+    assert field_value(col.element, "ACPropertyName") == "Custom Param"
+    assert field_value(col.element, "Parameter_Type") == "180"
+    assert field_value(col.element, "Parameter_Index") == "-1604"
+    assert field_value(col.element, "Parameter_Desc_Name") == "Custom Desc"
+
+
+def test_add_column_refuses_duplicate_caption():
+    """Captions are the only key _find uses to look up a column. A duplicate
+    would make retarget_column/rename_column silently act on whichever one
+    _find happens to match first. Verified empirically: before this fix,
+    adding a second "Door ID" to the sample fixture succeeds silently."""
+    scheme = load()
+    with pytest.raises(DuplicateColumnCaption):
+        add_column(scheme, "Door ID", Binding(kind=KIND_BUILTIN))
+    # The refusal must not leave a half-added column behind.
+    assert [c.caption for c in scheme.columns] == ["Door ID", "Quantity", "Fire Resistance"]
+
+
+def test_rename_column_refuses_existing_caption():
+    """Same hazard as test_add_column_refuses_duplicate_caption, reached via
+    rename_column instead of add_column."""
+    scheme = load()
+    with pytest.raises(DuplicateColumnCaption):
+        rename_column(scheme, "Quantity", "Door ID")
+    assert [c.caption for c in scheme.columns] == ["Door ID", "Quantity", "Fire Resistance"]
+
+
+def test_orphan_survives_add_remove_and_move_column():
+    """relink must not silently delete a Header_Item that exists in the file
+    but is unreachable from the root's sibling chain (an orphan: see
+    test_item_orphaned_from_the_chain_is_missing_from_columns in
+    test_model.py). It is real data, not a column, so every mutation that
+    calls relink must hand it back untouched: same object, same fields,
+    still a child of Header_Items. Verified empirically: before this fix,
+    building a scheme with an orphan and calling add_column removes the
+    orphan entirely.
+
+    test_added_column_avoids_colliding_with_a_high_id_orphan already proves
+    _next_item_id sees the orphan when picking a fresh id; this test proves
+    the orphan is still there afterwards.
+    """
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001", index="-1"),
+        _item("1001", "9000", "Alpha", next_="1002", index="1"),
+        _item("1002", "9000", "Beta", previous="1001", index="2"),
+        _item("9001", "9000", "Orphan", index="2"),  # not linked into the chain
+    )
+    scheme = parse_scheme(ET.ElementTree(ET.fromstring(xml)))
+    assert [c.caption for c in scheme.columns] == ["Alpha", "Beta"]
+    orphan = next(el for el in scheme.header_items_el
+                  if field_value(el, "Caption") == "Orphan")
+
+    def assert_orphan_untouched():
+        assert orphan in list(scheme.header_items_el)
+        assert field_value(orphan, "ID_of_Item") == "9001"
+        assert field_value(orphan, "ID_of_Parent") == "9000"
+        assert field_value(orphan, "ID_of_previous") == "0"
+        assert field_value(orphan, "ID_of_next") == "0"
+        assert field_value(orphan, "Index_of_Columns") == "2"
+
+    add_column(scheme, "Gamma", Binding(kind=KIND_BUILTIN))
+    assert_orphan_untouched()
+
+    remove_column(scheme, "Alpha")
+    assert_orphan_untouched()
+
+    move_column(scheme, "Beta", 0)
+    assert_orphan_untouched()
+
+    assert [c.caption for c in scheme.columns] == ["Beta", "Gamma"]

@@ -23,6 +23,10 @@ class ColumnNotFound(Exception):
     pass
 
 
+class DuplicateColumnCaption(Exception):
+    pass
+
+
 def _find(scheme: Scheme, caption: str) -> Column:
     for c in scheme.columns:
         if c.caption == caption:
@@ -56,15 +60,27 @@ def relink(scheme: Scheme) -> None:
     Rebuilding the whole chain from one ordered list is far harder to get wrong
     than splicing prev/next pointers per operation, and it means every mutation
     shares one tested code path. Fields we do not model are untouched.
+
+    A Header_Item that exists in the file but is not reachable from the root's
+    sibling chain (an orphan, the same case _next_item_id scans for) is not a
+    column, but it is still real data: relink is not entitled to delete it.
+    Orphans are re-appended after the chained columns, left exactly as found
+    (not renumbered, not rewired, not counted in Numbers_of_Columns or given
+    an Index_of_Columns), so nothing in the file is lost.
     """
     items_el = scheme.header_items_el
     root_el = scheme.root_item.element
+    column_els = {col.element for col in scheme.columns}
+    orphans = [el for el in items_el
+              if _is_element(el) and el is not root_el and el not in column_els]
 
     for el in list(items_el):
         items_el.remove(el)
     items_el.append(root_el)
     for col in scheme.columns:
         items_el.append(col.element)
+    for orphan in orphans:
+        items_el.append(orphan)
 
     set_field(root_el, "Numbers_of_Columns", str(len(scheme.columns)))
     set_field(root_el, "ID_of_firstChild",
@@ -111,6 +127,12 @@ def add_column(scheme: Scheme, caption: str, binding: Binding,
     """Insert a column. Formatting is inherited by deep-copying a template
     column, so widths, fonts, totals and colours match the scheme rather than
     being invented."""
+    if any(c.caption == caption for c in scheme.columns):
+        raise DuplicateColumnCaption(
+            f"A column captioned {caption!r} already exists. Captions are the "
+            "only key used to address columns, so a duplicate would make "
+            "retarget_column and rename_column act on whichever one is found first."
+        )
     if template_caption is not None:
         template_el = _find(scheme, template_caption).element
     elif scheme.columns:
@@ -149,6 +171,12 @@ def move_column(scheme: Scheme, caption: str, to_index: int) -> None:
 
 def rename_column(scheme: Scheme, caption: str, new_caption: str) -> None:
     column = _find(scheme, caption)
+    if any(c.caption == new_caption for c in scheme.columns if c is not column):
+        raise DuplicateColumnCaption(
+            f"A column captioned {new_caption!r} already exists. Captions are "
+            "the only key used to address columns, so a duplicate would make "
+            "retarget_column and rename_column act on whichever one is found first."
+        )
     set_field(column.element, "Caption", new_caption)
     column.caption = new_caption
 
