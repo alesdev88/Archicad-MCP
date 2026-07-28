@@ -1,5 +1,9 @@
+import os
 import shutil
+import sys
 from pathlib import Path
+
+import pytest
 
 import archicad_mcp.core.schemes as core_schemes
 from archicad_mcp.core.schemes import edit_schedule_scheme, read_schedule_scheme
@@ -65,6 +69,44 @@ def test_commit_refuses_to_write_over_the_input(tmp_path):
     out = edit_schedule_scheme(str(scheme), str(spec), output=str(scheme), dry_run=False)
     assert "error" in out
     assert "overwrite" in out["error"].lower()
+
+
+# --- The overwrite guard used to compare dest.resolve() == source.resolve(),
+# which is text comparison, not identity comparison. Two paths that name the
+# same file without being spelled identically slip past it, and the tool
+# reports success while silently overwriting the input. samefile() compares
+# device and inode instead, which is alias-aware. ---
+
+def test_commit_refuses_an_output_that_differs_from_the_input_only_by_case(tmp_path):
+    """On a case-insensitive filesystem (macOS's default APFS, which this
+    repo runs its tests on), SAMPLE_SCHEME.xml and sample_scheme.xml name the
+    exact same file. dest.resolve() == source.resolve() compares the path
+    text, sees two different strings, and lets the write through, silently
+    destroying the input. This must be refused exactly like passing the
+    input path back unchanged."""
+    scheme, spec = setup_case(tmp_path)
+    alias = scheme.with_name("SAMPLE_SCHEME.xml")
+    before = scheme.read_bytes()
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(alias), dry_run=False)
+    assert "error" in out
+    assert "overwrite" in out["error"].lower()
+    assert scheme.read_bytes() == before
+
+
+@pytest.mark.skipif(not hasattr(os, "link"),
+                    reason="os.link is not available on this platform")
+def test_commit_refuses_a_hard_link_to_the_input(tmp_path):
+    """A hard link is a second directory entry for the same inode: same
+    file, different, unrelated-looking path. dest.resolve() == source.resolve()
+    sees two unrelated paths and lets the write through."""
+    scheme, spec = setup_case(tmp_path)
+    linked = tmp_path / "linked.xml"
+    os.link(str(scheme), str(linked))
+    before = scheme.read_bytes()
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(linked), dry_run=False)
+    assert "error" in out
+    assert "overwrite" in out["error"].lower()
+    assert scheme.read_bytes() == before
 
 
 def test_commit_without_output_defaults_beside_the_input(tmp_path):
@@ -172,3 +214,52 @@ def test_duplicate_column_caption_from_the_column_layer_is_caught(tmp_path, monk
     out = edit_schedule_scheme(str(scheme), str(spec))
     assert "error" in out
     assert "Quantity" in out["error"]
+
+
+# --- save_scheme_tree(scheme.tree, dest) used to be called with no error
+# handling. This tool is registered without @_guarded (it never talks to
+# Archicad), so nothing else catches an OSError from the write, and it
+# escaped as a raw exception instead of the dict this tool always promises.
+# Each of these reproduces a distinct OSError save_scheme_tree's write can
+# raise: a missing destination directory, a destination that is itself a
+# directory, and a destination directory with no write permission. ---
+
+def test_write_failure_nonexistent_directory_is_an_error_envelope(tmp_path):
+    scheme, spec = setup_case(tmp_path)
+    dest = tmp_path / "does_not_exist" / "out.xml"
+    before = scheme.read_bytes()
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+    assert "error" in out
+    assert str(dest) in out["error"]
+    assert scheme.read_bytes() == before
+
+
+def test_write_failure_destination_is_a_directory_is_an_error_envelope(tmp_path):
+    scheme, spec = setup_case(tmp_path)
+    dest = tmp_path / "already_a_directory"
+    dest.mkdir()
+    before = scheme.read_bytes()
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+    assert "error" in out
+    assert str(dest) in out["error"]
+    assert scheme.read_bytes() == before
+
+
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="POSIX permission bits do not apply on Windows")
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0,
+                    reason="root ignores directory permission bits")
+def test_write_failure_read_only_directory_is_an_error_envelope(tmp_path):
+    scheme, spec = setup_case(tmp_path)
+    readonly_dir = tmp_path / "readonly"
+    readonly_dir.mkdir()
+    dest = readonly_dir / "out.xml"
+    before = scheme.read_bytes()
+    readonly_dir.chmod(0o555)
+    try:
+        out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+        assert "error" in out
+        assert str(dest) in out["error"]
+        assert scheme.read_bytes() == before
+    finally:
+        readonly_dir.chmod(0o755)

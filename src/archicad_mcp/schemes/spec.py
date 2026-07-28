@@ -291,10 +291,15 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
                 move_column(scheme, col_spec.caption, target_index)
                 changes.append(f"moved column {col_spec.caption!r} to {target_index}")
         else:
-            add_column(scheme, col_spec.caption, binding, index=target_index)
+            column = add_column(scheme, col_spec.caption, binding, index=target_index)
             changes.append(f"added column {col_spec.caption!r}")
+        # column is carried forward from whichever branch above ran, rather
+        # than re-derived by indexing a fresh caption dict here: retarget_column
+        # and move_column mutate that same Column object in place (they never
+        # replace it in scheme.columns), and add_column returns the one it just
+        # inserted. A second by-caption lookup added nothing but a KeyError
+        # this loop can never actually hit, so there is nothing left to catch.
         if col_spec.width is not None:
-            column = {c.caption: c for c in scheme.columns}[col_spec.caption]
             set_field(column.element, "Width_of_cell_portrait", str(col_spec.width))
             set_field(column.element, "Width_of_cell_landscape", str(col_spec.width))
     return changes

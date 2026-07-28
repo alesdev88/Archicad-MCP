@@ -152,10 +152,33 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
     if not dry_run:
         dest = Path(output).expanduser() if output else \
             source.with_suffix(".edited" + source.suffix)
-        if dest.resolve() == source.resolve():
+        # dest.resolve() == source.resolve() used to be the whole check, but
+        # that compares path text, not identity: an output that names the
+        # input through a different spelling (a case-only difference on a
+        # case-insensitive filesystem, a hard link) resolves to two different
+        # strings and slips past it, so the tool reports success while
+        # silently overwriting the input. samefile() compares device and
+        # inode instead, which catches both. It requires dest to exist,
+        # which it normally does not yet (the common case, a fresh write), so
+        # that specific failure falls back to the old text comparison.
+        try:
+            same_file = source.samefile(dest)
+        except FileNotFoundError:
+            same_file = dest.resolve() == source.resolve()
+        if same_file:
             return {"error": "Refusing to overwrite the input scheme. Pass a "
                              "different 'output' path so the export stays intact."}
-        save_scheme_tree(scheme.tree, dest)
+        try:
+            save_scheme_tree(scheme.tree, dest)
+        except OSError as exc:
+            # This tool is registered without @_guarded (it never talks to
+            # Archicad), so nothing else catches a write failure. A missing
+            # destination directory, a destination that is itself a
+            # directory, and a read-only destination directory (which also
+            # hits the no-output default path, when the input's own
+            # directory is not writable) all raise here. The contract, like
+            # read_schedule_scheme's, is to always return a dict.
+            return {"error": f"Could not write {dest}: {exc}"}
         written = str(dest)
 
     return {"spec_id": spec.spec_id, "dry_run": dry_run, "changes": changes,
