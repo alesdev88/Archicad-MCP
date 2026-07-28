@@ -1,3 +1,4 @@
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from archicad_mcp.schemes.model import (
     KIND_GDL_PARAM,
     KIND_PROPERTY,
     Binding,
+    field_value,
     parse_scheme,
     same_target,
 )
@@ -526,3 +528,109 @@ def test_builtin_number_value_raises_spec_error():
     not be silently rejected. Numbers are hashable but not valid forms."""
     with pytest.raises(SpecError):
         binding_from_bind({"builtin": 123})
+
+
+# --- Finding 1: a spec's `width` used to be written with set_field
+# unconditionally and never appended to `changes`, so dry_run could show
+# changes == [] for an edit that had, in fact, already rewritten the file.
+# Worse, the fixture (like some real exports) has no Width_of_cell_landscape
+# at all, and set_field's element-creation fallback appended one with no
+# indentation or trailing newline of its own: well-formed XML, but visibly
+# malformed next to every hand-formatted sibling. ---
+
+_WIDTH_SPEC_YAML = """
+- id: s
+  columns:
+    - caption: "Door ID"
+      bind: { property: "69A58F6F-1111-4000-8000-000000000001" }
+      width: 55
+    - caption: "Quantity"
+      bind: { builtin: Quantity }
+    - caption: "Fire Resistance"
+      bind: { gdl_param: "Fire Rating Param" }
+"""
+
+
+def test_width_change_is_applied_and_reported_in_changes(tmp_path):
+    specs, errors = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
+    assert errors == []
+    scheme = load_scheme()
+
+    changes = apply_spec(specs[0], scheme)
+
+    assert any("width" in c and "Door ID" in c for c in changes), changes
+    door_id = next(c for c in scheme.columns if c.caption == "Door ID")
+    assert field_value(door_id.element, "Width_of_cell_portrait") == "55"
+
+
+def test_identity_spec_with_the_same_width_is_a_true_no_op(tmp_path):
+    """Regression test for the silent-dry-run defect: a width spec that
+    already matches the column's current Width_of_cell_portrait must report
+    zero changes and must not alter a single byte of the file, exactly like
+    every other identity spec (see
+    test_apply_of_an_identical_spec_is_a_true_no_op). Before the fix,
+    apply_spec called set_field unconditionally for width, so this same spec
+    silently rewrote the file (the same bytes, but rewritten nonetheless)
+    while still reporting changes == [], which is exactly backwards for a
+    tool whose headline safety promise is that dry_run shows every change it
+    is about to make."""
+    spec_text = _WIDTH_SPEC_YAML.replace("width: 55", "width: 30")
+    specs, errors = load_specs(write_spec(tmp_path, spec_text))
+    assert errors == []
+    scheme = load_scheme()
+    original = FIXTURE.read_text(encoding="utf-8")
+
+    changes = apply_spec(specs[0], scheme)
+
+    assert changes == []
+    assert dumps_scheme_tree(scheme.tree) == original
+
+
+def test_width_change_reports_a_missing_landscape_field_instead_of_inventing_one(tmp_path):
+    """The fixture's Header_Items have no Width_of_cell_landscape at all.
+    Before the fix, set_field's ET.SubElement fallback created one with no
+    indentation and no trailing newline of its own. The fix leaves a missing
+    field untouched and says so in the change log instead of inventing it."""
+    specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
+    scheme = load_scheme()
+
+    changes = apply_spec(specs[0], scheme)
+
+    assert any("Width_of_cell_landscape" in c and "Door ID" in c for c in changes), changes
+    door_id = next(c for c in scheme.columns if c.caption == "Door ID")
+    assert door_id.element.find("Width_of_cell_landscape") is None
+
+
+def test_width_is_updated_on_a_column_that_already_has_a_landscape_field(tmp_path):
+    """Companion to the missing-field test above: when a column's XML does
+    carry Width_of_cell_landscape, a real width change must update it too,
+    not just Width_of_cell_portrait."""
+    specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
+    scheme = load_scheme()
+    door_id = next(c for c in scheme.columns if c.caption == "Door ID")
+    landscape = ET.SubElement(door_id.element, "Width_of_cell_landscape")
+    landscape.set("value", "30")
+
+    apply_spec(specs[0], scheme)
+
+    assert field_value(door_id.element, "Width_of_cell_landscape") == "55"
+
+
+def test_serialisation_is_well_formed_after_a_width_change(tmp_path):
+    """Regression test for the malformed-XML half of finding 1: applying a
+    real width change must never leave a freshly created field jammed
+    against its parent's closing tag with no indentation (the specific shape
+    set_field's element-creation fallback used to produce), and the output
+    must still obey the same formatting invariants as an unmodified file (no
+    " />", exactly one trailing newline), and must still be parseable XML."""
+    specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
+    scheme = load_scheme()
+
+    apply_spec(specs[0], scheme)
+    dumped = dumps_scheme_tree(scheme.tree)
+
+    assert ET.fromstring(dumped) is not None
+    assert " />" not in dumped
+    assert dumped.endswith("\n") and not dumped.endswith("\n\n")
+    assert "/></Header_Item>" not in dumped
+    assert 'Width_of_cell_portrait value="55"' in dumped

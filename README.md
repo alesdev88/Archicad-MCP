@@ -169,6 +169,7 @@ A scheme spec looks like this:
       bind: { builtin: Quantity }
     - caption: "Fire Resistance"
       bind: { gdl_param: "Fire Rating" }
+      width: 40
 ```
 
 A column binds three ways:
@@ -189,6 +190,14 @@ undocumented and are being mapped empirically, one confirmed example at a
 time. The raw-numbers form is what lets a scheme still be fully expressed
 even when a built-in has no name yet, and this is not a rare corner case: on
 a real 27-column door schedule, 2 columns need it.
+
+A column can also carry `width: <number>`, which sets its cell width to
+match. This is a no-op, reported as such, when the column already has that
+width. Only the portrait width is guaranteed: the landscape width field is
+updated too when a column already has one, but is never created on a column
+that lacks it, since that has not been confirmed as a field Archicad itself
+writes for every scheme, and the change log says so plainly rather than
+guessing.
 
 Criteria are read and preserved but not yet editable: the numeric codes behind
 them are undocumented and are being mapped in

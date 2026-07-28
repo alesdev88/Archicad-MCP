@@ -19,7 +19,9 @@ from archicad_mcp.schemes.model import (
     KIND_GDL_PARAM,
     KIND_PROPERTY,
     Binding,
+    Column,
     Scheme,
+    field_value,
     same_target,
     set_field,
 )
@@ -250,6 +252,53 @@ def load_specs(path: Path) -> tuple[list[SchemeSpec], list[str]]:
     return specs, errors
 
 
+# Archicad's own export carries a column's cell width once per page
+# orientation. Only Width_of_cell_portrait has ever been confirmed present:
+# the bundled sample fixture, itself byte-verified against a real Archicad
+# export, has no Width_of_cell_landscape on any of its four Header_Items.
+# Portrait is therefore treated as the authoritative current value; see
+# _apply_width for what that means for Width_of_cell_landscape.
+_WIDTH_FIELDS = ("Width_of_cell_portrait", "Width_of_cell_landscape")
+
+
+def _apply_width(column: Column, caption: str, width: str) -> list[str]:
+    """Write `width` to a column's cell-width field(s). Returns the change log
+    entries for doing so, empty when the column already has this width.
+
+    Compares only against Width_of_cell_portrait to decide whether anything
+    needs to change: if it already reads `width`, this returns immediately
+    without even looking at Width_of_cell_landscape, so a spec that repeats a
+    column's current width is a true no-op regardless of whether that
+    column's XML happens to carry a landscape field at all. This is what the
+    previous version of this function got wrong: it called set_field
+    unconditionally and reported nothing, so a dry run could show
+    changes == [] for an edit that had, in fact, already rewritten the file
+    (this tool's whole safety promise), and committing that same spec then
+    produced a changed file with nothing in the log to explain why.
+
+    A field that does not already exist on this column is never created:
+    set_field's only way to create a missing field is the ET.SubElement
+    fallback, which appends a child with no indentation or trailing newline
+    of its own, producing output that is well-formed XML but visually
+    malformed next to every hand-formatted sibling around it. Nothing in this
+    codebase has confirmed Width_of_cell_landscape is a field Archicad writes
+    for every scheme, so inventing one into a file that never had it risks
+    the byte-exact guarantee ("mutate only what we model, leave the rest
+    alone") far more than simply leaving it alone. Either way the gap is
+    reported in the change log, so it is visible rather than silently
+    absorbed.
+    """
+    if field_value(column.element, "Width_of_cell_portrait") == width:
+        return []
+    changes = [f"set width of column {caption!r} to {width!r}"]
+    for tag in _WIDTH_FIELDS:
+        if column.element.find(tag) is None:
+            changes.append(f"column {caption!r} has no {tag} field; left unchanged")
+            continue
+        set_field(column.element, tag, width)
+    return changes
+
+
 def apply_spec(spec: SchemeSpec, scheme: Scheme,
                resolver: Callable[[str], str] | None = None) -> list[str]:
     """Make the scheme's columns match the spec. Returns a human-readable change
@@ -311,6 +360,5 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
         # inserted. A second by-caption lookup added nothing but a KeyError
         # this loop can never actually hit, so there is nothing left to catch.
         if col_spec.width is not None:
-            set_field(column.element, "Width_of_cell_portrait", str(col_spec.width))
-            set_field(column.element, "Width_of_cell_landscape", str(col_spec.width))
+            changes.extend(_apply_width(column, col_spec.caption, str(col_spec.width)))
     return changes
