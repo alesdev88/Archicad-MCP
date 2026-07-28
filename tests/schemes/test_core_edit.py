@@ -294,13 +294,24 @@ def test_read_schedule_scheme_still_handles_the_same_non_utf8_file(tmp_path):
 # read_schedule_scheme's, is to always return a dict, so all three must be
 # caught here, not just SpecError. ---
 
-def test_apply_time_spec_error_is_surfaced_not_raised(tmp_path):
+def test_apply_time_spec_error_is_surfaced_not_raised(tmp_path, monkeypatch):
     """load_specs only validates a bind's shape at load time. The value
     itself is resolved later by binding_from_bind, from inside apply_spec,
-    and can still raise SpecError there, for instance a property given as a
-    name rather than a GUID with no resolver available (edit_schedule_scheme
-    never passes one). This must come back as an error envelope, exactly
-    like a load-time error, not escape as a raw SpecError."""
+    and can still raise SpecError there: here, a property named "OFFICE/Fire
+    Rating" that the stubbed project below simply does not have. This must
+    come back as an error envelope, exactly like a load-time error, not
+    escape as a raw SpecError.
+
+    get_connection is stubbed rather than left to reach a live Archicad:
+    "OFFICE/Fire Rating" is not a GUID, so edit_schedule_scheme's own
+    lazy-connect logic (_spec_needs_resolver) decides a resolver is needed
+    and calls get_connection regardless of whether this test cares about the
+    connection itself. Before this fix that call was unmocked, so running
+    this test with any Archicad listening on this machine's default port
+    made a real API.GetProductInfo call against it (and, with Tapir present,
+    GetProjectInfo/GetAddOnVersion too) rather than staying an isolated unit
+    test, exactly the live-suite leak this file's FakeCore-backed
+    conn_with_properties stub exists to avoid everywhere else."""
     scheme, _ = setup_case(tmp_path)
     spec = tmp_path / "named_property.yaml"
     spec.write_text("""
@@ -309,6 +320,12 @@ def test_apply_time_spec_error_is_surfaced_not_raised(tmp_path):
     - caption: "Fire"
       bind: { property: "OFFICE/Fire Rating" }
 """, encoding="utf-8")
+    # conn_with_properties()'s default only defines "OFFICE/Door ID", so
+    # resolving "OFFICE/Fire Rating" against it still raises SpecError, just
+    # from the resolver's "not found" branch rather than the "no resolver at
+    # all" branch this docstring used to describe.
+    monkeypatch.setattr(core_schemes, "get_connection",
+                        lambda port: conn_with_properties())
     before = scheme.read_bytes()
     out = edit_schedule_scheme(str(scheme), str(spec))
     assert "error" in out
