@@ -12,13 +12,17 @@ Usage:
 from __future__ import annotations
 
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from archicad_mcp.schemes.model import field_value, parse_scheme
+from archicad_mcp.schemes.model import parse_scheme
 from archicad_mcp.schemes.xml_io import load_scheme_tree
 
-# Every field of a Criterion worth watching. Anything that moves between two
-# exports is a candidate for the code table.
+# Fields already understood well enough that a change in them is expected
+# rather than a discovery. _criterion_values below reads every child a
+# Criterion actually has, known or not, so this list no longer gates what is
+# visible. It is kept only to order the output (known fields first, in this
+# order) and to decide what counts as "known" for the unrecognised marker.
 WATCHED = [
     "Param_Type", "Relation_Index", "ACPropertyGuid", "ACPropertyName",
     "ACPropertyGroup", "ACPropertyType", "AndNext", "Before_Brackets",
@@ -26,11 +30,58 @@ WATCHED = [
     "Variable_Type_ID", "Variable", "IFCType", "IFCAssignmentType",
 ]
 
+# The one nested path under UniValue this tool already knows how to read
+# (see docs/scheme-criteria-codes.md). Any other path under UniValue, or
+# under any other tag, is a genuine discovery and gets flagged as such.
+_KNOWN_NESTED = {"UniValue/Variant/Value"}
+KNOWN_FIELDS = frozenset(WATCHED) | _KNOWN_NESTED
+
+# Rank used to order the output: known fields first in WATCHED's order
+# (nested UniValue paths grouped where UniValue used to sit in the old
+# fixed dict), everything else after, sorted alphabetically among itself.
+_FIELD_ORDER = {tag: i for i, tag in enumerate(WATCHED + ["UniValue"])}
+
+
+def _field_sort_key(field: str) -> tuple:
+    top = field.split("/", 1)[0]
+    if top in _FIELD_ORDER:
+        return (0, _FIELD_ORDER[top], field)
+    return (1, 0, field)
+
+
+def _leaf_value(el: ET.Element) -> str:
+    """An element's own payload: its 'value' attribute if present, else its
+    stripped text. Same convention as archicad_mcp.schemes.model.field_value,
+    applied to the element itself rather than to one of its children."""
+    if "value" in el.attrib:
+        return el.attrib["value"]
+    return (el.text or "").strip()
+
+
+def _flatten(el: ET.Element, prefix: str) -> dict[str, str]:
+    """Flatten one Criterion child into {path: value} pairs, recursing into
+    nested containers such as UniValue so a change several levels down comes
+    back as a full path like "UniValue/Variant/Value" instead of collapsing
+    into an ambiguous top-level "UniValue"."""
+    children = [c for c in el if isinstance(c.tag, str)]
+    values: dict[str, str] = {}
+    if "value" in el.attrib or not children:
+        values[prefix] = _leaf_value(el)
+    for child in children:
+        values.update(_flatten(child, f"{prefix}/{child.tag}"))
+    return values
+
 
 def _criterion_values(criterion) -> dict[str, str]:
-    values = {tag: field_value(criterion.element, tag) for tag in WATCHED}
-    value_el = criterion.element.find("UniValue/Variant/Value")
-    values["UniValue"] = (value_el.text or "").strip() if value_el is not None else ""
+    """Every field actually present on this criterion, flattened to
+    {path: value}. Walks the real children of the element instead of a
+    fixed allowlist, so a field nobody has named yet still shows up the
+    moment it changes, which is the entire point of this tool."""
+    values: dict[str, str] = {}
+    for child in criterion.element:
+        if not isinstance(child.tag, str):
+            continue  # skip comments and processing instructions
+        values.update(_flatten(child, child.tag))
     return values
 
 
@@ -47,10 +98,15 @@ def diff_criteria(before_path: Path, after_path: Path) -> list[dict]:
     for i in range(min(len(before.criteria), len(after.criteria))):
         b = _criterion_values(before.criteria[i])
         a = _criterion_values(after.criteria[i])
-        for tag in b:
-            if b[tag] != a[tag]:
-                changes.append({"index": i, "field": tag,
-                                "before": b[tag], "after": a[tag]})
+        for field_name in sorted(b.keys() | a.keys(), key=_field_sort_key):
+            before_value = b.get(field_name, "")
+            after_value = a.get(field_name, "")
+            if before_value != after_value:
+                change = {"index": i, "field": field_name,
+                          "before": before_value, "after": after_value}
+                if field_name not in KNOWN_FIELDS:
+                    change["unrecognised"] = True
+                changes.append(change)
     return changes
 
 
@@ -64,7 +120,8 @@ def main() -> int:
         return 0
     for c in changes:
         where = "count" if c["index"] < 0 else f"criterion {c['index']}"
-        print(f"{where}: {c['field']}: {c['before']!r} -> {c['after']!r}")
+        flag = "  [UNRECOGNISED FIELD]" if c.get("unrecognised") else ""
+        print(f"{where}: {c['field']}: {c['before']!r} -> {c['after']!r}{flag}")
     return 0
 
 
