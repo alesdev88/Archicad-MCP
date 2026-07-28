@@ -12,9 +12,9 @@ from archicad_mcp.schemes.model import (
     Binding,
     Column,
     Scheme,
-    _is_element,
     binding_of,
     field_value,
+    is_element,
     set_field,
 )
 
@@ -45,7 +45,7 @@ def _next_item_id(scheme: Scheme) -> str:
     """
     highest = 0
     for node in scheme.header_items_el:
-        if not _is_element(node):
+        if not is_element(node):
             continue
         try:
             highest = max(highest, int(field_value(node, "ID_of_Item")))

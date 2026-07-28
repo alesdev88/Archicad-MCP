@@ -47,7 +47,7 @@ def _int_field(el: ET.Element, tag: str) -> int:
         return 0
 
 
-def _is_element(node) -> bool:
+def is_element(node) -> bool:
     """True if node is a real element, not a comment or PI."""
     return isinstance(node.tag, str)
 
@@ -151,7 +151,7 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
     items_el = root.find("Header_Items")
     # Filter to only real elements, skipping comments and PIs
     item_els = [e for e in (list(items_el) if items_el is not None else [])
-                 if _is_element(e)]
+                 if is_element(e)]
     by_id = {field_value(e, "ID_of_Item"): e for e in item_els}
 
     # A well-formed scheme has exactly one root (ID_of_Parent == "0"). If a
@@ -176,7 +176,7 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
     # A Header_Item that is neither the root nor reachable through the
     # sibling chain just walked is an orphan: real data sitting in the file
     # that is not a column. Snapshot it now, from item_els (already filtered
-    # through _is_element, so comments and PIs are never counted), before any
+    # through is_element, so comments and PIs are never counted), before any
     # mutation runs. relink (columns.py) must re-append exactly this
     # snapshot rather than rediscovering orphans later by set difference
     # against scheme.columns: after a mutation such as remove_column,

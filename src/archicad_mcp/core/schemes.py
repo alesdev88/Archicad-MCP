@@ -15,9 +15,9 @@ from archicad_mcp.schemes.model import (
     parse_scheme,
 )
 from archicad_mcp.schemes.spec import (
+    GUID,
     SchemeSpec,
     SpecError,
-    _GUID,
     apply_spec,
     load_specs,
 )
@@ -113,12 +113,12 @@ def _spec_needs_resolver(spec: SchemeSpec) -> bool:
     apply_spec ever runs, so a GUID-only spec (also the common case for a
     hand-authored office standard: builtins and GDL parameters never need
     this either) is known to be safe to apply completely offline. Uses the
-    same GUID pattern binding_from_bind itself checks (spec.py's _GUID), so
+    same GUID pattern binding_from_bind itself checks (spec.py's GUID), so
     the two rules cannot drift apart.
     """
     for col in spec.columns:
         value = col.bind.get("property") if isinstance(col.bind, dict) else None
-        if value is not None and not _GUID.match(str(value)):
+        if value is not None and not GUID.match(str(value)):
             return True
     return False
 

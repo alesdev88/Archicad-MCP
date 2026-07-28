@@ -43,8 +43,8 @@ BUILTIN_FIELDS: dict[str, tuple[int, int]] = {
     "Quantity": (1, -1003),
 }
 
-_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-                   r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                  r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 class SpecError(Exception):
@@ -122,7 +122,7 @@ def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) 
         raise SpecError(shape_error)
     kind, value = next(iter(bind.items()))
     if kind == "property":
-        if _GUID.match(str(value)):
+        if GUID.match(str(value)):
             return Binding(kind=KIND_PROPERTY, property_guid=str(value))
         if resolver is None:
             # Merely having Archicad open changes nothing here: this

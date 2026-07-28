@@ -6,8 +6,8 @@ from archicad_mcp.schemes.model import (
     KIND_GDL_PARAM,
     KIND_PROPERTY,
     Scheme,
-    _is_element,
     field_value,
+    is_element,
     parse_scheme,
 )
 from archicad_mcp.schemes.xml_io import load_scheme_tree
@@ -124,7 +124,7 @@ def test_reads_criteria():
 
 
 def test_is_element_rejects_comments_and_processing_instructions():
-    """_is_element is what keeps comments/PIs out of item_els, and therefore
+    """is_element is what keeps comments/PIs out of item_els, and therefore
     out of by_id and root_els. It cannot be exercised end to end through
     parse_scheme: a bare comment or PI has no children, so field_value on it
     is always "", which can never equal "0" (so it is never picked as a
@@ -132,15 +132,15 @@ def test_is_element_rejects_comments_and_processing_instructions():
     traversal id either (the chain walk's `current and ...` guard stops
     instead of looking it up). Asserting on the predicate directly is the
     only level at which this guarantee is actually checked."""
-    assert _is_element(ET.Comment("not a column")) is False
-    assert _is_element(ET.ProcessingInstruction("target", "data")) is False
-    assert _is_element(ET.Element("Header_Item")) is True
+    assert is_element(ET.Comment("not a column")) is False
+    assert is_element(ET.ProcessingInstruction("target", "data")) is False
+    assert is_element(ET.Element("Header_Item")) is True
 
 
 def test_comment_in_header_items_does_not_become_a_column():
     """Regression pin, not a filter-isolation test: a comment mixed into
     Header_Items must not crash the parser or change the column count. This
-    holds regardless of _is_element, since a comment's fields are always
+    holds regardless of is_element, since a comment's fields are always
     empty (see test_is_element_rejects_comments_and_processing_instructions
     for the test that actually isolates the filter)."""
     tree = load_scheme_tree(FIXTURE)
