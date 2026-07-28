@@ -20,6 +20,7 @@ from archicad_mcp.schemes.model import (
     KIND_PROPERTY,
     Binding,
     Scheme,
+    same_target,
     set_field,
 )
 
@@ -187,7 +188,7 @@ def apply_spec(spec: SchemeSpec, scheme: Scheme,
         current = {c.caption: c for c in scheme.columns}
         if col_spec.caption in current:
             column = current[col_spec.caption]
-            if column.binding != binding:
+            if not same_target(column.binding, binding):
                 retarget_column(scheme, col_spec.caption, binding)
                 changes.append(f"retargeted column {col_spec.caption!r}")
             if scheme.columns.index(column) != target_index:

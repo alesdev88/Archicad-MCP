@@ -62,6 +62,32 @@ class Binding:
     desc_name: str = ""
 
 
+def same_target(a: Binding, b: Binding) -> bool:
+    """True when two bindings name the same data, ignoring presentational
+    fields a YAML spec never expresses (property_name, desc_name).
+
+    A Binding read from a live scheme's XML (binding_of, below) carries
+    ACPropertyName and Parameter_Desc_Name: fields the file uses only to
+    display a label, never to identify what the column is bound to. A
+    Binding built from a YAML spec (binding_from_bind in spec.py) never sets
+    either, since a spec has no display label to invent. Comparing full
+    dataclass equality then calls two bindings different whenever a spec's
+    minimal Binding meets the fuller one read back from the file, even when
+    both name the exact same target. apply_spec must use this instead of !=
+    so that applying a spec which already describes the scheme is a true
+    no-op: no retarget, no rewritten bytes.
+    """
+    if a.kind != b.kind:
+        return False
+    if a.kind == KIND_PROPERTY:
+        return a.property_guid == b.property_guid
+    if a.kind == KIND_GDL_PARAM:
+        return a.property_name == b.property_name
+    if a.kind == KIND_BUILTIN:
+        return a.param_type == b.param_type and a.param_index == b.param_index
+    return False
+
+
 @dataclass
 class Column:
     item_id: str
