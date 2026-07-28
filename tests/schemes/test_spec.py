@@ -257,7 +257,7 @@ def test_malformed_yaml_is_reported_not_raised(tmp_path):
 def test_spec_missing_id_is_reported(tmp_path):
     specs, errors = load_specs(write_spec(tmp_path, "- template: t.xml\n  columns: []\n"))
     assert specs == []
-    assert errors and "id" in errors[0]
+    assert errors and "entry 0 is missing 'id'" in errors[0]
 
 
 def test_template_is_optional(tmp_path):
@@ -335,7 +335,7 @@ def test_columns_int_scalar_is_reported_not_raised(tmp_path):
     instead of being collected like every other malformed shape."""
     specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: 5\n"))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "'columns' that is not a list, got int" in errors[0]
 
 
 def test_columns_true_scalar_is_reported_not_raised(tmp_path):
@@ -343,7 +343,7 @@ def test_columns_true_scalar_is_reported_not_raised(tmp_path):
     same uncaught TypeError, since True is also truthy."""
     specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: true\n"))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "'columns' that is not a list, got bool" in errors[0]
 
 
 def test_columns_false_scalar_is_reported_too(tmp_path):
@@ -353,7 +353,7 @@ def test_columns_false_scalar_is_reported_too(tmp_path):
     side of that line."""
     specs, errors = load_specs(write_spec(tmp_path, "- id: s\n  columns: false\n"))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "'columns' that is not a list, got bool" in errors[0]
 
 
 def test_columns_absent_still_means_no_columns(tmp_path):
@@ -373,7 +373,7 @@ def test_criteria_non_list_scalar_is_reported_not_raised(tmp_path):
     spec_text = "- id: s\n  criteria: 5\n  columns: []\n"
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "'criteria' that is not a list, got int" in errors[0]
 
 
 # --- Finding 2: a column's bind shape (a mapping naming exactly one
@@ -389,7 +389,8 @@ def test_bind_empty_mapping_is_reported_by_load_specs(tmp_path):
 """
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "column 'X' has an invalid bind" in errors[0]
+    assert "Got: {}" in errors[0]
 
 
 def test_bind_two_keys_is_reported_by_load_specs(tmp_path):
@@ -401,7 +402,8 @@ def test_bind_two_keys_is_reported_by_load_specs(tmp_path):
 """
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "bind must name exactly one of property, gdl_param, builtin" in errors[0]
+    assert "'property'" in errors[0] and "'builtin'" in errors[0]
 
 
 def test_bind_unrecognised_kind_is_reported_by_load_specs(tmp_path):
@@ -413,7 +415,7 @@ def test_bind_unrecognised_kind_is_reported_by_load_specs(tmp_path):
 """
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert specs == []
-    assert errors and "s" in errors[0]
+    assert errors and "Unknown bind kind 'nonsense'" in errors[0]
 
 
 def test_binding_from_bind_still_rejects_empty_mapping_directly():
