@@ -102,6 +102,45 @@ def test_remove_column():
     assert [c.caption for c in reparse(scheme).columns] == ["Door ID", "Fire Resistance"]
 
 
+def test_remove_column_deletes_the_element_from_header_items():
+    """Checking scheme.columns and reparse(scheme).columns (test_remove_column
+    above) is not enough: both walk the sibling chain, so a Header_Item that
+    was reclassified as an orphan and silently re-appended is invisible to
+    either. This is exactly the regression a previous orphan-preserving fix
+    introduced: relink computed orphans as "everything in header_items_el
+    that is neither the root nor in scheme.columns", evaluated *after*
+    remove_column had already dropped Quantity from scheme.columns, so
+    Quantity matched that definition perfectly and was re-appended.
+    Verified empirically: before this fix, the fixture still holds 4
+    Header_Item elements, with "Quantity" still among their captions, after
+    remove_column(scheme, "Quantity").
+    """
+    scheme = load()
+    assert len(list(scheme.header_items_el)) == 4
+    assert scheme.orphans == []
+    remove_column(scheme, "Quantity")
+    # remove_column must not manufacture a new orphan out of what it removed.
+    assert scheme.orphans == []
+    remaining = list(scheme.header_items_el)
+    assert len(remaining) == 3
+    assert "Quantity" not in [field_value(e, "Caption") for e in remaining]
+
+
+def test_add_then_remove_a_column_leaves_element_count_unchanged():
+    """Guards against the file growing on every edit. Under the regression
+    described in test_remove_column_deletes_the_element_from_header_items,
+    every remove_column left a dead Header_Item behind instead of deleting
+    it, so this add-then-remove round trip would have left 5 elements
+    (4 original + 1 added, with the removal doing nothing) instead of
+    returning to the original 4.
+    """
+    scheme = load()
+    before = len(list(scheme.header_items_el))
+    add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
+    remove_column(scheme, "Notes")
+    assert len(list(scheme.header_items_el)) == before
+
+
 def test_remove_unknown_column_raises():
     with pytest.raises(ColumnNotFound):
         remove_column(load(), "Nope")

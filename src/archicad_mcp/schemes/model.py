@@ -93,6 +93,7 @@ class Scheme:
     columns: list[Column] = field(default_factory=list)
     criteria: list[Criterion] = field(default_factory=list)
     header_items_el: ET.Element | None = field(default=None, repr=False)
+    orphans: list[ET.Element] = field(default_factory=list, repr=False)
 
 
 def binding_of(item_el: ET.Element) -> Binding:
@@ -133,6 +134,7 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
     # not an accident.
     root_els = [e for e in item_els if field_value(e, "ID_of_Parent") == "0"]
     root_item = _column_of(root_els[0]) if root_els else None
+    root_el = root_els[0] if root_els else None
 
     # Order comes from the sibling chain, never document order. Guard against a
     # malformed file looping forever.
@@ -144,6 +146,20 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
         el = by_id[current]
         columns.append(_column_of(el))
         current = field_value(el, "ID_of_next")
+
+    # A Header_Item that is neither the root nor reachable through the
+    # sibling chain just walked is an orphan: real data sitting in the file
+    # that is not a column. Snapshot it now, from item_els (already filtered
+    # through _is_element, so comments and PIs are never counted), before any
+    # mutation runs. relink (columns.py) must re-append exactly this
+    # snapshot rather than rediscovering orphans later by set difference
+    # against scheme.columns: after a mutation such as remove_column,
+    # scheme.columns no longer reflects what this parse found reachable, and
+    # a column that was just removed would be indistinguishable from a
+    # genuine orphan, so it would be silently re-appended instead of
+    # actually disappearing from the file.
+    column_els = {col.element for col in columns}
+    orphans = [e for e in item_els if e is not root_el and e not in column_els]
 
     criteria = []
     for c in root.findall("Criteria_Settings/Complex_Criteria/Criterion"):
@@ -157,4 +173,5 @@ def parse_scheme(tree: ET.ElementTree) -> Scheme:
     return Scheme(tree=tree, root=root, scheme_id=root.get("ID", ""),
                   name=root.get("Name", ""), scheme_type=root.get("Scheme_Type", ""),
                   version=root.get("Version", ""), root_item=root_item,
-                  columns=columns, criteria=criteria, header_items_el=items_el)
+                  columns=columns, criteria=criteria, header_items_el=items_el,
+                  orphans=orphans)

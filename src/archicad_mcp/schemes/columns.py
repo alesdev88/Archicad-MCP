@@ -64,22 +64,25 @@ def relink(scheme: Scheme) -> None:
     A Header_Item that exists in the file but is not reachable from the root's
     sibling chain (an orphan, the same case _next_item_id scans for) is not a
     column, but it is still real data: relink is not entitled to delete it.
-    Orphans are re-appended after the chained columns, left exactly as found
-    (not renumbered, not rewired, not counted in Numbers_of_Columns or given
-    an Index_of_Columns), so nothing in the file is lost.
+    Orphan membership is captured once, by parse_scheme, before any mutation
+    runs (see Scheme.orphans). It must never be rediscovered here by set
+    difference against the current scheme.columns: at this point a column the
+    caller just removed is indistinguishable from a genuine orphan, so it
+    would be silently re-appended and remove_column would stop deleting
+    anything. Orphans are re-appended after the chained columns, left exactly
+    as found (not renumbered, not rewired, not counted in Numbers_of_Columns
+    or given an Index_of_Columns), so nothing that was already in the file
+    before the mutation is lost.
     """
     items_el = scheme.header_items_el
     root_el = scheme.root_item.element
-    column_els = {col.element for col in scheme.columns}
-    orphans = [el for el in items_el
-              if _is_element(el) and el is not root_el and el not in column_els]
 
     for el in list(items_el):
         items_el.remove(el)
     items_el.append(root_el)
     for col in scheme.columns:
         items_el.append(col.element)
-    for orphan in orphans:
+    for orphan in scheme.orphans:
         items_el.append(orphan)
 
     set_field(root_el, "Numbers_of_Columns", str(len(scheme.columns)))

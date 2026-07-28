@@ -7,6 +7,7 @@ from archicad_mcp.schemes.model import (
     KIND_PROPERTY,
     Scheme,
     _is_element,
+    field_value,
     parse_scheme,
 )
 from archicad_mcp.schemes.xml_io import load_scheme_tree
@@ -214,3 +215,30 @@ def test_item_orphaned_from_the_chain_is_missing_from_columns():
     )
     s = _parse_xml(xml)
     assert [c.caption for c in s.columns] == ["Alpha"]
+
+
+def test_parse_scheme_orphans_is_empty_for_a_well_formed_scheme():
+    """The sample fixture's four Header_Items are all either the root or
+    reachable through the sibling chain, so parse_scheme has nothing to
+    record as orphaned."""
+    s = load()
+    assert s.orphans == []
+
+
+def test_parse_scheme_records_the_orphan_at_parse_time():
+    """Same document as
+    test_item_orphaned_from_the_chain_is_missing_from_columns: Orphan (1002)
+    has a valid ID_of_Parent but nothing's firstChild or next points to it.
+    parse_scheme must snapshot it into scheme.orphans right here, at parse
+    time, before any mutation runs: relink (columns.py) later re-appends
+    exactly this snapshot, and must not try to rediscover orphans by set
+    difference against scheme.columns after a mutation has already changed
+    that list. See the relink docstring in columns.py for why that would
+    silently undo remove_column."""
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001"),
+        _item("1001", "9000", "Alpha", next_="0"),
+        _item("1002", "9000", "Orphan", next_="0"),
+    )
+    s = _parse_xml(xml)
+    assert [field_value(e, "Caption") for e in s.orphans] == ["Orphan"]
