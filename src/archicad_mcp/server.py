@@ -194,6 +194,7 @@ def build_server(
 def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import element_data as _element_data
     from archicad_mcp.core import query as _query
+    from archicad_mcp.core import schemes as core_schemes
 
     def _conn(port: int | None):
         return get_connection(port if port is not None else default_port)
@@ -292,6 +293,15 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
         return _publish.publish(_conn(port), publisher_set_name)
+
+    @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
+                          "criteria and its ordered columns, with what each column "
+                          "binds to. Schedules have no API, so export the scheme "
+                          "first via Document > Schedules > Scheme Settings > Export "
+                          "and pass the file path. Reads the file only, never "
+                          "Archicad.")
+    def read_schedule_scheme(path: str) -> dict:
+        return core_schemes.read_schedule_scheme(path)
 
     from archicad_mcp.gateway import execute as _gateway
     from archicad_mcp.gateway.registry import build_registry

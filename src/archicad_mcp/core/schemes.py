@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from archicad_mcp.schemes.model import (
+    KIND_BUILTIN,
+    KIND_GDL_PARAM,
+    KIND_PROPERTY,
+    NULL_GUID,
+    Scheme,
+    parse_scheme,
+)
+from archicad_mcp.schemes.xml_io import load_scheme_tree
+
+
+def _load(path: str) -> Scheme | dict:
+    """Returns a Scheme, or an {"error": ...} envelope the tool can return as-is."""
+    p = Path(path).expanduser()
+    if not p.is_file():
+        return {"error": f"Scheme file not found: {p}. Export one from Archicad via "
+                         "Document > Schedules > Scheme Settings > Export."}
+    try:
+        tree = load_scheme_tree(p)
+    except ET.ParseError as exc:
+        return {"error": f"{p} is not valid XML: {exc}"}
+    if tree.getroot().tag != "Scheme_Settings":
+        return {"error": f"{p} is not a schedule scheme. Expected a Scheme_Settings "
+                         f"root, got {tree.getroot().tag}."}
+    scheme = parse_scheme(tree)
+    # Every later operation reads through root_item (relink rewrites the chain
+    # from it), so a scheme without one is rejected here rather than crashing
+    # somewhere less obvious.
+    if scheme.root_item is None:
+        return {"error": f"{p} has no root Header_Item, so its column tree has no "
+                         "anchor. The export is incomplete or corrupt."}
+    return scheme
+
+
+def _binding_detail(binding) -> str:
+    if binding.kind == KIND_PROPERTY:
+        return binding.property_guid
+    if binding.kind == KIND_GDL_PARAM:
+        return binding.property_name
+    return f"type {binding.param_type}, index {binding.param_index}"
+
+
+def _criterion_target(criterion) -> str:
+    if criterion.element_class_id and criterion.element_class_id != NULL_GUID:
+        return criterion.element_class_id
+    return criterion.property_guid
+
+
+def read_schedule_scheme(path: str) -> dict:
+    scheme = _load(path)
+    if isinstance(scheme, dict):
+        return scheme
+    return {
+        "name": scheme.name,
+        "scheme_id": scheme.scheme_id,
+        "scheme_type": scheme.scheme_type,
+        "version": scheme.version,
+        "column_count": len(scheme.columns),
+        "columns": [{"index": i, "caption": c.caption, "binds_to": c.binding.kind,
+                     "detail": _binding_detail(c.binding)}
+                    for i, c in enumerate(scheme.columns)],
+        "criteria": [{"param_type": c.param_type, "relation_index": c.relation_index,
+                      "target": _criterion_target(c), "and_next": c.and_next}
+                     for c in scheme.criteria],
+    }
