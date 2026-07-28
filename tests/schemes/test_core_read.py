@@ -98,3 +98,13 @@ def test_extremely_long_path_returns_an_error_envelope_instead_of_raising():
     long_path = "/" + "a" * 5000
     out = read_schedule_scheme(long_path)
     assert "error" in out
+
+
+def test_nonexistent_home_directory_returns_an_error_envelope_instead_of_raising():
+    # Path.expanduser() raises RuntimeError("Could not determine home directory.")
+    # when given a path like ~nosuchuser/scheme.xml that references a nonexistent
+    # user. This must be caught and returned as an error envelope, not raised
+    # uncaught, or it breaks the "always returns a dict" contract.
+    out = read_schedule_scheme("~nosuchuser12345/scheme.xml")
+    assert "error" in out
+    assert "could not be resolved" in out["error"].lower()

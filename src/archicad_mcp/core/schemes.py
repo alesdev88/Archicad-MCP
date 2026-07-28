@@ -15,7 +15,10 @@ from archicad_mcp.schemes.xml_io import load_scheme_tree
 
 def _load(path: str) -> Scheme | dict:
     """Returns a Scheme, or an {"error": ...} envelope the tool can return as-is."""
-    p = Path(path).expanduser()
+    try:
+        p = Path(path).expanduser()
+    except RuntimeError as exc:
+        return {"error": f"Path {path} could not be resolved: {exc}"}
     try:
         # is_dir()/is_file() stat the path themselves. A path longer than the
         # OS name-length limit makes them raise OSError (ENAMETOOLONG) on
