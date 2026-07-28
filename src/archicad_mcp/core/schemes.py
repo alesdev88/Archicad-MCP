@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import difflib
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Callable
 
 from archicad_mcp.connection import get_connection
 from archicad_mcp.schemes.columns import ColumnNotFound, DuplicateColumnCaption
@@ -12,8 +14,14 @@ from archicad_mcp.schemes.model import (
     Scheme,
     parse_scheme,
 )
-from archicad_mcp.schemes.spec import SpecError, apply_spec, load_specs
-from archicad_mcp.schemes.validate import validate_scheme
+from archicad_mcp.schemes.spec import (
+    SchemeSpec,
+    SpecError,
+    _GUID,
+    apply_spec,
+    load_specs,
+)
+from archicad_mcp.schemes.validate import property_index, validate_scheme
 from archicad_mcp.schemes.xml_io import (
     load_scheme_tree,
     round_trips_exactly,
@@ -98,8 +106,62 @@ def read_schedule_scheme(path: str) -> dict:
     }
 
 
+def _spec_needs_resolver(spec: SchemeSpec) -> bool:
+    """True when at least one column binds a property by a "Group/Name"
+    string rather than a GUID, meaning apply_spec cannot resolve it without
+    a live connection to Archicad. Checked against the loaded spec before
+    apply_spec ever runs, so a GUID-only spec (also the common case for a
+    hand-authored office standard: builtins and GDL parameters never need
+    this either) is known to be safe to apply completely offline. Uses the
+    same GUID pattern binding_from_bind itself checks (spec.py's _GUID), so
+    the two rules cannot drift apart.
+    """
+    for col in spec.columns:
+        value = col.bind.get("property") if isinstance(col.bind, dict) else None
+        if value is not None and not _GUID.match(str(value)):
+            return True
+    return False
+
+
+def _property_resolver(conn) -> Callable[[str], str]:
+    """Build the resolver apply_spec needs to turn a "Group/Name" property
+    bind into a GUID, from the open project's own properties.
+
+    Reuses property_index (schemes/validate.py) rather than re-deriving the
+    Group/Name to GUID mapping here, so there is exactly one place that
+    knows how to read it out of Tapir's GetAllProperties response.
+    """
+    index = property_index(conn)
+
+    def resolve(name: str) -> str:
+        guid = index.get(name)
+        if guid is not None:
+            return guid
+        near = difflib.get_close_matches(name, index.keys(), n=3)
+        suggestion = f" Close matches: {', '.join(near)}." if near else ""
+        raise SpecError(
+            f"Property {name!r} was not found in the open project.{suggestion}")
+
+    return resolve
+
+
 def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
-                         output: str | None = None, dry_run: bool = True) -> dict:
+                         output: str | None = None, dry_run: bool = True,
+                         port: int | None = None) -> dict:
+    """Apply a YAML scheme spec to an exported schedule scheme.
+
+    Stays fully offline whenever every column binds by GUID, by GDL
+    parameter name, or by a named/raw built-in: none of those need a live
+    model. A column that binds a property by a "Group/Name" string does,
+    since only the open project knows which GUID that name currently maps
+    to, so a connection is opened for that case alone, right before
+    applying the spec, and never otherwise (see _spec_needs_resolver).
+    Like validate_schedule_scheme, this function has no try/except of its
+    own for a failed connection: get_connection and property_index raise
+    ArchicadUnavailableError or an APIErrorBase on failure, and @_guarded
+    at the tool layer in server.py is what turns that into an error
+    envelope.
+    """
     scheme = _load(path)
     if isinstance(scheme, dict):
         return scheme
@@ -135,9 +197,18 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
             f"Spec {spec.spec_id!r} was written against {spec.template!r} but is "
             f"being applied to {source.name!r}. Check this is deliberate.")
 
+    # Connect only when the loaded spec actually needs it. Most specs bind
+    # everything by GUID (or GDL parameter, or built-in) and must stay
+    # completely offline, which is the common case and this tool's
+    # deliberately offline nature.
+    resolver = None
+    if _spec_needs_resolver(spec):
+        conn = get_connection(port)
+        resolver = _property_resolver(conn)
+
     columns_before = [c.caption for c in scheme.columns]
     try:
-        changes = apply_spec(spec, scheme)
+        changes = apply_spec(spec, scheme, resolver=resolver)
     except (SpecError, ColumnNotFound, DuplicateColumnCaption) as exc:
         # apply_spec's own pre-checks (resolving every binding before any
         # mutation, scanning spec.columns for duplicate captions up front)
@@ -196,13 +267,14 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
 def validate_schedule_scheme(path: str, port: int | None = None) -> dict:
     """Check an exported scheme's property bindings against the open project.
 
-    Unlike read_schedule_scheme and edit_schedule_scheme, this talks to
-    Archicad (Tapir GetAllProperties), and has no try/except of its own for
-    that: get_connection and validate_scheme raise ArchicadUnavailableError
-    or an APIErrorBase on failure, same as any other tool that reaches
-    Archicad. This function's "always returns a dict" contract is completed
-    by @_guarded at the tool layer in server.py, not here, exactly because
-    this is the one schedule tool that carries it.
+    Unlike read_schedule_scheme, this always talks to Archicad (Tapir
+    GetAllProperties), and has no try/except of its own for that:
+    get_connection and validate_scheme raise ArchicadUnavailableError or an
+    APIErrorBase on failure, same as any other tool that reaches Archicad.
+    edit_schedule_scheme now also can, but only when a spec resolves a
+    property by a "Group/Name" string rather than a GUID; this function
+    always does. Both functions rely on @_guarded at the tool layer in
+    server.py to turn that into an error envelope, not on a try/except here.
     """
     scheme = _load(path)
     if isinstance(scheme, dict):

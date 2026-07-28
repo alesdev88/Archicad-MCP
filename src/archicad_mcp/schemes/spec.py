@@ -123,10 +123,21 @@ def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) 
         if _GUID.match(str(value)):
             return Binding(kind=KIND_PROPERTY, property_guid=str(value))
         if resolver is None:
+            # Merely having Archicad open changes nothing here: this
+            # function only ever consults the resolver it was given, never
+            # Archicad directly. Pointing at the resolver argument, rather
+            # than at Archicad's running state, is what used to be
+            # misleading: the edit_schedule_scheme tool now builds and
+            # passes a resolver automatically when a spec needs one, but a
+            # direct caller of apply_spec/binding_from_bind still has to
+            # supply one itself.
             raise SpecError(
-                f"Property {value!r} is a name, not a GUID, and no live model is "
-                "available to resolve it. Pass a GUID, or run with Archicad open "
-                "so the name can be looked up.")
+                f"Property {value!r} is a name, not a GUID, and this call was "
+                "given no resolver to look it up. Pass a GUID, or call this "
+                "with a resolver built from a live connection (see "
+                "archicad_mcp.schemes.validate.property_index). The "
+                "edit_schedule_scheme tool builds one automatically, "
+                "connecting to Archicad, whenever a spec needs it.")
         return Binding(kind=KIND_PROPERTY, property_guid=resolver(str(value)),
                        property_name=str(value))
     if kind == "gdl_param":

@@ -173,8 +173,12 @@ A scheme spec looks like this:
 
 A column binds three ways:
 
-- `bind: { property: "<GUID>" }`, or a `"Group/Name"` string when Archicad is
-  open so the name can be resolved
+- `bind: { property: "<GUID>" }`, which needs no connection to Archicad, or a
+  `"Group/Name"` string, which `edit_schedule_scheme` resolves by connecting
+  to Archicad and looking the name up. A spec that only uses GUIDs (plus
+  `gdl_param` and `builtin` bindings, below) runs fully offline; a spec with
+  even one named property needs Archicad open with the project that defines
+  it.
 - `bind: { gdl_param: "<parameter name>" }`, a library part parameter by name
 - `bind: { builtin: Quantity }` for the few named built-ins, or
   `bind: { builtin: { param_type: 0, param_index: -1561 } }` for any other

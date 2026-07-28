@@ -310,10 +310,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "dry_run=false. Never overwrites the input; writes to "
                           "'output' or to <name>.edited.xml beside it. Import the "
                           "result via Document > Schedules > Scheme Settings > "
-                          "Import. Criteria are preserved, not yet editable.")
+                          "Import. Criteria are preserved, not yet editable. A spec "
+                          "that binds every property by GUID needs no Archicad "
+                          "connection and runs fully offline; a spec that binds a "
+                          "property by a 'Group/Name' string needs Archicad open "
+                          "so the name can be resolved.")
+    @_guarded
     def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
-                             output: str | None = None, dry_run: bool = True) -> dict:
-        return core_schemes.edit_schedule_scheme(path, spec_path, spec_id, output, dry_run)
+                             output: str | None = None, dry_run: bool = True,
+                             port: int | None = None) -> dict:
+        return core_schemes.edit_schedule_scheme(
+            path, spec_path, spec_id, output, dry_run,
+            port if port is not None else default_port)
 
     @mcp.tool(description="Check an exported schedule scheme against the open "
                           "project: do its property bindings still exist, and does "

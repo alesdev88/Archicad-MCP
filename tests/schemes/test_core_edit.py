@@ -1,13 +1,18 @@
+import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
 import pytest
+from fastmcp import Client
 
 import archicad_mcp.core.schemes as core_schemes
+from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.schemes import edit_schedule_scheme, read_schedule_scheme
 from archicad_mcp.schemes.columns import ColumnNotFound, DuplicateColumnCaption
+from archicad_mcp.server import build_server
+from tests.conftest import FakeCore
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
 
@@ -316,3 +321,139 @@ def test_write_failure_read_only_directory_is_an_error_envelope(tmp_path):
         assert scheme.read_bytes() == before
     finally:
         readonly_dir.chmod(0o755)
+
+
+# --- A "Group/Name" property bind has no GUID: apply_spec needs a resolver
+# to turn the name into one, and edit_schedule_scheme used to never build
+# one, so the name form never worked, no matter whether Archicad was open.
+# The fix: edit_schedule_scheme now inspects the loaded spec, and connects
+# only when at least one column binds a property by name rather than by
+# GUID. A GUID-only spec (builtins and GDL params included) must stay
+# completely offline, which is proven below by making a connection attempt
+# fail the test outright. ---
+
+PROPERTIES_RESPONSE = {
+    "properties": [
+        {"propertyId": {"guid": "69A58F6F-1111-4000-8000-000000000001"},
+         "propertyGroupName": "OFFICE", "propertyName": "Door ID"},
+    ]
+}
+
+
+def conn_with_properties(properties=PROPERTIES_RESPONSE):
+    # conn.tapir() gates on tapir_available(), which probes via the OFFICIAL
+    # table, so the fake has to answer that too or every call raises.
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}},
+                    tapir={"GetAllProperties": properties})
+    return ArchicadConnection(19723, core=core)
+
+
+def test_guid_only_spec_never_connects_to_archicad(tmp_path, monkeypatch):
+    """SPEC_YAML binds Quantity as a builtin and Door ID by GUID: no column
+    names a property, so no resolver is needed and get_connection must
+    never be called. Patched to fail the test if it is reached at all,
+    rather than merely asserting no error came back."""
+    scheme, spec = setup_case(tmp_path)
+
+    def must_not_be_called(port):
+        raise AssertionError(
+            "get_connection must not be called for a GUID-only spec")
+
+    monkeypatch.setattr(core_schemes, "get_connection", must_not_be_called)
+    out = edit_schedule_scheme(str(scheme), str(spec))
+    assert "error" not in out
+    assert out["columns_after"] == ["Quantity", "Door ID"]
+
+
+def test_named_property_resolves_through_a_stubbed_connection(tmp_path, monkeypatch):
+    """bind: { property: "OFFICE/Door ID" } names a property instead of
+    giving its GUID. edit_schedule_scheme must detect this, connect, and
+    build a resolver from property_index so apply_spec can look the name
+    up. Proven end to end: write the result and read the GUID back out of
+    it, rather than inspecting internals."""
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Quantity"
+      bind: { builtin: Quantity }
+    - caption: "Door ID"
+      bind: { property: "OFFICE/Door ID" }
+""", encoding="utf-8")
+    calls = []
+
+    def fake_get_connection(port):
+        calls.append(port)
+        return conn_with_properties()
+
+    monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
+
+    dest = tmp_path / "resolved.xml"
+    out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
+    assert "error" not in out
+    # Proves the resolver path actually ran, rather than the GUID having
+    # come from anywhere else by coincidence.
+    assert calls, "get_connection must be called to resolve a named property"
+    door = next(c for c in read_schedule_scheme(str(dest))["columns"]
+               if c["caption"] == "Door ID")
+    assert door["detail"] == "69A58F6F-1111-4000-8000-000000000001"
+
+
+def test_named_property_not_found_is_an_error_naming_it(tmp_path, monkeypatch):
+    """The project is open and answering, but it simply has no property by
+    this name: the user needs to learn that the property does not exist,
+    not get a silent failure or an unrelated stack trace. Checks for the
+    resolver's own "not found" wording specifically, not just the property
+    name being present anywhere in the message: the old, pre-fix error
+    ("...no live model is available to resolve it") also happens to
+    mention the property name, so asserting on the name alone would pass
+    even without the fix."""
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Ghost"
+      bind: { property: "OFFICE/Nonexistent Property" }
+""", encoding="utf-8")
+    monkeypatch.setattr(core_schemes, "get_connection",
+                        lambda port: conn_with_properties())
+
+    out = edit_schedule_scheme(str(scheme), str(spec))
+    assert "error" in out
+    assert "OFFICE/Nonexistent Property" in out["error"]
+    assert "was not found in the open project" in out["error"]
+
+
+# --- edit_schedule_scheme's core function has no try/except of its own for
+# a failed connection, same contract as validate_schedule_scheme: only
+# @_guarded at the tool layer (server.py) turns ArchicadUnavailableError
+# into an error envelope. This must be proven through the registered tool,
+# not the bare core function, which is why this one test goes through
+# fastmcp's Client rather than calling edit_schedule_scheme directly. ---
+
+async def test_tool_converts_missing_archicad_to_an_error_envelope_when_a_name_needs_resolving(
+        tmp_path, monkeypatch):
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Door ID"
+      bind: { property: "OFFICE/Door ID" }
+""", encoding="utf-8")
+
+    def boom(port):
+        raise ArchicadUnavailableError(
+            "No running Archicad found. Start Archicad 29 and open a project.")
+
+    monkeypatch.setattr(core_schemes, "get_connection", boom)
+
+    mcp = build_server(mode="full")
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "edit_schedule_scheme", {"path": str(scheme), "spec_path": str(spec)})
+        payload = json.loads(result.content[0].text)
+    assert "error" in payload
+    assert "No running Archicad" in payload["error"]
