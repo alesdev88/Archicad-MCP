@@ -23,7 +23,14 @@ def property_index(conn: ArchicadConnection) -> dict[str, str]:
     """
     response = conn.tapir("GetAllProperties", None)
     index: dict[str, str] = {}
-    for item in response.get("properties", []):
+    # Guard against non-list properties value (e.g. null or a dict) to avoid
+    # unguarded TypeErrors/AttributeErrors that skip the tool layer's error
+    # envelope. Treating a malformed response as empty properties is simpler
+    # than raising a custom error: validation will report unresolved bindings.
+    properties = response.get("properties", [])
+    if not isinstance(properties, list):
+        properties = []
+    for item in properties:
         guid = (item.get("propertyId") or {}).get("guid")
         if not guid:
             continue

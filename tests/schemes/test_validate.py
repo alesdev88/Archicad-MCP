@@ -88,6 +88,21 @@ def test_builtin_columns_are_not_flagged():
 # an {"error": ...} envelope, via @_guarded in server.py, same as every other
 # tool that talks to Archicad. ---
 
+def test_property_index_treats_null_properties_as_empty():
+    """When Tapir returns null for properties, treat as no properties."""
+    null_response = {"properties": None}
+    index = property_index(conn_with(null_response))
+    assert index == {}
+
+
+def test_property_index_treats_dict_properties_as_empty():
+    """When Tapir incorrectly returns a dict instead of list for properties,
+    treat as no properties rather than crashing."""
+    dict_response = {"properties": {"some_key": "some_value"}}
+    index = property_index(conn_with(dict_response))
+    assert index == {}
+
+
 def test_property_index_raises_a_clear_actionable_error_when_tapir_is_absent():
     with pytest.raises(ArchicadUnavailableError) as exc_info:
         property_index(conn_without_tapir())
