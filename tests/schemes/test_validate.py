@@ -1,61 +1,25 @@
-import json
-from pathlib import Path
-
 import pytest
-from fastmcp import Client
 
 import archicad_mcp.core.schemes as core_schemes
-from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.schemes.model import parse_scheme
+from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.schemes.validate import property_index, validate_scheme
-from archicad_mcp.schemes.xml_io import load_scheme_tree
 from archicad_mcp.server import build_server
-from tests.conftest import FakeCore
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
-
-ALL_PROPERTIES = {
-    "properties": [
-        {"propertyId": {"guid": "69A58F6F-1111-4000-8000-000000000001"},
-         "propertyGroupName": "OFFICE", "propertyName": "Door ID"},
-        {"propertyId": {"guid": "432FA53A-B71E-404B-A9D5-F1964237A3EB"},
-         "propertyGroupName": "OFFICE", "propertyName": "Fire Rating"},
-    ]
-}
-
-
-def conn_with(properties=ALL_PROPERTIES):
-    # conn.tapir() gates on tapir_available(), which probes via the OFFICIAL
-    # table, so the fake has to answer that too or every call raises.
-    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}},
-                    tapir={"GetAllProperties": properties})
-    return ArchicadConnection(19723, core=core)
-
-
-def conn_without_tapir():
-    # The probe itself answers False: no Tapir table needed, since
-    # conn.tapir() raises before ever consulting it.
-    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": False}})
-    return ArchicadConnection(19723, core=core)
-
-
-def load():
-    return parse_scheme(load_scheme_tree(FIXTURE))
+from tests.schemes.conftest import FIXTURE, call, conn_with_properties, conn_without_tapir, load
 
 
 def test_property_index_maps_group_slash_name_to_guid():
-    index = property_index(conn_with())
+    index = property_index(conn_with_properties())
     assert index["OFFICE/Door ID"] == "69A58F6F-1111-4000-8000-000000000001"
 
 
 def test_resolvable_property_column_produces_no_finding():
-    findings = validate_scheme(conn_with(), load())
+    findings = validate_scheme(conn_with_properties(), load())
     assert not [f for f in findings if f["column"] == "Door ID"]
 
 
 def test_unresolvable_property_guid_is_reported():
     empty = {"properties": []}
-    findings = validate_scheme(conn_with(empty), load())
+    findings = validate_scheme(conn_with_properties(empty), load())
     door = [f for f in findings if f["column"] == "Door ID"]
     assert door and door[0]["severity"] == "error"
     assert "does not exist" in door[0]["message"]
@@ -63,13 +27,13 @@ def test_unresolvable_property_guid_is_reported():
 
 def test_caption_disagreeing_with_binding_is_reported():
     # The fixture's "Fire Resistance" column binds to "Fire Rating Param".
-    findings = validate_scheme(conn_with(), load())
+    findings = validate_scheme(conn_with_properties(), load())
     mismatch = [f for f in findings if f["column"] == "Fire Resistance"]
     assert mismatch and mismatch[0]["severity"] == "warning"
 
 
 def test_builtin_columns_are_not_flagged():
-    findings = validate_scheme(conn_with(), load())
+    findings = validate_scheme(conn_with_properties(), load())
     assert not [f for f in findings if f["column"] == "Quantity"]
 
 
@@ -91,7 +55,7 @@ def test_builtin_columns_are_not_flagged():
 def test_property_index_treats_null_properties_as_empty():
     """When Tapir returns null for properties, treat as no properties."""
     null_response = {"properties": None}
-    index = property_index(conn_with(null_response))
+    index = property_index(conn_with_properties(null_response))
     assert index == {}
 
 
@@ -99,7 +63,7 @@ def test_property_index_treats_dict_properties_as_empty():
     """When Tapir incorrectly returns a dict instead of list for properties,
     treat as no properties rather than crashing."""
     dict_response = {"properties": {"some_key": "some_value"}}
-    index = property_index(conn_with(dict_response))
+    index = property_index(conn_with_properties(dict_response))
     assert index == {}
 
 
@@ -120,7 +84,7 @@ def test_validate_scheme_raises_a_clear_actionable_error_when_tapir_is_absent():
 # --- core_schemes.validate_schedule_scheme wiring ---
 
 def test_validate_schedule_scheme_happy_path(monkeypatch):
-    monkeypatch.setattr(core_schemes, "get_connection", lambda port: conn_with())
+    monkeypatch.setattr(core_schemes, "get_connection", lambda port: conn_with_properties())
     out = core_schemes.validate_schedule_scheme(str(FIXTURE))
     assert out["name"] == "Sample Door Scheme"
     assert out["column_count"] == 3
@@ -131,7 +95,7 @@ def test_validate_schedule_scheme_happy_path(monkeypatch):
 
 def test_validate_schedule_scheme_ok_is_false_when_a_binding_is_unresolvable(monkeypatch):
     monkeypatch.setattr(core_schemes, "get_connection",
-                        lambda port: conn_with({"properties": []}))
+                        lambda port: conn_with_properties({"properties": []}))
     out = core_schemes.validate_schedule_scheme(str(FIXTURE))
     assert out["ok"] is False
     assert any(f["severity"] == "error" for f in out["findings"])
@@ -165,11 +129,6 @@ def test_validate_schedule_scheme_core_raises_when_tapir_is_absent(monkeypatch):
 
 # --- the registered tool: @_guarded must convert the above into a dict ---
 
-async def call(mcp, tool, args=None):
-    async with Client(mcp) as client:
-        result = await client.call_tool(tool, args or {})
-        return json.loads(result.content[0].text)
-
 
 async def test_tool_converts_missing_tapir_to_an_error_envelope(monkeypatch):
     monkeypatch.setattr(core_schemes, "get_connection", lambda port: conn_without_tapir())
@@ -181,7 +140,7 @@ async def test_tool_converts_missing_tapir_to_an_error_envelope(monkeypatch):
 
 
 async def test_tool_happy_path_through_the_full_server(monkeypatch):
-    monkeypatch.setattr(core_schemes, "get_connection", lambda port: conn_with())
+    monkeypatch.setattr(core_schemes, "get_connection", lambda port: conn_with_properties())
     payload = await call(build_server(mode="full"), "validate_schedule_scheme",
                          {"path": str(FIXTURE)})
     assert payload["name"] == "Sample Door Scheme"
@@ -193,7 +152,7 @@ async def test_default_port_is_used_when_the_caller_omits_it(monkeypatch):
 
     def fake_get_connection(port):
         seen["port"] = port
-        return conn_with()
+        return conn_with_properties()
 
     monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
     mcp = build_server(mode="full", port=19730)
@@ -206,7 +165,7 @@ async def test_explicit_port_overrides_the_default(monkeypatch):
 
     def fake_get_connection(port):
         seen["port"] = port
-        return conn_with()
+        return conn_with_properties()
 
     monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
     mcp = build_server(mode="full", port=19730)

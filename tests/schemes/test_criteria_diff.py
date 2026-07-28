@@ -1,9 +1,7 @@
 import shutil
-from pathlib import Path
 
 from scripts.diff_scheme_criteria import diff_criteria
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
+from tests.schemes.conftest import FIXTURE
 
 
 def test_identical_files_diff_to_nothing(tmp_path):

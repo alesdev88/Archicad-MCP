@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import pytest
 
@@ -23,47 +22,13 @@ from archicad_mcp.schemes.model import (
     parse_scheme,
 )
 from archicad_mcp.schemes.xml_io import dumps_scheme_tree, load_scheme_tree
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
-
-
-def load():
-    return parse_scheme(load_scheme_tree(FIXTURE))
+from tests.schemes.conftest import FIXTURE, _item, _scheme_xml, load
 
 
 def reparse(scheme):
     """Serialise and parse again, so assertions test what a file would contain
     rather than the in-memory objects we just mutated."""
     return parse_scheme(ET.ElementTree(ET.fromstring(dumps_scheme_tree(scheme.tree))))
-
-
-def _item(item_id, parent, caption, *, first_child="0", previous="0", next_="0", index="0"):
-    """A minimal Header_Item fragment carrying only the fields parse_scheme
-    and _next_item_id read: ID_of_Item/Parent/firstChild/previous/next for
-    tree structure, Index_of_Columns, and a Caption to tell items apart.
-    Binding fields are left out on purpose, mirroring the equivalent helper
-    in test_model.py: field_value/_int_field default them to '' / 0."""
-    return (
-        "<Header_Item>"
-        f'<Index_of_Columns value="{index}"/>'
-        f'<ID_of_Item value="{item_id}"/>'
-        f'<ID_of_Parent value="{parent}"/>'
-        f'<ID_of_firstChild value="{first_child}"/>'
-        f'<ID_of_previous value="{previous}"/>'
-        f'<ID_of_next value="{next_}"/>'
-        f"<Caption>{caption}</Caption>"
-        "</Header_Item>"
-    )
-
-
-def _scheme_xml(*items):
-    """Wrap Header_Item fragments in a minimal Scheme_Settings/Header_Items
-    document, standing in for a full Archicad export."""
-    return (
-        '<Scheme_Settings ID="1" Name="s" Scheme_Type="Element_List" Version="29.0.0">'
-        "<Header_Items>" + "".join(items) + "</Header_Items>"
-        "</Scheme_Settings>"
-    )
 
 
 def assert_chain_is_intact(scheme):

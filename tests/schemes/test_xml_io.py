@@ -10,8 +10,7 @@ from archicad_mcp.schemes.xml_io import (
     round_trips_exactly,
     save_scheme_tree,
 )
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
+from tests.schemes.conftest import FIXTURE
 
 
 def test_round_trip_is_byte_identical():

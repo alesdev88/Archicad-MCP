@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import pytest
 
@@ -9,7 +8,6 @@ from archicad_mcp.schemes.model import (
     KIND_PROPERTY,
     Binding,
     field_value,
-    parse_scheme,
     same_target,
 )
 from archicad_mcp.schemes.spec import (
@@ -20,9 +18,8 @@ from archicad_mcp.schemes.spec import (
     binding_from_bind,
     load_specs,
 )
-from archicad_mcp.schemes.xml_io import dumps_scheme_tree, load_scheme_tree
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
+from archicad_mcp.schemes.xml_io import dumps_scheme_tree
+from tests.schemes.conftest import FIXTURE, load
 
 SPEC_YAML = """
 - id: door-schedule
@@ -51,10 +48,6 @@ IDENTITY_SPEC_YAML = """
 """
 
 
-def load_scheme():
-    return parse_scheme(load_scheme_tree(FIXTURE))
-
-
 def write_spec(tmp_path, text=SPEC_YAML):
     p = tmp_path / "schemes.yaml"
     p.write_text(text, encoding="utf-8")
@@ -72,14 +65,14 @@ def test_loads_a_spec(tmp_path):
 
 def test_apply_sets_the_column_list_and_order(tmp_path):
     specs, _ = load_specs(write_spec(tmp_path))
-    scheme = load_scheme()
+    scheme = load()
     apply_spec(specs[0], scheme)
     assert [c.caption for c in scheme.columns] == ["Quantity", "Door ID", "Notes"]
 
 
 def test_apply_sets_binding_kinds(tmp_path):
     specs, _ = load_specs(write_spec(tmp_path))
-    scheme = load_scheme()
+    scheme = load()
     apply_spec(specs[0], scheme)
     kinds = {c.caption: c.binding.kind for c in scheme.columns}
     assert kinds["Quantity"] == KIND_BUILTIN
@@ -89,14 +82,14 @@ def test_apply_sets_binding_kinds(tmp_path):
 
 def test_apply_renames_the_scheme(tmp_path):
     specs, _ = load_specs(write_spec(tmp_path))
-    scheme = load_scheme()
+    scheme = load()
     apply_spec(specs[0], scheme)
     assert scheme.root.get("Name") == "Rebuilt Door Scheme"
 
 
 def test_apply_returns_a_change_log(tmp_path):
     specs, _ = load_specs(write_spec(tmp_path))
-    changes = apply_spec(specs[0], load_scheme())
+    changes = apply_spec(specs[0], load())
     assert any("Notes" in c for c in changes)
     assert any("Fire Resistance" in c for c in changes)
 
@@ -115,7 +108,7 @@ def test_apply_of_an_identical_spec_is_a_true_no_op(tmp_path):
     instructions to touch."""
     specs, errors = load_specs(write_spec(tmp_path, IDENTITY_SPEC_YAML))
     assert errors == []
-    scheme = load_scheme()
+    scheme = load()
     original = FIXTURE.read_text(encoding="utf-8")
 
     changes = apply_spec(specs[0], scheme)
@@ -134,7 +127,7 @@ def test_retarget_skipped_when_binding_differs_only_in_presentational_fields(tmp
     (same property_name, desc_name differs). Both presentational fields
     must survive untouched, proving retarget_column was never called."""
     specs, _ = load_specs(write_spec(tmp_path, IDENTITY_SPEC_YAML))
-    scheme = load_scheme()
+    scheme = load()
 
     changes = apply_spec(specs[0], scheme)
 
@@ -159,7 +152,7 @@ def test_retarget_still_fires_when_the_target_actually_changes(tmp_path):
       bind: { gdl_param: "Fire Rating Param" }
 """
     specs, _ = load_specs(write_spec(tmp_path, spec_text))
-    scheme = load_scheme()
+    scheme = load()
 
     changes = apply_spec(specs[0], scheme)
 
@@ -229,7 +222,7 @@ def test_named_property_without_a_resolver_is_an_error(tmp_path):
 """
     specs, _ = load_specs(write_spec(tmp_path, spec_text))
     with pytest.raises(SpecError):
-        apply_spec(specs[0], load_scheme())
+        apply_spec(specs[0], load())
 
 
 def test_named_property_uses_the_resolver(tmp_path):
@@ -241,7 +234,7 @@ def test_named_property_uses_the_resolver(tmp_path):
       bind: { property: "OFFICE/Fire Rating" }
 """
     specs, _ = load_specs(write_spec(tmp_path, spec_text))
-    scheme = load_scheme()
+    scheme = load()
     apply_spec(specs[0], scheme, resolver=lambda n: "AAAA1111-0000-0000-0000-000000000000")
     assert scheme.columns[0].binding.property_guid == "AAAA1111-0000-0000-0000-000000000000"
 
@@ -276,7 +269,7 @@ def test_criteria_block_is_reported_as_ignored_not_silently_dropped(tmp_path):
       bind: { builtin: Quantity }
 """
     specs, _ = load_specs(write_spec(tmp_path, spec_text))
-    changes = apply_spec(specs[0], load_scheme())
+    changes = apply_spec(specs[0], load())
     assert any("IGNORED the criteria block" in c for c in changes)
 
 
@@ -313,7 +306,7 @@ def test_apply_rejects_duplicate_captions_even_in_a_hand_built_spec():
     reach add_column/rename_column and surface as DuplicateColumnCaption.
     Checked before any mutation runs, so a rejected spec leaves the scheme
     untouched rather than half-edited."""
-    scheme = load_scheme()
+    scheme = load()
     before = [c.caption for c in scheme.columns]
     spec = SchemeSpec(spec_id="s", columns=[
         ColumnSpec(caption="Quantity", bind={"builtin": "Quantity"}),
@@ -451,7 +444,7 @@ def test_apply_leaves_scheme_completely_untouched_when_a_column_bind_is_invalid(
 """
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert errors == []
-    scheme = load_scheme()
+    scheme = load()
     before_captions = [c.caption for c in scheme.columns]
     before_bytes = FIXTURE.read_text(encoding="utf-8")
 
@@ -508,7 +501,7 @@ def test_apply_adds_a_column_using_the_builtin_mapping_escape_hatch(tmp_path):
 """
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert errors == []
-    scheme = load_scheme()
+    scheme = load()
     apply_spec(specs[0], scheme)
     by_caption = {c.caption: c.binding for c in scheme.columns}
     assert by_caption["Mystery Field"].kind == KIND_BUILTIN
@@ -556,7 +549,7 @@ _WIDTH_SPEC_YAML = """
 def test_width_change_is_applied_and_reported_in_changes(tmp_path):
     specs, errors = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
     assert errors == []
-    scheme = load_scheme()
+    scheme = load()
 
     changes = apply_spec(specs[0], scheme)
 
@@ -579,7 +572,7 @@ def test_identity_spec_with_the_same_width_is_a_true_no_op(tmp_path):
     spec_text = _WIDTH_SPEC_YAML.replace("width: 55", "width: 30")
     specs, errors = load_specs(write_spec(tmp_path, spec_text))
     assert errors == []
-    scheme = load_scheme()
+    scheme = load()
     original = FIXTURE.read_text(encoding="utf-8")
 
     changes = apply_spec(specs[0], scheme)
@@ -594,7 +587,7 @@ def test_width_change_reports_a_missing_landscape_field_instead_of_inventing_one
     indentation and no trailing newline of its own. The fix leaves a missing
     field untouched and says so in the change log instead of inventing it."""
     specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
-    scheme = load_scheme()
+    scheme = load()
 
     changes = apply_spec(specs[0], scheme)
 
@@ -608,7 +601,7 @@ def test_width_is_updated_on_a_column_that_already_has_a_landscape_field(tmp_pat
     carry Width_of_cell_landscape, a real width change must update it too,
     not just Width_of_cell_portrait."""
     specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
-    scheme = load_scheme()
+    scheme = load()
     door_id = next(c for c in scheme.columns if c.caption == "Door ID")
     landscape = ET.SubElement(door_id.element, "Width_of_cell_landscape")
     landscape.set("value", "30")
@@ -626,7 +619,7 @@ def test_serialisation_is_well_formed_after_a_width_change(tmp_path):
     must still obey the same formatting invariants as an unmodified file (no
     " />", exactly one trailing newline), and must still be parseable XML."""
     specs, _ = load_specs(write_spec(tmp_path, _WIDTH_SPEC_YAML))
-    scheme = load_scheme()
+    scheme = load()
 
     apply_spec(specs[0], scheme)
     dumped = dumps_scheme_tree(scheme.tree)

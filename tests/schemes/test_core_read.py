@@ -1,13 +1,11 @@
 import os
 import shutil
 import sys
-from pathlib import Path
 
 import pytest
 
 from archicad_mcp.core.schemes import read_schedule_scheme
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
+from tests.schemes.conftest import FIXTURE
 
 
 def test_reports_scheme_header():

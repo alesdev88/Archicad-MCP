@@ -1,20 +1,16 @@
-import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
 import pytest
-from fastmcp import Client
 
 import archicad_mcp.core.schemes as core_schemes
-from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
+from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core.schemes import edit_schedule_scheme, read_schedule_scheme
 from archicad_mcp.schemes.columns import ColumnNotFound, DuplicateColumnCaption
 from archicad_mcp.server import build_server
-from tests.conftest import FakeCore
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
+from tests.schemes.conftest import FIXTURE, call, conn_with_properties
 
 SPEC_YAML = """
 - id: door-schedule
@@ -421,22 +417,6 @@ def test_write_failure_read_only_directory_is_an_error_envelope(tmp_path):
 # completely offline, which is proven below by making a connection attempt
 # fail the test outright. ---
 
-PROPERTIES_RESPONSE = {
-    "properties": [
-        {"propertyId": {"guid": "69A58F6F-1111-4000-8000-000000000001"},
-         "propertyGroupName": "OFFICE", "propertyName": "Door ID"},
-    ]
-}
-
-
-def conn_with_properties(properties=PROPERTIES_RESPONSE):
-    # conn.tapir() gates on tapir_available(), which probes via the OFFICIAL
-    # table, so the fake has to answer that too or every call raises.
-    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}},
-                    tapir={"GetAllProperties": properties})
-    return ArchicadConnection(19723, core=core)
-
-
 def test_guid_only_spec_never_connects_to_archicad(tmp_path, monkeypatch):
     """SPEC_YAML binds Quantity as a builtin and Door ID by GUID: no column
     names a property, so no resolver is needed and get_connection must
@@ -521,10 +501,8 @@ async def test_default_port_is_used_when_the_caller_omits_it_for_edit(tmp_path, 
 
     monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
     mcp = build_server(mode="full", port=19730)
-    async with Client(mcp) as client:
-        result = await client.call_tool(
-            "edit_schedule_scheme", {"path": str(scheme), "spec_path": str(spec)})
-        payload = json.loads(result.content[0].text)
+    payload = await call(mcp, "edit_schedule_scheme",
+                        {"path": str(scheme), "spec_path": str(spec)})
     assert "error" not in payload
     assert seen["port"] == 19730
 
@@ -546,11 +524,8 @@ async def test_explicit_port_overrides_the_default_for_edit(tmp_path, monkeypatc
 
     monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
     mcp = build_server(mode="full", port=19730)
-    async with Client(mcp) as client:
-        result = await client.call_tool(
-            "edit_schedule_scheme",
-            {"path": str(scheme), "spec_path": str(spec), "port": 19740})
-        payload = json.loads(result.content[0].text)
+    payload = await call(mcp, "edit_schedule_scheme",
+                        {"path": str(scheme), "spec_path": str(spec), "port": 19740})
     assert "error" not in payload
     assert seen["port"] == 19740
 
@@ -634,10 +609,8 @@ async def test_tool_converts_missing_archicad_to_an_error_envelope_when_a_name_n
     monkeypatch.setattr(core_schemes, "get_connection", boom)
 
     mcp = build_server(mode="full")
-    async with Client(mcp) as client:
-        result = await client.call_tool(
-            "edit_schedule_scheme", {"path": str(scheme), "spec_path": str(spec)})
-        payload = json.loads(result.content[0].text)
+    payload = await call(mcp, "edit_schedule_scheme",
+                        {"path": str(scheme), "spec_path": str(spec)})
     assert "error" in payload
     assert "No running Archicad" in payload["error"]
 

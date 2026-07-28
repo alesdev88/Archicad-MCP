@@ -1,4 +1,3 @@
-from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from archicad_mcp.schemes.model import (
@@ -12,54 +11,7 @@ from archicad_mcp.schemes.model import (
     set_field,
 )
 from archicad_mcp.schemes.xml_io import load_scheme_tree
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "schemes" / "sample_scheme.xml"
-
-
-def load():
-    return parse_scheme(load_scheme_tree(FIXTURE))
-
-
-def _item(
-    item_id: str,
-    parent: str,
-    caption: str,
-    *,
-    first_child: str = "0",
-    previous: str = "0",
-    next_: str = "0",
-    index: str = "0",
-) -> str:
-    """A minimal Header_Item fragment: only the fields parse_scheme reads for
-    tree structure (ID_of_Item/Parent/firstChild/next), plus a Caption to
-    tell columns apart, plus Index_of_Columns for the ordering test, plus
-    ID_of_previous for verisimilitude even though parse_scheme's traversal
-    never reads it: it walks forward from ID_of_firstChild via ID_of_next
-    alone, and ID_of_previous is written by relink (columns.py), not read by
-    parse_scheme. Binding fields (ACPropertyGuid, Parameter_Type, ...) are
-    left out on purpose: field_value/_int_field default them to '' / 0, and
-    none of the tests using this helper assert on binding."""
-    return (
-        "<Header_Item>"
-        f'<Index_of_Columns value="{index}"/>'
-        f'<ID_of_Item value="{item_id}"/>'
-        f'<ID_of_Parent value="{parent}"/>'
-        f'<ID_of_firstChild value="{first_child}"/>'
-        f'<ID_of_previous value="{previous}"/>'
-        f'<ID_of_next value="{next_}"/>'
-        f"<Caption>{caption}</Caption>"
-        "</Header_Item>"
-    )
-
-
-def _scheme_xml(*items: str) -> str:
-    """Wrap Header_Item fragments in a minimal Scheme_Settings/Header_Items
-    document, standing in for a full Archicad export."""
-    return (
-        '<Scheme_Settings ID="1" Name="s" Scheme_Type="Element_List" Version="29.0.0">'
-        "<Header_Items>" + "".join(items) + "</Header_Items>"
-        "</Scheme_Settings>"
-    )
+from tests.schemes.conftest import FIXTURE, _item, _scheme_xml, load
 
 
 def _parse_xml(xml: str) -> Scheme:
