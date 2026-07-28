@@ -30,11 +30,14 @@ def _item(
     index: str = "0",
 ) -> str:
     """A minimal Header_Item fragment: only the fields parse_scheme reads for
-    tree structure (ID_of_Item/Parent/firstChild/previous/next), plus a
-    Caption to tell columns apart, plus Index_of_Columns for the ordering
-    test. Binding fields (ACPropertyGuid, Parameter_Type, ...) are left out
-    on purpose: field_value/_int_field default them to '' / 0, and none of
-    the tests using this helper assert on binding."""
+    tree structure (ID_of_Item/Parent/firstChild/next), plus a Caption to
+    tell columns apart, plus Index_of_Columns for the ordering test, plus
+    ID_of_previous for verisimilitude even though parse_scheme's traversal
+    never reads it: it walks forward from ID_of_firstChild via ID_of_next
+    alone, and ID_of_previous is written by relink (columns.py), not read by
+    parse_scheme. Binding fields (ACPropertyGuid, Parameter_Type, ...) are
+    left out on purpose: field_value/_int_field default them to '' / 0, and
+    none of the tests using this helper assert on binding."""
     return (
         "<Header_Item>"
         f'<Index_of_Columns value="{index}"/>'
