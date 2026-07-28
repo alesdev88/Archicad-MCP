@@ -119,13 +119,18 @@ def test_apply_of_an_identical_spec_is_a_true_no_op(tmp_path):
 
 
 def test_retarget_skipped_when_binding_differs_only_in_presentational_fields(tmp_path):
-    """binding_from_bind never sets property_name for a property bind, and
-    always sets desc_name to the gdl_param's own name rather than whatever
-    Parameter_Desc_Name the file happens to carry. Neither difference is a
-    real retarget: Door ID exercises the property kind (same GUID,
-    property_name differs) and Fire Resistance exercises the gdl_param kind
-    (same property_name, desc_name differs). Both presentational fields
-    must survive untouched, proving retarget_column was never called."""
+    """binding_from_bind never sets property_name for a property bind given
+    as a GUID, the branch IDENTITY_SPEC_YAML's Door ID exercises here
+    (bind: { property: "<guid>" }); the resolver branch, taken instead when
+    a bind names a property by "Group/Name", does set property_name, to the
+    name itself (see test_named_property_uses_the_resolver). Separately,
+    binding_from_bind always sets desc_name to the gdl_param's own name
+    rather than whatever Parameter_Desc_Name the file happens to carry.
+    Neither difference is a real retarget: Door ID exercises the
+    property-by-GUID kind (same GUID, property_name differs) and Fire
+    Resistance exercises the gdl_param kind (same property_name, desc_name
+    differs). Both presentational fields must survive untouched, proving
+    retarget_column was never called."""
     specs, _ = load_specs(write_spec(tmp_path, IDENTITY_SPEC_YAML))
     scheme = load()
 

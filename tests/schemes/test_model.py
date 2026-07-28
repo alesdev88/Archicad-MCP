@@ -78,24 +78,33 @@ def test_reads_criteria():
 
 def test_is_element_rejects_comments_and_processing_instructions():
     """is_element is what keeps comments/PIs out of item_els, and therefore
-    out of by_id and root_els. It cannot be exercised end to end through
-    parse_scheme: a bare comment or PI has no children, so field_value on it
-    is always "", which can never equal "0" (so it is never picked as a
-    root), and empty string is falsy, so it can never be followed as a
-    traversal id either (the chain walk's `current and ...` guard stops
-    instead of looking it up). Asserting on the predicate directly is the
-    only level at which this guarantee is actually checked."""
+    out of by_id, root_els, and scheme.orphans too (orphans is derived from
+    item_els, the same already-filtered list). This is observable end to end
+    through parse_scheme, not only at this predicate level: a comment placed
+    inside Header_Items neither becomes a column (see
+    test_comment_in_header_items_does_not_become_a_column below) nor an
+    orphan. What asserting the predicate directly here isolates, that those
+    end-to-end tests cannot, is the mechanism itself: field_value on a bare
+    comment or PI is always "", which can never equal "0" (so it is never
+    picked as a root), and empty string is falsy, so it can never be
+    followed as a traversal id either (the chain walk's `current and ...`
+    guard stops instead of looking it up) - both would produce the same
+    absence even if is_element itself were broken."""
     assert is_element(ET.Comment("not a column")) is False
     assert is_element(ET.ProcessingInstruction("target", "data")) is False
     assert is_element(ET.Element("Header_Item")) is True
 
 
 def test_comment_in_header_items_does_not_become_a_column():
-    """Regression pin, not a filter-isolation test: a comment mixed into
-    Header_Items must not crash the parser or change the column count. This
-    holds regardless of is_element, since a comment's fields are always
-    empty (see test_is_element_rejects_comments_and_processing_instructions
-    for the test that actually isolates the filter)."""
+    """A comment mixed into Header_Items must not crash the parser, change
+    the column count, or turn up in scheme.orphans (orphans is derived from
+    item_els, which is_element has already filtered the comment out of).
+    Column count staying the same holds regardless of is_element, since a
+    comment's fields are always empty (see
+    test_is_element_rejects_comments_and_processing_instructions for the
+    test that isolates that specific mechanism), but orphans staying empty
+    does not: it depends on is_element actually having excluded the comment
+    from item_els before orphans was ever computed."""
     tree = load_scheme_tree(FIXTURE)
     items_el = tree.getroot().find("Header_Items")
     # Insert a comment as a child alongside the real items
@@ -104,6 +113,7 @@ def test_comment_in_header_items_does_not_become_a_column():
     s = parse_scheme(tree)
     # The columns should still be the same 3, not 4
     assert [c.caption for c in s.columns] == ["Door ID", "Quantity", "Fire Resistance"]
+    assert s.orphans == []
 
 
 def test_cycle_in_next_chain_truncates_at_the_repeat():
