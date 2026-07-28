@@ -303,6 +303,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def read_schedule_scheme(path: str) -> dict:
         return core_schemes.read_schedule_scheme(path)
 
+    @mcp.tool(description="Apply a YAML scheme spec to an exported schedule scheme "
+                          "XML: set the columns and their order, retarget bindings, "
+                          "rename the scheme. DRY-RUN BY DEFAULT: returns the before "
+                          "and after column lists and writes nothing until "
+                          "dry_run=false. Never overwrites the input; writes to "
+                          "'output' or to <name>.edited.xml beside it. Import the "
+                          "result via Document > Schedules > Scheme Settings > "
+                          "Import. Criteria are preserved, not yet editable.")
+    def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
+                             output: str | None = None, dry_run: bool = True) -> dict:
+        return core_schemes.edit_schedule_scheme(path, spec_path, spec_id, output, dry_run)
+
     from archicad_mcp.gateway import execute as _gateway
     from archicad_mcp.gateway.registry import build_registry
 
