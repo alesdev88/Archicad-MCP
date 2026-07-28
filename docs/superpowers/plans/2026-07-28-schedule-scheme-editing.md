@@ -236,20 +236,51 @@ DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
 # ElementTree emits "<Foo />", Archicad writes "<Foo/>". Purely cosmetic to a
 # parser, but we round-trip byte for byte so that a no-op edit provably changes
 # nothing, which is what makes it safe to leave unmodelled sections alone.
-_SELF_CLOSING = re.compile(r" />")
+#
+# ElementTree writes comment and PI text unescaped, so a blanket substitution
+# would rewrite a " />" that happens to sit inside one. Substitute only in the
+# spans between them.
+_COMMENT_OR_PI = re.compile(r"<!--.*?-->|<\?.*?\?>", re.DOTALL)
+
+
+def _tighten_self_closing(text: str) -> str:
+    parts, last = [], 0
+    for match in _COMMENT_OR_PI.finditer(text):
+        parts.append(text[last:match.start()].replace(" />", "/>"))
+        parts.append(match.group(0))
+        last = match.end()
+    parts.append(text[last:].replace(" />", "/>"))
+    return "".join(parts)
 
 
 def load_scheme_tree(path: Path) -> ET.ElementTree:
-    return ET.parse(path)
+    # The default TreeBuilder silently discards comments and processing
+    # instructions, and a construct that vanishes without an error is exactly
+    # what we must not do. This covers comments and PIs nested inside the root
+    # element only: CPython's TreeBuilder attaches an inserted comment only
+    # when the element stack is non-empty, so a document-level one (before or
+    # after the root) is still dropped. round_trips_exactly catches that case.
+    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True))
+    return ET.parse(path, parser=parser)
 
 
 def dumps_scheme_tree(tree: ET.ElementTree) -> str:
     body = ET.tostring(tree.getroot(), encoding="unicode")
-    return DECLARATION + _SELF_CLOSING.sub("/>", body) + "\n"
+    return DECLARATION + _tighten_self_closing(body) + "\n"
 
 
 def save_scheme_tree(tree: ET.ElementTree, path: Path) -> None:
     path.write_text(dumps_scheme_tree(tree), encoding="utf-8")
+
+
+def round_trips_exactly(path: Path) -> bool:
+    """True when this file survives a no-op load and save unchanged.
+
+    The guard for everything we do not model. Callers verify this before
+    editing, so a file with a construct our serializer would rewrite is
+    refused loudly instead of being silently mangled.
+    """
+    return dumps_scheme_tree(load_scheme_tree(path)) == path.read_text(encoding="utf-8")
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -1609,6 +1640,16 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
         spec = matched[0]
 
     source = Path(path).expanduser()
+    # The guard for everything we do not model. If the input contains a
+    # construct our serializer would rewrite (a document-level comment, an
+    # explicit <Tag></Tag>), refuse rather than silently mangling it.
+    if not round_trips_exactly(source):
+        return {"error": f"{source} contains XML this server would rewrite when "
+                         "saving, so editing it could corrupt parts of the scheme "
+                         "outside the columns and criteria. This does not happen "
+                         "with schemes exported by Archicad. Re-export it from "
+                         "Scheme Settings rather than hand-editing the XML."}
+
     warnings = []
     if spec.template and spec.template != source.name:
         warnings.append(
@@ -1641,10 +1682,29 @@ Add to the imports at the top of the same file:
 
 ```python
 from archicad_mcp.schemes.spec import SpecError, apply_spec, load_specs
-from archicad_mcp.schemes.xml_io import load_scheme_tree, save_scheme_tree
+from archicad_mcp.schemes.xml_io import (
+    load_scheme_tree,
+    round_trips_exactly,
+    save_scheme_tree,
+)
 ```
 
 (replacing the existing `from archicad_mcp.schemes.xml_io import load_scheme_tree` line)
+
+Add this test to `tests/schemes/test_core_edit.py`:
+
+```python
+def test_refuses_a_scheme_it_would_rewrite_on_save(tmp_path):
+    _, spec = setup_case(tmp_path)
+    # An explicit <Tag></Tag> pair is a construct the serializer would collapse.
+    weird = tmp_path / "weird.xml"
+    weird.write_text(FIXTURE.read_text(encoding="utf-8").replace(
+        "<DimensionSetting value=\"0\"/>",
+        "<DimensionSetting value=\"0\"></DimensionSetting>", 1), encoding="utf-8")
+    out = edit_schedule_scheme(str(weird), str(spec))
+    assert "error" in out
+    assert "corrupt" in out["error"].lower()
+```
 
 - [ ] **Step 4: Register the tool**
 
