@@ -204,6 +204,36 @@ def test_template_mismatch_warns_but_still_applies(tmp_path):
     assert out["columns_after"] == ["Quantity", "Door ID"]
 
 
+# --- Finding 3: spec.template is free text a human wrote (the README's own
+# example uses "exports/door-scheme.xml"), while source.name (Path.name) is
+# always a bare filename. Comparing them as raw strings made the README's own
+# documented example fire a false "written against ... but is being applied
+# to ..." warning. Comparing basenames instead means a template path with a
+# directory component is judged on the filename alone. ---
+
+def test_template_given_as_a_path_with_a_matching_basename_does_not_warn(tmp_path):
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "with_dir.yaml"
+    spec.write_text(SPEC_YAML.replace("template: sample_scheme.xml",
+                                      "template: exports/sample_scheme.xml"),
+                    encoding="utf-8")
+    out = edit_schedule_scheme(str(scheme), str(spec))
+    assert out["warnings"] == []
+
+
+def test_template_mismatch_still_warns_even_with_a_directory_component(tmp_path):
+    """Companion to the test above: comparing basenames must still catch a
+    genuine mismatch, not stop warning altogether once a directory is
+    involved."""
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "with_dir_mismatch.yaml"
+    spec.write_text(SPEC_YAML.replace("template: sample_scheme.xml",
+                                      "template: exports/window_scheme.xml"),
+                    encoding="utf-8")
+    out = edit_schedule_scheme(str(scheme), str(spec))
+    assert out["warnings"] and "exports/window_scheme.xml" in out["warnings"][0]
+
+
 def test_refuses_a_scheme_it_would_rewrite_on_save(tmp_path):
     _, spec = setup_case(tmp_path)
     # An explicit <Tag></Tag> pair is a construct the serializer would collapse.

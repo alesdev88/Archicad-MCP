@@ -218,7 +218,14 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
                          "Scheme Settings rather than hand-editing the XML."}
 
     warnings = []
-    if spec.template and spec.template != source.name:
+    # Compared by basename, not the raw string: spec.template is free text a
+    # human wrote (the README's own example spec uses "exports/door-scheme.xml"),
+    # while source.name is always a bare filename (Path.name). Comparing the
+    # raw strings made a template value that legitimately includes a directory
+    # fire this warning even when it names the exact file being edited, which
+    # is more confusing than helpful for a check that exists purely to catch a
+    # genuine mismatch (the window spec applied to the door export, say).
+    if spec.template and Path(spec.template).name != source.name:
         warnings.append(
             f"Spec {spec.spec_id!r} was written against {spec.template!r} but is "
             f"being applied to {source.name!r}. Check this is deliberate.")
