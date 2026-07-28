@@ -686,13 +686,26 @@ from archicad_mcp.schemes.xml_io import load_scheme_tree
 def _load(path: str) -> Scheme | dict:
     """Returns a Scheme, or an {"error": ...} envelope the tool can return as-is."""
     p = Path(path).expanduser()
-    if not p.is_file():
-        return {"error": f"Scheme file not found: {p}. Export one from Archicad via "
-                         "Document > Schedules > Scheme Settings > Export."}
+    try:
+        # is_dir()/is_file() stat the path themselves. A path longer than the
+        # OS name-length limit makes them raise OSError on Python 3.12 and 3.13
+        # rather than returning False, which would escape the envelope.
+        if p.is_dir():
+            return {"error": f"{p} is a directory, not a scheme file."}
+        if not p.is_file():
+            return {"error": f"Scheme file not found: {p}. Export one from Archicad "
+                             "via Document > Schedules > Scheme Settings > Export."}
+    except OSError as exc:
+        return {"error": f"{p} could not be read: {exc}"}
     try:
         tree = load_scheme_tree(p)
     except ET.ParseError as exc:
         return {"error": f"{p} is not valid XML: {exc}"}
+    except OSError as exc:
+        # ET.parse opens the file itself, so an unreadable file raises
+        # PermissionError (an OSError), not ParseError. This tool's contract is
+        # that it always returns a dict, so it must not escape as an exception.
+        return {"error": f"{p} could not be read: {exc}"}
     if tree.getroot().tag != "Scheme_Settings":
         return {"error": f"{p} is not a schedule scheme. Expected a Scheme_Settings "
                          f"root, got {tree.getroot().tag}."}
