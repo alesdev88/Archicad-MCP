@@ -80,3 +80,28 @@ def test_round_trips_exactly_is_false_for_an_explicit_empty_tag(tmp_path):
     path.write_text(original, encoding="utf-8")
 
     assert round_trips_exactly(path) is False
+
+
+def test_comment_containing_self_closing_text_round_trips_byte_exactly(tmp_path):
+    original = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
+        '<Root><!-- see <Foo /> above --><Child value="1"/></Root>\n'
+    )
+    path = tmp_path / "comment_with_self_closing_text.xml"
+    path.write_text(original, encoding="utf-8")
+
+    tree = load_scheme_tree(path)
+
+    assert dumps_scheme_tree(tree) == original
+
+
+def test_round_trips_exactly_is_false_for_a_document_level_comment(tmp_path):
+    original = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
+        "<!-- document level, outside the root element -->\n"
+        "<Root><Child value=\"1\"/></Root>\n"
+    )
+    path = tmp_path / "document_level_comment.xml"
+    path.write_text(original, encoding="utf-8")
+
+    assert round_trips_exactly(path) is False
