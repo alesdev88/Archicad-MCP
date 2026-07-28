@@ -102,7 +102,7 @@ Create `tests/fixtures/schemes/sample_scheme.xml`. This reproduces the structura
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="0"/>
+			<Index_of_Columns value="1"/>
 			<ID_of_Item value="1001"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>
@@ -120,7 +120,7 @@ Create `tests/fixtures/schemes/sample_scheme.xml`. This reproduces the structura
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="1"/>
+			<Index_of_Columns value="2"/>
 			<ID_of_Item value="1002"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>
@@ -138,7 +138,7 @@ Create `tests/fixtures/schemes/sample_scheme.xml`. This reproduces the structura
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="2"/>
+			<Index_of_Columns value="3"/>
 			<ID_of_Item value="1003"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>
@@ -880,7 +880,7 @@ def assert_chain_is_intact(scheme):
         assert field_value(c.element, "ID_of_previous") == prev
         assert field_value(c.element, "ID_of_next") == nxt
         assert field_value(c.element, "ID_of_Parent") == root_id
-        assert field_value(c.element, "Index_of_Columns") == str(i)
+        assert field_value(c.element, "Index_of_Columns") == str(i + 1)
     ids = [c.item_id for c in cols]
     uniques = [field_value(c.element, "UniqueID") for c in cols]
     assert len(set(ids)) == len(ids)
@@ -1044,7 +1044,9 @@ def relink(scheme: Scheme) -> None:
 
     for i, col in enumerate(scheme.columns):
         set_field(col.element, "ID_of_Parent", scheme.root_item.item_id)
-        set_field(col.element, "Index_of_Columns", str(i))
+        # Measured from real Archicad 29.0.0 exports: columns are numbered
+        # from 1, and the root Header_Item holds -1. Do not "simplify" to 0.
+        set_field(col.element, "Index_of_Columns", str(i + 1))
         set_field(col.element, "ID_of_previous",
                   scheme.columns[i - 1].item_id if i > 0 else "0")
         set_field(col.element, "ID_of_next",
