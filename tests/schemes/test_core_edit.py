@@ -464,12 +464,78 @@ def test_named_property_resolves_through_a_stubbed_connection(tmp_path, monkeypa
     dest = tmp_path / "resolved.xml"
     out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)
     assert "error" not in out
-    # Proves the resolver path actually ran, rather than the GUID having
-    # come from anywhere else by coincidence.
-    assert calls, "get_connection must be called to resolve a named property"
+    # Proves the resolver path actually ran, rather than the GUID having come
+    # from anywhere else by coincidence, and that it ran exactly once with
+    # the port this call itself was given (None: this test calls the core
+    # function directly, with no port argument, bypassing server.py's own
+    # default_port plumbing entirely). "assert calls" alone would also pass
+    # if get_connection were ever called with the wrong port, or called more
+    # than once.
+    assert calls == [None]
     door = next(c for c in read_schedule_scheme(str(dest))["columns"]
                if c["caption"] == "Door ID")
     assert door["detail"] == "69A58F6F-1111-4000-8000-000000000001"
+
+
+# --- The test above calls edit_schedule_scheme (core/schemes.py) directly,
+# bypassing server.py's own tool wrapper entirely, so it cannot see whether
+# that wrapper's "port if port is not None else default_port" is doing
+# anything: "port if port is not None else default_port" can be simplified to
+# "port", losing the fallback to the server's own --port/ARCHICAD_MCP_PORT
+# default, with every test in this file (before the two below) still green.
+# Mirrors test_default_port_is_used_when_the_caller_omits_it and
+# test_explicit_port_overrides_the_default in test_validate.py, which cover
+# the identical wrapper logic for validate_schedule_scheme. ---
+
+async def test_default_port_is_used_when_the_caller_omits_it_for_edit(tmp_path, monkeypatch):
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Door ID"
+      bind: { property: "OFFICE/Door ID" }
+""", encoding="utf-8")
+    seen = {}
+
+    def fake_get_connection(port):
+        seen["port"] = port
+        return conn_with_properties()
+
+    monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
+    mcp = build_server(mode="full", port=19730)
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "edit_schedule_scheme", {"path": str(scheme), "spec_path": str(spec)})
+        payload = json.loads(result.content[0].text)
+    assert "error" not in payload
+    assert seen["port"] == 19730
+
+
+async def test_explicit_port_overrides_the_default_for_edit(tmp_path, monkeypatch):
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Door ID"
+      bind: { property: "OFFICE/Door ID" }
+""", encoding="utf-8")
+    seen = {}
+
+    def fake_get_connection(port):
+        seen["port"] = port
+        return conn_with_properties()
+
+    monkeypatch.setattr(core_schemes, "get_connection", fake_get_connection)
+    mcp = build_server(mode="full", port=19730)
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "edit_schedule_scheme",
+            {"path": str(scheme), "spec_path": str(spec), "port": 19740})
+        payload = json.loads(result.content[0].text)
+    assert "error" not in payload
+    assert seen["port"] == 19740
 
 
 def test_named_property_not_found_is_an_error_naming_it(tmp_path, monkeypatch):
@@ -496,6 +562,34 @@ def test_named_property_not_found_is_an_error_naming_it(tmp_path, monkeypatch):
     assert "error" in out
     assert "OFFICE/Nonexistent Property" in out["error"]
     assert "was not found in the open project" in out["error"]
+
+
+def test_named_property_not_found_suggests_a_close_match(tmp_path, monkeypatch):
+    """_property_resolver's near-match branch (difflib.get_close_matches)
+    never executes in test_named_property_not_found_is_an_error_naming_it
+    above: "OFFICE/Nonexistent Property" is nothing like the index's only
+    entry, "OFFICE/Door ID", so get_close_matches returns [] there and the
+    'Close matches: ...' suggestion is never appended, only the bare 'not
+    found' wording. This spec asks for "OFFICE/Door Id", one letter's case
+    away from the real property, so get_close_matches must find it and the
+    message must include the suggestion instead of stopping at 'not found'."""
+    scheme, _ = setup_case(tmp_path)
+    spec = tmp_path / "named.yaml"
+    spec.write_text("""
+- id: named
+  columns:
+    - caption: "Almost"
+      bind: { property: "OFFICE/Door Id" }
+""", encoding="utf-8")
+    monkeypatch.setattr(core_schemes, "get_connection",
+                        lambda port: conn_with_properties())
+
+    out = edit_schedule_scheme(str(scheme), str(spec))
+    assert "error" in out
+    assert "OFFICE/Door Id" in out["error"]
+    assert "was not found in the open project" in out["error"]
+    assert "Close matches:" in out["error"]
+    assert "OFFICE/Door ID" in out["error"]
 
 
 # --- edit_schedule_scheme's core function has no try/except of its own for

@@ -9,6 +9,7 @@ from archicad_mcp.schemes.model import (
     field_value,
     is_element,
     parse_scheme,
+    set_field,
 )
 from archicad_mcp.schemes.xml_io import load_scheme_tree
 
@@ -245,3 +246,27 @@ def test_parse_scheme_records_the_orphan_at_parse_time():
     )
     s = _parse_xml(xml)
     assert [field_value(e, "Caption") for e in s.orphans] == ["Orphan"]
+
+
+def test_set_field_creates_a_missing_field_with_a_value_attribute_not_text():
+    """set_field's only way to create a field that does not already exist is
+    the ET.SubElement fallback. Every other test that calls set_field does so
+    on a field the fixture (or a hand-built element) already carries, either
+    rewriting an existing 'value' attribute or existing text, so nothing pins
+    the shape of a freshly created field. This matters: Caption and
+    Parameter_Desc_Name carry their payload as element text rather than a
+    'value' attribute (see leaf_value's two branches), so a caller relying on
+    set_field to create one of those correctly, or a future edit that deletes
+    this fallback or swaps it for writing .text, would be silently wrong
+    without a test built on an element missing the field entirely, as here,
+    ever noticing."""
+    el = ET.Element("Header_Item")
+    assert el.find("Brand_New_Field") is None
+
+    set_field(el, "Brand_New_Field", "42")
+
+    child = el.find("Brand_New_Field")
+    assert child is not None
+    assert child.attrib == {"value": "42"}
+    assert child.text is None
+    assert field_value(el, "Brand_New_Field") == "42"
