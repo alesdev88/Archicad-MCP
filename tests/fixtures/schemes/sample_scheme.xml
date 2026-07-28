@@ -52,7 +52,7 @@
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="0"/>
+			<Index_of_Columns value="1"/>
 			<ID_of_Item value="1001"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>
@@ -70,7 +70,7 @@
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="1"/>
+			<Index_of_Columns value="2"/>
 			<ID_of_Item value="1002"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>
@@ -88,7 +88,7 @@
 		</Header_Item>
 		<Header_Item>
 			<Numbers_of_Columns value="0"/>
-			<Index_of_Columns value="2"/>
+			<Index_of_Columns value="3"/>
 			<ID_of_Item value="1003"/>
 			<ID_of_Parent value="1000"/>
 			<ID_of_firstChild value="0"/>

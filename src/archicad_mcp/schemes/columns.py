@@ -12,6 +12,7 @@ from archicad_mcp.schemes.model import (
     Binding,
     Column,
     Scheme,
+    _is_element,
     binding_of,
     field_value,
     set_field,
@@ -31,11 +32,19 @@ def _find(scheme: Scheme, caption: str) -> Column:
 
 
 def _next_item_id(scheme: Scheme) -> str:
-    used = [scheme.root_item.item_id] + [c.item_id for c in scheme.columns]
+    """Highest ID_of_Item anywhere in the file, plus one.
+
+    Must scan every Header_Item actually present in scheme.header_items_el,
+    not just root_item plus the reachable sibling chain (scheme.columns): a
+    Header_Item can be orphaned from that chain and still hold an id, and an
+    id computed only from the reachable items can collide with it.
+    """
     highest = 0
-    for value in used:
+    for node in scheme.header_items_el:
+        if not _is_element(node):
+            continue
         try:
-            highest = max(highest, int(value))
+            highest = max(highest, int(field_value(node, "ID_of_Item")))
         except ValueError:
             continue
     return str(highest + 1)
@@ -63,7 +72,11 @@ def relink(scheme: Scheme) -> None:
 
     for i, col in enumerate(scheme.columns):
         set_field(col.element, "ID_of_Parent", scheme.root_item.item_id)
-        set_field(col.element, "Index_of_Columns", str(i))
+        # 1-based, not 0-based: measured directly on two real Archicad 29.0.0
+        # scheme exports (a 27-column door schedule, a 20-column window
+        # schedule). Both show columns numbered 1..n with the root's own
+        # Index_of_Columns fixed at -1. Do not "simplify" this to str(i).
+        set_field(col.element, "Index_of_Columns", str(i + 1))
         set_field(col.element, "ID_of_previous",
                   scheme.columns[i - 1].item_id if i > 0 else "0")
         set_field(col.element, "ID_of_next",

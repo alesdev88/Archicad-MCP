@@ -34,6 +34,35 @@ def reparse(scheme):
     return parse_scheme(ET.ElementTree(ET.fromstring(dumps_scheme_tree(scheme.tree))))
 
 
+def _item(item_id, parent, caption, *, first_child="0", previous="0", next_="0", index="0"):
+    """A minimal Header_Item fragment carrying only the fields parse_scheme
+    and _next_item_id read: ID_of_Item/Parent/firstChild/previous/next for
+    tree structure, Index_of_Columns, and a Caption to tell items apart.
+    Binding fields are left out on purpose, mirroring the equivalent helper
+    in test_model.py: field_value/_int_field default them to '' / 0."""
+    return (
+        "<Header_Item>"
+        f'<Index_of_Columns value="{index}"/>'
+        f'<ID_of_Item value="{item_id}"/>'
+        f'<ID_of_Parent value="{parent}"/>'
+        f'<ID_of_firstChild value="{first_child}"/>'
+        f'<ID_of_previous value="{previous}"/>'
+        f'<ID_of_next value="{next_}"/>'
+        f"<Caption>{caption}</Caption>"
+        "</Header_Item>"
+    )
+
+
+def _scheme_xml(*items):
+    """Wrap Header_Item fragments in a minimal Scheme_Settings/Header_Items
+    document, standing in for a full Archicad export."""
+    return (
+        '<Scheme_Settings ID="1" Name="s" Scheme_Type="Element_List" Version="29.0.0">'
+        "<Header_Items>" + "".join(items) + "</Header_Items>"
+        "</Scheme_Settings>"
+    )
+
+
 def assert_chain_is_intact(scheme):
     cols = scheme.columns
     root_id = scheme.root_item.item_id
@@ -46,7 +75,9 @@ def assert_chain_is_intact(scheme):
         assert field_value(c.element, "ID_of_previous") == prev
         assert field_value(c.element, "ID_of_next") == nxt
         assert field_value(c.element, "ID_of_Parent") == root_id
-        assert field_value(c.element, "Index_of_Columns") == str(i)
+        # 1-based: Archicad numbers columns 1..n, root stays -1 (see the
+        # comment on relink's Index_of_Columns write in columns.py).
+        assert field_value(c.element, "Index_of_Columns") == str(i + 1)
     ids = [c.item_id for c in cols]
     uniques = [field_value(c.element, "UniqueID") for c in cols]
     assert len(set(ids)) == len(ids)
@@ -98,6 +129,44 @@ def test_added_column_gets_fresh_ids():
     new = add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
     assert new.item_id not in existing
     assert_chain_is_intact(scheme)
+
+
+def test_index_of_columns_is_one_based_like_real_archicad_exports():
+    """Measured directly on two real Archicad 29.0.0 scheme exports (a
+    27-column door schedule, a 20-column window schedule): both number
+    columns starting at 1, with the root Header_Item fixed at -1. Pins that
+    convention explicitly so a future edit cannot quietly simplify relink
+    back to 0-based indices without a test noticing."""
+    scheme = load()
+    add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
+    cols = scheme.columns
+    assert field_value(cols[0].element, "Index_of_Columns") == "1"
+    assert field_value(cols[-1].element, "Index_of_Columns") == str(len(cols))
+    assert field_value(scheme.root_item.element, "Index_of_Columns") == "-1"
+
+
+def test_added_column_avoids_colliding_with_a_high_id_orphan():
+    """_next_item_id must scan every Header_Item present in the file, not
+    just root_item plus the reachable sibling chain. An orphan (a Header_Item
+    with a valid ID_of_Parent but not linked into the chain, the parse case
+    pinned by test_item_orphaned_from_the_chain_is_missing_from_columns in
+    test_model.py) is invisible to scheme.columns, so a scan limited to
+    root_item + columns under-counts the true maximum id in the file.
+
+    Root is 9000, the one reachable column is 1001: a scan blind to the
+    orphan computes next id 9001, exactly the orphan's id, an actual
+    collision, not a hypothetical one.
+    """
+    xml = _scheme_xml(
+        _item("9000", "0", "Root", first_child="1001", index="-1"),
+        _item("1001", "9000", "Alpha", index="1"),
+        _item("9001", "9000", "Orphan", index="2"),  # not linked into the chain
+    )
+    scheme = parse_scheme(ET.ElementTree(ET.fromstring(xml)))
+    assert [c.caption for c in scheme.columns] == ["Alpha"]
+
+    new = add_column(scheme, "Notes", Binding(kind=KIND_BUILTIN))
+    assert new.item_id == "9002"
 
 
 def test_move_column():
