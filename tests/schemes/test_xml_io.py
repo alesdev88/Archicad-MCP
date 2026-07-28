@@ -141,6 +141,28 @@ def test_round_trips_exactly_is_false_for_a_document_level_comment(tmp_path):
     assert round_trips_exactly(path) is False
 
 
+def test_round_trips_exactly_raises_unicodedecodeerror_for_a_non_utf8_file(tmp_path):
+    """round_trips_exactly reads path as UTF-8, same assumption as every other
+    read in this module, since Archicad's own exports are always UTF-8. A
+    file that declares, and is actually written in, a different encoding
+    (here ISO-8859-1, with a genuine 0xE9 byte) is not a "this server would
+    rewrite it" problem, the usual meaning of this function returning False;
+    it is a different, more fundamental problem. This raises rather than
+    silently folding both cases into one boolean, so the one real caller
+    (edit_schedule_scheme, core/schemes.py) can tell them apart and explain
+    the encoding mismatch clearly instead of misreporting it as an
+    unmodelled-XML-construct warning."""
+    original = (
+        '<?xml version="1.0" encoding="ISO-8859-1" standalone="no" ?>\n'
+        '<Root><Child value="caf\xe9"/></Root>\n'
+    )
+    path = tmp_path / "latin1.xml"
+    path.write_bytes(original.encode("ISO-8859-1"))
+
+    with pytest.raises(UnicodeDecodeError):
+        round_trips_exactly(path)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permissions do not apply on Windows")
 def test_saved_file_has_ordinary_permissions(tmp_path):
     """Saved scheme files should have ordinary permissions (0o666 masked by

@@ -82,6 +82,20 @@ def round_trips_exactly(path: Path) -> bool:
     The guard for everything we do not model. Callers verify this before
     editing, so a file with a construct our serializer would rewrite is
     refused loudly instead of being silently mangled.
+
+    Reads path as UTF-8, same assumption as every other read in this module,
+    because that is what Archicad's own exports always are. A file that
+    declares, and is actually written in, a different encoding raises
+    UnicodeDecodeError here rather than this function catching it and
+    returning False: "this server would rewrite parts of the file" and "this
+    is not the encoding we assumed" are different problems with different
+    fixes (re-export from Scheme Settings either way, but for a different
+    reason), and collapsing both into one boolean would hand every caller the
+    wrong explanation for the second case. edit_schedule_scheme
+    (core/schemes.py), the one caller that reaches this today, is what turns
+    this into a distinct, clearly worded error envelope; read_schedule_scheme
+    never calls this function at all, so a non-UTF-8 file already works there
+    regardless.
     """
     original = path.read_text(encoding="utf-8")
     tree = load_scheme_tree(path)

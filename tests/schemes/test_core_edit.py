@@ -216,6 +216,48 @@ def test_refuses_a_scheme_it_would_rewrite_on_save(tmp_path):
     assert "corrupt" in out["error"].lower()
 
 
+# --- Finding 2: round_trips_exactly reads the file as UTF-8 to compare it
+# against the re-serialised output. A scheme that declares, and is actually
+# written in, a different encoding raises UnicodeDecodeError there, which is
+# not an OSError, so it used to escape edit_schedule_scheme uncaught,
+# breaking the "always returns a dict" contract read_schedule_scheme already
+# upholds for the exact same file (read_schedule_scheme never calls
+# round_trips_exactly at all, so it was never exposed to this). ---
+
+def _as_latin1_scheme(path, extra_caption_suffix=" \xe9"):
+    """Rewrite the fixture to declare, and actually be written in,
+    ISO-8859-1, with a non-ASCII byte (0xE9) in the scheme name so the file
+    is not valid UTF-8. Written straight to `path`, which setup_case already
+    pointed at a copy of the fixture."""
+    text = FIXTURE.read_text(encoding="utf-8")
+    text = text.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"')
+    text = text.replace("Sample Door Scheme", "Sample Door Scheme" + extra_caption_suffix)
+    path.write_bytes(text.encode("ISO-8859-1"))
+
+
+def test_non_utf8_scheme_is_an_error_envelope_not_a_raw_unicodedecodeerror(tmp_path):
+    scheme, spec = setup_case(tmp_path)
+    _as_latin1_scheme(scheme)
+
+    out = edit_schedule_scheme(str(scheme), str(spec))
+
+    assert "error" in out
+    assert "UTF-8" in out["error"]
+
+
+def test_read_schedule_scheme_still_handles_the_same_non_utf8_file(tmp_path):
+    """Companion pin: read_schedule_scheme never calls round_trips_exactly, so
+    this exact file already worked there both before and after the fix. Pinned
+    here so the asymmetry finding 2 was about cannot silently regress."""
+    scheme, _ = setup_case(tmp_path)
+    _as_latin1_scheme(scheme)
+
+    out = read_schedule_scheme(str(scheme))
+
+    assert "error" not in out
+    assert out["name"] == "Sample Door Scheme \xe9"
+
+
 # --- The column and spec layers below apply_spec can raise more than
 # SpecError: add_column and rename_column raise DuplicateColumnCaption, and
 # _find raises ColumnNotFound. edit_schedule_scheme's contract, like

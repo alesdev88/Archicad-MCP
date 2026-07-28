@@ -184,7 +184,33 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
     # The guard for everything we do not model. If the input contains a
     # construct our serializer would rewrite (a document-level comment, an
     # explicit <Tag></Tag>), refuse rather than silently mangling it.
-    if not round_trips_exactly(source):
+    try:
+        round_trips = round_trips_exactly(source)
+    except UnicodeDecodeError as exc:
+        # round_trips_exactly reads the file as UTF-8 (same assumption as
+        # every other read in this module) to compare it against the
+        # re-serialised output. Archicad's own exports are always UTF-8; a
+        # file that declares, and is actually written in, a different
+        # encoding fails that decode before round_trips_exactly ever gets to
+        # its own true/false verdict. This function is registered without
+        # @_guarded (it never talks to Archicad), so nothing else would catch
+        # this, and it used to escape as a raw UnicodeDecodeError instead of
+        # the dict this tool always promises, same contract as
+        # read_schedule_scheme, which handles this exact file fine because it
+        # never calls round_trips_exactly at all.
+        return {"error": f"{source} is not valid UTF-8: {exc}. Archicad writes "
+                         "scheme exports as UTF-8; this file was likely "
+                         "hand-edited or saved with a different encoding. "
+                         "Re-export it from Scheme Settings rather than "
+                         "hand-editing the XML."}
+    except OSError as exc:
+        # Same reasoning as the OSError guard in _load: round_trips_exactly
+        # opens and reads the file itself, a second time, independently of
+        # _load's own read above, so a file that becomes unreadable between
+        # the two (or any other transient I/O failure) must be caught here
+        # too, not just there.
+        return {"error": f"{source} could not be read: {exc}"}
+    if not round_trips:
         return {"error": f"{source} contains XML this server would rewrite when "
                          "saving, so editing it could corrupt parts of the scheme "
                          "outside the columns and criteria. This does not happen "
