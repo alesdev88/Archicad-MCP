@@ -36,15 +36,18 @@ criterion per pair.
 
 | Param_Type | Relation_Index | GUI meaning | Value field | Source |
 |---|---|---|---|---|
-| 88 | 1 | Element type is <class> | `ExtendedElem_ElemClassId` and `UniValue` carry the classification GUID | Observed in a real 29.0.0 door schedule; confirmed GUIDs below |
-| 232 | 12 | Property comparison on `ACPropertyGuid` | `UniValue` | Observed in a real 29.0.0 door schedule; the exact relation 12 means is not yet confirmed |
+| 88 | 1 | Element classification is `<class>` | `ExtendedElem_ElemClassId` and `UniValue/Variant/Value` both carry the classification GUID | Measured: a real 29.0.0 door schedule diffed against a real window schedule; confirmed GUIDs below |
+| 232 | 12 | A property is compared to a string | `ACPropertyGuid` names the property; the string is at `UniValue/Value/Variant/Value` | Measured: the same door/window pair; what Relation_Index 12 itself means is not confirmed |
 
-### Confirmed classification GUIDs (Param_Type 88, Relation_Index 1)
+### Measured example: a door schedule against a window schedule
 
-Obtained by exporting a real Archicad 29.0.0 door schedule and a real window
-schedule and diffing them with this script. Exactly two values changed
-between the two files, `ExtendedElem_ElemClassId` and `UniValue`, and both
-changed together to the same GUID:
+Both schemes have exactly three criteria, matched positionally by
+`scripts/diff_scheme_criteria.py`. Diffing a real Archicad 29.0.0 door
+schedule against a real window schedule gave this, criterion by criterion:
+
+**Criterion 0, in both schemes:** `Param_Type` 88, `Relation_Index` 1,
+`AndNext` 1. An element classification test. The GUID appears in both
+`ExtendedElem_ElemClassId` and at `UniValue/Variant/Value`:
 
 | Element class | GUID |
 |---|---|
@@ -53,7 +56,24 @@ changed together to the same GUID:
 
 These are measured, not guessed. They are Archicad's built-in element
 classification GUIDs, so they are expected to be stable across projects, but
-that has not been verified across more than the two files measured here.
+that has only been checked against these two files.
+
+**Criteria 1 and 2, in both schemes:** `Param_Type` 232, `Relation_Index` 12,
+against the property `432FA53A-B71E-404B-A9D5-F1964237A3EB`, comparing to a
+string carried at `UniValue/Value/Variant/Value`:
+
+| Criterion | Door schedule string | Window schedule string |
+|---|---|---|
+| 1 | "Simple Door Opening" | "Simple Window Opening" |
+| 2 | "Rectangular Door Opening" | "Rectangular Window Opening" |
+
+These read like library part names. That is an inference from the strings
+themselves, not a confirmed fact about what the property or Relation_Index 12
+actually checks.
+
+**`AndNext` across all three criteria (index 0, 1, 2), in both schemes, was
+`1, 0, 1`.** What it controls is not established. This is not guessed at
+further here; see Still unknown below.
 
 ## Still unknown
 

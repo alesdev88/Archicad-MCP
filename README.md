@@ -145,6 +145,67 @@ Keep real office standards **outside this repo**, in a local rules directory.
 
 Full reference: **[docs/rules.md](docs/rules.md)**.
 
+## Schedules
+
+Archicad exposes **no API for schedules at all**. Not the JSON API, not Tapir,
+and per Graphisoft not the C++ API either. What it does support is the XML
+round trip built into Scheme Settings, and that is what these tools work
+through:
+
+1. In Archicad: Document > Schedules > Scheme Settings, select a scheme, **Export**
+2. Edit it: `read_schedule_scheme` to see what it does, `edit_schedule_scheme`
+   to apply a YAML spec, `validate_schedule_scheme` to check its bindings
+   against the open project
+3. In Archicad: Scheme Settings > **Import**
+
+A scheme spec looks like this:
+
+```yaml
+- id: door-schedule
+  template: exports/door-scheme.xml
+  name: "Door Schedule"
+  columns:
+    - caption: "Quantity"
+      bind: { builtin: Quantity }
+    - caption: "Fire Resistance"
+      bind: { gdl_param: "Fire Rating" }
+```
+
+A column binds three ways:
+
+- `bind: { property: "<GUID>" }`, or a `"Group/Name"` string when Archicad is
+  open so the name can be resolved
+- `bind: { gdl_param: "<parameter name>" }`, a library part parameter by name
+- `bind: { builtin: Quantity }` for the few named built-ins, or
+  `bind: { builtin: { param_type: 0, param_index: -1561 } }` for any other
+  built-in by its raw numbers
+
+The named table deliberately holds only `Quantity`: the codes behind it are
+undocumented and are being mapped empirically, one confirmed example at a
+time. The raw-numbers form is what lets a scheme still be fully expressed
+even when a built-in has no name yet, and this is not a rare corner case: on
+a real 27-column door schedule, 2 columns need it.
+
+Criteria are read and preserved but not yet editable: the numeric codes behind
+them are undocumented and are being mapped in
+[docs/scheme-criteria-codes.md](docs/scheme-criteria-codes.md).
+
+### Limitations
+
+- **Criteria are read and preserved but cannot yet be edited.** See
+  [docs/scheme-criteria-codes.md](docs/scheme-criteria-codes.md) for what is
+  confirmed about the codes behind them so far, and what is still unknown.
+- **Every edit needs two manual steps in Archicad**, Export before and
+  Import after, because no API reaches schedules.
+- **Whether re-importing an edited scheme updates it in place or creates a
+  numbered duplicate is not yet confirmed.** Graphisoft's documentation says
+  duplicate names are auto-numbered, but real exports carry stable scheme
+  IDs, which suggests an in-place match may be possible. Test on a scratch
+  project before relying on either behaviour.
+- **`edit_schedule_scheme` refuses any file that would not survive a no-op
+  save unchanged.** This protects the parts of the format the server does
+  not model.
+
 ## Tools
 
 **QA (both modes):** `list_instances`, `get_model_summary`, `list_rules`,
@@ -153,8 +214,9 @@ Full reference: **[docs/rules.md](docs/rules.md)**.
 
 **Core (full mode):** `query_elements`, `get_element_data`, `set_element_data`,
 `create_elements`, `move_elements`, `delete_elements`, `manage_selection`,
-`get_project_info`, `list_attributes`, `manage_issues`, `publish`. Every write
-is dry-run by default; delete and move also require `confirm=true`.
+`get_project_info`, `list_attributes`, `manage_issues`, `publish`,
+`read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
+Every write is dry-run by default; delete and move also require `confirm=true`.
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_api_command`. The complete official + Tapir command surface (231
@@ -185,6 +247,8 @@ uv run python scripts/sync_tapir_defs.py
 - **[Known issues](docs/known-issues.md)**: the property-read crash, the element
   ceiling, verified property names, and what is validated end-to-end.
 - **[Writing rules](docs/rules.md)**: every rule type, field, and the scoring model.
+- **[Schedule criteria codes](docs/scheme-criteria-codes.md)**: the empirical
+  `Param_Type` and `Relation_Index` table, and how to extend it.
 
 ## License
 

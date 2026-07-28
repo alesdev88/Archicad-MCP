@@ -170,3 +170,18 @@ ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
 
 Pinning the port is deliberate: it stops the suite finding and touching whatever
 model happens to be open.
+
+## Schedules
+
+Schedules have no programmatic interface. No command in the official JSON API
+or Tapir reads or writes a schedule, and Graphisoft's developer forum states
+the C++ API does not reach them either. The only supported route is the Scheme
+Settings Import and Export XML, which is what the `*_schedule_scheme` tools
+operate on. This means every schedule edit needs two manual clicks in Archicad,
+before and after.
+
+Whether re-importing an edited scheme updates it in place or creates a numbered
+duplicate is **not yet confirmed**. Graphisoft's documentation says duplicate
+names are auto-numbered, but exported schemes carry stable IDs that suggest an
+in-place match may be possible. Test on a scratch project before relying on
+either behaviour.
