@@ -1,4 +1,8 @@
+import os
+import shutil
 from pathlib import Path
+
+import pytest
 
 from archicad_mcp.core.schemes import read_schedule_scheme
 
@@ -57,3 +61,24 @@ def test_malformed_xml_returns_an_error_envelope(tmp_path):
     out = read_schedule_scheme(str(bad))
     assert "error" in out
     assert "not valid XML" in out["error"]
+
+
+def test_directory_path_returns_a_distinct_error_envelope(tmp_path):
+    out = read_schedule_scheme(str(tmp_path))
+    assert "error" in out
+    assert "directory" in out["error"].lower()
+    assert "not found" not in out["error"].lower()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
+def test_unreadable_file_returns_an_error_envelope_instead_of_raising(tmp_path):
+    unreadable = tmp_path / "unreadable.xml"
+    shutil.copy(FIXTURE, unreadable)
+    os.chmod(unreadable, 0o000)
+    try:
+        out = read_schedule_scheme(str(unreadable))
+    finally:
+        # Restore permissions so pytest can clean up tmp_path afterwards.
+        os.chmod(unreadable, 0o644)
+    assert "error" in out
+    assert "could not be read" in out["error"]

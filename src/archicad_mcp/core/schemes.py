@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from archicad_mcp.schemes.model import (
-    KIND_BUILTIN,
     KIND_GDL_PARAM,
     KIND_PROPERTY,
     NULL_GUID,
@@ -17,6 +16,9 @@ from archicad_mcp.schemes.xml_io import load_scheme_tree
 def _load(path: str) -> Scheme | dict:
     """Returns a Scheme, or an {"error": ...} envelope the tool can return as-is."""
     p = Path(path).expanduser()
+    if p.is_dir():
+        return {"error": f"{p} is a directory, not a scheme file. Point this at the "
+                         "exported Scheme_Settings XML file instead."}
     if not p.is_file():
         return {"error": f"Scheme file not found: {p}. Export one from Archicad via "
                          "Document > Schedules > Scheme Settings > Export."}
@@ -24,6 +26,13 @@ def _load(path: str) -> Scheme | dict:
         tree = load_scheme_tree(p)
     except ET.ParseError as exc:
         return {"error": f"{p} is not valid XML: {exc}"}
+    except OSError as exc:
+        # ET.parse opens the file itself, so a file that exists but cannot be
+        # read (permissions, transient I/O error) raises OSError here, not
+        # ParseError. read_schedule_scheme must always return a dict, so this
+        # has to be caught same as the parse failure above, just reported
+        # with a message that does not claim the XML itself is invalid.
+        return {"error": f"{p} could not be read: {exc}"}
     if tree.getroot().tag != "Scheme_Settings":
         return {"error": f"{p} is not a schedule scheme. Expected a Scheme_Settings "
                          f"root, got {tree.getroot().tag}."}
