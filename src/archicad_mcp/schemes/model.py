@@ -17,15 +17,25 @@ KIND_BUILTIN = "builtin"
 GDL_PARAM_TYPE = 180
 
 
+def leaf_value(el: ET.Element) -> str:
+    """An element's own payload: its 'value' attribute if present, else its
+    stripped text. field_value (below) applies this convention to a named
+    child of a parent element; a caller that already has the target element
+    in hand, rather than a parent plus a tag name, uses this directly instead
+    of re-implementing the same rule (see scripts/diff_scheme_criteria.py,
+    which walks Criterion children it has already found)."""
+    if "value" in el.attrib:
+        return el.attrib["value"]
+    return (el.text or "").strip()
+
+
 def field_value(el: ET.Element, tag: str) -> str:
     """A child's payload. Most carry it in a 'value' attribute, some (Caption,
     Parameter_Desc_Name) carry it as text."""
     child = el.find(tag)
     if child is None:
         return ""
-    if "value" in child.attrib:
-        return child.attrib["value"]
-    return (child.text or "").strip()
+    return leaf_value(child)
 
 
 def set_field(el: ET.Element, tag: str, value: str) -> None:

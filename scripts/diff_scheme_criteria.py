@@ -15,7 +15,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from archicad_mcp.schemes.model import parse_scheme
+from archicad_mcp.schemes.model import is_element, leaf_value, parse_scheme
 from archicad_mcp.schemes.xml_io import load_scheme_tree
 
 # Fields already understood well enough that a change in them is expected
@@ -49,24 +49,15 @@ def _field_sort_key(field: str) -> tuple:
     return (1, 0, field)
 
 
-def _leaf_value(el: ET.Element) -> str:
-    """An element's own payload: its 'value' attribute if present, else its
-    stripped text. Same convention as archicad_mcp.schemes.model.field_value,
-    applied to the element itself rather than to one of its children."""
-    if "value" in el.attrib:
-        return el.attrib["value"]
-    return (el.text or "").strip()
-
-
 def _flatten(el: ET.Element, prefix: str) -> dict[str, str]:
     """Flatten one Criterion child into {path: value} pairs, recursing into
     nested containers such as UniValue so a change several levels down comes
     back as a full path like "UniValue/Variant/Value" instead of collapsing
     into an ambiguous top-level "UniValue"."""
-    children = [c for c in el if isinstance(c.tag, str)]
+    children = [c for c in el if is_element(c)]
     values: dict[str, str] = {}
     if "value" in el.attrib or not children:
-        values[prefix] = _leaf_value(el)
+        values[prefix] = leaf_value(el)
     for child in children:
         values.update(_flatten(child, f"{prefix}/{child.tag}"))
     return values
@@ -79,7 +70,7 @@ def _criterion_values(criterion) -> dict[str, str]:
     moment it changes, which is the entire point of this tool."""
     values: dict[str, str] = {}
     for child in criterion.element:
-        if not isinstance(child.tag, str):
+        if not is_element(child):
             continue  # skip comments and processing instructions
         values.update(_flatten(child, child.tag))
     return values
