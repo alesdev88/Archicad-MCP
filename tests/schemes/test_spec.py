@@ -510,3 +510,19 @@ def test_apply_adds_a_column_using_the_builtin_mapping_escape_hatch(tmp_path):
     assert by_caption["Mystery Field"].kind == KIND_BUILTIN
     assert by_caption["Mystery Field"].param_type == 0
     assert by_caption["Mystery Field"].param_index == -1561
+
+
+def test_builtin_list_value_raises_spec_error_not_type_error():
+    """A builtin bind whose value is a list (unhashable) must raise
+    SpecError, not TypeError. This was the live bug: the membership test
+    'value not in BUILTIN_FIELDS' raised TypeError: unhashable type: 'list'
+    instead of producing a clear SpecError message."""
+    with pytest.raises(SpecError):
+        binding_from_bind({"builtin": [0, -1]})
+
+
+def test_builtin_number_value_raises_spec_error():
+    """A builtin bind whose value is a number must also raise SpecError,
+    not be silently rejected. Numbers are hashable but not valid forms."""
+    with pytest.raises(SpecError):
+        binding_from_bind({"builtin": 123})

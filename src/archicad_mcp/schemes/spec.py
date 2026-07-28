@@ -149,6 +149,11 @@ def binding_from_bind(bind: dict, resolver: Callable[[str], str] | None = None) 
                     f"'param_index', both integers. Got: {value!r}")
             return Binding(kind=KIND_BUILTIN, param_type=value["param_type"],
                            param_index=value["param_index"])
+        if not isinstance(value, str):
+            known = ", ".join(sorted(BUILTIN_FIELDS)) or "none"
+            raise SpecError(
+                f"builtin must be a known field name ({known}) or a mapping with "
+                f"'param_type' and 'param_index'. Got: {value!r}")
         if value not in BUILTIN_FIELDS:
             known = ", ".join(sorted(BUILTIN_FIELDS)) or "none"
             raise SpecError(f"Unknown built-in field {value!r}. Known: {known}.")
