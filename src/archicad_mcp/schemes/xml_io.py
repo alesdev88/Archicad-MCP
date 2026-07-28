@@ -63,6 +63,13 @@ def save_scheme_tree(tree: ET.ElementTree, path: Path) -> None:
     tmp_path = Path(tmp_name)
     try:
         tmp_path.write_text(text, encoding="utf-8")
+        # mkstemp creates the file with mode 0o600 for security, but os.replace
+        # carries that mode to the destination. For scheme files shared between
+        # users and imported back into Archicad, ordinary permissions are needed.
+        if os.name != "nt":
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(tmp_name, 0o666 & ~umask)
         os.replace(tmp_name, path)
     except OSError:
         tmp_path.unlink(missing_ok=True)

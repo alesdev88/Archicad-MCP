@@ -1,3 +1,5 @@
+import os
+import platform
 from pathlib import Path
 
 import pytest
@@ -137,3 +139,21 @@ def test_round_trips_exactly_is_false_for_a_document_level_comment(tmp_path):
     path.write_text(original, encoding="utf-8")
 
     assert round_trips_exactly(path) is False
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions do not apply on Windows")
+def test_saved_file_has_ordinary_permissions(tmp_path):
+    """Saved scheme files should have ordinary permissions (0o666 masked by
+    umask), not owner-only (0o600). This is important because these files are
+    Archicad scheme exports that users import back into Archicad and may share
+    with colleagues."""
+    tree = load_scheme_tree(FIXTURE)
+    out = tmp_path / "out.xml"
+    save_scheme_tree(tree, out)
+
+    umask = os.umask(0)
+    os.umask(umask)
+    expected_mode = 0o666 & ~umask
+
+    actual_mode = out.stat().st_mode & 0o777
+    assert actual_mode == expected_mode
