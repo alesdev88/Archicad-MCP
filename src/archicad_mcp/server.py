@@ -194,6 +194,7 @@ def build_server(
 def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import element_data as _element_data
     from archicad_mcp.core import query as _query
+    from archicad_mcp.core import schemes as core_schemes
 
     def _conn(port: int | None):
         return get_connection(port if port is not None else default_port)
@@ -292,6 +293,45 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
         return _publish.publish(_conn(port), publisher_set_name)
+
+    @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
+                          "criteria and its ordered columns, with what each column "
+                          "binds to. Schedules have no API, so export the scheme "
+                          "first via Document > Schedules > Scheme Settings > Export "
+                          "and pass the file path. Reads the file only, never "
+                          "Archicad.")
+    def read_schedule_scheme(path: str) -> dict:
+        return core_schemes.read_schedule_scheme(path)
+
+    @mcp.tool(description="Apply a YAML scheme spec to an exported schedule scheme "
+                          "XML: set the columns and their order, retarget bindings, "
+                          "rename the scheme. DRY-RUN BY DEFAULT: returns the before "
+                          "and after column lists and writes nothing until "
+                          "dry_run=false. Never overwrites the input; writes to "
+                          "'output' or to <name>.edited.xml beside it. Import the "
+                          "result via Document > Schedules > Scheme Settings > "
+                          "Import. Criteria are preserved, not yet editable. A spec "
+                          "that binds every property by GUID needs no Archicad "
+                          "connection and runs fully offline; a spec that binds a "
+                          "property by a 'Group/Name' string needs Archicad open "
+                          "so the name can be resolved.")
+    @_guarded
+    def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
+                             output: str | None = None, dry_run: bool = True,
+                             port: int | None = None) -> dict:
+        return core_schemes.edit_schedule_scheme(
+            path, spec_path, spec_id, output, dry_run,
+            port if port is not None else default_port)
+
+    @mcp.tool(description="Check an exported schedule scheme against the open "
+                          "project: do its property bindings still exist, and does "
+                          "any column caption disagree with what it is bound to. "
+                          "Reads property definitions only, not values, so it does "
+                          "not risk the property-read crash.")
+    @_guarded
+    def validate_schedule_scheme(path: str, port: int | None = None) -> dict:
+        return core_schemes.validate_schedule_scheme(
+            path, port if port is not None else default_port)
 
     from archicad_mcp.gateway import execute as _gateway
     from archicad_mcp.gateway.registry import build_registry
