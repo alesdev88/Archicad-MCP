@@ -70,9 +70,9 @@ handling:
 
 | Binding | Encoded as | Example from the door scheme |
 |---|---|---|
-| Archicad property | `ACPropertyGuid` | `Oznaka vrat / Door ID` |
+| Archicad property | `ACPropertyGuid` | the door ID column |
 | GDL library parameter | `ACPropertyName` + `Parameter_Desc_Name`, with `Parameter_Type=180`, `Parameter_Index=-1604` | 20 of the 27 door columns |
-| Built-in field | `Parameter_Type` + `Parameter_Index` | `Količina / Quantity` is type 1, index -1003 |
+| Built-in field | `Parameter_Type` + `Parameter_Index` | the quantity column is type 1, index -1003 |
 
 **Criteria are undocumented numeric codes plus GUIDs.** The door scheme is
 three criteria: `Param_Type=88` with `Relation_Index=1` matching element
@@ -93,9 +93,10 @@ This is the foundation of the whole design and the first test to write.
 
 ### Incidental finding
 
-The door scheme's column captioned `Požarna Odpornost / Fire Resistance` binds
-to a GDL parameter named `Požarne Zahteve - NI v uporabi` ("not in use"). The
-caption and the binding disagree. This surfaced from parsing alone and is the
+In the schemes examined, a column captioned as a fire resistance rating turned
+out to be bound to a GDL parameter whose own name ended in "not in use". The
+caption and the binding disagreed, so the column had been reporting something
+other than what it claimed. This surfaced from parsing alone, and it is the
 motivating case for `validate_schedule_scheme`.
 
 ### Related format, out of scope
@@ -171,18 +172,18 @@ actually uses:
 ```yaml
 - id: door-schedule
   template: exports/door-scheme.xml
-  name: "Shema Vrat / Door Scheme"
+  name: "Door Schedule"
   criteria:
     - element_class: Door
     - property: "OFFICE/Fire Rating"
       relation: not-empty
   columns:
-    - caption: "Oznaka vrat / Door ID"
+    - caption: "Door ID"
       bind: { property: "OFFICE/Door ID" }
-    - caption: "Količina / Quantity"
+    - caption: "Quantity"
       bind: { builtin: Quantity }
-    - caption: "Požarna Odpornost / Fire Resistance"
-      bind: { gdl_param: "Požarna Odpornost" }
+    - caption: "Fire Resistance"
+      bind: { gdl_param: "Fire Rating" }
       width: 30
 ```
 

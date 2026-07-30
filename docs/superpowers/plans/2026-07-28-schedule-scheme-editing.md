@@ -15,7 +15,7 @@
 - **Serializer rules, all three required:** declaration is `<?xml version="1.0" encoding="UTF-8" standalone="no" ?>` followed by a newline; self-closing tags are `/>` with no preceding space; file ends with exactly one trailing newline.
 - **Preserve what we do not understand.** Only `Header_Items` and `Criteria_Settings` may be mutated. `View_Settings`, `W2D_Settings`, `DimensionSettings`, `FieldCustomDataStore` and every unrecognised element or attribute pass through untouched.
 - **No new runtime dependencies.** stdlib plus what `pyproject.toml` already declares.
-- **Test fixtures are anonymised.** Never commit the real office schemes from `~/Documents/ArchiCAD/AC templates/AC29/`. This repo is going public.
+- **Test fixtures are anonymised.** Never commit a real office scheme export. Keep them in a local directory outside the repo, the same way office rule YAML stays out. This repo is going public.
 - **Offline tests only.** Everything except `validate_schedule_scheme` runs with no Archicad. Use `FakeCore` from `tests/conftest.py` for the one that does.
 - **Tools register in `full` mode only**, inside `_register_full_mode_tools` in `src/archicad_mcp/server.py`.
 - **Writes are dry-run by default**, matching `set_element_data` and the other mutating tools.
@@ -296,7 +296,7 @@ Run this one-off check against a real export to confirm the round trip holds on 
 uv run python -c "
 from pathlib import Path
 from archicad_mcp.schemes.xml_io import load_scheme_tree, dumps_scheme_tree
-p = Path.home() / 'Documents/ArchiCAD/AC templates/AC29/2001 Shema Vrat _ Door Scheme.xml'
+p = Path('/path/to/a/real/scheme-export.xml')   # a local export, never committed
 print('byte-identical:', dumps_scheme_tree(load_scheme_tree(p)) == p.read_text(encoding='utf-8'))
 "
 ```
