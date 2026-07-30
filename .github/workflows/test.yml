@@ -25,6 +25,13 @@ jobs:
       # to track, so the alternatives are pinning a full version or sitting two
       # majors behind on v7. Bump this by hand (or let Dependabot do it).
       - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          # The default cache key carries the runner image's own default Python
+          # (3.14.6 on the macOS image, for instance), not UV_PYTHON, so both
+          # matrix entries for a given OS land on one key and race to reserve
+          # it: one saves and the other warns that another job may be creating
+          # the cache. The suffix gives every entry its own key.
+          cache-suffix: ${{ matrix.python-version }}
       - run: uv sync
       - run: uv run pytest -v
       - run: uv build
