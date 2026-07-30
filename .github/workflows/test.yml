@@ -15,8 +15,16 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      # Both pinned to versions that run on Node 24. checkout moved to Node 24
+      # in v5 and setup-uv in v7; the older v4/v5 pair here ran on Node 20,
+      # which the runners now force onto Node 24 anyway while emitting a
+      # deprecation warning on every job.
+      - uses: actions/checkout@v7
+      # Exact version, not a floating major like the line above, because
+      # astral-sh stopped publishing major tags after v7: there is no v8 or v9
+      # to track, so the alternatives are pinning a full version or sitting two
+      # majors behind on v7. Bump this by hand (or let Dependabot do it).
+      - uses: astral-sh/setup-uv@v9.0.0
       - run: uv sync
       - run: uv run pytest -v
       - run: uv build
