@@ -1,0 +1,15 @@
+# Scheme XML is compared byte for byte. tests/schemes/test_xml_io.py asserts
+# that a load/save cycle reproduces tests/fixtures/schemes/sample_scheme.xml
+# exactly, and round_trips_exactly() treats a newline difference as a rewrite
+# it must refuse. If a checkout converted these files to CRLF (Git for Windows
+# installs with core.autocrlf=true by default, and actions/checkout does not
+# override it), the fixture on disk would no longer be the bytes those tests
+# were written against. Pin it so every platform sees the same file.
+*.xml text eol=lf
+
+# Same reasoning for the YAML specs and rule files the suite reads, and for
+# Python sources, so nothing in the tree depends on the checkout's newline
+# policy.
+*.yaml text eol=lf
+*.yml text eol=lf
+*.py text eol=lf

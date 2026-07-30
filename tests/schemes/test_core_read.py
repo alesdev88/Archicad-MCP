@@ -98,11 +98,37 @@ def test_extremely_long_path_returns_an_error_envelope_instead_of_raising():
     assert "error" in out
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="ntpath.expanduser never leaves the leading ~ in place, so "
+           "Path.expanduser() cannot raise here; see the Windows twin below",
+)
 def test_nonexistent_home_directory_returns_an_error_envelope_instead_of_raising():
     # Path.expanduser() raises RuntimeError("Could not determine home directory.")
     # when given a path like ~nosuchuser/scheme.xml that references a nonexistent
     # user. This must be caught and returned as an error envelope, not raised
     # uncaught, or it breaks the "always returns a dict" contract.
+    #
+    # POSIX only. Path.expanduser() raises exactly when os.path.expanduser
+    # hands back a string still starting with "~", and only posixpath does
+    # that: it looks the user up with pwd.getpwnam and returns the path
+    # untouched when there is no such account. ntpath never looks anything up
+    # at all, so the RuntimeError branch in _load is unreachable on Windows.
     out = read_schedule_scheme("~nosuchuser12345/scheme.xml")
     assert "error" in out
     assert "could not be resolved" in out["error"].lower()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-specific expanduser behaviour")
+def test_nonexistent_home_directory_returns_an_error_envelope_on_windows():
+    """The Windows twin of the test above.
+
+    ntpath.expanduser synthesises a home directory by joining the parent of
+    USERPROFILE with the name after the "~", without checking that the account
+    exists, so "~nosuchuser12345/scheme.xml" resolves to something like
+    C:\\Users\\nosuchuser12345\\scheme.xml and Path.expanduser() never raises.
+    The path then simply does not exist. Different branch of _load, same
+    contract: a dict carrying an error, never an exception."""
+    out = read_schedule_scheme("~nosuchuser12345/scheme.xml")
+    assert "error" in out
+    assert "not found" in out["error"].lower()

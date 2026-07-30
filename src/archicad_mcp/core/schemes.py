@@ -186,6 +186,11 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
     # explicit <Tag></Tag>), refuse rather than silently mangling it.
     try:
         round_trips = round_trips_exactly(source)
+        # Read inside this try, not down in the failure branch below, so the
+        # OSError guard covers it too. A file that becomes unreadable between
+        # the two reads must still produce an error envelope rather than an
+        # escaping OSError, same contract the guards here already uphold.
+        has_crlf = not round_trips and b"\r\n" in source.read_bytes()
     except UnicodeDecodeError as exc:
         # round_trips_exactly reads the file as UTF-8 (same assumption as
         # every other read in this module) to compare it against the
@@ -211,6 +216,20 @@ def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
         # too, not just there.
         return {"error": f"{source} could not be read: {exc}"}
     if not round_trips:
+        # Newlines get their own message. round_trips_exactly compares real
+        # bytes, so a CRLF-newlined file fails it: our serializer always emits
+        # LF, and the XML parser normalises CRLF away before we see the text,
+        # so saving would rewrite every line ending. That is a true refusal,
+        # but the generic wording below would explain it wrongly, blaming an
+        # unmodelled XML construct and asserting this never happens to
+        # Archicad's own exports, which tells anyone holding a CRLF file to go
+        # looking for a problem that is not there.
+        if has_crlf:
+            return {"error": f"{source} uses CRLF line endings, which this server "
+                             "would rewrite to LF when saving, changing every line "
+                             "of the file rather than only the columns and criteria "
+                             "you asked to change. Convert it to LF line endings, or "
+                             "re-export it from Scheme Settings, and edit that copy."}
         return {"error": f"{source} contains XML this server would rewrite when "
                          "saving, so editing it could corrupt parts of the scheme "
                          "outside the columns and criteria. This does not happen "

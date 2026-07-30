@@ -14,7 +14,12 @@ from tests.schemes.conftest import FIXTURE
 
 
 def test_round_trip_is_byte_identical():
-    original = FIXTURE.read_text(encoding="utf-8")
+    # Decoded from the raw bytes, not read_text: read_text's universal-newline
+    # translation would compare against an LF-normalised copy of the fixture
+    # rather than the fixture, so this would pass on a CRLF checkout while
+    # claiming to prove byte identity. .gitattributes pins the fixture to LF
+    # so this is stable on every platform.
+    original = FIXTURE.read_bytes().decode("utf-8")
     tree = load_scheme_tree(FIXTURE)
     assert dumps_scheme_tree(tree) == original
 
@@ -58,7 +63,10 @@ def test_save_writes_utf8_bytes(tmp_path):
         "</Header_Items></Scheme_Settings>\n"
     )
     src = tmp_path / "non_ascii_source.xml"
-    src.write_text(text, encoding="utf-8")
+    # write_bytes, so the source on disk really is `text`. write_text would
+    # translate the newlines on Windows, leaving the assertion below comparing
+    # the output against something that was never what the source contained.
+    src.write_bytes(text.encode("utf-8"))
 
     tree = load_scheme_tree(src)
     out = tmp_path / "out.xml"
@@ -103,7 +111,7 @@ def test_comment_survives_round_trip_byte_exactly(tmp_path):
         '<Root><!-- keep me --><Child value="1"/></Root>\n'
     )
     path = tmp_path / "with_comment.xml"
-    path.write_text(original, encoding="utf-8")
+    path.write_bytes(original.encode("utf-8"))
 
     tree = load_scheme_tree(path)
 
@@ -116,7 +124,7 @@ def test_processing_instruction_survives_round_trip_byte_exactly(tmp_path):
         '<Root><?custom-instruction do="something"?><Child value="1"/></Root>\n'
     )
     path = tmp_path / "with_pi.xml"
-    path.write_text(original, encoding="utf-8")
+    path.write_bytes(original.encode("utf-8"))
 
     tree = load_scheme_tree(path)
 
@@ -133,7 +141,7 @@ def test_round_trips_exactly_is_false_for_an_explicit_empty_tag(tmp_path):
         "<Root><Tag></Tag></Root>\n"
     )
     path = tmp_path / "explicit_empty.xml"
-    path.write_text(original, encoding="utf-8")
+    path.write_bytes(original.encode("utf-8"))
 
     assert round_trips_exactly(path) is False
 
@@ -144,7 +152,7 @@ def test_comment_containing_self_closing_text_round_trips_byte_exactly(tmp_path)
         '<Root><!-- see <Foo /> above --><Child value="1"/></Root>\n'
     )
     path = tmp_path / "comment_with_self_closing_text.xml"
-    path.write_text(original, encoding="utf-8")
+    path.write_bytes(original.encode("utf-8"))
 
     tree = load_scheme_tree(path)
 
@@ -158,7 +166,28 @@ def test_round_trips_exactly_is_false_for_a_document_level_comment(tmp_path):
         "<Root><Child value=\"1\"/></Root>\n"
     )
     path = tmp_path / "document_level_comment.xml"
-    path.write_text(original, encoding="utf-8")
+    path.write_bytes(original.encode("utf-8"))
+
+    assert round_trips_exactly(path) is False
+
+
+def test_round_trips_exactly_is_false_for_a_crlf_file(tmp_path):
+    """dumps_scheme_tree always emits LF, and the XML parser normalises CRLF
+    to LF before we ever see the text, so a CRLF-newlined scheme is a file
+    this serializer would rewrite. round_trips_exactly must say so.
+
+    This used to return True on every platform: it read the file with
+    Path.read_text, whose universal-newline translation turns CRLF back into
+    LF, so the comparison could not see the very difference save_scheme_tree
+    was about to introduce. The guard exists to refuse files we would rewrite,
+    and a newline rewrite is a rewrite, so reading it newline-blind defeated
+    the guard for exactly this case."""
+    original = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\r\n'
+        '<Root><Child value="1"/></Root>\r\n'
+    )
+    path = tmp_path / "crlf.xml"
+    path.write_bytes(original.encode("utf-8"))
 
     assert round_trips_exactly(path) is False
 

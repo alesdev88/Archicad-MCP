@@ -230,13 +230,35 @@ def test_template_mismatch_still_warns_even_with_a_directory_component(tmp_path)
     assert out["warnings"] and "exports/window_scheme.xml" in out["warnings"][0]
 
 
+def test_refuses_a_crlf_scheme_and_says_so_in_those_terms(tmp_path):
+    """A CRLF file genuinely fails round_trips_exactly (we always emit LF), so
+    refusing it is right. What matters is which reason the user is given: the
+    generic "contains XML this server would rewrite" message ends with "this
+    does not happen with schemes exported by Archicad", which would send
+    someone holding a CRLF export hunting for a nonexistent XML defect. The
+    error has to name the line endings."""
+    scheme, spec = setup_case(tmp_path)
+    text = scheme.read_bytes().decode("utf-8")
+    scheme.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+
+    out = edit_schedule_scheme(str(scheme), str(spec))
+
+    assert "error" in out
+    assert "crlf" in out["error"].lower()
+    assert "does not happen" not in out["error"]
+
+
 def test_refuses_a_scheme_it_would_rewrite_on_save(tmp_path):
     _, spec = setup_case(tmp_path)
     # An explicit <Tag></Tag> pair is a construct the serializer would collapse.
     weird = tmp_path / "weird.xml"
-    weird.write_text(FIXTURE.read_text(encoding="utf-8").replace(
+    # write_bytes: this test must fail because of the explicit <Tag></Tag>
+    # pair, not because write_text gave the file CRLF newlines on Windows,
+    # which round_trips_exactly would also (correctly) reject. Same reason for
+    # decoding the fixture's bytes rather than read_text-ing them.
+    weird.write_bytes(FIXTURE.read_bytes().decode("utf-8").replace(
         "<DimensionSetting value=\"0\"/>",
-        "<DimensionSetting value=\"0\"></DimensionSetting>", 1), encoding="utf-8")
+        "<DimensionSetting value=\"0\"></DimensionSetting>", 1).encode("utf-8"))
     out = edit_schedule_scheme(str(weird), str(spec))
     assert "error" in out
     assert "corrupt" in out["error"].lower()
@@ -627,10 +649,14 @@ async def test_tool_converts_missing_archicad_to_an_error_envelope_when_a_name_n
 
 def test_comment_in_header_items_survives_a_full_edit_schedule_scheme_run(tmp_path):
     scheme, spec = setup_case(tmp_path)
-    text = scheme.read_text(encoding="utf-8")
+    text = scheme.read_bytes().decode("utf-8")
     text = text.replace(
         "<Header_Items>", "<Header_Items><!-- office standard: do not reorder -->", 1)
-    scheme.write_text(text, encoding="utf-8")
+    # Bytes in, bytes out: a write_text round trip here would convert the
+    # copied fixture's LF newlines to CRLF on Windows, and edit_schedule_scheme
+    # would then refuse the file as one it would rewrite, so this test would
+    # fail there for a reason that has nothing to do with comment survival.
+    scheme.write_bytes(text.encode("utf-8"))
 
     dest = tmp_path / "edited.xml"
     out = edit_schedule_scheme(str(scheme), str(spec), output=str(dest), dry_run=False)

@@ -62,7 +62,13 @@ def save_scheme_tree(tree: ET.ElementTree, path: Path) -> None:
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
-        tmp_path.write_text(text, encoding="utf-8")
+        # newline="" disables newline translation, so the bytes on disk are
+        # exactly dumps_scheme_tree's output on every platform. Without it,
+        # text mode rewrites every "\n" to os.linesep, which on Windows means
+        # a no-op edit silently converts all ~114 line endings of a real
+        # Archicad export from LF to CRLF, breaking the byte-for-byte
+        # round-trip guarantee this whole module is built on.
+        tmp_path.write_text(text, encoding="utf-8", newline="")
         # mkstemp creates the file with mode 0o600 for security, but os.replace
         # carries that mode to the destination. For scheme files shared between
         # users and imported back into Archicad, ordinary permissions are needed.
@@ -83,9 +89,19 @@ def round_trips_exactly(path: Path) -> bool:
     editing, so a file with a construct our serializer would rewrite is
     refused loudly instead of being silently mangled.
 
-    Reads path as UTF-8, same assumption as every other read in this module,
-    because that is what Archicad's own exports always are. A file that
-    declares, and is actually written in, a different encoding raises
+    Reads the raw bytes and decodes them as UTF-8 rather than going through
+    Path.read_text, so the comparison sees the file's real line endings.
+    read_text applies universal-newline translation, which turns CRLF into LF
+    on the way in and so hid the one rewrite the caller is most likely to hit:
+    dumps_scheme_tree always emits LF, so a CRLF-newlined scheme would be
+    rewritten on save, and a newline-blind read reported it as round-tripping
+    exactly. (Path.read_text only grew a newline parameter in 3.13, and this
+    package supports 3.12, so decoding the bytes ourselves is also the
+    portable way to say this.)
+
+    Same UTF-8 assumption as every other read in this module, because that is
+    what Archicad's own exports always are. A file that declares, and is
+    actually written in, a different encoding raises
     UnicodeDecodeError here rather than this function catching it and
     returning False: "this server would rewrite parts of the file" and "this
     is not the encoding we assumed" are different problems with different
@@ -97,6 +113,6 @@ def round_trips_exactly(path: Path) -> bool:
     never calls this function at all, so a non-UTF-8 file already works there
     regardless.
     """
-    original = path.read_text(encoding="utf-8")
+    original = path.read_bytes().decode("utf-8")
     tree = load_scheme_tree(path)
     return dumps_scheme_tree(tree) == original
