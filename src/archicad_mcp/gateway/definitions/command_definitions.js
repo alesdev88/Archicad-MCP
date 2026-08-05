@@ -73,6 +73,114 @@ var gCommands = [{
                 "outputScheme": {
         "$ref": "#/ExecutionResult"
     }
+            },{
+                "name": "GetUserGSID",
+                "version": "1.5.6",
+                "description": "Get the current registered User-GSID and OrganizationsID. Requires Archicad 27 or later.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "userId": {
+                "type": "string",
+                "description": "The stable GSID User ID of the logged-in user."
+            },
+            "organizationIds": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "The list of organization IDs the user belongs to. Empty if not part of any organization or if the information cannot be retrieved."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "userId"
+        ]
+    }
+            },{
+                "name": "ShowAlert",
+                "version": "1.5.6",
+                "description": "Display a dialog with up to three buttons.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "alertType": {
+                "type": "string",
+                "enum": ["information", "warning", "error"],
+                "description": "The type of the alert dialog."
+            },
+            "title": {
+                "type": "string",
+                "description": "The title of the alert dialog."
+            },
+            "message": {
+                "type": "string",
+                "description": "The main message text."
+            },
+            "subMessage": {
+                "type": "string",
+                "description": "Optional smaller sub-message text below the main message."
+            },
+            "button1": {
+                "type": "string",
+                "description": "Label for the first (default) button."
+            },
+            "button2": {
+                "type": "string",
+                "description": "Label for the second button (e.g. Cancel)."
+            },
+            "button3": {
+                "type": "string",
+                "description": "Label for the optional third button."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["alertType", "title", "message", "button1"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "clickedButton": {
+                "type": "integer",
+                "description": "Index of the button the user clicked: 1 = button1, 2 = button2, 3 = button3."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["clickedButton"]
+    }
+            },{
+                "name": "GetSpecialFolders",
+                "version": "1.5.6",
+                "description": "Retrieves the filesystem paths of the special folders of the running Archicad (preferences, cache, data, temporary, application, defaults, templates, help, embedded project library, etc.).",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "folderTypes": {
+                "type": "array",
+                "description": "The types of the special folders to retrieve.",
+                "items": {
+                    "$ref": "#/SpecialFolderType"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "folderTypes"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "folderPaths": {
+                "$ref": "#/SpecialFolderPathsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "folderPaths"
+        ]
+    }
             }]
         },{
             "name": "Project Commands",
@@ -1163,6 +1271,42 @@ var gCommands = [{
         "$ref": "#/ConnectedElementsOrError"
     }
             },{
+                "name": "GetRelationsOfElements",
+                "version": "1.5.7",
+                "description": "Gets the type-specific relations of the given elements: endpoint and reference line connections of walls, beams and beam segments, boundary elements and boundary sections of zones, the zones on the two sides of windows, doors, skylights and curtain wall panels, and the zones connected to roofs and shells. Available from Archicad 26.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            },
+            "otherElementType": {
+                "$ref": "#/ElementType",
+                "description": "Optional filter: only relations to elements of this type are returned."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "relations": {
+                "type": "array",
+                "description": "Type-specific relations of each element, aligned with the input.",
+                "items": {
+                    "$ref": "#/ElementRelationsOrError"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "relations"
+        ]
+    }
+            },{
                 "name": "GetZoneBoundaries",
                 "version": "1.2.3",
                 "description": "Gets the boundaries of the given Zone (connected elements, neighbour zones, etc.).",
@@ -1573,7 +1717,7 @@ var gCommands = [{
 }
             },{
                 "name": "SetGDLParametersOfElements",
-                "version": "1.0.8",
+                "version": "1.5.7",
                 "description": "Sets the given GDL parameters of the given elements.",
                 "inputScheme": {
     "type": "object",
@@ -2195,7 +2339,7 @@ var gCommands = [{
             },{
                 "name": "CreateRoofs",
                 "version": "1.4.0",
-                "description": "Creates multi-plane Roof elements based on footprint, level and roof profile data.",
+                "description": "Creates Roof elements based on footprint, level and roof profile data. Creates a multi-plane roof by default; pass 'pivotLine' (and optionally 'angle') to create a single-plane roof instead.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -2217,6 +2361,21 @@ var gCommands = [{
                             "items": { "$ref": "#/PolyArc" }
                         },
                         "holes": { "$ref": "#/Holes2D" },
+                        "pivotLine": {
+                            "type": "object",
+                            "description": "If given, a single-plane roof is created instead of a multi-plane roof: one plane tilted along this pivot line. The plane rises on the left side of the line direction (begCoordinate towards endCoordinate); flip the line to tilt towards the other side.",
+                            "properties": {
+                                "begCoordinate": { "$ref": "#/Coordinate2D" },
+                                "endCoordinate": { "$ref": "#/Coordinate2D" }
+                            },
+                            "additionalProperties": false,
+                            "required": ["begCoordinate", "endCoordinate"]
+                        },
+                        "angle": {
+                            "type": "number",
+                            "description": "Slope angle of the single-plane roof in radians. Only valid together with 'pivotLine'.",
+                            "exclusiveMinimum": 0.0
+                        },
                         "eavesOverhang": { "type": "number" },
                         "levels": {
                             "type": "array",
@@ -2539,7 +2698,11 @@ var gCommands = [{
                         "type": "number",
                         "description" : "Optional pen weight override in mm."
                     },
-                    "coordinates": { 
+                    "roomSeparator": {
+                        "type": "boolean",
+                        "description": "Is this a zone boundary line? Optional, defaults to false."
+                    },
+                    "coordinates": {
                         "type": "array",
                         "description": "The 2D coordinates of the polyline.",
                         "items": {
@@ -2580,8 +2743,431 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "CreateLineElements",
+                "version": "1.5.7",
+                "description": "Creates Line elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "linesData": {
+            "type": "array",
+            "description": "Array of data to create Lines.",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Line.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the line on. Optional parameter, by default the current layer is used."
+                    },
+                    "begCoordinate": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "endCoordinate": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "roomSeparator": {
+                        "type": "boolean",
+                        "description": "Is this a zone boundary line? Optional, defaults to false."
+                    },
+                    "linePenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index. By default the current pen is used."
+                    },
+                    "lineTypeId": {
+                        "$ref": "#/AttributeId",
+                        "description": "Optional line type attribute. By default the current line type is used."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "begCoordinate",
+                    "endCoordinate"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "linesData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateArcs",
+                "version": "1.5.7",
+                "description": "Creates Arc elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "arcsData": {
+            "type": "array",
+            "description": "Array of data to create Arcs.",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Arc.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the arc on. Optional parameter, by default the current layer is used."
+                    },
+                    "origin": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "radius": {
+                        "type": "number"
+                    },
+                    "begAngle": {
+                        "type": "number",
+                        "description": "Beginning angle of the arc in radians."
+                    },
+                    "endAngle": {
+                        "type": "number",
+                        "description": "End angle of the arc in radians."
+                    },
+                    "roomSeparator": {
+                        "type": "boolean",
+                        "description": "Is this a zone boundary line? Optional, defaults to false."
+                    },
+                    "linePenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index. By default the current pen is used."
+                    },
+                    "lineTypeId": {
+                        "$ref": "#/AttributeId",
+                        "description": "Optional line type attribute. By default the current line type is used."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "origin",
+                    "radius",
+                    "begAngle",
+                    "endAngle"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "arcsData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateCircles",
+                "version": "1.5.7",
+                "description": "Creates Circle elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "circlesData": {
+            "type": "array",
+            "description": "Array of data to create Circles.",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Circle.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the circle on. Optional parameter, by default the current layer is used."
+                    },
+                    "origin": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "radius": {
+                        "type": "number"
+                    },
+                    "roomSeparator": {
+                        "type": "boolean",
+                        "description": "Is this a zone boundary line? Optional, defaults to false."
+                    },
+                    "linePenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index. By default the current pen is used."
+                    },
+                    "lineTypeId": {
+                        "$ref": "#/AttributeId",
+                        "description": "Optional line type attribute. By default the current line type is used."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "origin",
+                    "radius"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "circlesData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateHotspots",
+                "version": "1.5.7",
+                "description": "Creates Hotspot elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "hotspotsData": {
+            "type": "array",
+            "description": "Array of data to create Hotspots.",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Hotspot.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the hotspot on. Optional parameter, by default the current layer is used."
+                    },
+                    "position": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "height": {
+                        "type": "number"
+                    },
+                    "penIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index. By default the current pen is used."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "position"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "hotspotsData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateHatches",
+                "version": "1.5.7",
+                "description": "Creates Hatch elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "hatchesData": {
+            "type": "array",
+            "description": "Array of data to create Hatches.",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Hatch.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the hatch on. Optional parameter, by default the current layer is used."
+                    },
+                    "coordinates": {
+                        "type": "array",
+                        "description": "The 2D coordinates of the hatch outline (single contour, no holes). Do not repeat the first point at the end.",
+                        "items": {
+                            "$ref": "#/Coordinate2D"
+                        },
+                        "minItems": 3
+                    },
+                    "arcs": {
+                        "type": "array",
+                        "description": "The arcs of the hatch outline.",
+                        "items": {
+                            "$ref": "#/PolyArc"
+                        }
+                    },
+                    "contourPenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index for the contour. By default the current pen is used."
+                    },
+                    "fillPenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index for the fill. By default the current pen is used."
+                    },
+                    "fillBackgroundPenIndex": {
+                        "type": "integer"
+                    },
+                    "fillId": {
+                        "$ref": "#/AttributeId",
+                        "description": "Optional fill attribute. By default the current fill is used."
+                    },
+                    "buildingMaterialId": {
+                        "$ref": "#/AttributeId"
+                    },
+                    "roomSpecial": {
+                        "type": "integer",
+                        "description": "Special area percent in a room (negative means OFF)."
+                    },
+                    "showArea": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "coordinates"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "hatchesData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateSplines",
+                "version": "1.5.7",
+                "description": "Creates Spline elements based on the given parameters.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "splinesData": {
+            "type": "array",
+            "description": "Array of data to create Splines. Only auto-smoothed curves are supported (bezier handle positions are calculated automatically by Archicad from the point positions).",
+            "items": {
+                "type": "object",
+                "description": "The parameters of the new Spline.",
+                "properties": {
+                    "floorInd": {
+                        "type": "number",
+                        "description": "The identifier of the floor. Optional parameter, by default the current floor is used."
+                    },
+                    "layerIndex": {
+                        "type": "integer",
+                        "description": "Layer attribute index to place the spline on. Optional parameter, by default the current layer is used."
+                    },
+                    "coordinates": {
+                        "type": "array",
+                        "description": "The 2D coordinates of the spline points. Do not repeat the first point at the end even for a closed spline.",
+                        "items": {
+                            "$ref": "#/Coordinate2D"
+                        },
+                        "minItems": 3
+                    },
+                    "closed": {
+                        "type": "boolean",
+                        "description": "Is this a closed curve? Optional, defaults to false."
+                    },
+                    "roomSeparator": {
+                        "type": "boolean",
+                        "description": "Is this a zone boundary line? Optional, defaults to false."
+                    },
+                    "linePenIndex": {
+                        "type": "integer",
+                        "description": "Optional pen index. By default the current pen is used."
+                    },
+                    "lineTypeId": {
+                        "$ref": "#/AttributeId",
+                        "description": "Optional line type attribute. By default the current line type is used."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "coordinates"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "splinesData"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
                 "name": "CreateObjects",
-                "version": "1.0.3",
+                "version": "1.5.7",
                 "description": "Creates Object elements based on the given parameters.",
                 "inputScheme": {
         "type": "object",
@@ -2603,6 +3189,44 @@ var gCommands = [{
                         "dimensions": {
                             "$ref": "#/Dimensions3D"
                         },
+                        
+        "angle": { "type": "number" },
+        "pen": { "type": "integer" },
+        "lineTypeId": { "$ref": "#/AttributeId" },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Material/Surface override (API_ObjectType.mat)." },
+        "sectionFillId": { "$ref": "#/AttributeId" },
+        "sectionFillPen": { "type": "integer" },
+        "sectionFillBackgroundPen": { "type": "integer" },
+        "sectionContourPen": { "type": "integer" },
+        "useObjectPens": { "type": "boolean" },
+        "useObjectLineTypes": { "type": "boolean" },
+        "useObjectMaterials": { "type": "boolean" },
+        "useObjectSectionAttributes": { "type": "boolean" },
+        "reflected": { "type": "boolean" },
+        "useFixSize": { "type": "boolean" },
+        "fixPoint": { "type": "integer", "description": "0-based index of the hotspot to keep fixed (raw API_ObjectType.fixPoint value, not 1-based)." },
+        "offset": { "$ref": "#/Coordinate2D", "description": "Offset of the symbol's origin from the insertion point. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default hotspot offset regardless of what is sent) - same class of read-only-in-practice field as Morph's bodyType/edgeType/level." },
+        "useFixedAngle": { "type": "boolean", "description": "Use a fixed rotation angle. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify." },
+        "isAutoOnStoryVisibility": { "type": "boolean" },
+        "visibility": {
+            "type": "object",
+            "properties": {
+                "showOnHome": { "type": "boolean" },
+                "showAllAbove": { "type": "boolean" },
+                "showAllBelow": { "type": "boolean" },
+                "showRelAbove": { "type": "integer" },
+                "showRelBelow": { "type": "integer" }
+            },
+            "additionalProperties": false
+        },
+        "linkToSettings": {
+            "type": "object",
+            "properties": {
+                "homeStoryDifference": { "type": "integer" },
+                "newCreationMode": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        },
                         "floorIndex": {
                             "type": "integer",
                             "description": "Optional floor index. If omitted, derived from the coordinate's z value."
@@ -2635,7 +3259,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateLamps",
-                "version": "1.5.0",
+                "version": "1.5.7",
                 "description": "Creates Lamp elements based on the given parameters.",
                 "inputScheme": {
         "type": "object",
@@ -2657,6 +3281,46 @@ var gCommands = [{
                         "dimensions": {
                             "$ref": "#/Dimensions3D"
                         },
+                        
+        "angle": { "type": "number" },
+        "pen": { "type": "integer" },
+        "lineTypeId": { "$ref": "#/AttributeId" },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Material/Surface override (API_ObjectType.mat)." },
+        "sectionFillId": { "$ref": "#/AttributeId" },
+        "sectionFillPen": { "type": "integer" },
+        "sectionFillBackgroundPen": { "type": "integer" },
+        "sectionContourPen": { "type": "integer" },
+        "useObjectPens": { "type": "boolean" },
+        "useObjectLineTypes": { "type": "boolean" },
+        "useObjectMaterials": { "type": "boolean" },
+        "useObjectSectionAttributes": { "type": "boolean" },
+        "reflected": { "type": "boolean" },
+        "useFixSize": { "type": "boolean" },
+        "fixPoint": { "type": "integer", "description": "0-based index of the hotspot to keep fixed (raw API_ObjectType.fixPoint value, not 1-based)." },
+        "offset": { "$ref": "#/Coordinate2D", "description": "Offset of the symbol's origin from the insertion point. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default hotspot offset regardless of what is sent) - same class of read-only-in-practice field as Morph's bodyType/edgeType/level." },
+        "useFixedAngle": { "type": "boolean", "description": "Use a fixed rotation angle. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify." },
+        "isAutoOnStoryVisibility": { "type": "boolean" },
+        "visibility": {
+            "type": "object",
+            "properties": {
+                "showOnHome": { "type": "boolean" },
+                "showAllAbove": { "type": "boolean" },
+                "showAllBelow": { "type": "boolean" },
+                "showRelAbove": { "type": "integer" },
+                "showRelBelow": { "type": "integer" }
+            },
+            "additionalProperties": false
+        },
+        "linkToSettings": {
+            "type": "object",
+            "properties": {
+                "homeStoryDifference": { "type": "integer" },
+                "newCreationMode": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        },
+        "lightColor": { "$ref": "#/ColorRGB", "description": "Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default light color). lightIsOn (the on/off state, as opposed to the color) does not have this problem." },
+        "lightIsOn": { "type": "boolean" },
                         "floorIndex": {
                             "type": "integer",
                             "description": "Optional floor index. If omitted, derived from the coordinate's z value."
@@ -3393,6 +4057,178 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "ModifyObjects",
+                "version": "1.5.7",
+                "description": "Modifies Object elements based on the given parameters.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "objectsWithDetails": {
+                "type": "array",
+                "description": "Array of elements to modify, with the fields to change. Only provided fields are changed; omitted fields are left as-is.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": {
+                            "$ref": "#/ElementId"
+                        },
+                        "coordinates": {
+                            "$ref": "#/Coordinate3D"
+                        },
+                        "dimensions": {
+                            "$ref": "#/Dimensions3D"
+                        },
+                        
+        "angle": { "type": "number" },
+        "pen": { "type": "integer" },
+        "lineTypeId": { "$ref": "#/AttributeId" },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Material/Surface override (API_ObjectType.mat)." },
+        "sectionFillId": { "$ref": "#/AttributeId" },
+        "sectionFillPen": { "type": "integer" },
+        "sectionFillBackgroundPen": { "type": "integer" },
+        "sectionContourPen": { "type": "integer" },
+        "useObjectPens": { "type": "boolean" },
+        "useObjectLineTypes": { "type": "boolean" },
+        "useObjectMaterials": { "type": "boolean" },
+        "useObjectSectionAttributes": { "type": "boolean" },
+        "reflected": { "type": "boolean" },
+        "useFixSize": { "type": "boolean" },
+        "fixPoint": { "type": "integer", "description": "0-based index of the hotspot to keep fixed (raw API_ObjectType.fixPoint value, not 1-based)." },
+        "offset": { "$ref": "#/Coordinate2D", "description": "Offset of the symbol's origin from the insertion point. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default hotspot offset regardless of what is sent) - same class of read-only-in-practice field as Morph's bodyType/edgeType/level." },
+        "useFixedAngle": { "type": "boolean", "description": "Use a fixed rotation angle. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify." },
+        "isAutoOnStoryVisibility": { "type": "boolean" },
+        "visibility": {
+            "type": "object",
+            "properties": {
+                "showOnHome": { "type": "boolean" },
+                "showAllAbove": { "type": "boolean" },
+                "showAllBelow": { "type": "boolean" },
+                "showRelAbove": { "type": "integer" },
+                "showRelBelow": { "type": "integer" }
+            },
+            "additionalProperties": false
+        },
+        "linkToSettings": {
+            "type": "object",
+            "properties": {
+                "homeStoryDifference": { "type": "integer" },
+                "newCreationMode": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        }
+                    },
+                    "additionalProperties": false,
+                    "required" : [
+                        "elementId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "objectsWithDetails"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "ModifyLamps",
+                "version": "1.5.7",
+                "description": "Modifies Lamp elements based on the given parameters.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "lampsWithDetails": {
+                "type": "array",
+                "description": "Array of elements to modify, with the fields to change. Only provided fields are changed; omitted fields are left as-is.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": {
+                            "$ref": "#/ElementId"
+                        },
+                        "coordinates": {
+                            "$ref": "#/Coordinate3D"
+                        },
+                        "dimensions": {
+                            "$ref": "#/Dimensions3D"
+                        },
+                        
+        "angle": { "type": "number" },
+        "pen": { "type": "integer" },
+        "lineTypeId": { "$ref": "#/AttributeId" },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Material/Surface override (API_ObjectType.mat)." },
+        "sectionFillId": { "$ref": "#/AttributeId" },
+        "sectionFillPen": { "type": "integer" },
+        "sectionFillBackgroundPen": { "type": "integer" },
+        "sectionContourPen": { "type": "integer" },
+        "useObjectPens": { "type": "boolean" },
+        "useObjectLineTypes": { "type": "boolean" },
+        "useObjectMaterials": { "type": "boolean" },
+        "useObjectSectionAttributes": { "type": "boolean" },
+        "reflected": { "type": "boolean" },
+        "useFixSize": { "type": "boolean" },
+        "fixPoint": { "type": "integer", "description": "0-based index of the hotspot to keep fixed (raw API_ObjectType.fixPoint value, not 1-based)." },
+        "offset": { "$ref": "#/Coordinate2D", "description": "Offset of the symbol's origin from the insertion point. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default hotspot offset regardless of what is sent) - same class of read-only-in-practice field as Morph's bodyType/edgeType/level." },
+        "useFixedAngle": { "type": "boolean", "description": "Use a fixed rotation angle. Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify." },
+        "isAutoOnStoryVisibility": { "type": "boolean" },
+        "visibility": {
+            "type": "object",
+            "properties": {
+                "showOnHome": { "type": "boolean" },
+                "showAllAbove": { "type": "boolean" },
+                "showAllBelow": { "type": "boolean" },
+                "showRelAbove": { "type": "integer" },
+                "showRelBelow": { "type": "integer" }
+            },
+            "additionalProperties": false
+        },
+        "linkToSettings": {
+            "type": "object",
+            "properties": {
+                "homeStoryDifference": { "type": "integer" },
+                "newCreationMode": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        },
+        "lightColor": { "$ref": "#/ColorRGB", "description": "Reported accurately on Get, but confirmed live that Archicad silently discards this value through both Create and Modify (Get always reports the library part's own default light color). lightIsOn (the on/off state, as opposed to the color) does not have this problem." },
+        "lightIsOn": { "type": "boolean" }
+                    },
+                    "additionalProperties": false,
+                    "required" : [
+                        "elementId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "lampsWithDetails"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
                 "name": "GetElementPreviewImage",
                 "version": "1.2.7",
                 "description": "Returns the preview image of the given element.",
@@ -3590,6 +4426,121 @@ var gCommands = [{
         "additionalProperties": false,
         "required": [
             "groupGuids"
+        ]
+    }
+            },{
+                "name": "GetGroupsOfElements",
+                "version": "1.5.6",
+                "description": "Gets the identifier of the group that directly contains each given element. Returns an error for elements that are not part of any group.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "groupGuids": {
+                "type": "array",
+                "description": "The identifier of the group that directly contains each given element, or an error for elements that are not part of any group.",
+                "items": {
+                    "$ref": "#/GroupIdOrError"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "groupGuids"
+        ]
+    }
+            },{
+                "name": "GetElementsOfGroups",
+                "version": "1.5.6",
+                "description": "Gets the elements directly contained by each given group.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "groups": {
+                "type": "array",
+                "description": "The groups to get the elements of.",
+                "items": {
+                    "$ref": "#/GroupIdArrayItem"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "groups"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elementsOfGroups": {
+                "type": "array",
+                "description": "The elements directly contained by each given group, or an error.",
+                "items": {
+                    "$ref": "#/ElementsWrapperOrError"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementsOfGroups"
+        ]
+    }
+            },{
+                "name": "GetSuspendGroupsMode",
+                "version": "1.5.6",
+                "description": "Gets the current state of the Suspend Groups mode.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "suspendGroups": {
+                "type": "boolean",
+                "description": "True if the Suspend Groups mode is currently on."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "suspendGroups"
+        ]
+    }
+            },{
+                "name": "SetSuspendGroupsMode",
+                "version": "1.5.6",
+                "description": "Turns the Suspend Groups mode on or off. Suspend groups to perform operations on elements that are part of a group; remember to restore the previous state afterwards.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "suspendGroups": {
+                "type": "boolean",
+                "description": "Turn the Suspend Groups mode on or off."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "suspendGroups"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResult": {
+                "$ref": "#/ExecutionResult"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResult"
         ]
     }
             }]
@@ -6918,6 +7869,45 @@ var gCommands = [{
     },
                 "outputScheme": {"type":"object","properties":{"elements":{"$ref":"#/Elements"}},"additionalProperties":false,"required":["elements"]}
             },{
+                "name": "ChangeDrawingLink",
+                "version": "1.5.7",
+                "description": "Relinks a Drawing to a different source navigator item. Archicad has no in-place relink API, so this recreates the Drawing against the new source and deletes the original - the returned elementId is a NEW guid, not the input one. The Drawing Title marker's own position is not preserved (undocumented Archicad limitation).",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "drawingsWithNewLinks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "description": "An existing Drawing and the navigator item it should be relinked to.",
+                    "properties": {
+                        "elementId": { "$ref": "#/ElementId" },
+                        "navigatorItemId": { "$ref": "#/NavigatorItemId" },
+                        "layoutDatabaseId": { "$ref": "#/DatabaseId" }
+                    },
+                    "additionalProperties": false,
+                    "required": ["elementId", "navigatorItemId", "layoutDatabaseId"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["drawingsWithNewLinks"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "type": "array",
+                "description": "One result per input item. On success, elementId is the NEW Drawing's identifier - relinking necessarily replaces the element, it cannot keep the original guid.",
+                "items": {
+                    "$ref": "#/ElementIdOrError"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements"]
+    }
+            },{
                 "name": "GetLayoutSettings",
                 "version": "1.1.7",
                 "description": "Gets settings of layouts, including Layout Info Panel custom data fields.",
@@ -8458,6 +9448,840 @@ var gCommands = [{
         "required": [
             "executionResults"
         ]
+    }
+            }]
+        },{
+            "name": "Keynote Commands",
+            "commands": [{
+                "name": "GetKeynoteTree",
+                "version": "1.5.6",
+                "description": "Retrieves the whole keynote folder and item hierarchy. The technical root folder is not included in the output; the top-level folders and items are returned directly. Available from Archicad 28.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "foldersInRoot": {
+                "type": "array",
+                "description": "The top-level keynote folders with their content recursively. The technical root folder itself is not included.",
+                "items": {
+                    "$ref": "#/KeynoteFolderDetails"
+                }
+            },
+            "itemsInRoot": {
+                "type": "array",
+                "description": "The keynote items located directly in the technical root folder.",
+                "items": {
+                    "$ref": "#/KeynoteItemDetails"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "foldersInRoot",
+            "itemsInRoot"
+        ]
+    }
+            },{
+                "name": "GetKeynoteAutoTexts",
+                "version": "1.5.6",
+                "description": "Retrieves the autotext tokens of the given keynote items. The tokens can be used as label text content to reference the fields of a keynote item. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "keynoteItems": {
+                "type": "array",
+                "description": "The keynote items to get the autotext tokens for.",
+                "items": {
+                    "$ref": "#/KeynoteItemIdArrayItem"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteItems"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "autoTexts": {
+                "$ref": "#/KeynoteAutoTextTokensOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "autoTexts"
+        ]
+    }
+            },{
+                "name": "CreateKeynoteFolders",
+                "version": "1.5.6",
+                "description": "Creates keynote folders under the given parent folders (or under the root folder). Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "foldersData": {
+                "type": "array",
+                "description": "Array of data to create keynote folders.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "parentFolderId": {
+                            "$ref": "#/KeynoteFolderId",
+                            "description": "The parent folder. Optional; defaults to the root folder."
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "title": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "key",
+                        "title"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "foldersData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "keynoteFolderIdsOrErrors": {
+                "$ref": "#/KeynoteFolderIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteFolderIdsOrErrors"
+        ]
+    }
+            },{
+                "name": "CreateKeynoteItems",
+                "version": "1.5.6",
+                "description": "Creates keynote items in the given parent folders (or in the root folder). Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "itemsData": {
+                "type": "array",
+                "description": "Array of data to create keynote items.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "parentFolderId": {
+                            "$ref": "#/KeynoteFolderId",
+                            "description": "The parent folder. Optional; defaults to the root folder."
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "title": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        },
+                        "reference": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "key"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "itemsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "keynoteItemIdsOrErrors": {
+                "$ref": "#/KeynoteItemIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteItemIdsOrErrors"
+        ]
+    }
+            },{
+                "name": "ModifyKeynoteFolders",
+                "version": "1.5.6",
+                "description": "Modifies the key, title or reference of the given keynote folders. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "foldersData": {
+                "type": "array",
+                "description": "Array of data to modify keynote folders. Only provided fields are changed.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "keynoteFolderId": {
+                            "$ref": "#/KeynoteFolderId"
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "title": {
+                            "type": "string"
+                        },
+                        "reference": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "keynoteFolderId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "foldersData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "ModifyKeynoteItems",
+                "version": "1.5.6",
+                "description": "Modifies the key, title, description or reference of the given keynote items. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "itemsData": {
+                "type": "array",
+                "description": "Array of data to modify keynote items. Only provided fields are changed.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "keynoteItemId": {
+                            "$ref": "#/KeynoteItemId"
+                        },
+                        "key": {
+                            "type": "string"
+                        },
+                        "title": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        },
+                        "reference": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "keynoteItemId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "itemsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "DeleteKeynoteFolders",
+                "version": "1.5.6",
+                "description": "Deletes the given keynote folders including their content. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "keynoteFolderIds": {
+                "type": "array",
+                "description": "The keynote folders to delete.",
+                "items": {
+                    "$ref": "#/KeynoteFolderIdArrayItem"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteFolderIds"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "DeleteKeynoteItems",
+                "version": "1.5.6",
+                "description": "Deletes the given keynote items. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "keynoteItemIds": {
+                "type": "array",
+                "description": "The keynote items to delete.",
+                "items": {
+                    "$ref": "#/KeynoteItemIdArrayItem"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteItemIds"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "CreateKeynoteLabels",
+                "version": "1.5.6",
+                "description": "Creates Label elements that reference the given keynote items via autotext. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "labelsData": {
+                "type": "array",
+                "description": "Array of data to create keynote labels.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "keynoteItemId": {
+                            "$ref": "#/KeynoteItemId"
+                        },
+                        "position": {
+                            "$ref": "#/Coordinate2D",
+                            "description": "The reference point of the label."
+                        },
+                        "contentFields": {
+                            "type": "array",
+                            "description": "The keynote fields to include in the label text as autotext. Optional; defaults to all fields.",
+                            "items": {
+                                "type": "string",
+                                "enum": ["Key", "Title", "Description", "Reference"]
+                            },
+                            "minItems": 1
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "keynoteItemId",
+                        "position"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "labelsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/ElementIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            }]
+        },{
+            "name": "MEP Commands",
+            "commands": [{
+                "name": "GetMEPElements",
+                "version": "1.5.6",
+                "description": "Retrieves the MEP (Mechanical, Electrical, Plumbing) elements of the project, optionally filtered by type and domain. MEP elements are ordinary elements, so the generic element commands work on them as well (for example they can be deleted with the DeleteElements command). Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementTypes": {
+                "type": "array",
+                "description": "Optional filter for the MEP element types.",
+                "items": {
+                    "type": "string",
+                    "enum": ["RoutingElement", "RigidSegment", "Elbow", "Transition", "Branch", "Terminal", "Accessory", "Equipment", "Fitting", "FlexibleSegment", "TakeOff"]
+                }
+            },
+            "domains": {
+                "type": "array",
+                "description": "Optional filter for the MEP domains.",
+                "items": {
+                    "type": "string",
+                    "enum": ["Ventilation", "Piping", "CableCarrier"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "type": "array",
+                "description": "The MEP elements.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": {
+                            "$ref": "#/ElementId"
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The type of the MEP element."
+                        },
+                        "domain": {
+                            "type": "string",
+                            "description": "The MEP domain of the element. Empty for domain-independent elements (e.g. Equipment)."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "elementId",
+                        "type",
+                        "domain"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "GetMEPRoutingElements",
+                "version": "1.5.6",
+                "description": "Retrieves the details of the given MEP routing elements: domain, MEP system, route polyline, segments with cross section data and nodes. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "routingElements": {
+                "$ref": "#/MEPRoutingElementDetailsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "routingElements"
+        ]
+    }
+            },{
+                "name": "GetMEPPorts",
+                "version": "1.5.6",
+                "description": "Retrieves the ports of the given MEP elements including position, shape, size and connection status. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elementPorts": {
+                "$ref": "#/MEPElementPortsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementPorts"
+        ]
+    }
+            },{
+                "name": "GetMEPDistributionSystems",
+                "version": "1.5.6",
+                "description": "Retrieves the MEP distribution systems of the project with their domain, MEP system attribute and member elements. Available from Archicad 28.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "distributionSystems": {
+                "type": "array",
+                "description": "The distribution systems of the project.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string"
+                        },
+                        "mepSystemId": {
+                            "$ref": "#/AttributeId"
+                        },
+                        "elements": {
+                            "$ref": "#/Elements"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["domain", "elements"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "distributionSystems"
+        ]
+    }
+            },{
+                "name": "CreateMEPRoutingElements",
+                "version": "1.5.6",
+                "description": "Creates MEP routing elements (duct, pipe or cable carrier routes) along the given polylines with optional cross section data and MEP system. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "routingElementsData": {
+                "type": "array",
+                "description": "Array of data to create MEP routing elements.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "enum": ["Ventilation", "Piping", "CableCarrier"]
+                        },
+                        "nodeCoordinates": {
+                            "type": "array",
+                            "description": "The corner points of the route polyline.",
+                            "items": {
+                                "$ref": "#/Coordinate3D"
+                            },
+                            "minItems": 2
+                        },
+                        "crossSectionWidth": {
+                            "type": "number",
+                            "description": "Optional cross section width applied to all segments."
+                        },
+                        "crossSectionHeight": {
+                            "type": "number",
+                            "description": "Optional cross section height applied to all segments."
+                        },
+                        "crossSectionShape": {
+                            "type": "string",
+                            "description": "Optional cross section shape applied to all segments.",
+                            "enum": ["Rectangular", "Circular", "Oval", "UShape"]
+                        },
+                        "crossSectionReferenceId": {
+                            "type": "integer",
+                            "description": "Optional cross section reference id of the segment preference table (used for circular cross sections)."
+                        },
+                        "mepSystemId": {
+                            "$ref": "#/AttributeId",
+                            "description": "Optional MEP system attribute."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "domain",
+                        "nodeCoordinates"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "routingElementsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/ElementIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "CreateMEPElements",
+                "version": "1.5.6",
+                "description": "Creates MEP elements (Terminal, Accessory, Equipment or Fitting) at the given positions. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementsData": {
+                "type": "array",
+                "description": "Array of data to create MEP elements.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["Terminal", "Accessory", "Equipment", "Fitting"]
+                        },
+                        "domain": {
+                            "type": "string",
+                            "description": "The MEP domain of the element. Required for all types except Equipment.",
+                            "enum": ["Ventilation", "Piping", "CableCarrier"]
+                        },
+                        "position": {
+                            "$ref": "#/Coordinate3D"
+                        },
+                        "orientationDirection": {
+                            "$ref": "#/Coordinate3D",
+                            "description": "Optional direction vector of the orientation. Defaults to (1, 0, 0)."
+                        },
+                        "orientationRotation": {
+                            "$ref": "#/Coordinate3D",
+                            "description": "Optional rotation vector of the orientation. Defaults to (0, 1, 0)."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "type",
+                        "position"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/ElementIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    }
+            },{
+                "name": "ModifyMEPRoutingElements",
+                "version": "1.5.6",
+                "description": "Modifies the given MEP routing elements: MEP system, cross section data of all segments and node positions. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "routingElementsData": {
+                "type": "array",
+                "description": "Array of data to modify MEP routing elements. Only provided fields are changed.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": {
+                            "$ref": "#/ElementId"
+                        },
+                        "mepSystemId": {
+                            "$ref": "#/AttributeId"
+                        },
+                        "crossSectionWidth": {
+                            "type": "number",
+                            "description": "New cross section width applied to all segments."
+                        },
+                        "crossSectionHeight": {
+                            "type": "number",
+                            "description": "New cross section height applied to all segments."
+                        },
+                        "crossSectionShape": {
+                            "type": "string",
+                            "description": "New cross section shape applied to all segments.",
+                            "enum": ["Rectangular", "Circular", "Oval", "UShape"]
+                        },
+                        "nodePositions": {
+                            "type": "array",
+                            "description": "New positions of the routing nodes. The size must match the number of nodes of the route.",
+                            "items": {
+                                "$ref": "#/Coordinate3D"
+                            }
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "elementId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "routingElementsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "ConnectMEPElements",
+                "version": "1.5.6",
+                "description": "Connects MEP routing elements to other MEP elements or routes. Merges routes, splits routes or creates branch elements as needed. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "connectionsData": {
+                "type": "array",
+                "description": "Array of connections to create.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "routingElementId": {
+                            "$ref": "#/ElementId",
+                            "description": "The routing element to connect."
+                        },
+                        "connectToId": {
+                            "$ref": "#/ElementId",
+                            "description": "The MEP element or routing element to connect to."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "routingElementId",
+                        "connectToId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "connectionsData"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "connectionResults": {
+                "$ref": "#/MEPConnectionResultsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "connectionResults"
+        ]
+    }
+            },{
+                "name": "GetMEPPreferenceTables",
+                "version": "1.5.7",
+                "description": "Gets the circular cross section preference tables (referenceId, diameter, description) of the Piping or Ventilation domain. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "domain": {
+                "type": "string",
+                "description": "The MEP domain of the segment preference tables.",
+                "enum": ["Piping", "Ventilation"]
+            }
+        },
+        "additionalProperties": false,
+        "required": ["domain"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "tables": {
+                "type": "array",
+                "description": "The circular segment preference tables of the domain.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "guid": { "type": "string" },
+                        "rows": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "referenceId": { "type": "integer" },
+                                    "diameter": { "type": "number" },
+                                    "description": { "type": "string" }
+                                },
+                                "required": ["referenceId", "diameter"],
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": ["guid", "rows"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["tables"]
     }
             }]
         },{

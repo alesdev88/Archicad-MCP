@@ -18,6 +18,250 @@ var gSchemaDefinitions = {
             "elementId"
         ]
     },
+    "ElementIdOrError": {
+        "type": "object",
+        "description": "An element identifier or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/ElementIdArrayItem"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "ElementIdsOrErrors": {
+        "type": "array",
+        "description": "A list of element identifiers or errors.",
+        "items": {
+            "$ref": "#/ElementIdOrError"
+        }
+    },
+    "MEPRoutingSegmentDetails": {
+        "type": "object",
+        "description": "The details of an MEP routing segment.",
+        "properties": {
+            "elementId": {
+                "$ref": "#/ElementId"
+            },
+            "crossSectionWidth": {
+                "type": "number"
+            },
+            "crossSectionHeight": {
+                "type": "number"
+            },
+            "crossSectionShape": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementId",
+            "crossSectionWidth",
+            "crossSectionHeight",
+            "crossSectionShape"
+        ]
+    },
+    "MEPRoutingNodeDetails": {
+        "type": "object",
+        "description": "The details of an MEP routing node.",
+        "properties": {
+            "elementId": {
+                "$ref": "#/ElementId"
+            },
+            "position": {
+                "$ref": "#/Coordinate3D"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementId",
+            "position"
+        ]
+    },
+    "MEPRoutingElementDetails": {
+        "type": "object",
+        "description": "The details of an MEP routing element.",
+        "properties": {
+            "domain": {
+                "type": "string"
+            },
+            "mepSystemId": {
+                "$ref": "#/AttributeId"
+            },
+            "polyline": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/Coordinate3D"
+                }
+            },
+            "segments": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/MEPRoutingSegmentDetails"
+                }
+            },
+            "nodes": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/MEPRoutingNodeDetails"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "domain",
+            "mepSystemId",
+            "polyline",
+            "segments",
+            "nodes"
+        ]
+    },
+    "MEPRoutingElementDetailsOrError": {
+        "type": "object",
+        "description": "The details of an MEP routing element or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/MEPRoutingElementDetails"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "MEPRoutingElementDetailsOrErrors": {
+        "type": "array",
+        "description": "A list of MEP routing element details or errors.",
+        "items": {
+            "$ref": "#/MEPRoutingElementDetailsOrError"
+        }
+    },
+    "MEPPortDetails": {
+        "type": "object",
+        "description": "The details of a port of an MEP element.",
+        "properties": {
+            "portId": {
+                "$ref": "#/Guid"
+            },
+            "name": {
+                "type": "string"
+            },
+            "position": {
+                "$ref": "#/Coordinate3D"
+            },
+            "direction": {
+                "$ref": "#/Coordinate3D"
+            },
+            "shape": {
+                "type": "string"
+            },
+            "width": {
+                "type": "number"
+            },
+            "height": {
+                "type": "number"
+            },
+            "domain": {
+                "type": "string"
+            },
+            "mepSystemId": {
+                "$ref": "#/AttributeId"
+            },
+            "isPhysicallyConnected": {
+                "type": "boolean"
+            },
+            "connectedPortId": {
+                "$ref": "#/Guid"
+            },
+            "connectedElementId": {
+                "$ref": "#/ElementId"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "portId",
+            "name",
+            "position",
+            "direction",
+            "shape",
+            "width",
+            "height",
+            "domain",
+            "mepSystemId",
+            "isPhysicallyConnected"
+        ]
+    },
+    "MEPElementPorts": {
+        "type": "object",
+        "description": "The ports of an MEP element.",
+        "properties": {
+            "ports": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/MEPPortDetails"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "ports"
+        ]
+    },
+    "MEPElementPortsOrError": {
+        "type": "object",
+        "description": "The ports of an MEP element or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/MEPElementPorts"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "MEPElementPortsOrErrors": {
+        "type": "array",
+        "description": "A list of MEP element ports or errors.",
+        "items": {
+            "$ref": "#/MEPElementPortsOrError"
+        }
+    },
+    "MEPConnectionResult": {
+        "type": "object",
+        "description": "The result of connecting an MEP routing element: the routing element deleted by merging, the routing element created by splitting and the branch element created by the connection.",
+        "properties": {
+            "deletedRoutingElementId": {
+                "$ref": "#/ElementId"
+            },
+            "splitRoutingElementId": {
+                "$ref": "#/ElementId"
+            },
+            "createdBranchId": {
+                "$ref": "#/ElementId"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "MEPConnectionResultOrError": {
+        "type": "object",
+        "description": "The result of an MEP connection or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/MEPConnectionResult"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "MEPConnectionResultsOrErrors": {
+        "type": "array",
+        "description": "A list of MEP connection results or errors.",
+        "items": {
+            "$ref": "#/MEPConnectionResultOrError"
+        }
+    },
     "ElementId": {
         "type": "object",
         "description": "The identifier of an element.",
@@ -106,6 +350,214 @@ var gSchemaDefinitions = {
         "additionalProperties": false,
         "required": [
             "guid"
+        ]
+    },
+    "KeynoteFolderId": {
+        "type": "object",
+        "description": "The identifier of a keynote folder.",
+        "properties": {
+            "guid": {
+                "$ref": "#/Guid"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "guid"
+        ]
+    },
+    "KeynoteItemId": {
+        "type": "object",
+        "description": "The identifier of a keynote item.",
+        "properties": {
+            "guid": {
+                "$ref": "#/Guid"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "guid"
+        ]
+    },
+    "KeynoteFolderIdArrayItem": {
+        "type": "object",
+        "properties": {
+            "keynoteFolderId": {
+                "$ref": "#/KeynoteFolderId"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteFolderId"
+        ]
+    },
+    "KeynoteItemIdArrayItem": {
+        "type": "object",
+        "properties": {
+            "keynoteItemId": {
+                "$ref": "#/KeynoteItemId"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteItemId"
+        ]
+    },
+    "KeynoteFolderIdOrError": {
+        "type": "object",
+        "description": "A keynote folder identifier or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/KeynoteFolderIdArrayItem"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "KeynoteFolderIdsOrErrors": {
+        "type": "array",
+        "description": "A list of keynote folder identifiers or errors.",
+        "items": {
+            "$ref": "#/KeynoteFolderIdOrError"
+        }
+    },
+    "KeynoteItemIdOrError": {
+        "type": "object",
+        "description": "A keynote item identifier or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/KeynoteItemIdArrayItem"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "KeynoteItemIdsOrErrors": {
+        "type": "array",
+        "description": "A list of keynote item identifiers or errors.",
+        "items": {
+            "$ref": "#/KeynoteItemIdOrError"
+        }
+    },
+    "KeynoteAutoTextTokens": {
+        "type": "object",
+        "description": "The autotext tokens of a keynote item. A token can be used as the text content of a label to reference the field of the keynote item.",
+        "properties": {
+            "keyToken": {
+                "type": "string"
+            },
+            "titleToken": {
+                "type": "string"
+            },
+            "descriptionToken": {
+                "type": "string"
+            },
+            "referenceToken": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keyToken",
+            "titleToken",
+            "descriptionToken",
+            "referenceToken"
+        ]
+    },
+    "KeynoteAutoTextTokensOrError": {
+        "type": "object",
+        "description": "The autotext tokens of a keynote item or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/KeynoteAutoTextTokens"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "KeynoteAutoTextTokensOrErrors": {
+        "type": "array",
+        "description": "A list of keynote autotext tokens or errors.",
+        "items": {
+            "$ref": "#/KeynoteAutoTextTokensOrError"
+        }
+    },
+    "KeynoteItemDetails": {
+        "type": "object",
+        "description": "The details of a keynote item.",
+        "properties": {
+            "keynoteItemId": {
+                "$ref": "#/KeynoteItemId"
+            },
+            "key": {
+                "type": "string"
+            },
+            "title": {
+                "type": "string"
+            },
+            "description": {
+                "type": "string"
+            },
+            "reference": {
+                "type": "string"
+            },
+            "uiText": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteItemId",
+            "key",
+            "title",
+            "description",
+            "reference",
+            "uiText"
+        ]
+    },
+    "KeynoteFolderDetails": {
+        "type": "object",
+        "description": "The details of a keynote folder, including its subfolders and items recursively.",
+        "properties": {
+            "keynoteFolderId": {
+                "$ref": "#/KeynoteFolderId"
+            },
+            "key": {
+                "type": "string"
+            },
+            "title": {
+                "type": "string"
+            },
+            "reference": {
+                "type": "string"
+            },
+            "uiText": {
+                "type": "string"
+            },
+            "subFolders": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/KeynoteFolderDetails"
+                }
+            },
+            "items": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/KeynoteItemDetails"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "keynoteFolderId",
+            "key",
+            "title",
+            "reference",
+            "uiText",
+            "subFolders",
+            "items"
         ]
     },
     "DesignOptionId": {
@@ -1256,21 +1708,26 @@ var gSchemaDefinitions = {
             "properties": {
                 "value": {
                     "type": "number",
-                    "description": "The numeric value."
+                    "description": "The numeric value. Present for all flags except 'Step', which instead carries stepBegin/stepValue."
                 },
                 "flag": {
                     "type": "string",
                     "description": "The flag."
+                },
+                "stepBegin": {
+                    "type": "number",
+                    "description": "Only present when flag is 'Step': the value is stepBegin + n*stepValue for n >= 0."
+                },
+                "stepValue": {
+                    "type": "number",
+                    "description": "Only present when flag is 'Step' - see stepBegin."
                 },
                 "description": {
                     "type": "string",
                     "description": "The description of the value."
                 }
             },
-            "additionalProperties": false,
-            "required": [
-                "value"
-            ]
+            "additionalProperties": false
         }
     },
     "GDLParameterDetails": {
@@ -1323,7 +1780,9 @@ var gSchemaDefinitions = {
                         "Disabled",
                         "Child",
                         "Unique",
-                        "Fixed"
+                        "Fixed",
+                        "BoldName",
+                        "Open"
                     ]
                 }
             },
@@ -1340,6 +1799,13 @@ var gSchemaDefinitions = {
             "canHaveCustomValue": {
                 "type": "boolean",
                 "description": "The parameter can have a custom value."
+            },
+            "itemDescriptions": {
+                "type": "array",
+                "description": "Per-item text labels for an array-type parameter (API_AddParType.arrayDescriptions), one per array element in dim1xdim2 order. Only present when the library part defines them.",
+                "items": {
+                    "type": "string"
+                }
             }
         },
         "additionalProperties": false,
@@ -4033,6 +4499,7 @@ var gSchemaDefinitions = {
     },
     "ObjectDetails": {
         "$ref": "#/LibPartBasedElementDetails",
+        "description": "Shared shape for Object and Lamp elements (both use the same API_ObjectType struct). lightColor/lightIsOn only apply to Lamps. Per the Archicad SDK's own remarks, per-story visibility (visibility.showRelAbove/showRelBelow) and visibility.linkToSettings.newCreationMode were 'not extended' for Object/Lamp the way they were for other element types - still settable here for schema symmetry, but Archicad may silently ignore them.",
         "properties": {
             "origin": {
                 "$ref": "#/Coordinate3D"
@@ -4042,6 +4509,110 @@ var gSchemaDefinitions = {
             },
             "angle": {
                 "type": "number"
+            },
+            "pen": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            },
+            "surfaceId": {
+                "$ref": "#/AttributeId",
+                "description": "Material/Surface override (API_ObjectType.mat)."
+            },
+            "sectionFillId": {
+                "$ref": "#/AttributeId"
+            },
+            "sectionFillPen": {
+                "type": "integer"
+            },
+            "sectionFillBackgroundPen": {
+                "type": "integer"
+            },
+            "sectionContourPen": {
+                "type": "integer"
+            },
+            "useObjectPens": {
+                "type": "boolean",
+                "description": "Use the pen defined in the library part instead of 'pen'."
+            },
+            "useObjectLineTypes": {
+                "type": "boolean",
+                "description": "Use the line type defined in the library part instead of 'lineTypeId'."
+            },
+            "useObjectMaterials": {
+                "type": "boolean",
+                "description": "Use the materials defined in the library part instead of 'surfaceId'."
+            },
+            "useObjectSectionAttributes": {
+                "type": "boolean",
+                "description": "Use the section attributes defined in the library part instead of 'sectionFillId'/'sectionFillPen'/'sectionFillBackgroundPen'/'sectionContourPen'."
+            },
+            "reflected": {
+                "type": "boolean"
+            },
+            "useFixSize": {
+                "type": "boolean",
+                "description": "Use the A/B (dimensions.x/dimensions.y) values as fixed sizes."
+            },
+            "fixPoint": {
+                "type": "integer",
+                "description": "0-based index of the hotspot to keep fixed when the object is resized (raw API_ObjectType.fixPoint value, not 1-based)."
+            },
+            "offset": {
+                "$ref": "#/Coordinate2D",
+                "description": "Offset of the symbol's origin from the insertion point. Reported accurately here, but confirmed live that Archicad silently discards this value through both Create and Modify (always reports the library part's own default hotspot offset regardless of what is sent) - same class of read-only-in-practice field as Morph's bodyType/edgeType/level."
+            },
+            "useFixedAngle": {
+                "type": "boolean",
+                "description": "Use a fixed rotation angle (API_ObjectType.fixedAngle - stored as Int32 in the API despite being boolean in practice). Reported accurately here, but confirmed live that Archicad silently discards this value through both Create and Modify."
+            },
+            "isAutoOnStoryVisibility": {
+                "type": "boolean",
+                "description": "Recalculate per-story visibility automatically from the object's vertical extent ('All Relevant Stories')."
+            },
+            "lightColor": {
+                "$ref": "#/ColorRGB",
+                "description": "Lamp only. Reported accurately here, but confirmed live that Archicad silently discards this value through both Create and Modify (always reports the library part's own default light color). lightIsOn (the on/off state) does not have this problem."
+            },
+            "lightIsOn": {
+                "type": "boolean",
+                "description": "Lamp only."
+            },
+            "visibility": {
+                "type": "object",
+                "description": "Per-story visibility settings.",
+                "properties": {
+                    "showOnHome": {
+                        "type": "boolean"
+                    },
+                    "showAllAbove": {
+                        "type": "boolean"
+                    },
+                    "showAllBelow": {
+                        "type": "boolean"
+                    },
+                    "showRelAbove": {
+                        "type": "integer"
+                    },
+                    "showRelBelow": {
+                        "type": "integer"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "linkToSettings": {
+                "type": "object",
+                "description": "Mode of linking to the home story.",
+                "properties": {
+                    "homeStoryDifference": {
+                        "type": "integer"
+                    },
+                    "newCreationMode": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false
             }
         },
         "additionalProperties": false,
@@ -4106,6 +4677,208 @@ var gSchemaDefinitions = {
                 "items": {
                     "$ref": "#/PolyArc"
                 }
+            },
+            "roomSeparator": {
+                "type": "boolean",
+                "description": "Is this a zone boundary line?"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            },
+            "zCoordinate": {
+                "type": "number"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "coordinates",
+            "zCoordinate"
+        ]
+    },
+    "LineDetails": {
+        "type": "object",
+        "properties": {
+            "begCoordinate": {
+                "$ref": "#/Coordinate2D"
+            },
+            "endCoordinate": {
+                "$ref": "#/Coordinate2D"
+            },
+            "roomSeparator": {
+                "type": "boolean",
+                "description": "Is this a zone boundary line?"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            },
+            "zCoordinate": {
+                "type": "number"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "begCoordinate",
+            "endCoordinate",
+            "zCoordinate"
+        ]
+    },
+    "ArcDetails": {
+        "type": "object",
+        "description": "Geometry of an Arc or Circle element. begAngle/endAngle are only present for Arc (a Circle spans the full 0-2*PI range implicitly).",
+        "properties": {
+            "origin": {
+                "$ref": "#/Coordinate2D"
+            },
+            "radius": {
+                "type": "number"
+            },
+            "angle": {
+                "type": "number",
+                "description": "0.0, or the angle of the 'a' axis in radians."
+            },
+            "ratio": {
+                "type": "number",
+                "description": "1.0, or 'a/b' of the ellipse."
+            },
+            "begAngle": {
+                "type": "number",
+                "description": "Beginning angle of the arc in radians. Only present for Arc, not Circle."
+            },
+            "endAngle": {
+                "type": "number",
+                "description": "End angle of the arc in radians. Only present for Arc, not Circle."
+            },
+            "reflected": {
+                "type": "boolean"
+            },
+            "roomSeparator": {
+                "type": "boolean",
+                "description": "Is this a zone boundary line?"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            },
+            "zCoordinate": {
+                "type": "number"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "origin",
+            "radius",
+            "angle",
+            "ratio",
+            "reflected",
+            "zCoordinate"
+        ]
+    },
+    "HotspotDetails": {
+        "type": "object",
+        "properties": {
+            "position": {
+                "$ref": "#/Coordinate2D"
+            },
+            "height": {
+                "type": "number",
+                "description": "Z coordinate of the hotspot (can come from a GDL script)."
+            },
+            "penIndex": {
+                "type": "integer"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "position",
+            "height"
+        ]
+    },
+    "SplineDetails": {
+        "type": "object",
+        "description": "Geometry of a Spline element. Geometry is read-only: Archicad's own API does not support modifying Spline geometry via ACAPI_Element_Change. The settings fields (roomSeparator/linePenIndex/lineTypeId) ARE modifiable via SET.",
+        "properties": {
+            "coordinates": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/Coordinate2D"
+                }
+            },
+            "closed": {
+                "type": "boolean",
+                "description": "Is this a closed curve?"
+            },
+            "roomSeparator": {
+                "type": "boolean",
+                "description": "Is this a zone boundary line?"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            },
+            "zCoordinate": {
+                "type": "number"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "coordinates",
+            "closed",
+            "zCoordinate"
+        ]
+    },
+    "HatchDetails": {
+        "type": "object",
+        "properties": {
+            "coordinates": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/Coordinate2D"
+                }
+            },
+            "arcs": {
+                "type": "array",
+                "description": "The arcs of the hatch outline.",
+                "items": {
+                    "$ref": "#/PolyArc"
+                }
+            },
+            "holes": {
+                "$ref": "#/Holes2D"
+            },
+            "contourPenIndex": {
+                "type": "integer"
+            },
+            "fillPenIndex": {
+                "type": "integer"
+            },
+            "fillBackgroundPenIndex": {
+                "type": "integer"
+            },
+            "fillId": {
+                "$ref": "#/AttributeId",
+                "description": "The fill attribute used, if the hatch's type is a plain fill hatch."
+            },
+            "buildingMaterialId": {
+                "$ref": "#/AttributeId",
+                "description": "The building material attribute used, if the hatch's type is a building material hatch."
+            },
+            "roomSpecial": {
+                "type": "integer",
+                "description": "Special area percent in a room (negative means OFF)."
+            },
+            "showArea": {
+                "type": "boolean",
+                "description": "True if the area text is shown."
             },
             "zCoordinate": {
                 "type": "number"
@@ -4846,6 +5619,40 @@ var gSchemaDefinitions = {
                     "$ref": "#/Coordinate2D"
                 },
                 "minItems": 3
+            },
+            "navigatorItemId": {
+                "$ref": "#/NavigatorItemId",
+                "description": "The identifier of the navigator item (view/layout) this Drawing was created from. Read-only: Archicad only lets this be set at creation time (see CreateDrawings) - it cannot be changed afterwards to relink the Drawing to a different source."
+            },
+            "nameType": {
+                "type": "string",
+                "enum": ["ViewOrSourceFileName", "ViewIdAndName", "CustomName"],
+                "description": "How the drawing's title name is assembled (Identification tabpage of the Drawing Settings dialog)."
+            },
+            "customName": {
+                "type": "string",
+                "description": "The drawing's custom title name. Present only when nameType is CustomName."
+            },
+            "numberingType": {
+                "type": "string",
+                "enum": ["ByLayout", "ByViewId", "CustomNumber"],
+                "description": "How the drawing's title ID is assigned (Identification tabpage of the Drawing Settings dialog)."
+            },
+            "customNumber": {
+                "type": "string",
+                "description": "The drawing's custom title ID. Present only when numberingType is CustomNumber."
+            },
+            "isInNumbering": {
+                "type": "boolean",
+                "description": "Whether the drawing is included in the automatic drawing numbering sequence."
+            },
+            "titleLibraryPartIndex": {
+                "type": "number",
+                "description": "Library part index of the drawing title (API_DrawingTitle::libInd). A negative/invalid index means no title object is instantiated; setting it to a valid index (e.g. copied from another drawing) makes Archicad create the title's own placed element."
+            },
+            "titleElementId": {
+                "$ref": "#/ElementId",
+                "description": "Id of the drawing title, itself a placed GDL object element (font/pen/size aside, its own settings are reachable like any other element, e.g. with GetGDLParametersOfElements/SetGDLParametersOfElements). Absent if the drawing has no title object."
             }
         },
         "additionalProperties": false,
@@ -4856,7 +5663,12 @@ var gSchemaDefinitions = {
             "drawingScale",
             "modelOffset",
             "isCutWithFrame",
-            "bounds"
+            "bounds",
+            "navigatorItemId",
+            "nameType",
+            "numberingType",
+            "isInNumbering",
+            "titleLibraryPartIndex"
         ]
     },
     "LabelDetails": {
@@ -5419,10 +6231,200 @@ var gSchemaDefinitions = {
         "additionalProperties": false,
         "required": []
     },
+    "LineSettings": {
+        "type": "object",
+        "description": "Settings for modifying a Line.",
+        "properties": {
+            "begCoordinate": {
+                "$ref": "#/Coordinate2D"
+            },
+            "endCoordinate": {
+                "$ref": "#/Coordinate2D"
+            },
+            "roomSeparator": {
+                "type": "boolean"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "ArcSettings": {
+        "type": "object",
+        "description": "Settings for modifying an Arc or Circle. begAngle/endAngle are only applied to Arc, ignored for Circle.",
+        "properties": {
+            "origin": {
+                "$ref": "#/Coordinate2D"
+            },
+            "radius": {
+                "type": "number"
+            },
+            "angle": {
+                "type": "number"
+            },
+            "ratio": {
+                "type": "number"
+            },
+            "begAngle": {
+                "type": "number"
+            },
+            "endAngle": {
+                "type": "number"
+            },
+            "reflected": {
+                "type": "boolean"
+            },
+            "roomSeparator": {
+                "type": "boolean"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "HotspotSettings": {
+        "type": "object",
+        "description": "Settings for modifying a Hotspot.",
+        "properties": {
+            "position": {
+                "$ref": "#/Coordinate2D"
+            },
+            "height": {
+                "type": "number"
+            },
+            "penIndex": {
+                "type": "integer"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "SplineSettings": {
+        "type": "object",
+        "description": "Settings for modifying a Spline. Only these settings fields are modifiable - Archicad's own API does not support changing Spline geometry (coordinates/closed) via ACAPI_Element_Change.",
+        "properties": {
+            "roomSeparator": {
+                "type": "boolean"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "PolylineSettings": {
+        "type": "object",
+        "description": "Settings for modifying a Polyline. Setting coordinates replaces the entire polygon (single contour, no holes) and may change the number of vertices.",
+        "properties": {
+            "coordinates": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/Coordinate2D"
+                },
+                "minItems": 2
+            },
+            "arcs": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/PolyArc"
+                }
+            },
+            "roomSeparator": {
+                "type": "boolean"
+            },
+            "linePenIndex": {
+                "type": "integer"
+            },
+            "lineTypeId": {
+                "$ref": "#/AttributeId"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+    "HatchSettings": {
+        "type": "object",
+        "description": "Settings for modifying a Hatch. Setting coordinates replaces the entire polygon (outline plus optional holes) and may change the number of vertices.",
+        "properties": {
+            "coordinates": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/Coordinate2D"
+                },
+                "minItems": 3
+            },
+            "arcs": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/PolyArc"
+                }
+            },
+            "holes": {
+                "$ref": "#/Holes2D"
+            },
+            "contourPenIndex": {
+                "type": "integer"
+            },
+            "fillPenIndex": {
+                "type": "integer"
+            },
+            "fillBackgroundPenIndex": {
+                "type": "integer"
+            },
+            "fillId": {
+                "$ref": "#/AttributeId"
+            },
+            "buildingMaterialId": {
+                "$ref": "#/AttributeId"
+            },
+            "roomSpecial": {
+                "type": "integer"
+            },
+            "showArea": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
     "DrawingSettings": {
         "description": "Modifiable settings for a Drawing element placed on a layout.",
         "type": "object",
         "properties": {
+            "pos": {
+                "$ref": "#/Coordinate2D",
+                "description": "Position of the drawing's reference point on the layout."
+            },
+            "angle": {
+                "type": "number",
+                "description": "Rotation angle of the drawing in radians."
+            },
+            "ratio": {
+                "type": "number",
+                "description": "Scale ratio applied to the drawing relative to its source view."
+            },
+            "drawingScale": {
+                "type": "number",
+                "description": "The nominal scale of the drawing."
+            },
+            "modelOffset": {
+                "$ref": "#/Coordinate2D",
+                "description": "Offset of the model origin within the drawing."
+            },
             "clipPolygon": {
                 "type": "array",
                 "description": "Polygon (in model coordinates) used to clip the drawing view. At least 3 points. Setting this also enables polygon clipping (useDrawingPolyClip).",
@@ -5430,6 +6432,32 @@ var gSchemaDefinitions = {
                     "$ref": "#/Coordinate2D"
                 },
                 "minItems": 3
+            },
+            "nameType": {
+                "type": "string",
+                "enum": ["ViewOrSourceFileName", "ViewIdAndName", "CustomName"],
+                "description": "How the drawing's title name is assembled (Identification tabpage of the Drawing Settings dialog)."
+            },
+            "customName": {
+                "type": "string",
+                "description": "The drawing's custom title name. Only used when nameType is CustomName."
+            },
+            "numberingType": {
+                "type": "string",
+                "enum": ["ByLayout", "ByViewId", "CustomNumber"],
+                "description": "How the drawing's title ID is assigned (Identification tabpage of the Drawing Settings dialog)."
+            },
+            "customNumber": {
+                "type": "string",
+                "description": "The drawing's custom title ID. Only used when numberingType is CustomNumber."
+            },
+            "isInNumbering": {
+                "type": "boolean",
+                "description": "Whether the drawing is included in the automatic drawing numbering sequence."
+            },
+            "titleLibraryPartIndex": {
+                "type": "number",
+                "description": "Library part index of the drawing title (API_DrawingTitle::libInd). A negative/invalid index means no title object is instantiated; setting it to a valid index (e.g. copied from another drawing) makes Archicad create the title's own placed element."
             }
         },
         "additionalProperties": false
@@ -5443,6 +6471,24 @@ var gSchemaDefinitions = {
             },
             {
                 "$ref": "#/ZoneSettings"
+            },
+            {
+                "$ref": "#/LineSettings"
+            },
+            {
+                "$ref": "#/ArcSettings"
+            },
+            {
+                "$ref": "#/HotspotSettings"
+            },
+            {
+                "$ref": "#/SplineSettings"
+            },
+            {
+                "$ref": "#/PolylineSettings"
+            },
+            {
+                "$ref": "#/HatchSettings"
             },
             {
                 "$ref": "#/DrawingSettings"
@@ -5974,6 +7020,31 @@ var gSchemaDefinitions = {
             "groupId"
         ]
     },
+    "ElementsWrapper": {
+        "type": "object",
+        "description": "A list of elements wrapped in an object.",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+    "ElementsWrapperOrError": {
+        "type": "object",
+        "description": "A list of elements or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/ElementsWrapper"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
     "GroupIdOrError": {
         "type": "object",
         "description": "A groupId or an error.",
@@ -6148,6 +7219,316 @@ var gSchemaDefinitions = {
         "required": [
             "inheritOperatorAttributes",
             "skipPolygonHoles"
+        ]
+    },
+    "SpecialFolderType": {
+        "type": "string",
+        "description": "The type of a special folder of the running Archicad.",
+        "enum": [
+            "ApplicationPrefs",
+            "GraphisoftPrefs",
+            "GraphisoftHome",
+            "Cache",
+            "Data",
+            "UserDocuments",
+            "Temporary",
+            "Application",
+            "Defaults",
+            "WebObjects",
+            "Templates",
+            "Help",
+            "EmbeddedProjectLibrary",
+            "EmbeddedProjectLibraryHotlink",
+            "ProjectPreviews"
+        ]
+    },
+    "SpecialFolderPath": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "The path of the special folder in the filesystem."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "path"
+        ]
+    },
+    "SpecialFolderPathOrError": {
+        "type": "object",
+        "description": "The path of a special folder or an error.",
+        "oneOf": [
+            {
+                "$ref": "#/SpecialFolderPath"
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
+        ]
+    },
+    "SpecialFolderPathsOrErrors": {
+        "type": "array",
+        "description": "A list of special folder paths or errors.",
+        "items": {
+            "$ref": "#/SpecialFolderPathOrError"
+        }
+    },
+    "ConnectionItem": {
+        "type": "object",
+        "description": "An element connected with its beginning or end point.",
+        "properties": {
+            "elementId": {
+                "$ref": "#/ElementId"
+            },
+            "connectedWithBeginPoint": {
+                "type": "boolean",
+                "description": "True if the element is connected with its beginning point, false if it is connected with its end point."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementId",
+            "connectedWithBeginPoint"
+        ]
+    },
+    "EndpointConnections": {
+        "type": "object",
+        "description": "The connections of a wall, beam or beam segment.",
+        "properties": {
+            "connectedToBeginPoint": {
+                "type": "array",
+                "description": "Elements connected to the beginning point of the element.",
+                "items": {
+                    "$ref": "#/ConnectionItem"
+                }
+            },
+            "connectedToEndPoint": {
+                "type": "array",
+                "description": "Elements connected to the end point of the element.",
+                "items": {
+                    "$ref": "#/ConnectionItem"
+                }
+            },
+            "connectedWithReferenceLineToEndPoints": {
+                "type": "array",
+                "description": "Elements connected with their reference line to the beginning or end point of the element.",
+                "items": {
+                    "$ref": "#/ConnectionItem"
+                }
+            },
+            "connectedToReferenceLine": {
+                "type": "array",
+                "description": "Elements connected to the reference line of the element, not at its endpoints.",
+                "items": {
+                    "$ref": "#/ConnectionItem"
+                }
+            },
+            "crossingReferenceLine": {
+                "type": "array",
+                "description": "Elements whose reference line intersects the reference line of the element.",
+                "items": {
+                    "$ref": "#/ConnectionItem"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "connectedToBeginPoint",
+            "connectedToEndPoint",
+            "connectedWithReferenceLineToEndPoints",
+            "connectedToReferenceLine",
+            "crossingReferenceLine"
+        ]
+    },
+    "ElementsOfElementType": {
+        "type": "object",
+        "description": "Elements of a given type.",
+        "properties": {
+            "elementType": {
+                "$ref": "#/ElementType"
+            },
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementType",
+            "elements"
+        ]
+    },
+    "ZoneBoundaryPart": {
+        "type": "object",
+        "description": "Section of a wall, beam or curtain wall segment related to a zone.",
+        "properties": {
+            "elementId": {
+                "$ref": "#/ElementId"
+            },
+            "roomEdgeIndex": {
+                "type": "integer",
+                "description": "Index of the zone polygon edge adjacent to the element (not present for beams)."
+            },
+            "begDistance": {
+                "type": "number",
+                "description": "Beginning distance of the section from the beginning point of the element."
+            },
+            "endDistance": {
+                "type": "number",
+                "description": "End distance of the section from the beginning point of the element."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementId",
+            "begDistance",
+            "endDistance"
+        ]
+    },
+    "ZoneRelations": {
+        "type": "object",
+        "description": "The relations of a zone: the related elements grouped by type and the boundary sections of walls, beams and curtain wall segments.",
+        "properties": {
+            "elementsGroupedByType": {
+                "type": "array",
+                "description": "The elements related to the zone, grouped by element type.",
+                "items": {
+                    "$ref": "#/ElementsOfElementType"
+                }
+            },
+            "wallParts": {
+                "type": "array",
+                "description": "Sections of walls that border the zone.",
+                "items": {
+                    "$ref": "#/ZoneBoundaryPart"
+                }
+            },
+            "beamParts": {
+                "type": "array",
+                "description": "Sections of beams related to the zone.",
+                "items": {
+                    "$ref": "#/ZoneBoundaryPart"
+                }
+            },
+            "curtainWallSegmentParts": {
+                "type": "array",
+                "description": "Sections of curtain wall segments that border the zone.",
+                "items": {
+                    "$ref": "#/ZoneBoundaryPart"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementsGroupedByType",
+            "wallParts",
+            "beamParts",
+            "curtainWallSegmentParts"
+        ]
+    },
+    "ElementRelationsOrError": {
+        "type": "object",
+        "description": "The type-specific relations of an element or an error. The variant depends on the type of the input element.",
+        "oneOf": [
+            {
+                "type": "object",
+                "description": "Relations of a wall.",
+                "properties": {
+                    "wallConnections": {
+                        "$ref": "#/EndpointConnections"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "wallConnections"
+                ]
+            },
+            {
+                "type": "object",
+                "description": "Relations of a beam.",
+                "properties": {
+                    "beamConnections": {
+                        "$ref": "#/EndpointConnections"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "beamConnections"
+                ]
+            },
+            {
+                "type": "object",
+                "description": "Relations of a beam segment.",
+                "properties": {
+                    "beamSegmentConnections": {
+                        "$ref": "#/EndpointConnections"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "beamSegmentConnections"
+                ]
+            },
+            {
+                "type": "object",
+                "description": "Relations of a zone.",
+                "properties": {
+                    "zoneRelations": {
+                        "$ref": "#/ZoneRelations"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "zoneRelations"
+                ]
+            },
+            {
+                "type": "object",
+                "description": "Relations of a curtain wall panel, skylight, window or door: the zones on the two sides of the opening.",
+                "properties": {
+                    "openingRelations": {
+                        "type": "object",
+                        "properties": {
+                            "fromRoom": {
+                                "$ref": "#/ElementId"
+                            },
+                            "toRoom": {
+                                "$ref": "#/ElementId"
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "openingRelations"
+                ]
+            },
+            {
+                "type": "object",
+                "description": "Relations of a roof or shell: the connected zones.",
+                "properties": {
+                    "roofOrShellRelations": {
+                        "type": "object",
+                        "properties": {
+                            "connectedRooms": {
+                                "$ref": "#/Elements"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "connectedRooms"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "roofOrShellRelations"
+                ]
+            },
+            {
+                "$ref": "#/ErrorItem"
+            }
         ]
     }
 }
