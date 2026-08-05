@@ -27,7 +27,15 @@ jobs:
       # astral-sh stopped publishing major tags after v7. Move the two
       # workflows together, so a release is built by the toolchain that
       # tested the commit rather than a later one nothing has run yet.
+      # persist-credentials defaults to true, which writes this run's
+      # GITHUB_TOKEN into .git/config as an auth header. This job holds
+      # contents: write and then runs code that is not ours (npx fetches the
+      # mcpb packer, uv sync resolves the whole PyPI tree), so that would leave
+      # a write-capable token on disk alongside it. Nothing here pushes over
+      # git: gh release create authenticates through GH_TOKEN instead.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           # Same reason test.yml gives every matrix entry its own key. The
@@ -48,6 +56,17 @@ jobs:
       # before the shell parses it. Through the environment it stays one
       # argument no matter what it contains.
       - run: uv run --no-project python scripts/check_release_version.py "$GITHUB_REF_NAME"
+
+      # The version lives in a fourth place that check cannot see: uv.lock
+      # records the project's own version, and the bundle SHIPS uv.lock. Bump
+      # pyproject.toml, manifest.json and the README without re-running
+      # uv lock, and the check above happily says "agree" while the extension
+      # goes out with a lock file that disagrees with its own pyproject, which
+      # makes uv re-resolve on the user's machine at first launch. uv lock
+      # --check is the purpose-built test for exactly that, and is a sub-second
+      # no-op when they agree. It has to run before uv sync, because sync
+      # quietly updates the lock and would erase the evidence.
+      - run: uv lock --check
 
       # test.yml has already run the full matrix if this commit reached main
       # the usual way, but a tag can be pushed at any commit, including one

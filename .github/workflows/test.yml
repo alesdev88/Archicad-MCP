@@ -32,6 +32,12 @@ jobs:
           # it: one saves and the other warns that another job may be creating
           # the cache. The suffix gives every entry its own key.
           cache-suffix: ${{ matrix.python-version }}
+      # Before uv sync, which quietly updates the lock and would erase the
+      # evidence. uv.lock records the project's own version and ships inside
+      # the .mcpb bundle, so a bump that forgot to re-lock is caught here, on
+      # the commit that caused it, rather than at tag time when the fix is to
+      # delete a pushed tag.
+      - run: uv lock --check
       - run: uv sync
       - run: uv run pytest -v
       - run: uv build
