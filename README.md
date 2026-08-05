@@ -107,6 +107,24 @@ answered, which is the fastest way to tell a config problem from a connection
 problem. If nothing is found, see
 [Known issues: connection](docs/known-issues.md#connection).
 
+If the client shows no tools at all, the server never started, and asking it
+anything will not tell you why. Read the log instead. The server writes what it
+found to stderr on startup, which Claude Desktop captures:
+
+```bash
+tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs on Windows
+```
+
+```
+archicad-mcp: mode=full, 12 rules loaded
+archicad-mcp: Archicad 29 (build 4006) on port 19723, project 'Sample', Tapir 1.5.3
+```
+
+That line distinguishes the three failures that look identical from the chat
+window: the server not spawning (no line at all), Archicad not running (the
+line says so, and says tools connect on demand once you start it), and the
+Tapir add-on missing (the line names which tools degrade).
+
 ## Configuration
 
 | Flag | Env var | Default | What it does |

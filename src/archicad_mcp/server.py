@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import functools
 import os
+import sys
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -12,7 +14,9 @@ from multiconn_archicad.errors import APIErrorBase
 from archicad_mcp import actions
 from archicad_mcp.connection import (
     NO_OPEN_PROJECT_CODE,
+    PORT_RANGE,
     ArchicadUnavailableError,
+    InstanceInfo,
     discover_instances,
     get_connection,
 )
@@ -67,6 +71,9 @@ def build_server(
     mcp = FastMCP("archicad-mcp")
     loaded = load_rules(rules_dir)
     default_port = port
+    # Carried on the server so main() can report it without loading rules twice.
+    mcp.archicad_rule_count = len(loaded.rules)
+    mcp.archicad_rule_errors = len(loaded.errors)
 
     def _rules_subset(ruleset: str | None = None, rule_id: str | None = None):
         rules = loaded.rules
@@ -357,17 +364,108 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _gateway.execute_api_command(registry, _conn(port), name, params)
 
 
+_BANNER_PREFIX = "archicad-mcp:"
+
+# What the user loses when the add-on is absent, named rather than implied, so
+# the log line answers "why did create_elements fail" without a docs round trip.
+_NO_TAPIR_NOTE = ("element creation, issues, IFC checks, highlighting and "
+                  "publishing are unavailable, and element counts cover model "
+                  "elements only")
+
+
+def _instance_line(info: InstanceInfo, mode: str) -> str:
+    if not info.project_open:
+        return (f"{_BANNER_PREFIX} Archicad on port {info.port} has no project "
+                "open, so it cannot answer anything until you open one")
+    parts = [f"Archicad {info.version} (build {info.build}) on port {info.port}"]
+    # verdicts mode exists to keep project identity out of what this server
+    # surfaces; the log is no exception.
+    if info.project_name and mode != "verdicts":
+        parts.append(f"project {info.project_name!r}")
+    if info.tapir_available:
+        parts.append(f"Tapir {info.tapir_version or 'version unknown'}")
+    else:
+        parts.append(f"Tapir add-on not installed ({_NO_TAPIR_NOTE})")
+    return f"{_BANNER_PREFIX} " + ", ".join(parts)
+
+
+def format_startup_banner(mode: str, rule_count: int,
+                          instances: Sequence[InstanceInfo],
+                          rule_errors: int = 0) -> str:
+    """The diagnostic lines written to stderr at startup.
+
+    This is what someone reads in mcp-server-archicad.log when the tools are
+    not behaving, so every line has to be actionable on its own.
+    """
+    head = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
+    if rule_errors:
+        head += f", {rule_errors} rule file(s) rejected (call list_rules for details)"
+    lines = [head]
+    if not instances:
+        first, last = PORT_RANGE[0], PORT_RANGE[-1]
+        lines.append(
+            f"{_BANNER_PREFIX} no Archicad answering on ports {first}-{last}. "
+            "Start Archicad 29 and open a project. Tools connect on demand, so "
+            "this server does not need restarting once it is up.")
+    else:
+        lines.extend(_instance_line(info, mode) for info in instances)
+    return "\n".join(lines)
+
+
+def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0) -> None:
+    """Write the banner to stderr. Never raises, never touches stdout.
+
+    Under stdio transport stdout is the JSON-RPC channel: one stray byte there
+    corrupts the stream and the client drops the server. And a diagnostic that
+    can itself abort startup is worse than no diagnostic, so discovery failure
+    degrades to the config line alone.
+    """
+    try:
+        instances = discover_instances()
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not break startup
+        print(f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded "
+              f"(instance discovery failed: {exc})", file=sys.stderr, flush=True)
+        return
+    print(format_startup_banner(mode, rule_count, instances, rule_errors),
+          file=sys.stderr, flush=True)
+
+
+def resolve_mode(raw: str | None) -> str:
+    """Fall back to 'full' for an unset or blank mode.
+
+    An .mcpb bundle substitutes an unfilled user_config field as an empty
+    string, so the env var arrives set-but-empty. Passing that straight to
+    argparse turns an optional setting into a startup crash.
+    """
+    return raw.strip() if raw and raw.strip() else "full"
+
+
+def resolve_rules_dir(raw: str | Path | None) -> Path | None:
+    """None for an unset or blank rules directory, so the bundled rules load.
+
+    Path("") is Path("."), which is truthy. A blank env var therefore used to
+    slip past an `if rules_dir` guard and scan the working directory, loading
+    zero rules instead of falling back to the bundled examples.
+    """
+    text = str(raw).strip() if raw is not None else ""
+    return Path(text) if text else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
-                        default=os.environ.get("ARCHICAD_MCP_MODE", "full"))
+                        default=resolve_mode(os.environ.get("ARCHICAD_MCP_MODE")))
     parser.add_argument("--rules-dir", type=Path,
-                        default=os.environ.get("ARCHICAD_MCP_RULES_DIR"))
+                        default=resolve_rules_dir(
+                            os.environ.get("ARCHICAD_MCP_RULES_DIR")))
     parser.add_argument("--port", type=int, default=None,
                         help="Archicad API port (19723-19743); auto-detected if omitted")
     args, _ = parser.parse_known_args()
-    rules_dir = Path(args.rules_dir) if args.rules_dir else None
-    build_server(mode=args.mode, rules_dir=rules_dir, port=args.port).run()
+    rules_dir = resolve_rules_dir(args.rules_dir)
+    server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port)
+    emit_startup_banner(args.mode, server.archicad_rule_count,
+                        server.archicad_rule_errors)
+    server.run()
 
 
 if __name__ == "__main__":
