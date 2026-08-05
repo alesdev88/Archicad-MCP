@@ -31,10 +31,9 @@ does two jobs:
 
 ## Install as a Claude Desktop extension (recommended)
 
-One file, one click, no JSON editing. In Claude Desktop open **Settings >
-Extensions** and drag in `archicad-mcp-<version>.mcpb`, either from the
-[releases page](https://github.com/alesdev88/Archicad-MCP/releases) or built
-locally with `npx @anthropic-ai/mcpb pack .`.
+One file, one click, no JSON editing. Download `archicad-mcp-0.1.0.mcpb` from the
+[latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest), then
+in Claude Desktop open **Settings > Extensions** and drag it in.
 
 Mode, office rules folder, and the property-read ceiling then appear as form
 fields in the extension's settings, and the whole server gets an on/off switch.
@@ -45,7 +44,10 @@ uses it to build its own environment on first launch, which takes a few seconds
 the first time and is instant afterwards.
 
 If you would rather wire it up by hand, or you are on Claude Code, use one of
-the sections below instead.
+the sections below instead. Those install the wheel from a tagged release, so
+you get a known version rather than whatever `main` happens to be. To upgrade,
+re-run the install command with the newer version's URL from the
+[releases page](https://github.com/alesdev88/Archicad-MCP/releases).
 
 ## Install on macOS
 
@@ -53,8 +55,8 @@ the sections below instead.
 # 1. Install uv (skip if you already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install the server
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git
+# 2. Install the server from the latest release
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -84,8 +86,8 @@ editing the file.
 # 1. Install uv (skip if you already have it)
 winget install --id=astral-sh.uv -e
 
-# 2. Install the server
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git
+# 2. Install the server from the latest release
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -113,7 +115,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -275,6 +277,14 @@ commands on the verified setup), for anything the curated tools don't cover.
 
 ```bash
 uv sync && uv run pytest          # offline suite
+```
+
+To install unreleased `main` rather than a release, point uv at the repository
+instead of at a wheel, or append a tag to build a released version from source:
+
+```bash
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.1.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
