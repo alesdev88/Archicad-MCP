@@ -29,6 +29,24 @@ does two jobs:
   highlighting, and publishing; verified on Tapir 1.5.3. Without it, those tools
   degrade instead of erroring.
 
+## Install as a Claude Desktop extension (recommended)
+
+One file, one click, no JSON editing. In Claude Desktop open **Settings >
+Extensions** and drag in `archicad-mcp-<version>.mcpb`, either from the
+[releases page](https://github.com/alesdev88/Archicad-MCP/releases) or built
+locally with `npx @anthropic-ai/mcpb pack .`.
+
+Mode, office rules folder, and the property-read ceiling then appear as form
+fields in the extension's settings, and the whole server gets an on/off switch.
+Leave a field empty and it falls back to the default in the table below.
+
+You still need [uv](https://docs.astral.sh/uv/) on the machine: the extension
+uses it to build its own environment on first launch, which takes a few seconds
+the first time and is instant afterwards.
+
+If you would rather wire it up by hand, or you are on Claude Code, use one of
+the sections below instead.
+
 ## Install on macOS
 
 ```bash
@@ -106,6 +124,24 @@ With Archicad open, ask the client to **list Archicad instances**. The
 answered, which is the fastest way to tell a config problem from a connection
 problem. If nothing is found, see
 [Known issues: connection](docs/known-issues.md#connection).
+
+If the client shows no tools at all, the server never started, and asking it
+anything will not tell you why. Read the log instead. The server writes what it
+found to stderr on startup, which Claude Desktop captures:
+
+```bash
+tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs on Windows
+```
+
+```
+archicad-mcp: mode=full, 12 rules loaded
+archicad-mcp: Archicad 29 (build 4006) on port 19723, project 'Sample', Tapir 1.5.3
+```
+
+That line distinguishes the three failures that look identical from the chat
+window: the server not spawning (no line at all), Archicad not running (the
+line says so, and says tools connect on demand once you start it), and the
+Tapir add-on missing (the line names which tools degrade).
 
 ## Configuration
 
@@ -253,6 +289,38 @@ After a Tapir add-on update, refresh the bundled command schemas:
 
 ```bash
 uv run python scripts/sync_tapir_defs.py
+```
+
+Build the Claude Desktop extension. `version` in `manifest.json` and in
+`pyproject.toml` have to state the same thing, and the test suite fails if they
+drift:
+
+```bash
+uv run python scripts/check_release_version.py
+npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.1.0.mcpb
+```
+
+`.mcpbignore` decides what ships. The bundle carries `pyproject.toml` and
+`uv.lock` rather than vendored wheels, so `uv` resolves the same pinned
+dependency set on the target machine and one bundle serves both macOS and
+Windows.
+
+Releasing is a tag push. `.github/workflows/release.yml` refuses the tag unless
+both files and the tag itself agree on the version, then builds the bundle, the
+wheel, and the sdist and attaches all three to a GitHub release. Run the same
+check by hand first, because a tag that has been pushed has to be deleted
+before it can be corrected:
+
+```bash
+uv run python scripts/check_release_version.py v0.1.1
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+`icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
+only to redraw it and is deliberately not a project dependency:
+
+```bash
+uv run --with pillow python scripts/make_icon.py
 ```
 
 ## Docs

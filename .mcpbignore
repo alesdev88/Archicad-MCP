@@ -1,0 +1,19 @@
+# Everything the bundle does not need at runtime. uv resolves dependencies from
+# pyproject.toml and uv.lock, so only the package source has to ship.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.git/
+.github/
+.gitattributes
+.gitignore
+.claude/
+.DS_Store
+dist/
+tests/
+scripts/
+docs/
+*.mcpb

@@ -1,0 +1,92 @@
+name: release
+on:
+  push:
+    # Version tags only. A tag is the one signal that says "this exact commit
+    # is 0.1.0", and nothing else in the repository should be able to publish.
+    tags: ["v*"]
+
+# Creating the release is the only privileged thing here and the default token
+# is read-only, so this is the whole grant. Every other step reads the
+# checkout and writes to the runner.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # One Python, not test.yml's matrix. The wheel is py3-none-any and the
+      # bundle ships pyproject.toml and uv.lock rather than vendored wheels,
+      # so nothing that gets uploaded depends on the interpreter that built
+      # it. 3.13 is the newer of the two the suite covers, so the release is
+      # still built on a version that is actually tested.
+      UV_PYTHON: "3.13"
+    steps:
+      # The same two pins as test.yml, for the reasons written out there:
+      # checkout follows its major, setup-uv is an exact version because
+      # astral-sh stopped publishing major tags after v7. Move the two
+      # workflows together, so a release is built by the toolchain that
+      # tested the commit rather than a later one nothing has run yet.
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          # Same reason test.yml gives every matrix entry its own key. The
+          # default one is derived from the runner image's default Python, not
+          # from UV_PYTHON, so without a suffix this job would race a test run
+          # for the one key that image hands both of them.
+          cache-suffix: release
+
+      # The gate, before anything is synced, built, or packed. It is the one
+      # failure here whose cost is not a re-run: a tag has already been pushed
+      # by the time this workflow exists, so a mismatch means deleting the tag
+      # and pushing it again, and every second spent before saying so is spent
+      # on work that is going to be thrown away. --no-project because the
+      # check imports nothing outside the standard library.
+      #
+      # $GITHUB_REF_NAME rather than ${{ github.ref_name }}: a tag name is text
+      # somebody chose, and ${{ }} substitution pastes it into the script
+      # before the shell parses it. Through the environment it stays one
+      # argument no matter what it contains.
+      - run: uv run --no-project python scripts/check_release_version.py "$GITHUB_REF_NAME"
+
+      # test.yml has already run the full matrix if this commit reached main
+      # the usual way, but a tag can be pushed at any commit, including one
+      # that never did. This is the tripwire for that case, and is deliberately
+      # a single run rather than a second copy of the matrix, which would only
+      # re-prove what main already proved.
+      - run: uv sync
+      - run: uv run pytest -v
+
+      # Wheel and sdist first, because uv build is also what creates dist/ for
+      # the bundle to be written into. dist/ is not in the repository.
+      - run: uv build
+
+      # Node is whatever the runner image ships, an LTS it keeps current,
+      # while mcpb is pinned: the packer decides the bundle format, the
+      # interpreter running it does not, so the packer is the thing worth
+      # holding still between releases. Validate before packing so a manifest
+      # mistake is reported as one here, instead of turning up later as a
+      # bundle Claude Desktop declines to install. README documents the same
+      # two commands unpinned, for building one locally.
+      - run: npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
+      - run: npx --yes @anthropic-ai/mcpb@2.1.2 pack . "dist/archicad-mcp-${GITHUB_REF_NAME#v}.mcpb"
+
+      # gh is preinstalled on the runner and is the same command this would be
+      # by hand, so there is no third-party release action to pin and keep
+      # current. The wheel and sdist go up alongside the bundle because every
+      # install path in README that is not the extension is a git URL, and
+      # without these there is nowhere to get a built distribution of one
+      # named version.
+      - run: |
+          flags=(--generate-notes --title "$GITHUB_REF_NAME")
+          # Anything that is not exactly major.minor.patch is a prerelease,
+          # whichever way it is spelled (v0.2.0rc1, v0.2.0-beta.1). GitHub
+          # should label it as one rather than offer it from the releases page
+          # as the current version to download.
+          if [[ ! "${GITHUB_REF_NAME#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
+            dist/*.mcpb dist/*.whl dist/*.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
