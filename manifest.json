@@ -1,0 +1,95 @@
+{
+  "manifest_version": "0.4",
+  "name": "archicad-mcp",
+  "display_name": "Archicad",
+  "version": "0.1.0",
+  "description": "Delivery-readiness QA and full API access for a running Archicad 29 model",
+  "long_description": "Connects Claude to a **running Archicad 29** instance over the built-in JSON API.\n\n- **Delivery-readiness QA.** Your office standards, written as YAML rules and run against the open model. Returns pass/fail, a score, and the GUIDs of the elements that failed.\n- **Full API access.** Curated tools for querying, editing, and creating elements, plus a gateway to every official JSON API and Tapir command.\n\nArchicad must be running with a project open; there is nothing to start on the Archicad side, because its JSON API listens whenever a project is open. The [Tapir add-on](https://github.com/ENZYME-APD/tapir-archicad-automation/releases) is optional but recommended, and is required for element creation, issues, IFC checks, highlighting, and publishing.\n\n> **Save before you read properties.** `GetPropertyValuesOfElements` can crash Archicad 29, even for a single property on a single element, taking unsaved work with it. This is an Archicad-side fault this server can trigger but cannot prevent. See the documentation link for details.",
+  "author": {
+    "name": "Aleš Dolenec",
+    "url": "https://github.com/alesdev88"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alesdev88/Archicad-MCP.git"
+  },
+  "homepage": "https://github.com/alesdev88/Archicad-MCP",
+  "documentation": "https://github.com/alesdev88/Archicad-MCP#readme",
+  "support": "https://github.com/alesdev88/Archicad-MCP/issues",
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": ["archicad", "bim", "aec", "tapir", "ifc", "qa"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/archicad_mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "archicad-mcp"],
+      "env": {
+        "ARCHICAD_MCP_MODE": "${user_config.mode}",
+        "ARCHICAD_MCP_RULES_DIR": "${user_config.rules_dir}",
+        "ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS": "${user_config.max_property_elements}"
+      }
+    }
+  },
+  "user_config": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "'full' exposes everything: QA, element tools, and the API gateway. 'verdicts' exposes only the 8 QA tools and keeps the project name out of what the model sees.",
+      "default": "full",
+      "required": false
+    },
+    "rules_dir": {
+      "type": "directory",
+      "title": "Office rules folder",
+      "description": "Folder of YAML rule files holding your office standards. Keep it outside the repository. Leave empty to load the bundled example rules.",
+      "multiple": false,
+      "required": false
+    },
+    "max_property_elements": {
+      "type": "number",
+      "title": "Property-read element ceiling",
+      "description": "Refuse any property read spanning more elements than this. Blast-radius control for the Archicad property-read crash, not a fix for it. Lower is safer.",
+      "default": 5000,
+      "min": 1,
+      "max": 200000,
+      "required": false
+    }
+  },
+  "tools_generated": true,
+  "tools": [
+    { "name": "list_instances", "description": "List running Archicad instances: port, version, open project, Tapir availability. Call this first." },
+    { "name": "get_model_summary", "description": "Aggregate element counts by type, optionally by layer and story." },
+    { "name": "list_rules", "description": "List the loaded QA rules and any rule files that were rejected." },
+    { "name": "run_rule", "description": "Run one QA rule against the open model." },
+    { "name": "audit_delivery_readiness", "description": "Run the full rule set and return a score plus failing element GUIDs." },
+    { "name": "verify_ifc_export_readiness", "description": "Check the model against IFC delivery requirements." },
+    { "name": "highlight_failures", "description": "Highlight failing elements in Archicad." },
+    { "name": "create_issues_from_failures", "description": "Turn rule failures into Archicad issues." },
+    { "name": "query_elements", "description": "Query elements by type, layer, story, or current selection." },
+    { "name": "get_element_data", "description": "Read properties and classifications for specific elements." },
+    { "name": "set_element_data", "description": "Write property values to elements. Dry-run by default." },
+    { "name": "create_elements", "description": "Create walls, slabs, columns, beams, and objects. Dry-run by default." },
+    { "name": "move_elements", "description": "Move elements. Dry-run by default and requires confirm=true." },
+    { "name": "delete_elements", "description": "Delete elements. Dry-run by default and requires confirm=true." },
+    { "name": "manage_selection", "description": "Read or change the current selection in Archicad." },
+    { "name": "get_project_info", "description": "Project name, location, stories, and Teamwork state." },
+    { "name": "list_attributes", "description": "List layers, materials, composites, profiles, and other attributes." },
+    { "name": "manage_issues", "description": "List, create, and comment on Archicad issues." },
+    { "name": "publish", "description": "Run a publisher set." },
+    { "name": "read_schedule_scheme", "description": "Read an exported Scheme Settings XML file and explain what it does." },
+    { "name": "edit_schedule_scheme", "description": "Apply a YAML spec to an exported schedule scheme XML." },
+    { "name": "validate_schedule_scheme", "description": "Check a scheme's bindings against the open project." },
+    { "name": "list_api_commands", "description": "Catalog of every official JSON API and Tapir command." },
+    { "name": "describe_api_command", "description": "Full description and input schema for one API command." },
+    { "name": "execute_api_command", "description": "Execute any Archicad API command by name." }
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.12.0",
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "python": ">=3.12"
+    }
+  }
+}
