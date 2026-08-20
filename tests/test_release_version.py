@@ -3,10 +3,11 @@ from scripts.check_release_version import (
     normalise_tag,
     read_versions,
     readme_version_refs,
+    server_json_versions,
 )
 
 
-def test_the_two_declared_versions_in_this_repo_agree():
+def test_every_declared_version_in_this_repo_agrees():
     """The assertion that earns this file its place. The release workflow runs
     the same check against the tag, but only once the tag exists; here it runs
     on every push, so drift is caught while it is still a commit to amend
@@ -96,3 +97,71 @@ def test_this_repo_readme_agrees_with_the_declared_version():
     readme_entries = {k: v for k, v in versions.items() if k.startswith("README.md")}
     assert readme_entries, "README version references should be picked up"
     assert set(readme_entries.values()) == {versions["pyproject.toml"]}
+
+
+# ---------- server.json version references ----------
+
+def _server_json(server_version: str, package_version: str, url_version: str) -> dict:
+    """A server.json shaped like the real one, with each of its three kinds of
+    version reference settable independently, which is the only way to write a
+    test for one of them drifting on its own."""
+    return {
+        "version": server_version,
+        "packages": [{
+            "registryType": "mcpb",
+            "version": package_version,
+            "identifier": (
+                "https://github.com/alesdev88/Archicad-MCP/releases/download/"
+                f"v{url_version}/archicad-mcp-{url_version}.mcpb"
+            ),
+        }],
+    }
+
+
+def test_every_place_server_json_states_the_version_is_found():
+    found = server_json_versions(_server_json("0.3.0", "0.3.0", "0.3.0"))
+    assert set(found.values()) == {"0.3.0"}
+    # Four references: the server's own version, the package's version, the tag
+    # in the download URL, and the version inside the bundle's filename.
+    assert len(found) == 4
+
+
+def test_a_server_json_still_pointing_at_the_previous_release_is_reported():
+    """The silent failure the whole check exists for. Both version fields were
+    bumped and the download URL was not, so the registry keeps handing clients
+    the old bundle from a URL that still resolves and never 404s to say so."""
+    found = server_json_versions(_server_json("0.3.0", "0.3.0", "0.2.0"))
+    problems = disagreements({"pyproject.toml": "0.3.0", **found})
+    assert any("URL ref" in line and "0.2.0" in line for line in problems)
+
+
+def test_the_two_versions_inside_one_url_are_reported_separately():
+    """A URL whose tag and filename disagree is corrupt on its own terms, so
+    the two have to be reported as two references rather than collapsed onto a
+    single key where the second would overwrite the first."""
+    data = {
+        "version": "0.3.0",
+        "packages": [{
+            "version": "0.3.0",
+            "identifier": (
+                "https://github.com/alesdev88/Archicad-MCP/releases/download/"
+                "v0.3.0/archicad-mcp-0.2.0.mcpb"
+            ),
+        }],
+    }
+    found = server_json_versions(data)
+    assert sorted(found.values()) == ["0.2.0", "0.3.0", "0.3.0", "0.3.0"]
+    assert disagreements(found)
+
+
+def test_a_package_version_left_behind_is_reported():
+    found = server_json_versions(_server_json("0.3.0", "0.2.0", "0.3.0"))
+    problems = disagreements(found)
+    assert any("packages[0] version" in line and "0.2.0" in line for line in problems)
+
+
+def test_this_repo_server_json_agrees_with_the_declared_version():
+    versions = read_versions()
+    entries = {k: v for k, v in versions.items() if k.startswith("server.json")}
+    assert entries, "server.json version references should be picked up"
+    assert set(entries.values()) == {versions["pyproject.toml"]}

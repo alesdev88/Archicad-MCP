@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.alesdev88/archicad-mcp",
+  "title": "Archicad",
+  "description": "Delivery-readiness QA and full official + Tapir API access for a running Archicad 29.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/alesdev88/Archicad-MCP",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad-mcp-0.1.0.mcpb",
+      "version": "0.1.0",
+      "fileSha256": "26e2f562c6212de6ac3b31706eec34e5e8dc7cec5e8cdda94c7d61ad77fe2d53",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

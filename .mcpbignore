@@ -17,3 +17,7 @@ tests/
 scripts/
 docs/
 *.mcpb
+# Registry metadata, not runtime input. It also describes this bundle from the
+# outside, hash included, so a copy sealed inside the bundle could only ever
+# state the hash of something else.
+server.json

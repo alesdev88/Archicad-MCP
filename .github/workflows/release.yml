@@ -5,11 +5,15 @@ on:
     # is 0.1.0", and nothing else in the repository should be able to publish.
     tags: ["v*"]
 
-# Creating the release is the only privileged thing here and the default token
-# is read-only, so this is the whole grant. Every other step reads the
-# checkout and writes to the runner.
+# Two privileged things happen here, and this is the whole grant for both.
+# contents creates the release. id-token mints a short-lived OIDC token that
+# the MCP registry accepts as proof this run is from this repository, which is
+# why publishing to the registry needs no stored credential: there is nothing
+# to rotate, nothing to leak, and a token that is worthless minutes later.
+# Every other step reads the checkout and writes to the runner.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -90,22 +94,73 @@ jobs:
       - run: npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
       - run: npx --yes @anthropic-ai/mcpb@2.1.2 pack . "dist/archicad-mcp-${GITHUB_REF_NAME#v}.mcpb"
 
+      # server.json tells the registry where the bundle is and what it must
+      # hash to, and clients check that hash before they install. Every other
+      # field in it is committed and gated by check_release_version.py, the
+      # same as manifest.json. This one cannot be: it is a hash of the bundle,
+      # and the bundle is built from the very commit that would have to contain
+      # it. So it is stamped at the first moment it is knowable, and whatever
+      # placeholder is committed is never what gets published.
+      - run: |
+          bundle="dist/archicad-mcp-${GITHUB_REF_NAME#v}.mcpb"
+          jq --arg sha "$(sha256sum "$bundle" | cut -d' ' -f1)" \
+            '.packages[0].fileSha256 = $sha' server.json > server.stamped
+          mv server.stamped server.json
+
+      # Anything that is not exactly major.minor.patch is a prerelease,
+      # whichever way it is spelled (v0.2.0rc1, v0.2.0-beta.1). Decided once,
+      # here, because the two steps below need the same answer and a second
+      # copy of this regex would be a second thing to keep in step.
+      - run: |
+          if [[ "${GITHUB_REF_NAME#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "PRERELEASE=false" >> "$GITHUB_ENV"
+          else
+            echo "PRERELEASE=true" >> "$GITHUB_ENV"
+          fi
+
       # gh is preinstalled on the runner and is the same command this would be
       # by hand, so there is no third-party release action to pin and keep
       # current. The wheel and sdist go up alongside the bundle because every
       # install path in README that is not the extension is a git URL, and
       # without these there is nowhere to get a built distribution of one
-      # named version.
+      # named version. A prerelease is labelled as one rather than offered from
+      # the releases page as the current version to download.
       - run: |
           flags=(--generate-notes --title "$GITHUB_REF_NAME")
-          # Anything that is not exactly major.minor.patch is a prerelease,
-          # whichever way it is spelled (v0.2.0rc1, v0.2.0-beta.1). GitHub
-          # should label it as one rather than offer it from the releases page
-          # as the current version to download.
-          if [[ ! "${GITHUB_REF_NAME#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "$PRERELEASE" == "true" ]]; then
             flags+=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
             dist/*.mcpb dist/*.whl dist/*.tar.gz
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # After the release exists, never before. The registry stores the
+      # bundle's download URL and hands it to clients verbatim, so publishing
+      # while the asset was still uploading would advertise a URL that 404s,
+      # and nothing would tell the registry to look again later.
+      #
+      # Skipped for prereleases. The registry offers one current version per
+      # server, so registering v0.2.0rc1 would hand a release candidate to
+      # everyone who installs from a client's server list.
+      #
+      # Unpinned, unlike the mcpb packer above, and for the opposite reason.
+      # The packer decides the format of a file this repository produces, so
+      # holding it still is what keeps bundles comparable between releases.
+      # mcp-publisher speaks a protocol the registry defines and is still
+      # changing while it is in preview, so the version that works is the one
+      # matching the registry as it is today, not as it was at the last release.
+      #
+      # Last, so that nothing else in the release depends on it. A failure here
+      # leaves the GitHub release intact and correct, which is what every
+      # install path other than the registry uses, and re-running the job
+      # recovers it. What re-running cannot do is correct a publish that
+      # succeeded: the registry refuses a version it already holds ("cannot
+      # publish duplicate version"), so a wrong entry is fixed by releasing the
+      # next patch version, never by pushing this tag again.
+      - name: Publish to the MCP registry
+        if: env.PRERELEASE == 'false'
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

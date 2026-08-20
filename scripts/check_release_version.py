@@ -1,16 +1,26 @@
 """Refuse a release whose version is not stated identically everywhere.
 
-The version is written down in three places, and nothing keeps them in step:
+The version is written down in four places, and nothing keeps them in step:
 
     pyproject.toml   [project] version
     manifest.json    "version"
     README.md        the download URLs and artifact names readers paste
+    server.json      the MCP registry entry: its own version, the package
+                     version, and the release URL the bundle is fetched from
 
-At release time a fourth copy of it appears as the git tag. A mismatch is
+At release time a fifth copy of it appears as the git tag. A mismatch is
 invisible while it is being made and expensive afterwards: the extension ends
 up reporting a version no wheel was ever built for, the README hands new
 readers a download link that 404s, and the tag that named it has already been
 pushed.
+
+server.json is the one whose drift is silent, which is why it is worth checking
+even though nobody reads it by hand. The other three fail loudly when they rot:
+a link 404s, an extension names a version no wheel was built for. A stale
+server.json still resolves. It points the registry at the *previous* release's
+bundle, which is still sitting on the releases page, so every client that
+installs from the registry quietly gets an old version and nothing anywhere
+reports an error.
 
 Run it bare to check that the files agree, which is what the test suite does on
 every push, well before there is a tag to get wrong:
@@ -66,14 +76,48 @@ def readme_version_refs(text: str) -> list[tuple[int, str]]:
     return found
 
 
+def server_json_versions(data: dict) -> dict[str, str]:
+    """Every version server.json states, keyed by where in the file it sits.
+
+    Three kinds of place, checked separately because they drift separately: the
+    server's own version, each package's version, and the release URL that
+    package is downloaded from, which spells the version out twice over, once
+    as the git tag and once inside the bundle's filename.
+
+    The URL is read with the same patterns as the README because it is the same
+    URL shape and the same artifact names, so a version appearing there is this
+    project's own by construction rather than by guesswork.
+
+    fileSha256 is deliberately not checked here. It is the one field release
+    time is the first moment able to know, because it is a hash of the bundle
+    that is built from the very commit that would have to contain it, so the
+    release workflow stamps it after packing. Nothing that can be gated before
+    a tag exists can say anything true about it.
+    """
+    found = {"server.json version": str(data["version"])}
+    for index, package in enumerate(data.get("packages", ())):
+        where = f"server.json packages[{index}]"
+        found[f"{where} version"] = str(package["version"])
+        # Numbered rather than collapsed onto one key. Two references in a
+        # single URL that disagree with each other is exactly the corruption
+        # worth catching, and keying them both as "the URL" would let the
+        # second quietly overwrite the first and report a pass.
+        identifier = str(package.get("identifier", ""))
+        for n, (_, version) in enumerate(readme_version_refs(identifier), start=1):
+            found[f"{where} URL ref {n}"] = version
+    return found
+
+
 def read_versions(root: Path = ROOT) -> dict[str, str]:
     """The version each file declares, keyed by the file name so a failure can
     name the file to edit rather than the value that is wrong."""
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    server = json.loads((root / "server.json").read_text(encoding="utf-8"))
     versions = {
         "pyproject.toml": str(pyproject["project"]["version"]),
         "manifest.json": str(manifest["version"]),
+        **server_json_versions(server),
     }
     readme = root / "README.md"
     if readme.exists():
@@ -126,8 +170,8 @@ def main(argv: list[str]) -> int:
         print("Version mismatch, refusing to release:")
         for line in problems:
             print(f"  {line}")
-        print("Bring pyproject.toml, manifest.json, README.md, and the tag into "
-              "agreement.")
+        print("Bring pyproject.toml, manifest.json, README.md, server.json, and "
+              "the tag into agreement.")
         return 1
     # Name the README reference count rather than just the file. A regex that
     # quietly stopped matching would otherwise pass by finding nothing, and a
@@ -135,7 +179,12 @@ def main(argv: list[str]) -> int:
     # the README rots.
     readme = ROOT / "README.md"
     refs = readme_version_refs(readme.read_text(encoding="utf-8")) if readme.exists() else []
+    # Same reasoning for server.json, which has the stronger claim on it: its
+    # references are read out of a structure rather than out of prose, so a
+    # renamed field would not fail, it would simply stop being looked at.
+    server_refs = sum(1 for key in versions if key.startswith("server.json"))
     checked = ["pyproject.toml", "manifest.json",
+               f"{server_refs} server.json reference{'' if server_refs == 1 else 's'}",
                f"{len(refs)} README.md reference{'' if len(refs) == 1 else 's'}"]
     if tag is not None:
         checked.append(f"tag {tag}")
