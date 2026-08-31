@@ -26,8 +26,12 @@ class ArchicadUnavailableError(Exception):
     """str(exc) is a user-facing, actionable message."""
 
 
-# Live-verified: Archicad answers on its port with a project-less status error
-# (API.GetProductInfo itself fails) when it is running but no project is open.
+# Live-verified: Archicad answers on its port but refuses even
+# API.GetProductInfo with code 4001 ("Invalid program status") when no project
+# is open. An open modal dialog (e.g. Object Settings) blocks the API the same
+# way while a project IS open (seen live 2026-08-31, AC 29.0/5101), and
+# community reports give that case the same code 4001, so a refused probe
+# cannot be pinned on a missing project.
 NO_OPEN_PROJECT_CODE = 4001
 
 
@@ -40,6 +44,9 @@ class InstanceInfo:
     tapir_available: bool
     tapir_version: str | None
     project_open: bool = True
+    # The raw refusal ("code 4001: Invalid program status") when project_open
+    # is False, so the real reason survives into errors and list_instances.
+    status_error: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -114,13 +121,16 @@ def probe_port(port: int, core=None) -> InstanceInfo | None:
         product = conn.official("API.GetProductInfo")
     except (APIConnectionError, RequestError, CommandTimeoutError):
         return None
-    except APIErrorBase:
-        # Archicad is there but has no project open (it refuses even
-        # GetProductInfo). Report the instance rather than hiding it, and
-        # never let one project-less instance break discovery of the others.
+    except APIErrorBase as exc:
+        # Archicad is there but refuses even GetProductInfo: either no project
+        # is open, or a modal dialog is blocking the API while a project IS
+        # open. Both refuse with code 4001, so keep the raw refusal instead of
+        # guessing the cause. Report the instance rather than hiding it, and
+        # never let one refusing instance break discovery of the others.
         return InstanceInfo(port=port, version=0, build=0, project_name=None,
                             tapir_available=False, tapir_version=None,
-                            project_open=False)
+                            project_open=False,
+                            status_error=f"code {exc.code}: {exc.message}")
     tapir = conn.tapir_available()
     project_name = None
     tapir_version = None
@@ -151,10 +161,18 @@ def discover_instances() -> list[InstanceInfo]:
 
 
 def _require_open_project(info: InstanceInfo) -> None:
+    # A refused probe has two indistinguishable causes (same error code 4001):
+    # no open project, or a modal dialog blocking the API while a project is
+    # open. Claiming just "no project is open" misdiagnoses the dialog case
+    # (seen live 2026-08-31), so the message must name both.
     if not info.project_open:
+        detail = f" ({info.status_error})" if info.status_error else ""
         raise ArchicadUnavailableError(
-            f"Archicad is running on port {info.port} but no project is open. "
-            "Open a project and retry.")
+            f"Archicad is running on port {info.port} but refused the API "
+            f"request{detail}. Either no project is open, or a modal dialog "
+            "(e.g. Object Settings) is blocking the API even though a project "
+            "is open. Close any open dialog in Archicad, or open a project, "
+            "and retry.")
 
 
 def get_connection(port: int | None) -> ArchicadConnection:

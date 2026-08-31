@@ -41,11 +41,15 @@ _HANDLED_ERRORS = (ArchicadUnavailableError, APIErrorBase)
 
 def _tool_error(exc: Exception) -> dict:
     if isinstance(exc, APIErrorBase):
-        # Only suggest "open a project" for the error that actually means it.
-        # Appending it to every API error (e.g. a schema rejection) misleads.
+        # Code 4001 ("Invalid program status") means Archicad cannot execute
+        # commands right now: no project open, or a modal dialog blocking the
+        # API while one is open. Only that code gets the hint; appending it to
+        # every API error (e.g. a schema rejection) misleads.
         message = f"Archicad API error: {exc.message}"
         if getattr(exc, "code", None) == NO_OPEN_PROJECT_CODE:
-            message += ". Open a project in Archicad and retry."
+            message += (". Open a project in Archicad if none is open; if one "
+                        "is open, close any modal dialog (e.g. Object "
+                        "Settings) blocking the API, and retry.")
         return {"error": message}
     return {"error": str(exc)}
 
@@ -375,8 +379,10 @@ _NO_TAPIR_NOTE = ("element creation, issues, IFC checks, highlighting and "
 
 def _instance_line(info: InstanceInfo, mode: str) -> str:
     if not info.project_open:
-        return (f"{_BANNER_PREFIX} Archicad on port {info.port} has no project "
-                "open, so it cannot answer anything until you open one")
+        detail = f" ({info.status_error})" if info.status_error else ""
+        return (f"{_BANNER_PREFIX} Archicad on port {info.port} refused API "
+                f"commands{detail}: it has no project open, or a modal dialog "
+                "is blocking the API. Close any open dialog or open a project")
     parts = [f"Archicad {info.version} (build {info.build}) on port {info.port}"]
     # verdicts mode exists to keep project identity out of what this server
     # surfaces; the log is no exception.

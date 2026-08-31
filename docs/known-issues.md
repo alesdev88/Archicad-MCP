@@ -121,7 +121,8 @@ open. Behaviour worth knowing:
 | Situation | What happens |
 |---|---|
 | Nothing on any port | `No running Archicad found. Start Archicad 29 and open a project.` |
-| Archicad running, no project open | Reported by `list_instances` with `project_open: false` and version/build `0`. Archicad refuses even `API.GetProductInfo` (error `4001`) until a project is open, and tools then fail with a message saying exactly that. |
+| Archicad running, no project open | Reported by `list_instances` with `project_open: false` and version/build `0`. Archicad refuses even `API.GetProductInfo` (error `4001`) until a project is open, and tools then fail with a message naming the two possible causes below. |
+| Archicad running, project open, but a modal dialog open (e.g. Object Settings) | The dialog blocks the whole API with the same error `4001` as a missing project, so this looks identical to the row above and the two cannot be told apart. Tools fail with a message naming both causes; close the dialog and retry. |
 | Several instances, projects open | Discovery refuses to guess. Pass `port` to the tool; `list_instances` shows the options. |
 | Archicad quits or crashes mid-session | Tools report that Archicad is not responding on that port and may have been closed or crashed. |
 

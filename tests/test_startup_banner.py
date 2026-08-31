@@ -91,6 +91,9 @@ def test_banner_reports_an_instance_with_no_project_open():
     banner = format_startup_banner("full", 3, [NO_PROJECT])
     assert "19724" in banner
     assert "no project open" in banner.lower()
+    # A modal dialog blocks the API the same way (live 2026-08-31), so the
+    # banner must not flatly claim the project is missing.
+    assert "modal dialog" in banner.lower()
 
 
 def test_banner_lists_every_instance_when_several_are_running():
