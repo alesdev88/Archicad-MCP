@@ -511,7 +511,14 @@ const state = {q:"", fam:"all", cov:"all"};
   const st = document.getElementById("tstatus");
   const recheck = document.getElementById("recheck");
   const update = document.getElementById("update");
-  const SYNC_CMD = "uv run python scripts/sync_tapir_defs.py";
+  // This page lives at <repo>/docs/; when opened from disk, derive the repo root
+  // from the file URL so the copied command works from any cwd. Served over http
+  // the viewer's checkout location is unknowable, so fall back to the bare command.
+  const REPO_ROOT = location.protocol === "file:"
+    ? decodeURIComponent(location.pathname).replace(/\/docs\/[^/]*$/, "").replace(/^\/([A-Za-z]:)/, "$1")
+    : "";
+  const CD_PREFIX = REPO_ROOT ? `cd "${REPO_ROOT}" && ` : "";
+  const SYNC_CMD = CD_PREFIX + "uv run python scripts/sync_tapir_defs.py";
   // Sync the definitions AND regenerate this page, so a reload shows the new version.
   const UPDATE_CMD = SYNC_CMD + " && uv run python scripts/build_dashboard.py";
   const parse = v => String(v||"").replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
