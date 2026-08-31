@@ -26,12 +26,12 @@ does two jobs:
   suitable Python (3.12+) for you.
 - **[Tapir add-on](https://github.com/ENZYME-APD/tapir-archicad-automation/releases)**,
   optional but recommended. Required for element creation, issues, IFC checks,
-  highlighting, and publishing; verified on Tapir 1.5.3. Without it, those tools
+  highlighting, and publishing; verified on Tapir 1.5.8. Without it, those tools
   degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
 
-One file, one click, no JSON editing. Download `archicad-mcp-0.1.0.mcpb` from the
+One file, one click, no JSON editing. Download `archicad-mcp-0.1.1.mcpb` from the
 [latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest), then
 in Claude Desktop open **Settings > Extensions** and drag it in.
 
@@ -56,7 +56,7 @@ re-run the install command with the newer version's URL from the
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.1/archicad_mcp-0.1.1-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -87,7 +87,7 @@ editing the file.
 winget install --id=astral-sh.uv -e
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.1/archicad_mcp-0.1.1-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -115,7 +115,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.0/archicad_mcp-0.1.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.1/archicad_mcp-0.1.1-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -137,7 +137,7 @@ tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs
 
 ```
 archicad-mcp: mode=full, 12 rules loaded
-archicad-mcp: Archicad 29 (build 4006) on port 19723, project 'Sample', Tapir 1.5.3
+archicad-mcp: Archicad 29 (build 4006) on port 19723, project 'Sample', Tapir 1.5.8
 ```
 
 That line distinguishes the three failures that look identical from the chat
@@ -301,7 +301,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.1.0   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.1.1   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -324,7 +324,7 @@ drift:
 
 ```bash
 uv run python scripts/check_release_version.py
-npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.1.0.mcpb
+npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.1.1.mcpb
 ```
 
 `.mcpbignore` decides what ships. The bundle carries `pyproject.toml` and
