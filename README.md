@@ -257,6 +257,23 @@ them are undocumented and are being mapped in
   save unchanged.** This protects the parts of the format the server does
   not model.
 
+## Library parts
+
+The `archicad-gdl` command (installed alongside the server) turns mesh models
+(OBJ, 3DS) into placeable library parts and pushes them into the open
+project, without opening the GDL editor:
+
+```bash
+archicad-gdl build chair.3ds --name "My Chair" --config assets.json
+archicad-gdl deploy "build/My Chair.gsm" --place 0 0 --preview check.png
+```
+
+It parses the mesh (units, pivots, welding), optionally decimates dense
+meshes through a background Blender, writes the HSF source, compiles it with
+the LP_XMLConverter bundled inside Archicad, and deploys over the same
+connection the server uses. Finish variants become dropdowns in Object
+Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
+
 ## Tools
 
 **QA (both modes):** `list_instances`, `get_model_summary`, `list_rules`,
@@ -340,6 +357,8 @@ uv run --with pillow python scripts/make_icon.py
 - **[Writing rules](docs/rules.md)**: every rule type, field, and the scoring model.
 - **[Schedule criteria codes](docs/scheme-criteria-codes.md)**: the empirical
   `Param_Type` and `Relation_Index` table, and how to extend it.
+- **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
+  finish dropdowns, and the GDL fine print the generator encodes.
 
 ## License
 

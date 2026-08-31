@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 archicad-mcp = "archicad_mcp.server:main"
+archicad-gdl = "archicad_mcp.gdl.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
