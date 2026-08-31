@@ -214,6 +214,9 @@ async def test_api_error_hint_only_for_no_project_open(monkeypatch, tmp_path):
     mcp = make(4001, "Invalid program status (no open project)")
     payload = await call(mcp, "get_model_summary")
     assert "Open a project" in payload["error"]
+    # 4001 also fires while a modal dialog blocks the API with a project open
+    # (live 2026-08-31), so the hint must name that cause too.
+    assert "modal dialog" in payload["error"]
 
     mcp = make(4002, "Invalid command parameters (JSON schema)")
     payload = await call(mcp, "get_model_summary")

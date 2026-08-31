@@ -100,6 +100,8 @@ def test_instance_with_no_open_project_is_reported_not_hidden():
     assert info is not None, "a project-less instance must still be discovered"
     assert info.project_open is False
     assert info.port == 19723
+    # The raw refusal is kept: it is the only record of WHY the probe failed.
+    assert info.status_error == "code 4001: Invalid program status (no open project)"
 
 
 def test_discovery_survives_a_project_less_instance(monkeypatch):
@@ -133,3 +135,29 @@ def test_get_connection_on_project_less_port_is_actionable(monkeypatch):
     monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None: info)
     with pytest.raises(ArchicadUnavailableError, match="no project is open"):
         get_connection(19723)
+
+
+def test_refused_probe_error_names_the_modal_dialog_cause(monkeypatch):
+    """Live 2026-08-31 (AC 29.0/5101): with the Object Settings dialog open,
+    Archicad refuses even GetProductInfo although a project IS open, with the
+    same code 4001 as the no-project case. The probe cannot tell the two
+    apart, so the error must name both causes and carry the raw refusal
+    instead of flatly claiming that no project is open."""
+    from multiconn_archicad.errors import StandardAPIError
+
+    class DialogBlockedCore:
+        def post_command(self, *a, **k):
+            raise StandardAPIError(message="Invalid program status", code=4001)
+
+    from archicad_mcp.connection import get_connection
+    info = probe_port(19723, core=DialogBlockedCore())
+    assert info is not None and info.project_open is False
+    monkeypatch.setattr("archicad_mcp.connection.probe_port",
+                        lambda p, core=None: info)
+    with pytest.raises(ArchicadUnavailableError) as excinfo:
+        get_connection(19723)
+    message = str(excinfo.value)
+    assert "modal dialog" in message
+    assert "no project is open" in message
+    assert "close any open dialog" in message.lower()
+    assert "code 4001: Invalid program status" in message
