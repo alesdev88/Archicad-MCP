@@ -4,11 +4,12 @@ from archicad_mcp.connection import ArchicadConnection
 
 CREATE_COMMANDS: dict[str, tuple[str, str]] = {
     "column": ("CreateColumns", "columnsData"),
+    "mesh": ("CreateMeshes", "meshesData"),
+    "object": ("CreateObjects", "objectsData"),
+    "polyline": ("CreatePolylines", "polylinesData"),
+    "railing": ("CreateRailings", "railingsData"),
     "slab": ("CreateSlabs", "slabsData"),
     "zone": ("CreateZones", "zonesData"),
-    "polyline": ("CreatePolylines", "polylinesData"),
-    "object": ("CreateObjects", "objectsData"),
-    "mesh": ("CreateMeshes", "meshesData"),
 }
 
 

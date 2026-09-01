@@ -21,3 +21,17 @@ reference documents it links to.
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](gdl-pipeline.md)**: mesh models to library parts with finish
   dropdowns, and the GDL fine print the generator encodes.
+
+## Element creation tools
+
+To change the Railing tool's own defaults so your next manual placement
+inherits them, apply a Railing favorite to the tool defaults:
+
+```
+execute_write_api_command
+  name:   ApplyFavoritesToElementDefaults
+  params: {"favorites": ["<your railing favorite>"]}
+```
+
+This is separate from favoriteName on create_elements, which applies a
+favorite to one new element and leaves the tool defaults as it found them.

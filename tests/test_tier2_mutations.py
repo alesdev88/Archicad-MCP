@@ -55,6 +55,29 @@ async def test_create_elements_unknown_type_points_to_gateway(core):
     assert "execute_write_api_command" in payload["error"]
 
 
+RAILING_ITEM = {"referenceLinePoints": [{"x": 0, "y": 0, "z": 0},
+                                        {"x": 3, "y": 0, "z": 0.9}]}
+
+
+async def test_create_railing_dry_run(core):
+    payload = await call("create_elements",
+                         {"element_type": "railing", "items": [RAILING_ITEM]})
+    assert payload["dry_run"] is True
+    assert payload["command"] == "CreateRailings"
+    assert payload["payload"] == {"railingsData": [RAILING_ITEM]}
+    assert not any(c == "CreateRailings" for c, _ in core.calls)
+
+
+async def test_create_railing_commit(core):
+    core.tapir_responses["CreateRailings"] = {
+        "elements": [{"elementId": {"guid": "new-railing-1"}}]}
+    payload = await call("create_elements",
+                         {"element_type": "railing", "items": [RAILING_ITEM],
+                          "dry_run": False})
+    assert payload == {"dry_run": False, "created": 1,
+                       "elements": ["new-railing-1"]}
+
+
 async def test_move_refuses_without_confirm(core):
     payload = await call("move_elements",
                          {"guids": ["w-1"], "vector": {"x": 1.0, "y": 0.0, "z": 0.0}})
