@@ -155,6 +155,10 @@ Live-run against Archicad 29.0/4006:
   `create_issue`
 - The tier-3 gateway (309 commands, writes included)
 
+The 0.2.0 `win32` bundle, cross-built on macOS, was installed on Windows and
+runs: the extension starts, the tools appear, and it reaches Archicad. That is
+the check the build machine cannot perform for itself.
+
 The live runs above predate the 0.2.0 tool split, which renamed these tools
 without changing what they send to Archicad: `manage_selection` became
 `get_selection` / `set_selection` / `clear_selection`, `manage_issues` became

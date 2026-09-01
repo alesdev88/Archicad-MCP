@@ -395,8 +395,9 @@ uv run python scripts/check_release_version.py v0.2.0
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-A cross-built Windows bundle has never been executed by the machine that built
-it. Install one on Windows before trusting a release.
+A cross-built Windows bundle cannot be executed by the machine that built it,
+so install one on Windows before trusting a release. The 0.2.0 bundle was
+checked that way and runs.
 
 `icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
 only to redraw it and is deliberately not a project dependency:
@@ -414,11 +415,11 @@ uv run --with pillow python scripts/make_icon.py
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
   finish dropdowns, and the GDL fine print the generator encodes.
-- **API dashboard**: every one of the 309 reachable commands, grouped, showing
-  which have a dedicated tool and which are gateway-only. It is a generated
-  page rather than a document, so clone the repo and open
-  `docs/api-dashboard.html` in a browser. Refresh it with
-  `uv run python scripts/build_dashboard.py` after a Tapir definitions sync.
+- **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
+  every one of the 309 reachable commands, grouped, showing which have a
+  dedicated tool and which are gateway-only. Generated rather than written;
+  refresh it with `uv run python scripts/build_dashboard.py` after a Tapir
+  definitions sync, and the push publishes it.
 
 ## Privacy Policy
 
