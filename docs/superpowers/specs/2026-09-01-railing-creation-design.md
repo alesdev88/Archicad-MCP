@@ -81,7 +81,9 @@ next Tapir minor version.
 ### Geometry: two mutually exclusive modes per item
 
 - `referenceLinePoints`: an array of `{x, y, z}`. Free-standing railing.
-- `hostStairGuid` plus `side` (`"left"` or `"right"`). Derived from the stair.
+- `ownerStairId` plus `side` (`"left"` or `"right"`). Derived from the stair.
+  `ownerStairId` is an `ElementId` object, matching the `ownerWallId` convention
+  `CreateWindowsCommand` already uses (`ExtendedElementCommands.cpp:3879`).
 
 Giving both, or neither, is a per-item error. Errors are per item, not per
 call, matching how the base class already reports them.
@@ -108,15 +110,25 @@ Follows the official sample: `memo.coords` 1-based, `memo.parcs`,
 `memo.polyZCoords` sized `nCoords + 1`, and
 `element.railing.nVertices = nCoords`.
 
-### dryRun
+### Previewing the derived geometry
 
-`dryRun: true` returns the derived reference-line points and the resolved
-settings without creating anything. This is the diagnostic path for the vertex
-filter below, and the reason no separate read command is needed.
+A `dryRun` flag on `CreateRailings` was the original choice here, and it is not
+implementable. `SetTypeSpecificParameters` is `const`, returns only an optional
+error, and `CreateElementsCommandBase::Execute` calls `ACAPI_Element_Create`
+unconditionally afterwards (`ElementCreationCommands.hpp:13`). A dry run would
+therefore mean changing a virtual signature shared by roughly twenty commands,
+which is a large upstream ask for a diagnostic.
+
+Instead, a separate read command `GetStairRailingReferenceLine` returns the
+points a railing would follow, without creating anything. It shares the
+derivation code with `CreateRailings` through a free function, so the two
+cannot drift, and being a read it reaches the MCP through
+`execute_read_api_command` with no confirmation prompt.
 
 ## Component 2: nosing derivation
 
-Runs inside `SetTypeSpecificParameters` when `hostStairGuid` is given.
+Runs inside `SetTypeSpecificParameters` when `ownerStairId` is given, and in
+`GetStairRailingReferenceLine`, through a free function shared by both.
 
 1. `ACAPI_Element_Get` the host stair, then `ACAPI_Element_GetMemo` with
    `APIMemoMask_All`.
@@ -145,10 +157,11 @@ straight to the Railing masks. Nothing in the dev kit examples reads
 `stairBoundary`, and neither does Tapir. So the plan above rests on
 `APIMemoMask_All` populating a field that nobody has been shown to read.
 
-**This is the first thing to verify, before any other work.** A throwaway
-command that reads one stair's memo and reports whether `stairBoundary[0]` and
-`stairBoundary[1]` are populated, and how many vertices each has, settles it in
-one build.
+**This is the first thing to verify, before any other work.** A read command,
+`GetStairBoundaries`, that reports whether `stairBoundary[0]` and
+`stairBoundary[1]` are populated and how many vertices each has, settles it in
+one build. It is worth keeping afterwards as the diagnostic for the vertex
+filter, so it is a deliverable rather than a throwaway.
 
 If they come back empty, in order of preference:
 
@@ -162,7 +175,7 @@ If they come back empty, in order of preference:
 
 ## Component 3: host link
 
-When `hostStairGuid` is given, the command records which stair the railing came
+When `ownerStairId` is given, the command records which stair the railing came
 from, so that a later re-sync tool has something to find.
 
 - Ensure a property group and a text property definition exist, using
@@ -237,8 +250,8 @@ against the small non-sensitive test model, in this order:
    into the tool defaults after the call.
 7. Property group and definition created once, reused on the second call.
 
-`dryRun` first at every step, so a wrong vertex filter prints points instead of
-placing junk in the model.
+Run `GetStairRailingReferenceLine` first at every step, so a wrong vertex
+filter prints points instead of placing junk in the model.
 
 ## Sequencing
 
@@ -247,5 +260,5 @@ placing junk in the model.
 2. `CreateRailings` with `referenceLinePoints` only, plus the MCP dispatch
    entry and the registry overlay. Deliverable: railings on any polyline,
    through the MCP.
-3. Stair derivation and `dryRun`.
+3. Stair derivation, and `GetStairRailingReferenceLine` to preview it.
 4. Host link recording, once the group and property names are chosen.
