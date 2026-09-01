@@ -1,7 +1,7 @@
 """Generate a self-contained HTML dashboard of every API command the MCP server
 can reach: the official Archicad JSON API plus the Tapir add-on commands, grouped
 logically, with coverage marked (which commands have a dedicated first-class tool
-versus which are reachable only through the generic execute_api_command gateway).
+versus which are reachable only through the generic gateway tools).
 
 Run it to refresh the page whenever the bundled definitions change:
 
@@ -30,10 +30,11 @@ TAPIR_REPO = "ENZYME-APD/tapir-archicad-automation"
 # Underlying API command -> the dedicated MCP tool(s) that surface it.
 # Derived from src/archicad_mcp/core/*, actions.py and extract.py. A command that
 # appears here is "first-class" (a curated, safety-checked tool wraps it); every
-# other command in the catalog is reachable through execute_api_command.
+# other command in the catalog is reachable through execute_read_api_command or
+# execute_write_api_command, whichever matches its access classification.
 WRAPPED_BY: dict[str, list[str]] = {
     "API.GetAllElements": ["query_elements", "get_model_summary"],
-    "API.GetSelectedElements": ["query_elements", "manage_selection"],
+    "API.GetSelectedElements": ["query_elements", "get_selection"],
     "API.GetTypesOfElements": ["get_element_data"],
     "API.GetPropertyIds": ["get_element_data"],
     "API.GetPropertyValuesOfElements": ["get_element_data"],
@@ -44,19 +45,19 @@ WRAPPED_BY: dict[str, list[str]] = {
     "API.SetPropertyValuesOfElements": ["set_element_data"],
     "MoveElements": ["move_elements"],
     "DeleteElements": ["delete_elements"],
-    "ChangeSelectionOfElements": ["manage_selection"],
+    "ChangeSelectionOfElements": ["set_selection", "clear_selection"],
     "CreateColumns": ["create_elements"],
     "CreateSlabs": ["create_elements"],
     "CreateZones": ["create_elements"],
     "CreatePolylines": ["create_elements"],
     "CreateObjects": ["create_elements"],
     "CreateMeshes": ["create_elements"],
-    "GetIssues": ["manage_issues"],
-    "CreateIssue": ["manage_issues", "create_issues_from_failures"],
-    "AddCommentToIssue": ["manage_issues"],
-    "AttachElementsToIssue": ["manage_issues", "create_issues_from_failures"],
-    "ExportIssuesToBCF": ["manage_issues"],
-    "ImportIssuesFromBCF": ["manage_issues"],
+    "GetIssues": ["list_issues"],
+    "CreateIssue": ["create_issue", "create_issues_from_failures"],
+    "AddCommentToIssue": ["add_issue_comment"],
+    "AttachElementsToIssue": ["attach_elements_to_issue", "create_issues_from_failures"],
+    "ExportIssuesToBCF": ["export_issues_bcf"],
+    "ImportIssuesFromBCF": ["import_issues_bcf"],
     "API.GetProductInfo": ["get_project_info"],
     "GetProjectInfo": ["get_project_info"],
     "GetStories": ["get_project_info"],
@@ -93,13 +94,17 @@ TOOLS: list[dict] = [
     {"name": "set_element_data", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Write element property values. Dry-run by default: returns planned changes without touching the model. Pass dry_run=false to commit."},
     {"name": "create_elements", "cat": "Elements", "mode": "full", "mutates": True,
-     "desc": "Create elements (column/slab/zone/polyline/object/mesh) via Tapir. Dry-run by default. Other types: use execute_api_command."},
+     "desc": "Create elements (column/slab/zone/polyline/object/mesh) via Tapir. Dry-run by default. Other types: use execute_write_api_command."},
     {"name": "move_elements", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Move elements by a vector {x,y,z} in meters. Refuses without confirm=true."},
     {"name": "delete_elements", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Delete elements. Irreversible. Refuses without confirm=true."},
-    {"name": "manage_selection", "cat": "Elements", "mode": "full", "mutates": True,
-     "desc": "Get, set, or clear the current element selection in Archicad. action: get | set | clear."},
+    {"name": "get_selection", "cat": "Elements", "mode": "full",
+     "desc": "Return the GUIDs of the elements currently selected in Archicad."},
+    {"name": "set_selection", "cat": "Elements", "mode": "full", "mutates": True,
+     "desc": "Replace the current selection with the given element GUIDs."},
+    {"name": "clear_selection", "cat": "Elements", "mode": "full", "mutates": True,
+     "desc": "Deselect everything in the Archicad window."},
     # QA and rules
     {"name": "list_rules", "cat": "QA & rules", "mode": "both",
      "desc": "List loaded QA rules (id, type, severity, tags) and any rule-file load errors."},
@@ -114,17 +119,38 @@ TOOLS: list[dict] = [
     {"name": "create_issues_from_failures", "cat": "QA & rules", "mode": "both", "mutates": True,
      "desc": "Create an Archicad issue from a rule's failures and attach the failing elements (requires Tapir add-on)."},
     # Issues and publishing
-    {"name": "manage_issues", "cat": "Issues & publishing", "mode": "full", "mutates": True,
-     "desc": "Manage Archicad issues (Tapir): action = list | create | comment | attach | export_bcf | import_bcf."},
+    {"name": "list_issues", "cat": "Issues & publishing", "mode": "full",
+     "desc": "List the issues in the open project, with their ids (requires the Tapir add-on)."},
+    {"name": "create_issue", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Create a new issue in the open project and return its id (requires the Tapir add-on)."},
+    {"name": "add_issue_comment", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Add a text comment to an existing issue (requires the Tapir add-on)."},
+    {"name": "attach_elements_to_issue", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Attach elements to an existing issue as highlights (requires the Tapir add-on)."},
+    {"name": "export_issues_bcf", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Export every issue in the project to a BCF file (requires the Tapir add-on)."},
+    {"name": "import_issues_bcf", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Import issues into the project from a BCF file (requires the Tapir add-on)."},
     {"name": "publish", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Fire an Archicad publisher set by name (Tapir)."},
+    # Schedules. No API command wraps these: Archicad exposes no schedule API at
+    # any level, so they work on an exported Scheme Settings XML file instead.
+    # That is also why none of them appears in WRAPPED_BY.
+    {"name": "read_schedule_scheme", "cat": "Schedules", "mode": "full",
+     "desc": "Describe an exported schedule scheme XML: its criteria and its ordered columns. Reads the file only, never Archicad."},
+    {"name": "edit_schedule_scheme", "cat": "Schedules", "mode": "full", "mutates": True,
+     "desc": "Apply a YAML scheme spec to an exported schedule scheme XML. Dry-run by default; never overwrites the input."},
+    {"name": "validate_schedule_scheme", "cat": "Schedules", "mode": "full",
+     "desc": "Check an exported scheme's property bindings against the open project. Reads definitions only, not values."},
     # Gateway
     {"name": "list_api_commands", "cat": "Raw API gateway", "mode": "full",
      "desc": "Catalog of ALL available Archicad API commands (official JSON API + Tapir), optionally filtered by group."},
     {"name": "describe_api_command", "cat": "Raw API gateway", "mode": "full",
-     "desc": "Full description and input schema for one API command. Call before execute_api_command."},
-    {"name": "execute_api_command", "cat": "Raw API gateway", "mode": "full", "mutates": True,
-     "desc": "Execute any Archicad API command by name (official 'API.*' or Tapir). Params validated against the bundled schema where available."},
+     "desc": "Full description and input schema for one API command. Call before either execute tool."},
+    {"name": "execute_read_api_command", "cat": "Raw API gateway", "mode": "full",
+     "desc": "Run one read-only Archicad API command by name. A command that changes the project is refused here."},
+    {"name": "execute_write_api_command", "cat": "Raw API gateway", "mode": "full", "mutates": True,
+     "desc": "Run one Archicad API command that changes the project. Refuses without confirm=true."},
 ]
 
 
@@ -432,7 +458,7 @@ footer a{color:var(--muted)}
       <button class="themebtn" id="themebtn" type="button">theme</button>
     </div>
     <div style="padding:10px 22px 0">
-      <p class="sub">Every command the MCP server can reach: the official Archicad JSON API and the Tapir add-on commands, grouped as the add-on groups them. Solid boxes are commands a dedicated, safety-checked tool already wraps. Hollow boxes are reachable through the generic <code style="font-family:var(--mono)">execute_api_command</code> gateway but have no first-class tool yet.</p>
+      <p class="sub">Every command the MCP server can reach: the official Archicad JSON API and the Tapir add-on commands, grouped as the add-on groups them. Solid boxes are commands a dedicated, safety-checked tool already wraps. Hollow boxes are reachable through the generic <code style="font-family:var(--mono)">execute_read_api_command</code> / <code style="font-family:var(--mono)">execute_write_api_command</code> gateway but have no first-class tool yet.</p>
     </div>
     <div class="hd-stats" id="stats"></div>
     <div class="hd-tapir">
@@ -597,6 +623,7 @@ function nameHtml(cmd){
 }
 
 function rowHtml(cmd){
+  const gw = c => c.access === "read" ? "execute_read_api_command" : "execute_write_api_command";
   const fc = cmd.wrapped_by.length>0;
   const cov = fc
     ? `<span class="tag wrap" title="Wrapped by: ${esc(cmd.wrapped_by.join(", "))}">${esc(cmd.wrapped_by[0])}${cmd.wrapped_by.length>1?" +"+(cmd.wrapped_by.length-1):""}</span>`
@@ -604,8 +631,8 @@ function rowHtml(cmd){
   const schema = cmd.has_schema ? `<span class="tag schema">schema</span>` : "";
   const ver = cmd.version ? `<span class="tag ver" title="First included in Tapir v${esc(cmd.version)}">v${esc(cmd.version)}</span>` : "";
   const call = fc
-    ? `<code class="call">${esc(cmd.wrapped_by[0])}(...)</code> <span>or</span> <code class="call">execute_api_command("${esc(cmd.name)}", ...)</code>`
-    : `<code class="call">execute_api_command("${esc(cmd.name)}", { ...params })</code>`;
+    ? `<code class="call">${esc(cmd.wrapped_by[0])}(...)</code> <span>or</span> <code class="call">${gw(cmd)}("${esc(cmd.name)}", ...)</code>`
+    : `<code class="call">${gw(cmd)}("${esc(cmd.name)}", { ...params })</code>`;
   const schemaBlock = cmd.input_schema
     ? `<div class="schemahead">Input schema <button class="copy" data-copy>copy</button></div>
        <pre>${esc(JSON.stringify(cmd.input_schema,null,2))}</pre>`

@@ -29,7 +29,9 @@ does two jobs:
   (3.12+) for you.
 - **[Tapir add-on](https://github.com/ENZYME-APD/tapir-archicad-automation/releases)**,
   optional but recommended. Required for element creation, issues, IFC checks,
-  highlighting, and publishing; verified on Tapir 1.5.9. Without it, those tools
+  highlighting, and publishing. The bundled command definitions are synced from
+  Tapir **1.5.8**, and the server has been exercised live against **1.5.9**, so
+  a newer add-on than the definitions is fine. Without the add-on, those tools
   degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
@@ -56,8 +58,8 @@ Leave a field empty and it falls back to the default in the table below.
 
 The bundle contains a complete CPython 3.12 and every dependency, so it starts
 immediately and works on a machine with no Python, no uv, and no internet
-access. That is why it is around 40 MB: the alternative was asking every machine
-to install a package manager first.
+access. That is why it is 42 MB on Windows and 54 MB on macOS: the alternative
+was asking every machine to install a package manager first.
 
 Deploying to a team? On a Team or Enterprise plan an owner can upload the bundle
 under **Organization settings > Connectors > Desktop**, which makes it a
@@ -157,7 +159,7 @@ tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs
 
 ```
 archicad-mcp: mode=full, 12 rules loaded
-archicad-mcp: Archicad 29 (build 4006) on port 19723, project 'Sample', Tapir 1.5.8
+archicad-mcp: Archicad 29 (build 5101) on port 19723, project 'Sample', Tapir 1.5.9
 ```
 
 That line distinguishes the three failures that look identical from the chat
@@ -279,9 +281,8 @@ them are undocumented and are being mapped in
 
 ## Library parts
 
-The `archicad-gdl` command (installed alongside the server) turns mesh models
-(OBJ, 3DS) into placeable library parts and pushes them into the open
-project, without opening the GDL editor:
+The `archicad-gdl` command turns mesh models (OBJ, 3DS) into placeable library
+parts and pushes them into the open project, without opening the GDL editor:
 
 ```bash
 archicad-gdl build chair.3ds --name "My Chair" --config assets.json
@@ -293,6 +294,10 @@ meshes through a background Blender, writes the HSF source, compiles it with
 the LP_XMLConverter bundled inside Archicad, and deploys over the same
 connection the server uses. Finish variants become dropdowns in Object
 Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
+
+This is a command line tool, so it comes with the `uv tool install` paths above
+and not with the Claude Desktop extension. The extension bundles an interpreter
+for its own use rather than putting anything on your PATH.
 
 ## Tools
 
@@ -349,30 +354,49 @@ After a Tapir add-on update, refresh the bundled command schemas:
 uv run python scripts/sync_tapir_defs.py
 ```
 
-Build the Claude Desktop extension. `version` in `manifest.json` and in
-`pyproject.toml` have to state the same thing, and the test suite fails if they
-drift:
+Build the Claude Desktop extensions. One bundle per platform, both from this
+one machine (Node is needed, for the `mcpb` packer):
+
+```bash
+uv run python scripts/build_bundle.py --target all
+```
+
+Each bundle gets a relocatable CPython from
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+with every locked dependency installed into its own site-packages, so it starts
+with no uv, no system Python and no network. The tree contains compiled wheels,
+which is why a bundle is platform-specific; the build is not, because
+`uv pip install --python-platform` resolves wheels for a named target. Source
+builds are refused outright: one would compile for *this* machine and put the
+result in a bundle labelled for another, which fails at import on the user's
+machine with nothing to explain why.
+
+That refusal is also why there is no Intel macOS bundle. The script self-tests
+the bundle it just built whenever the target is the machine building it, and
+says so when it cannot, which is every time you cross-build for Windows.
+
+The version is written in four places (`pyproject.toml`, `manifest.json`,
+`server.json`, and the download links in this README) and the test suite fails
+if they drift:
 
 ```bash
 uv run python scripts/check_release_version.py
-npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.2.0.mcpb
 ```
 
-`.mcpbignore` decides what ships. The bundle carries `pyproject.toml` and
-`uv.lock` rather than vendored wheels, so `uv` resolves the same pinned
-dependency set on the target machine and one bundle serves both macOS and
-Windows.
-
 Releasing is a tag push. `.github/workflows/release.yml` refuses the tag unless
-both files and the tag itself agree on the version, then builds the bundle, the
-wheel, and the sdist and attaches all three to a GitHub release. Run the same
-check by hand first, because a tag that has been pushed has to be deleted
-before it can be corrected:
+all four files and the tag itself agree, then builds both bundles, the wheel and
+the sdist, attaches them to a GitHub release, stamps each bundle's SHA-256 into
+`server.json`, and publishes that to the MCP registry. Run the check by hand
+first, because a pushed tag has to be deleted before it can be corrected, and
+the registry refuses a version it already holds:
 
 ```bash
 uv run python scripts/check_release_version.py v0.2.0
 git tag v0.2.0 && git push origin v0.2.0
 ```
+
+A cross-built Windows bundle has never been executed by the machine that built
+it. Install one on Windows before trusting a release.
 
 `icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
 only to redraw it and is deliberately not a project dependency:
@@ -390,6 +414,11 @@ uv run --with pillow python scripts/make_icon.py
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
   finish dropdowns, and the GDL fine print the generator encodes.
+- **API dashboard**: every one of the 309 reachable commands, grouped, showing
+  which have a dedicated tool and which are gateway-only. It is a generated
+  page rather than a document, so clone the repo and open
+  `docs/api-dashboard.html` in a browser. Refresh it with
+  `uv run python scripts/build_dashboard.py` after a Tapir definitions sync.
 
 ## Privacy Policy
 

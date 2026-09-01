@@ -82,3 +82,44 @@ async def test_tool_names_fit_the_length_limit():
     """64 characters, per the submission checklist."""
     for name in await _tools("full"):
         assert len(name) <= 64, f"{name} is {len(name)} characters"
+
+
+async def test_the_dashboard_lists_every_tool():
+    """docs/api-dashboard.html is generated from a hand-written tool catalog.
+
+    A second copy of the tool list drifts, and did: the three schedule tools
+    shipped and the dashboard never learned about them, so the page understated
+    the server for several releases. Nothing about that fails on its own, which
+    is what this test is for.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "build_dashboard.py"
+    spec = importlib.util.spec_from_file_location("build_dashboard", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    declared = {t["name"] for t in module.TOOLS}
+    live = set(await _tools("full"))
+    assert declared == live, (
+        f"dashboard is missing {sorted(live - declared)}, "
+        f"and lists {sorted(declared - live)} which do not exist")
+
+
+async def test_the_dashboard_agrees_about_which_tools_write():
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "build_dashboard.py"
+    spec = importlib.util.spec_from_file_location("build_dashboard", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    tools = await _tools("full")
+    for entry in module.TOOLS:
+        mutates = bool(entry.get("mutates"))
+        read_only = tools[entry["name"]].annotations.readOnlyHint
+        assert read_only is not mutates, (
+            f"{entry['name']}: dashboard says mutates={mutates}, "
+            f"annotation says readOnlyHint={read_only}")
