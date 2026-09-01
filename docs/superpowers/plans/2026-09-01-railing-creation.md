@@ -34,10 +34,25 @@ cmake --build Build/AC29 --config RelWithDebInfo
 
 The `Build/AC29` tree is already configured (Xcode generator, `AC_VERSION=29`, DevKit at `Build/DevKits/AC29/Support`), so no re-configure step is needed. To load the rebuilt bundle into a running Archicad:
 
+Do NOT use `Tools/update_addon_and_restart_archicad.py`: it requires a
+`--downloadUrl` and fetches a published release, so it fails on a locally built
+bundle. Archicad loads the add-on from `/Applications/Graphisoft/Archicad 29/
+Add-Ons/`, which is writable without sudo, so the reload is quit, copy, relaunch:
+
 ```bash
-cd /Users/alesd/Developer/tapir-archicad-automation/archicad-addon
-python Tools/update_addon_and_restart_archicad.py --addOnLocation Build/AC29/RelWithDebInfo/TapirAddOn_AC29_Mac.bundle --port 19723
+curl -s -X POST http://127.0.0.1:19723 -H 'Content-Type: application/json' \
+  -d '{"command":"API.ExecuteAddOnCommand","parameters":{"addOnCommandId":{"commandNamespace":"TapirCommand","commandName":"QuitArchicad"},"addOnCommandParameters":{}}}'
+# wait for the process to exit, then:
+ditto "/Users/alesd/Developer/tapir-archicad-automation/archicad-addon/Build/AC29/RelWithDebInfo/TapirAddOn_AC29_Mac.bundle" \
+     "/Applications/Graphisoft/Archicad 29/Add-Ons/TapirAddOn_AC29_Mac.bundle"
+open "/Applications/Graphisoft/Archicad 29/Archicad 29.app"
 ```
+
+`ditto` rather than `cp` because it preserves the bundle's permission bits and
+symlinks, which is the same reason the upstream reload script uses it.
+
+**Every reload is gated.** Quitting Archicad closes whatever the owner has open.
+Build, then stop and ask before running the quit command.
 
 ## File structure
 
