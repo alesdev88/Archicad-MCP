@@ -54,6 +54,32 @@ def _tool_error(exc: Exception) -> dict:
     return {"error": str(exc)}
 
 
+def _tool_meta(title: str, *, read_only: bool, destructive: bool = False) -> dict:
+    """Decorator kwargs carrying the tool's title and its safety hints.
+
+    The Connectors Directory review requires every tool to declare a title and
+    the applicable readOnlyHint or destructiveHint, and clients act on them:
+    a read-only tool may run without asking the user, a destructive one always
+    prompts. So the hints are a safety contract, not listing metadata.
+
+    Title twice on purpose. The MCP schema carries one at the top level and one
+    inside annotations, different clients read different ones, and there is no
+    version of this worth debugging later to save a line.
+
+    Where the two ideas disagree, this codebase reads "destructive" as "changes
+    the project or writes a file", which is wider than the MCP spec's "not
+    purely additive". Creating an issue is additive and still marked
+    destructive, because it lands in someone's .pln and a confirmation prompt
+    is the right cost for that. Only transient view state (selection,
+    highlighting) is a non-destructive write.
+    """
+    return {
+        "title": title,
+        "annotations": {"title": title, "readOnlyHint": read_only,
+                        "destructiveHint": destructive},
+    }
+
+
 def _guarded(func):
     """Wrap a tool handler so connection/API errors become {"error": ...}."""
     @functools.wraps(func)
@@ -105,7 +131,8 @@ def build_server(
     # ---------- Tier 1: verdict tools (both modes) ----------
 
     @mcp.tool(description="List running Archicad instances: port, version, open project, "
-                          "Tapir add-on availability. Call this first.")
+                          "Tapir add-on availability. Call this first.",
+              **_tool_meta("List Archicad instances", read_only=True, destructive=False))
     @_guarded
     def list_instances() -> dict:
         instances = [i.to_dict() for i in discover_instances()]
@@ -122,7 +149,8 @@ def build_server(
                           "(can crash Archicad). Counts only, never element data. "
                           "'coverage' says what element_count spans: 'whole-plan' "
                           "with the Tapir add-on, 'model-elements-only' without it "
-                          "(then it is NOT a project total).")
+                          "(then it is NOT a project total).",
+              **_tool_meta("Summarize model contents", read_only=True, destructive=False))
     @_guarded
     def get_model_summary(include_layer_story: bool = False,
                           port: int | None = None) -> dict:
@@ -142,7 +170,8 @@ def build_server(
         return result
 
     @mcp.tool(description="List loaded QA rules (id, type, severity, tags) and any "
-                          "rule-file load errors.")
+                          "rule-file load errors.",
+              **_tool_meta("List QA rules", read_only=True, destructive=False))
     def list_rules() -> dict:
         return {
             "source": loaded.source,
@@ -153,20 +182,23 @@ def build_server(
         }
 
     @mcp.tool(description="Run one QA rule by id. Returns a verdict: pass/fail, "
-                          "failure count, failing element GUIDs.")
+                          "failure count, failing element GUIDs.",
+              **_tool_meta("Run one QA rule", read_only=True, destructive=False))
     @_guarded
     def run_rule(rule_id: str, port: int | None = None) -> dict:
         rules = _rules_subset(rule_id=rule_id)
         return _verdict_for(rules, port).to_dict()
 
     @mcp.tool(description="Run all loaded QA rules (optionally only those tagged with "
-                          "'ruleset') against the open model. Returns a scored verdict.")
+                          "'ruleset') against the open model. Returns a scored verdict.",
+              **_tool_meta("Audit delivery readiness", read_only=True, destructive=False))
     @_guarded
     def audit_delivery_readiness(ruleset: str | None = None, port: int | None = None) -> dict:
         return _verdict_for(_rules_subset(ruleset=ruleset), port).to_dict()
 
     @mcp.tool(description="Run only the IFC-related QA rules to check IFC export "
-                          "readiness. Requires the Tapir add-on for IFC data.")
+                          "readiness. Requires the Tapir add-on for IFC data.",
+              **_tool_meta("Verify IFC export readiness", read_only=True, destructive=False))
     @_guarded
     def verify_ifc_export_readiness(port: int | None = None) -> dict:
         ifc_rules = [r for r in loaded.rules if "ifc" in r.needs]
@@ -176,7 +208,8 @@ def build_server(
         return _verdict_for(ifc_rules, port).to_dict()
 
     @mcp.tool(description="Highlight the elements failing a rule in the Archicad window "
-                          "(requires Tapir add-on).")
+                          "(requires Tapir add-on).",
+              **_tool_meta("Highlight failing elements", read_only=False, destructive=False))
     @_guarded
     def highlight_failures(rule_id: str, port: int | None = None) -> dict:
         rules = _rules_subset(rule_id=rule_id)
@@ -186,7 +219,8 @@ def build_server(
         return actions.highlight_elements(conn, guids)
 
     @mcp.tool(description="Create an Archicad issue from a rule's failures and attach "
-                          "the failing elements (requires Tapir add-on).")
+                          "the failing elements (requires Tapir add-on).",
+              **_tool_meta("Create issues from rule failures", read_only=False, destructive=True))
     @_guarded
     def create_issues_from_failures(rule_id: str, port: int | None = None) -> dict:
         rules = _rules_subset(rule_id=rule_id)
@@ -216,7 +250,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "with the Tapir add-on, 'model-elements-only' without it "
                           "(2D elements such as markers, labels and section lines "
                           "are then invisible, so a count of 0 is not proof of "
-                          "absence).")
+                          "absence).",
+              **_tool_meta("Query elements", read_only=True, destructive=False))
     @_guarded
     def query_elements(element_type: str | None = None, layer: str | None = None,
                        story: int | None = None, classification_system: str | None = None,
@@ -226,7 +261,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Read type, layer, requested properties (address user "
                           "properties as 'Group/Name') and optionally classifications "
-                          "for the given element GUIDs.")
+                          "for the given element GUIDs.",
+              **_tool_meta("Read element data", read_only=True, destructive=False))
     @_guarded
     def get_element_data(guids: list[str], properties: list[str] | None = None,
                          include_classifications: bool = False,
@@ -236,7 +272,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Write element property values. DRY-RUN BY DEFAULT: returns "
                           "planned changes (current -> new) without touching the model. "
-                          "Pass dry_run=false to commit.")
+                          "Pass dry_run=false to commit.",
+              **_tool_meta("Write element properties", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,
                          port: int | None = None) -> dict:
@@ -248,31 +285,48 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Create elements (column/slab/zone/polyline/object/mesh) via "
                           "Tapir. DRY-RUN BY DEFAULT: shows the exact command and payload. "
-                          "Pass dry_run=false to create. Other types: use execute_api_command.")
+                          "Pass dry_run=false to create. Other types: use "
+                          "execute_write_api_command.",
+              **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
                         port: int | None = None) -> dict:
         return _create.create_elements(_conn(port), element_type, items, dry_run)
 
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
-                          "confirm=true.")
+                          "confirm=true.",
+              **_tool_meta("Move elements", read_only=False, destructive=True))
     @_guarded
     def move_elements(guids: list[str], vector: dict, confirm: bool = False,
                       port: int | None = None) -> dict:
         return _mutate.move_elements(_conn(port), guids, vector, confirm)
 
-    @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true.")
+    @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true.",
+              **_tool_meta("Delete elements", read_only=False, destructive=True))
     @_guarded
     def delete_elements(guids: list[str], confirm: bool = False,
                         port: int | None = None) -> dict:
         return _mutate.delete_elements(_conn(port), guids, confirm)
 
-    @mcp.tool(description="Get, set, or clear the current element selection in Archicad. "
-                          "action: 'get' | 'set' | 'clear'.")
+    @mcp.tool(description="Return the GUIDs of the elements currently selected in "
+                          "Archicad.",
+              **_tool_meta("Read current selection", read_only=True, destructive=False))
     @_guarded
-    def manage_selection(action: str, guids: list[str] | None = None,
-                         port: int | None = None) -> dict:
-        return _selection.manage_selection(_conn(port), action, guids)
+    def get_selection(port: int | None = None) -> dict:
+        return _selection.get_selection(_conn(port))
+
+    @mcp.tool(description="Replace the current selection with the given element GUIDs. "
+                          "Whatever the user had selected by hand is deselected.",
+              **_tool_meta("Replace current selection", read_only=False, destructive=False))
+    @_guarded
+    def set_selection(guids: list[str], port: int | None = None) -> dict:
+        return _selection.set_selection(_conn(port), guids)
+
+    @mcp.tool(description="Deselect everything in the Archicad window.",
+              **_tool_meta("Clear current selection", read_only=False, destructive=False))
+    @_guarded
+    def clear_selection(port: int | None = None) -> dict:
+        return _selection.clear_selection(_conn(port))
 
     from archicad_mcp.core import attributes as _attributes
     from archicad_mcp.core import issues as _issues
@@ -280,27 +334,65 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import publish as _publish
 
     @mcp.tool(description="Project info: Archicad version, project name, stories, "
-                          "hotlinks, geolocation presence (Tapir enriches).")
+                          "hotlinks, geolocation presence (Tapir enriches).",
+              **_tool_meta("Get project info", read_only=True, destructive=False))
     @_guarded
     def get_project_info(port: int | None = None) -> dict:
         return _project.get_project_info(_conn(port))
 
     @mcp.tool(description="List attribute names by type: Layer, BuildingMaterial, "
-                          "Composite, Surface, Profile, ZoneCategory.")
+                          "Composite, Surface, Profile, ZoneCategory.",
+              **_tool_meta("List attributes", read_only=True, destructive=False))
     @_guarded
     def list_attributes(attribute_type: str, port: int | None = None) -> dict:
         return _attributes.list_attributes(_conn(port), attribute_type)
 
-    @mcp.tool(description="Manage Archicad issues (Tapir): action = list | create | "
-                          "comment | attach | export_bcf | import_bcf.")
+    @mcp.tool(description="List the issues in the open project, with their ids "
+                          "(requires the Tapir add-on).",
+              **_tool_meta("List issues", read_only=True, destructive=False))
     @_guarded
-    def manage_issues(action: str, name: str | None = None, issue_id: str | None = None,
-                      comment: str | None = None, guids: list[str] | None = None,
-                      bcf_path: str | None = None, port: int | None = None) -> dict:
-        return _issues.manage_issues(_conn(port), action, name, issue_id,
-                                     comment, guids, bcf_path)
+    def list_issues(port: int | None = None) -> dict:
+        return _issues.list_issues(_conn(port))
 
-    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).")
+    @mcp.tool(description="Create a new issue in the open project and return its id "
+                          "(requires the Tapir add-on).",
+              **_tool_meta("Create an issue", read_only=False, destructive=True))
+    @_guarded
+    def create_issue(name: str, port: int | None = None) -> dict:
+        return _issues.create_issue(_conn(port), name)
+
+    @mcp.tool(description="Add a text comment to an existing issue, addressed by its id "
+                          "(requires the Tapir add-on).",
+              **_tool_meta("Comment on an issue", read_only=False, destructive=True))
+    @_guarded
+    def add_issue_comment(issue_id: str, comment: str, port: int | None = None) -> dict:
+        return _issues.add_issue_comment(_conn(port), issue_id, comment)
+
+    @mcp.tool(description="Attach elements to an existing issue as highlights "
+                          "(requires the Tapir add-on).",
+              **_tool_meta("Attach elements to an issue", read_only=False, destructive=True))
+    @_guarded
+    def attach_elements_to_issue(issue_id: str, guids: list[str],
+                                 port: int | None = None) -> dict:
+        return _issues.attach_elements_to_issue(_conn(port), issue_id, guids)
+
+    @mcp.tool(description="Export every issue in the project to a BCF file at the given "
+                          "path, aligned to the survey point. Overwrites the file if it "
+                          "exists (requires the Tapir add-on).",
+              **_tool_meta("Export issues to BCF", read_only=False, destructive=True))
+    @_guarded
+    def export_issues_bcf(bcf_path: str, port: int | None = None) -> dict:
+        return _issues.export_issues_bcf(_conn(port), bcf_path)
+
+    @mcp.tool(description="Import issues into the project from a BCF file, aligned to "
+                          "the survey point (requires the Tapir add-on).",
+              **_tool_meta("Import issues from BCF", read_only=False, destructive=True))
+    @_guarded
+    def import_issues_bcf(bcf_path: str, port: int | None = None) -> dict:
+        return _issues.import_issues_bcf(_conn(port), bcf_path)
+
+    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).",
+              **_tool_meta("Run a publisher set", read_only=False, destructive=True))
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
         return _publish.publish(_conn(port), publisher_set_name)
@@ -310,7 +402,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "binds to. Schedules have no API, so export the scheme "
                           "first via Document > Schedules > Scheme Settings > Export "
                           "and pass the file path. Reads the file only, never "
-                          "Archicad.")
+                          "Archicad.",
+              **_tool_meta("Read a schedule scheme", read_only=True, destructive=False))
     def read_schedule_scheme(path: str) -> dict:
         return core_schemes.read_schedule_scheme(path)
 
@@ -325,7 +418,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "that binds every property by GUID needs no Archicad "
                           "connection and runs fully offline; a spec that binds a "
                           "property by a 'Group/Name' string needs Archicad open "
-                          "so the name can be resolved.")
+                          "so the name can be resolved.",
+              **_tool_meta("Edit a schedule scheme", read_only=False, destructive=True))
     @_guarded
     def edit_schedule_scheme(path: str, spec_path: str, spec_id: str | None = None,
                              output: str | None = None, dry_run: bool = True,
@@ -338,7 +432,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "project: do its property bindings still exist, and does "
                           "any column caption disagree with what it is bound to. "
                           "Reads property definitions only, not values, so it does "
-                          "not risk the property-read crash.")
+                          "not risk the property-read crash.",
+              **_tool_meta("Validate a schedule scheme", read_only=True, destructive=False))
     @_guarded
     def validate_schedule_scheme(path: str, port: int | None = None) -> dict:
         return core_schemes.validate_schedule_scheme(
@@ -350,22 +445,53 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     registry = build_registry()
 
     @mcp.tool(description="Catalog of ALL available Archicad API commands (official "
-                          "JSON API + Tapir), optionally filtered by group.")
-    def list_api_commands(group: str | None = None) -> dict:
-        return _gateway.list_api_commands(registry, group)
+                          "JSON API + Tapir). Filter by group, or by access='read' / "
+                          "'write' to see which of the two execute tools runs a "
+                          "given command.",
+              **_tool_meta("List API commands", read_only=True, destructive=False))
+    def list_api_commands(group: str | None = None, access: str | None = None) -> dict:
+        return _gateway.list_api_commands(registry, group, access)
 
     @mcp.tool(description="Full description and input schema for one API command. "
-                          "Call before execute_api_command.")
+                          "Call before execute_read_api_command or "
+                          "execute_write_api_command.",
+              **_tool_meta("Describe an API command", read_only=True, destructive=False))
     def describe_api_command(name: str) -> dict:
         return _gateway.describe_api_command(registry, name)
 
-    @mcp.tool(description="Execute any Archicad API command by name (official 'API.*' "
-                          "or Tapir). Params validated against the bundled schema "
-                          "where available. Prefer the dedicated tools when one exists.")
+    @mcp.tool(description="Run one read-only Archicad API command by name and return "
+                          "its result. Covers the official Archicad JSON API "
+                          "(https://archicadapi.graphisoft.com/JSONInterfaceDocumentation/) "
+                          "and the Tapir add-on "
+                          "(https://github.com/ENZYME-APD/tapir-archicad-automation). "
+                          "Reads only: a command that changes the project is refused "
+                          "here and belongs to execute_write_api_command. Params are "
+                          "validated against the bundled schema where available. "
+                          "Prefer the dedicated tools when one exists.",
+              **_tool_meta("Run a read-only API command", read_only=True, destructive=False))
     @_guarded
-    def execute_api_command(name: str, params: dict | str | None = None,
-                            port: int | None = None) -> dict:
-        return _gateway.execute_api_command(registry, _conn(port), name, params)
+    def execute_read_api_command(name: str, params: dict | str | None = None,
+                                 port: int | None = None) -> dict:
+        return _gateway.execute_read_api_command(
+            registry, lambda: _conn(port), name, params)
+
+    @mcp.tool(description="Run one Archicad API command that changes the project. "
+                          "Covers the official Archicad JSON API "
+                          "(https://archicadapi.graphisoft.com/JSONInterfaceDocumentation/) "
+                          "and the Tapir add-on "
+                          "(https://github.com/ENZYME-APD/tapir-archicad-automation). "
+                          "IRREVERSIBLE for many commands, and reaches DeleteElements "
+                          "and QuitArchicad among others. Refuses without confirm=true; "
+                          "the refusal echoes the command and params it would have run. "
+                          "Params are validated against the bundled schema where "
+                          "available. Prefer the dedicated tools when one exists.",
+              **_tool_meta("Run a write API command", read_only=False, destructive=True))
+    @_guarded
+    def execute_write_api_command(name: str, params: dict | str | None = None,
+                                  confirm: bool = False,
+                                  port: int | None = None) -> dict:
+        return _gateway.execute_write_api_command(
+            registry, lambda: _conn(port), name, params, confirm)
 
 
 _BANNER_PREFIX = "archicad-mcp:"

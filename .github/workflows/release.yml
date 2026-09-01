@@ -84,28 +84,51 @@ jobs:
       # the bundle to be written into. dist/ is not in the repository.
       - run: uv build
 
-      # Node is whatever the runner image ships, an LTS it keeps current,
-      # while mcpb is pinned: the packer decides the bundle format, the
-      # interpreter running it does not, so the packer is the thing worth
-      # holding still between releases. Validate before packing so a manifest
-      # mistake is reported as one here, instead of turning up later as a
-      # bundle Claude Desktop declines to install. README documents the same
-      # two commands unpinned, for building one locally.
-      - run: npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json
-      - run: npx --yes @anthropic-ai/mcpb@2.1.2 pack . "dist/archicad-mcp-${GITHUB_REF_NAME#v}.mcpb"
+      # One bundle per platform, all three cross-built on this one runner. The
+      # bundles are platform-specific because the dependency tree contains
+      # compiled wheels; the build is not, because uv resolves wheels for a
+      # named target platform and the standalone interpreters are plain
+      # downloads. That is what keeps this a single job rather than a runner
+      # matrix, at the cost of the one check a matrix would give for free:
+      # nothing here can execute a Windows bundle, so a release is not proven
+      # until one is installed on Windows. The script validates each generated
+      # manifest before packing it, and pins the mcpb packer for the reason
+      # pins exist here generally: the packer decides the bundle format, so it
+      # is the thing worth holding still between releases.
+      #
+      # Node is whatever the runner image ships, an LTS it keeps current. It
+      # runs the packer; it does not decide anything the packer produces.
+      - run: uv run python scripts/build_bundle.py --target all
 
-      # server.json tells the registry where the bundle is and what it must
+      # server.json tells the registry where each bundle is and what it must
       # hash to, and clients check that hash before they install. Every other
       # field in it is committed and gated by check_release_version.py, the
-      # same as manifest.json. This one cannot be: it is a hash of the bundle,
-      # and the bundle is built from the very commit that would have to contain
-      # it. So it is stamped at the first moment it is knowable, and whatever
-      # placeholder is committed is never what gets published.
+      # same as manifest.json. These cannot be: they are hashes of bundles
+      # built from the very commit that would have to contain them. So they are
+      # stamped at the first moment they are knowable, and the placeholder that
+      # is committed is never what gets published.
+      #
+      # Matched on the filename rather than by position, so that reordering
+      # server.json's packages cannot quietly pair a bundle with another
+      # platform's hash. The check afterwards is what makes that safe to rely
+      # on: a package left holding the placeholder is refused by every client
+      # that checks the hash, and an unstamped entry is the only way that
+      # happens by accident.
       - run: |
-          bundle="dist/archicad-mcp-${GITHUB_REF_NAME#v}.mcpb"
-          jq --arg sha "$(sha256sum "$bundle" | cut -d' ' -f1)" \
-            '.packages[0].fileSha256 = $sha' server.json > server.stamped
-          mv server.stamped server.json
+          version="${GITHUB_REF_NAME#v}"
+          for target in win32 darwin-arm64; do
+            name="archicad-mcp-${version}-${target}.mcpb"
+            sha="$(sha256sum "dist/$name" | cut -d' ' -f1)"
+            jq --arg name "$name" --arg sha "$sha" \
+              '(.packages[] | select(.identifier | endswith($name))).fileSha256 = $sha' \
+              server.json > server.stamped
+            mv server.stamped server.json
+          done
+          if jq -e '[.packages[] | select(.fileSha256 | test("^0{64}$"))] | length > 0' \
+               server.json > /dev/null; then
+            echo "::error::a package in server.json kept its placeholder hash" >&2
+            exit 1
+          fi
 
       # Anything that is not exactly major.minor.patch is a prerelease,
       # whichever way it is spelled (v0.2.0rc1, v0.2.0-beta.1). Decided once,

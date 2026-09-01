@@ -110,15 +110,19 @@ async def test_list_attributes_unknown_type(core):
 
 
 async def test_issues_list_and_create(core):
-    listed = await call("manage_issues", {"action": "list"})
+    listed = await call("list_issues")
     assert listed["issues"][0]["name"] == "Old issue"
-    created = await call("manage_issues", {"action": "create", "name": "Fix walls"})
+    created = await call("create_issue", {"name": "Fix walls"})
     assert created["issue_id"] == "i-2"
 
 
 async def test_issues_create_requires_name(core):
-    payload = await call("manage_issues", {"action": "create"})
+    # An empty string rather than an omitted argument: name is a required
+    # parameter now, so omitting it is rejected by schema validation before the
+    # tool body runs, and this is the check that the body itself still refuses.
+    payload = await call("create_issue", {"name": ""})
     assert "name" in payload["error"]
+    assert not any(cmd == "CreateIssue" for cmd, _ in core.calls)
 
 
 async def test_publish(core):

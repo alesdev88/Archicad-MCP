@@ -54,8 +54,12 @@ ROOT = Path(__file__).resolve().parent.parent
 README_PATTERNS = (
     # The tag inside a release download URL.
     re.compile(r"/releases/download/v(?P<version>[^/\s)]+)/"),
-    # The version inside a built artifact's filename.
+    # The version inside a built artifact's filename. The bundle is built once
+    # per platform and names the platform after the version, so that suffix is
+    # matched and discarded here; without it the version group would swallow
+    # "-win32" and every release would fail this check.
     re.compile(r"archicad[-_]mcp-(?P<version>\d[^\s\"')]*?)"
+               r"(?:-(?:win32|darwin-arm64))?"
                r"(?:-py3-none-any\.whl|\.tar\.gz|\.mcpb)"),
     # A source install pinned to a release tag.
     re.compile(r"Archicad-MCP\.git@v(?P<version>\S+)"),

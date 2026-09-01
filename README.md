@@ -22,26 +22,46 @@ does two jobs:
 ## Requirements
 
 - **Archicad 29**, running, with a project open. The JSON API talks to the live app.
-- **[uv](https://docs.astral.sh/uv/)**, which installs the server and fetches a
-  suitable Python (3.12+) for you.
+- **Nothing else, if you install the extension.** The `.mcpb` carries its own
+  Python interpreter and every dependency, so there is nothing to install first
+  and nothing to download on first launch. The manual install paths below do
+  need **[uv](https://docs.astral.sh/uv/)**, which fetches a suitable Python
+  (3.12+) for you.
 - **[Tapir add-on](https://github.com/ENZYME-APD/tapir-archicad-automation/releases)**,
   optional but recommended. Required for element creation, issues, IFC checks,
-  highlighting, and publishing; verified on Tapir 1.5.8. Without it, those tools
+  highlighting, and publishing; verified on Tapir 1.5.9. Without it, those tools
   degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
 
-One file, one click, no JSON editing. Download `archicad-mcp-0.1.2.mcpb` from the
-[latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest), then
-in Claude Desktop open **Settings > Extensions** and drag it in.
+One file, one click, no JSON editing, and no prerequisites. Download the bundle
+for your platform from the
+[latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest):
+
+| Platform | File |
+|---|---|
+| Windows | `archicad-mcp-0.2.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.2.0-darwin-arm64.mcpb` |
+
+There is no Intel macOS bundle. `cryptography`, which this server depends on
+through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
+only be produced by compiling on an Intel Mac. Intel Macs use the manual install
+below instead, where the build happens on the machine that will run it.
+
+Then in Claude Desktop open **Settings > Extensions** and drag it in.
 
 Mode, office rules folder, and the property-read ceiling then appear as form
 fields in the extension's settings, and the whole server gets an on/off switch.
 Leave a field empty and it falls back to the default in the table below.
 
-You still need [uv](https://docs.astral.sh/uv/) on the machine: the extension
-uses it to build its own environment on first launch, which takes a few seconds
-the first time and is instant afterwards.
+The bundle contains a complete CPython 3.12 and every dependency, so it starts
+immediately and works on a machine with no Python, no uv, and no internet
+access. That is why it is around 40 MB: the alternative was asking every machine
+to install a package manager first.
+
+Deploying to a team? On a Team or Enterprise plan an owner can upload the bundle
+under **Organization settings > Connectors > Desktop**, which makes it a
+one-click install for everyone instead of a file to pass around.
 
 If you would rather wire it up by hand, or you are on Claude Code, use one of
 the sections below instead. Those install the wheel from a tagged release, so
@@ -56,7 +76,7 @@ re-run the install command with the newer version's URL from the
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.2/archicad_mcp-0.1.2-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.0/archicad_mcp-0.2.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -87,7 +107,7 @@ editing the file.
 winget install --id=astral-sh.uv -e
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.2/archicad_mcp-0.1.2-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.0/archicad_mcp-0.2.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -115,7 +135,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.1.2/archicad_mcp-0.1.2-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.0/archicad_mcp-0.2.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -281,14 +301,25 @@ Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
 `highlight_failures`, `create_issues_from_failures`
 
 **Core (full mode):** `query_elements`, `get_element_data`, `set_element_data`,
-`create_elements`, `move_elements`, `delete_elements`, `manage_selection`,
-`get_project_info`, `list_attributes`, `manage_issues`, `publish`,
-`read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
+`create_elements`, `move_elements`, `delete_elements`, `get_selection`,
+`set_selection`, `clear_selection`, `get_project_info`, `list_attributes`,
+`list_issues`, `create_issue`, `add_issue_comment`, `attach_elements_to_issue`,
+`export_issues_bcf`, `import_issues_bcf`, `publish`, `read_schedule_scheme`,
+`edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
-`execute_api_command`. The complete official + Tapir command surface (231
-commands on the verified setup), for anything the curated tools don't cover.
+`execute_read_api_command`, `execute_write_api_command`. The complete official +
+Tapir command surface (309 commands on the verified setup), for anything the
+curated tools don't cover.
+
+Reads and writes are separate tools throughout, and every tool declares whether
+it is read-only or destructive. Clients use those declarations to decide what to
+run without asking you: a read never prompts, a write always does. The gateway
+splits the command catalog the same way, 138 reads and 171 writes, classified by
+command name with anything unrecognised treated as a write. The write half also
+refuses to run without `confirm=true`, because it can reach `DeleteElements` and
+`QuitArchicad`.
 
 ## Development
 
@@ -301,7 +332,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.1.2   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.2.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -324,7 +355,7 @@ drift:
 
 ```bash
 uv run python scripts/check_release_version.py
-npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.1.2.mcpb
+npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/archicad-mcp-0.2.0.mcpb
 ```
 
 `.mcpbignore` decides what ships. The bundle carries `pyproject.toml` and
@@ -339,8 +370,8 @@ check by hand first, because a tag that has been pushed has to be deleted
 before it can be corrected:
 
 ```bash
-uv run python scripts/check_release_version.py v0.1.2
-git tag v0.1.2 && git push origin v0.1.2
+uv run python scripts/check_release_version.py v0.2.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 `icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
@@ -359,6 +390,23 @@ uv run --with pillow python scripts/make_icon.py
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
   finish dropdowns, and the GDL fine print the generator encodes.
+
+## Privacy Policy
+
+The server runs entirely on your machine and makes no outbound network
+connections. It talks to the Archicad JSON API on `127.0.0.1`, ports 19723 to
+19743, and to nothing else. There is no telemetry, no analytics, and no backend:
+the author receives nothing, including error reports.
+
+Model data the server reads is returned to the MCP client that asked for it,
+normally Claude Desktop, which sends it to Anthropic as part of your
+conversation under [Anthropic's Privacy
+Policy](https://www.anthropic.com/legal/privacy). Nothing is cached or retained
+by the server between requests. Two reductions are built in: `verdicts` mode
+keeps the project name out of what the model sees, and Teamwork credentials are
+stripped from `get_project_info` before it returns.
+
+Full text: **[PRIVACY.md](PRIVACY.md)**.
 
 ## License
 

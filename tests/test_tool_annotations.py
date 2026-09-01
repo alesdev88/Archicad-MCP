@@ -1,0 +1,84 @@
+"""Every tool must declare a title and an accurate safety hint.
+
+This is a submission requirement for the Claude Connectors Directory, but it is
+a safety contract first: clients are allowed to run a readOnlyHint tool without
+asking the user, and they always prompt for a destructiveHint one. A tool that
+writes while claiming readOnlyHint would be granted silent permission to change
+someone's model.
+
+The requirement is easy to satisfy once and then lose, because adding a tool is
+a one-line decorator and nothing about forgetting the hints fails at runtime.
+Hence a test rather than a checklist.
+"""
+from __future__ import annotations
+
+import pytest
+from fastmcp import Client
+
+from archicad_mcp.server import build_server
+
+# Named rather than derived. Deriving "which tools write" from the code under
+# test would make this assert that the code agrees with itself; the whole value
+# is in a second, independent statement of the answer.
+WRITERS = {
+    "highlight_failures", "create_issues_from_failures", "set_element_data",
+    "create_elements", "move_elements", "delete_elements", "set_selection",
+    "clear_selection", "create_issue", "add_issue_comment",
+    "attach_elements_to_issue", "export_issues_bcf", "import_issues_bcf",
+    "publish", "edit_schedule_scheme", "execute_write_api_command",
+}
+
+# Writes that change only transient application state, never project data or a
+# file on disk. Everything else in WRITERS is destructive.
+NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection"}
+
+
+async def _tools(mode: str):
+    async with Client(build_server(mode=mode)) as client:
+        return {t.name: t for t in await client.list_tools()}
+
+
+@pytest.mark.parametrize("mode", ["full", "verdicts"])
+async def test_every_tool_declares_a_title_and_a_hint(mode):
+    for name, tool in (await _tools(mode)).items():
+        ann = tool.annotations
+        assert ann is not None, f"{name} has no annotations"
+        assert ann.title, f"{name} has no annotations.title"
+        assert tool.title, f"{name} has no top-level title"
+        assert ann.readOnlyHint is not None, f"{name} declares no readOnlyHint"
+        assert ann.destructiveHint is not None, f"{name} declares no destructiveHint"
+
+
+async def test_hints_match_what_the_tools_actually_do():
+    tools = await _tools("full")
+    unknown = WRITERS - set(tools)
+    assert not unknown, f"WRITERS names tools that do not exist: {sorted(unknown)}"
+    for name, tool in tools.items():
+        writes = name in WRITERS
+        assert tool.annotations.readOnlyHint is not writes, (
+            f"{name}: readOnlyHint disagrees with WRITERS")
+        expected_destructive = writes and name not in NON_DESTRUCTIVE_WRITERS
+        assert tool.annotations.destructiveHint is expected_destructive, (
+            f"{name}: destructiveHint should be {expected_destructive}")
+
+
+async def test_no_tool_both_reads_and_writes_behind_a_parameter():
+    """The directory review rejects a tool that dispatches to reads and writes.
+
+    Not something a schema can check, so this pins the specific tools that used
+    to have that shape and were split for it. A regression here means someone
+    reintroduced manage_selection, manage_issues or the combined gateway.
+    """
+    names = set(await _tools("full"))
+    for gone in ("manage_selection", "manage_issues", "execute_api_command"):
+        assert gone not in names, f"{gone} is back, and mixes reads with writes"
+    for arrived in ("get_selection", "set_selection", "clear_selection",
+                    "list_issues", "create_issue",
+                    "execute_read_api_command", "execute_write_api_command"):
+        assert arrived in names, f"{arrived} is missing"
+
+
+async def test_tool_names_fit_the_length_limit():
+    """64 characters, per the submission checklist."""
+    for name in await _tools("full"):
+        assert len(name) <= 64, f"{name} is {len(name)} characters"

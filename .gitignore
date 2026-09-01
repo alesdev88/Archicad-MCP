@@ -10,3 +10,8 @@ __pycache__/
 # fixtures, and this repository is public, so they stay on the machine that
 # needs them. Test data that belongs here goes in tests/fixtures/.
 teren/
+
+# Staging tree and cached standalone interpreters for scripts/build_bundle.py.
+# Both are rebuildable from pinned inputs, and the interpreter cache alone is
+# tens of megabytes per target.
+build/

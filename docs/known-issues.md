@@ -69,7 +69,7 @@ Asking for a single type is now one Tapir request instead of enumerating the
 plan and reading back every element's type, so a typed query no longer costs
 16k+ property reads.
 
-**Still marker-blind:** `manage_selection` reads the selection with the official
+**Still marker-blind:** `get_selection` reads the selection with the official
 `API.GetSelectedElements`, which returns `[]` when a marker (a CutPlane, say) is
 selected. `query_elements(selection_only=true)` does not have this problem.
 
@@ -82,7 +82,7 @@ session transcript. The tool now drops the `user:token` segment and keeps the
 host and project path, with a regex backstop that redacts any JWT-shaped string
 surviving in another field.
 
-## `execute_api_command` tolerates `params` sent as text
+## The gateway tools tolerate `params` sent as text
 
 Some MCP clients collapse a nullable object field (`dict | None`) to an untyped
 schema and then send the value as a JSON string, which made every parameterized
@@ -96,7 +96,7 @@ no command is sent.
 
 `singleEnum` and `multiEnum` properties need an `EnumValueId`, not a plain value.
 `set_element_data` reports them as `skipped` with a reason rather than silently
-failing. To set one, use `execute_api_command` with the enum's id.
+failing. To set one, use `execute_write_api_command` with the enum's id.
 
 ## Tapir version matters
 
@@ -147,12 +147,20 @@ Live-run against Archicad 29.0/4006:
 
 - Instance discovery, `get_model_summary`, `query_elements` (type + story filters)
 - `get_element_data`, `set_element_data` (dry-run, commit, read-back)
-- `manage_selection` (`set` replaces the selection)
+- `get_selection`, `set_selection` (replaces rather than appends), `clear_selection`
 - `create_elements`, then `move_elements`, then `delete_elements`, including
   their dry-run and `confirm=true` guards
 - `audit_delivery_readiness`, `run_rule`, `highlight_failures`,
-  `create_issues_from_failures`, `verify_ifc_export_readiness`, `manage_issues`
-- The tier-3 gateway (231 commands, writes included)
+  `create_issues_from_failures`, `verify_ifc_export_readiness`, `list_issues`,
+  `create_issue`
+- The tier-3 gateway (309 commands, writes included)
+
+The live runs above predate the 0.2.0 tool split, which renamed these tools
+without changing what they send to Archicad: `manage_selection` became
+`get_selection` / `set_selection` / `clear_selection`, `manage_issues` became
+`list_issues` and five single-purpose write tools, and `execute_api_command`
+became `execute_read_api_command` and `execute_write_api_command`. The offline
+suite covers the new surface; the live re-run is still owed.
 
 Not validated: `publish`.
 

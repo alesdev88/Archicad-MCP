@@ -46,7 +46,7 @@ def test_builtin_columns_are_not_flagged():
 # own ArchicadUnavailableError propagate untouched, all the way out of
 # validate_scheme/validate_schedule_scheme, exactly like every other
 # Tapir-only core function in this codebase (core/project.py's guarded
-# fields, the gateway's execute_api_command). That message already names the
+# fields, the gateway's execute functions). That message already names the
 # missing command, explains why, and links the add-on to install, so nothing
 # here needs to add its own wording. Only the registered tool converts it to
 # an {"error": ...} envelope, via @_guarded in server.py, same as every other

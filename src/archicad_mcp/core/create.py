@@ -18,7 +18,7 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     if entry is None:
         return {"error": f"Unknown element_type '{element_type}'. Valid types: "
                          f"{sorted(CREATE_COMMANDS)}. For door/window/stair and other "
-                         "Tapir creation commands use execute_api_command "
+                         "Tapir creation commands use execute_write_api_command "
                          "(describe_api_command shows the schema)."}
     command, payload_key = entry
     payload = {payload_key: items}

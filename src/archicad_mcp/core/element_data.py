@@ -63,7 +63,7 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
         elif value_type in _ENUM_TYPES:
             skipped.append({"guid": c["guid"], "property": c["property"],
                             "reason": f"'{value_type}' properties take an enum value id, "
-                                      "not a plain value; set it via execute_api_command "
+                                      "not a plain value; set it via execute_write_api_command "
                                       "with the enum's id"})
         else:
             payload.append({

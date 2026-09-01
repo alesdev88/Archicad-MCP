@@ -52,7 +52,7 @@ async def test_create_elements_commit(core):
 
 async def test_create_elements_unknown_type_points_to_gateway(core):
     payload = await call("create_elements", {"element_type": "door", "items": [{}]})
-    assert "execute_api_command" in payload["error"]
+    assert "execute_write_api_command" in payload["error"]
 
 
 async def test_move_refuses_without_confirm(core):
@@ -82,13 +82,13 @@ async def test_delete_with_confirm(core):
 
 
 async def test_selection_get_uses_official_api(core):
-    payload = await call("manage_selection", {"action": "get"})
+    payload = await call("get_selection")
     assert payload == {"guids": ["w-1"]}
 
 
 async def test_selection_set_replaces_current(core):
     # core fixture seeds the current selection as [w-1]
-    payload = await call("manage_selection", {"action": "set", "guids": ["w-2"]})
+    payload = await call("set_selection", {"guids": ["w-2"]})
     assert payload == {"selected": 1}
     change = [params for cmd, params in core.calls if cmd == "ChangeSelectionOfElements"]
     assert len(change) == 1  # one call does both remove + add
@@ -99,7 +99,7 @@ async def test_selection_set_replaces_current(core):
 
 
 async def test_selection_clear_removes_current(core):
-    payload = await call("manage_selection", {"action": "clear"})
+    payload = await call("clear_selection")
     assert payload == {"cleared": 1}
     change = [params for cmd, params in core.calls if cmd == "ChangeSelectionOfElements"]
     assert change[0]["removeElementsFromSelection"] == [{"elementId": {"guid": "w-1"}}]
