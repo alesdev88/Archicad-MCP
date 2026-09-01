@@ -29,6 +29,20 @@ def test_tapir_commands_have_resolved_schemas():
     assert "$ref" not in sample, "all $ref pointers must be resolved"
 
 
+def test_local_overlay_commands_are_registered():
+    registry = build_registry()
+    assert "CreateRailings" in registry
+    assert registry["CreateRailings"].access == "write"
+    assert registry["GetStairBoundaries"].access == "read"
+
+
+def test_local_overlay_commands_carry_a_schema():
+    registry = build_registry()
+    schema = registry["CreateRailings"].input_schema
+    assert schema is not None
+    assert "railingsData" in schema["properties"]
+
+
 def _read_command_with_required_params() -> str:
     """A read command whose schema declares required fields.
 
