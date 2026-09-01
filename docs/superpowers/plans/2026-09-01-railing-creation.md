@@ -595,41 +595,138 @@ git commit -m "feat: merge a sync-immune overlay of fork-only commands into the 
 
 ---
 
-### Task 5: Nosing derivation and `GetStairRailingReferenceLine`
+### Task 5a: Prove the stair's 3D model is reachable and attributable
 
-The approved spec put this behind a `dryRun` flag on `CreateRailings`. That is not implementable as designed: `SetTypeSpecificParameters` is `const`, returns only an optional error, and the base class calls `ACAPI_Element_Create` unconditionally afterwards (`ElementCreationCommands.hpp:13`), so a dry run would require changing a virtual signature shared by roughly twenty commands. A separate read command gives the same diagnostic, shares the derivation code, and is classified read so the MCP reaches it without a confirmation prompt.
+The spec's original Component 2 is dead. A live probe established that no element data
+surface in a Stair carries elevation: `stairBoundary` vertex `zValue` is 0 throughout,
+`edgeData` has no elevation field, `baseLine` / `walkingLine` / `customWalkLine` /
+`centerWalkLine` are all `API_Coord` and so have no Z at all, `stairTreads.zOffset` is a
+constant nosing offset, `API_StairRiserType` has no elevation field, and a tread element's
+own memo holds only 125 GDL parameters with `polygon.nCoords == 0`. The complete list of
+non-null memo fields on a Stair is `stairRisers`, `stairTreads`, `stairStructures`,
+`elemInfoString`.
+
+The chosen route is the generated 3D model, which is ground truth and the only source
+correct for landings, winders and curved flights. This task proves it is reachable before
+anything is designed on it. Three assumptions about this API have already been wrong in
+this plan, every one of them from reading headers and inferring, so this is a gate.
+
+**Files:**
+- Modify: `archicad-addon/Sources/RailingProbe.hpp`
+- Modify: `archicad-addon/Sources/RailingProbe.cpp`
+
+**Interfaces:**
+- Consumes: `ACAPI_ModelAccess_GetNum (API_3DTypeID, Int32*)` and
+  `ACAPI_ModelAccess_GetComponent (API_Component3D*)` (`ACAPinc.h:6227`, `:6254`);
+  `ACAPI_ModelAccess_Get3DInfo (const API_Elem_Head&, API_ElemInfo3D*)` (`ACAPinc.h:4072`);
+  `API_BodyType::parent`, an `API_Elem_Head` documented as "the floorplan element the body
+  has been converted from", plus the body's `xmin`/`ymin`/`zmin`/`xmax`/`ymax`/`zmax`
+  floats (`APIdefs_3D.h`, `API_BodyType`).
+- Produces: a new section `model3D` on the existing `GetStairGeometryProbe` response.
+
+- [ ] **Step 1: Add the `model3D` section to the probe**
+
+For the given stair, report all of:
+
+1. **Direct route.** Call `ACAPI_ModelAccess_Get3DInfo` with the stair's `API_Elem_Head`
+   and report the raw `GSErrCode` and, on success, the returned body index range. The
+   documented element list at `ACAPinc.h` does NOT include `API_StairID`, so this is
+   expected to fail; report the exact error code rather than treating failure as fatal.
+   Repeat for the first tread's head, since `API_TreadID` is not in the list either.
+
+2. **Whole-model walk.** `ACAPI_ModelAccess_GetNum (API_BodyID, &count)`, then for each
+   body index call `ACAPI_ModelAccess_GetComponent`. Report the total body count, and for
+   every body whose `parent.guid` is the stair's guid OR is one of the stair's 21 tread
+   guids, report: body index, `parent.guid`, the parent's element type name, and the full
+   `zmin`/`zmax`/`xmin`/`xmax`/`ymin`/`ymax`.
+
+3. **The decisive summary.** A runtime-computed verdict string answering, in plain words:
+   how many bodies are attributable to this stair, whether they are attributed to the
+   Stair itself or to individual Tread elements, and whether their `zmin`/`zmax` values
+   climb across the run rather than all being zero. Compute it, do not leave it to be
+   eyeballed.
+
+Guard everything. A zero body count, or `GetComponent` failing, is a result to report,
+not a crash. The 3D model may need generating first: if the body count is zero, say so
+explicitly in the verdict rather than reporting "no geometry", because those are different
+conclusions and only one of them kills the design.
+
+- [ ] **Step 2: Build**
+
+Run: `cd /Users/alesd/Developer/tapir-archicad-automation/archicad-addon && cmake --build Build/AC29 --config RelWithDebInfo`
+
+Note: the first build after adding files can fail with a linker error, because CMake's
+`GLOB_RECURSE ... CONFIGURE_DEPENDS` reconfigures mid-build and the first pass uses the
+stale build description. A plain re-run of the same command succeeds. Do not investigate
+this; just re-run once.
+
+- [ ] **Step 3: Gate, run by the controller**
+
+The reload is gated on the repository owner, so stop after the build and report.
+
+The controller runs the probe and decides:
+
+- Bodies attributable to the stair or its treads, with climbing Z: the design holds,
+  continue to Task 5b.
+- Body count zero, or no body attributable: **stop and report.** The 3D model route is
+  the fourth design attempt on this component, and its failure means stair-following
+  railings are not reachable through this API at all, which is a conversation to have
+  rather than a fifth attempt to improvise.
+
+---
+
+### Task 5b: Derive the reference line from the 3D model
+
+Only start this once Task 5a's gate has passed, and write it against what the gate
+actually observed rather than against what this section assumes.
 
 **Files:**
 - Modify: `archicad-addon/Sources/RailingCommands.hpp`
 - Modify: `archicad-addon/Sources/RailingCommands.cpp`
 - Modify: `archicad-addon/Sources/AddOnMain.cpp`
-- Modify: `src/archicad_mcp/gateway/definitions/local_commands.json`
+- Modify: `src/archicad_mcp/gateway/definitions/local_commands.json` (MCP repo)
 
 **Interfaces:**
-- Consumes: the memo-reading code from Task 1, and the observed vertex-type behaviour recorded there in Step 6.
 - Produces: the free function
 
 ```cpp
 GS::Optional<GS::ObjectState> DeriveStairRailingReferenceLine (const API_Guid& stairGuid, const GS::UniString& side, double horizontalOffset, double verticalOffset, GS::Array<API_Coord3D>& points);
 ```
 
-returning an error ObjectState on failure and filling `points` on success, plus the JSON command `GetStairRailingReferenceLine` taking `{"stairs": [{"elementId": ..., "side": "left"|"right", "horizontalOffset"?: number, "verticalOffset"?: number}]}`. Task 6 calls the same free function.
+returning an error ObjectState on failure and filling `points` on success, plus a read
+command `GetStairRailingReferenceLine` taking
+`{"stairs": [{"elementId": ..., "side": "left"|"right", "horizontalOffset"?, "verticalOffset"?}]}`.
+Task 6 calls the same free function.
 
-- [ ] **Step 1: Implement the derivation function**
+- [ ] **Step 1: Implement the derivation**
 
-In `RailingCommands.cpp`. Steps, in order:
+The shape depends on what Task 5a found. Written against the expected finding, that bodies
+are attributed to individual Tread elements:
 
-1. `ACAPI_Element_Get` the stair. If the type is not `API_StairID`, return `CreateErrorResponse (APIERR_BADID, "ownerStairId does not identify a Stair element.")`.
-2. `ACAPI_Element_GetMemo (stairGuid, &memo, APIMemoMask_All)`, with an `OnExit` guard calling `ACAPI_DisposeElemMemoHdls`.
-3. Side index: `"left"` gives 0, `"right"` gives 1, per `APIdefs_Elements.h:14249`. Any other value is `CreateErrorResponse (APIERR_BADPARS, "side must be \"left\" or \"right\".")`.
-4. Walk `i` from 1 to `polygon.nCoords`. Keep a vertex when `vertexData[i].type == APISP_Tread && vertexData[i].isTop`. This is the filter Task 1 Step 6 validated; if the observed data disagreed, use what was recorded there instead and update this line's comment to say what was seen.
-5. Build each point as `{coords[i].x, coords[i].y, vertexData[i].zValue + verticalOffset}`.
-6. Apply `horizontalOffset` by moving each point along the inward normal. For point `i`, take the unit vector perpendicular to the segment to its neighbour, sign it towards the stair's other boundary, and scale by `horizontalOffset`. Skip entirely when `horizontalOffset` is 0, which is the default and the common case.
-7. If fewer than two points survive, return `CreateErrorResponse (APIERR_GENERAL, "Could not derive a reference line: the stair boundary yielded fewer than 2 usable vertices.")`. That message is what tells you a filter is wrong rather than a stair being odd, so keep it specific.
+1. Collect the stair's tread guids from `memo.stairTreads`, each of which carries
+   `head.guid` and a `sequenceNumber` running 1 to `stepNum`.
+2. Walk the 3D model once, building a map from tread guid to that tread's body bounding
+   box. One pass, not one pass per tread.
+3. For each tread in `sequenceNumber` order, produce one reference point: X and Y taken
+   from the body corner nearest the chosen side, Z from the body's `zmax`, which is the
+   walking surface.
+4. Apply `horizontalOffset` along the inward normal and `verticalOffset` to Z.
+5. If fewer than two points survive, return
+   `CreateErrorResponse (APIERR_GENERAL, "Could not derive a reference line: no tread bodies were attributable to this stair.")`.
+
+Choosing the corner nearest the side is the one genuinely fiddly part: a body bounding box
+is axis-aligned, so on a flight running diagonally in plan its corners are not the tread's
+corners. Say plainly in the report if this proves too coarse, because the fix is to read
+the body's polygons and vertices (`API_PgonID`, `API_VertID`) rather than its bounding box,
+which is more work and should not be attempted speculatively before the bounding box is
+shown to be inadequate.
 
 - [ ] **Step 2: Implement and register the read command**
 
-`GetStairRailingReferenceLineCommand` follows the same `CommandBase` shape as Task 1. Per entry, call `DeriveStairRailingReferenceLine` and return either the error or `{"elementId": ..., "side": ..., "points": [{"x","y","z"}]}` using `Create3DCoordinateObjectState` (`CommandBase.hpp:66`).
+`GetStairRailingReferenceLineCommand` follows the `CommandBase` shape already used twice in
+this file. Per entry, call the free function and return either the error or
+`{"elementId": ..., "side": ..., "points": [{"x","y","z"}]}` built with
+`Create3DCoordinateObjectState` (`CommandBase.hpp:66`).
 
 ```cpp
         err |= RegisterCommand<GetStairRailingReferenceLineCommand> (
@@ -640,33 +737,34 @@ In `RailingCommands.cpp`. Steps, in order:
 
 - [ ] **Step 3: Add it to the MCP overlay**
 
-Append a third command entry to `local_commands.json`, in the same shape as the two from Task 4. `classify_access` will class it read on the `Get` prefix, so it becomes reachable through `execute_read_api_command` with no confirmation prompt.
+Append a third entry to `local_commands.json` in the same shape as the existing two.
+`classify_access` will class it read on the `Get` prefix. Do NOT add the probe command.
 
 - [ ] **Step 4: Build**
 
 Run: `cd /Users/alesd/Developer/tapir-archicad-automation/archicad-addon && cmake --build Build/AC29 --config RelWithDebInfo`
-Expected: build succeeds.
 
-- [ ] **Step 5: Live test across four stair shapes**
+- [ ] **Step 5: Live check, gated**
 
-Load the bundle. For each of a straight flight, an L-shape with a landing, a winder, and a curved flight in the test model, call `GetStairRailingReferenceLine` for both sides and check three things: the point count is close to the tread count rather than double or triple it, Z rises monotonically along a flight and stays flat across a landing, and the left and right runs are offset from each other by the flight width rather than sitting on top of one another.
-
-Record any shape that comes out wrong. A winder or curved flight failing while straight and L work is a filter problem worth fixing here, before Task 6 starts placing elements from it.
+Stop after the build and report. The controller runs `GetStairRailingReferenceLine` on the
+test file's L-shaped stair and checks: the point count is close to the 21 treads rather
+than double or triple it, Z climbs monotonically along each flight and stays flat across
+the landing, and the left and right runs are separated by roughly the 1.4 m flight width
+rather than sitting on top of one another. The known values for that stair are
+`basePlaneBasePointZ 0.331501576`, `riserHeight 0.177566076`, `stepNum 21`,
+`totalHeight 3.728887595`, so the top point should land near z 4.06.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 cd /Users/alesd/Developer/tapir-archicad-automation
 git add archicad-addon/Sources/RailingCommands.hpp archicad-addon/Sources/RailingCommands.cpp archicad-addon/Sources/AddOnMain.cpp
-git commit -m "feat: derive a railing reference line from a stair boundary"
+git commit -m "feat: derive a railing reference line from the stair 3D model"
 
 cd "/Users/alesd/Developer/Archicad MCP"
 git add src/archicad_mcp/gateway/definitions/local_commands.json
 git commit -m "feat: reach GetStairRailingReferenceLine from the gateway"
 ```
-
----
-
 ### Task 6: `ownerStairId` mode on `CreateRailings`
 
 **Files:**
@@ -701,12 +799,16 @@ Add the four properties to the `railingsData` item schema. `ownerStairId` is `{ 
         if (!parameters.Get ("side", side)) {
             return CreateErrorResponse (APIERR_BADPARS, "side is required when ownerStairId is given.");
         }
-        const auto horizontalOffset = GetOptionalDouble (parameters, "horizontalOffset");
-        const auto verticalOffset = GetOptionalDouble (parameters, "verticalOffset");
+        // GetOptionalDouble is NOT reachable: it lives in an anonymous namespace in
+        // ExtendedElementCommands.cpp. Task 2 hit this and inlined the logic instead.
+        double horizontalOffset = 0.0;
+        parameters.Get ("horizontalOffset", horizontalOffset);
+        double verticalOffset = 0.0;
+        parameters.Get ("verticalOffset", verticalOffset);
         auto error = DeriveStairRailingReferenceLine (
             GetGuidFromObjectState (*ownerStairId), side,
-            horizontalOffset.HasValue () ? horizontalOffset.Get () : 0.0,
-            verticalOffset.HasValue () ? verticalOffset.Get () : 0.0,
+            horizontalOffset,
+            verticalOffset,
             points);
         if (error.HasValue ()) {
             return error;
