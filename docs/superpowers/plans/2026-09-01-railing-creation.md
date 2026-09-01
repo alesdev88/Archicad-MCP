@@ -315,7 +315,7 @@ It does the following, in order:
     for (Int32 i = 0; i < nCoords; ++i) {
         (*memo.coords)[i + 1].x = points[i].x;
         (*memo.coords)[i + 1].y = points[i].y;
-        (*memo.polyZCoords)[i + 1] = points[i].z - floorIndexAndOffset.second;
+        (*memo.polyZCoords)[i + 1] = floorIndexAndOffset.second + (points[i].z - points[0].z);
     }
 
     element.railing.nVertices = static_cast<UInt32> (nCoords);
@@ -323,7 +323,7 @@ It does the following, in order:
     return {};
 ```
 
-The Z subtraction is deliberate: `polyZCoords` is relative to the storey the element sits on, and `ResolveFloorIndexAndOffset` returns that storey's elevation as its second member. Step 6 verifies this against the model; if railings land at the wrong height by exactly one storey elevation, this line is why.
+The Z expression is subtle, and an earlier draft of this plan got it wrong. `ResolveFloorIndexAndOffset` does NOT return the storey's absolute elevation: it returns `zPos - storyLevel`, an already relative offset, as `CommandBase.cpp:718` and `:751` show. Every other consumer assigns `.second` directly and never subtracts it from an absolute input, see `ElementCreationCommands.cpp:288` for columns and `ExtendedElementCommands.cpp:3782` for stairs. Since `points[0].z` is what gets passed in, `.second` equals `points[0].z - storyLevel`, and each vertex needs `points[i].z - storyLevel`, which expands to `(points[i].z - points[0].z) + .second`. Note that a storey at elevation 0 cannot detect a mistake here, because the error term is proportional to storey elevation, so any live check of this must use a storey whose elevation is not zero.
 
 - [ ] **Step 5: Register the command**
 
