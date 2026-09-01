@@ -148,13 +148,26 @@ jobs:
       # without these there is nowhere to get a built distribution of one
       # named version. A prerelease is labelled as one rather than offered from
       # the releases page as the current version to download.
+      #
+      # Create, or re-upload if the release already exists. The registry publish
+      # below is the last step and the one most likely to fail on its own terms,
+      # since it talks to a service still in preview. When it did, the run could
+      # not simply be re-run: this step had already created the release, and
+      # creating it again is an error, so the recovery the comment below
+      # promises was not actually available. Now it is.
       - run: |
           flags=(--generate-notes --title "$GITHUB_REF_NAME")
           if [[ "$PRERELEASE" == "true" ]]; then
             flags+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
-            dist/*.mcpb dist/*.whl dist/*.tar.gz
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "release exists, replacing its assets"
+            gh release upload "$GITHUB_REF_NAME" --clobber \
+              dist/*.mcpb dist/*.whl dist/*.tar.gz
+          else
+            gh release create "$GITHUB_REF_NAME" "${flags[@]}" \
+              dist/*.mcpb dist/*.whl dist/*.tar.gz
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 

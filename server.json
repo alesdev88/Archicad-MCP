@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.alesdev88/archicad-mcp",
   "title": "Archicad",
-  "description": "Delivery-readiness QA and full official + Tapir API access for a running Archicad 29. Self-contained: no Python or uv required.",
+  "description": "Delivery-readiness QA and full official + Tapir API access for a running Archicad 29.",
   "version": "0.2.0",
   "repository": {
     "url": "https://github.com/alesdev88/Archicad-MCP",

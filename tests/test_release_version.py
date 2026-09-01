@@ -165,3 +165,22 @@ def test_this_repo_server_json_agrees_with_the_declared_version():
     entries = {k: v for k, v in versions.items() if k.startswith("server.json")}
     assert entries, "server.json version references should be picked up"
     assert set(entries.values()) == {versions["pyproject.toml"]}
+
+
+def test_server_json_description_fits_the_registry_limit():
+    """The MCP registry caps description at 100 characters.
+
+    It rejected a 127-character one with a 422 at the very last step of a
+    release, after the GitHub release had already been created and could not be
+    made again by re-running the job. The limit belongs to the registry, so
+    nothing local enforced it and nothing could have: this test is the local
+    copy of that rule.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    description = json.loads((root / "server.json").read_text())["description"]
+    assert len(description) <= 100, (
+        f"server.json description is {len(description)} characters; the registry "
+        f"refuses anything over 100")
