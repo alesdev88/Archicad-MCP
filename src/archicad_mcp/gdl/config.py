@@ -58,6 +58,10 @@ class GroupSpec:
     label: str
     texture: str | None = None   # variant role, shared texture key, or "@frame"
     rgb: RGB = (0.6, 0.6, 0.6)
+    uv_rotate: int = 0           # rotate this group's UVs (0/90/180/270 deg),
+                                 # e.g. to run wood grain along a leg instead
+                                 # of across it; source UVs are often authored
+                                 # for a different (untextured) finish
 
 
 @dataclass
@@ -111,7 +115,8 @@ def load_config(path: str | Path) -> dict[str, ObjectConfig]:
                             for v in spec.get("frame_variants", [])],
             groups={sub: GroupSpec(label=g["label"],
                                    texture=g.get("texture"),
-                                   rgb=_as_rgb(g.get("rgb", (0.6, 0.6, 0.6))))
+                                   rgb=_as_rgb(g.get("rgb", (0.6, 0.6, 0.6))),
+                                   uv_rotate=int(g.get("uv_rotate", 0)))
                     for sub, g in spec.get("groups", {}).items()},
             decimate={k: int(v) for k, v in spec.get("decimate", {}).items()},
         )

@@ -64,7 +64,18 @@ class BuildResult:
     notes: list[str] = field(default_factory=list)
 
 
-def build_group_gdl(verts, uvs, tris: list[Face], textured: bool) -> list[str]:
+def _rotate_uv(u: float, v: float, deg: int) -> tuple[float, float]:
+    if deg == 90:
+        return v, -u
+    if deg == 180:
+        return -u, -v
+    if deg == 270:
+        return -v, u
+    return u, v
+
+
+def build_group_gdl(verts, uvs, tris: list[Face], textured: bool,
+                    uv_rotate: int = 0) -> list[str]:
     """Emit BASE/VERT|TEVE/EDGE/PGON/BODY for one material group.
 
     Vertices are split per (position, uv) pair so TEVE can carry explicit
@@ -121,6 +132,7 @@ def build_group_gdl(verts, uvs, tris: list[Face], textured: bool) -> list[str]:
         x, y, z = verts[vi]
         if textured:
             u, v = uvs[vt] if vt is not None else (0.0, 0.0)
+            u, v = _rotate_uv(u, v, uv_rotate)
             out.append(f"TEVE {_fmt(x)}, {_fmt(y)}, {_fmt(z)}, {_fmt(u)}, {_fmt(v)}")
         else:
             out.append(f"VERT {_fmt(x)}, {_fmt(y)}, {_fmt(z)}")
@@ -232,7 +244,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
             used_shared.add(tex)
         elif tex != "@frame":
             tex = None
-        infos.append((spec.label, tex, spec.rgb))
+        infos.append((spec.label, tex, spec.rgb, spec.uv_rotate))
 
     # texture registry: (GDL texture name, source file, library file name);
     # library file names carry a content hash so identical textures dedupe
@@ -255,7 +267,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
     for ref, _src, _fname in picts:
         gdl3d.append(f'DEFINE TEXTURE "{ref}" "{pict_file[ref]}", 1, 1, 0, 0')
     gdl3d.append("")
-    for i, (label, tex, rgb) in enumerate(infos, 1):
+    for i, (label, tex, rgb, _uv_rot) in enumerate(infos, 1):
         if tex == "@frame":
             for fi, (_flabel, frgb) in enumerate(frame_variants, 1):
                 gdl3d += _flat_material(f"{name}_m{i}_f{fi}", frgb)
@@ -272,7 +284,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
             gdl3d += _flat_material(f"{name}_m{i}", rgb)
 
     group_summaries = []
-    for i, ((mtl, faces), (label, tex, rgb)) in enumerate(zip(ordered, infos), 1):
+    for i, ((mtl, faces), (label, tex, rgb, uv_rot)) in enumerate(zip(ordered, infos), 1):
         tris = [t for f in faces for t in triangulate(f)]
         gdl3d += [
             f"! ---- group {i}: {label} [{mtl}] ({len(tris)} triangles) ----",
@@ -293,7 +305,8 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
         gdl3d.append("endif")
         has_uvs = any(c[1] is not None for f in faces for c in f)
         textured = has_uvs and tex is not None and tex != "@frame"
-        gdl3d += build_group_gdl(verts, mesh.uvs, tris, textured=textured)
+        gdl3d += build_group_gdl(verts, mesh.uvs, tris, textured=textured,
+                                 uv_rotate=uv_rot)
         gdl3d.append("")
         group_summaries.append(f"{label} [{mtl.strip()}] {len(tris)} tris tex={tex}")
 
@@ -397,7 +410,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
 \t\t</Integer>
 """
     surf_params = []
-    for i, (label, _tex, _rgb) in enumerate(infos, 1):
+    for i, (label, _tex, _rgb, _uv_rot) in enumerate(infos, 1):
         surf_params.append(f"""\t\t<Boolean Name="override_surface_{i}">
 \t\t\t<Description><![CDATA["Override Surface: {label}"]]></Description>
 \t\t\t<Value>0</Value>
