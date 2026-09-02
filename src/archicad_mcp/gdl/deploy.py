@@ -28,6 +28,26 @@ def embed_gsm(conn: ArchicadConnection, gsm_path: str | Path,
     })
 
 
+def embed_textures(conn: ArchicadConnection,
+                   files: list[Path]) -> tuple[list[str], list[str]]:
+    """Embed texture image files next to the objects that reference them.
+
+    Texture file names carry a content hash, so a per-file failure (Tapir
+    cannot overwrite an existing embedded file) means the identical file is
+    already there and skipping is correct. Returns (added, skipped) names.
+    """
+    if not files:
+        return [], []
+    result = conn.tapir("AddFilesToEmbeddedLibrary", {
+        "files": [{"inputPath": str(f.resolve()), "outputPath": f.name}
+                  for f in files]
+    })
+    added, skipped = [], []
+    for f, r in zip(files, result.get("executionResults", [])):
+        (added if r.get("success") else skipped).append(f.name)
+    return added, skipped
+
+
 def reload_libraries(conn: ArchicadConnection) -> dict:
     return conn.tapir("ReloadLibraries")
 

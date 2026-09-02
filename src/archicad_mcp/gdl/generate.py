@@ -6,9 +6,14 @@ toolchain.py). Hard-won rules baked in here:
 - TEVE carries explicit UVs; never mix VERT and TEVE in one body (mixing
   silently disables all UVs). Groups without UVs use VERT and get automatic
   texture wrapping.
-- DEFINE TEXTURE must reference embedded pictures by NUMERIC index (the
-  GDLPict SubIdent); a string is resolved against the loaded libraries and
-  misses the object's own pictures.
+- Textures ship as SEPARATE image files in the library (not embedded in the
+  .gsm as GDLPict sections): DEFINE TEXTURE references them by file name.
+  Rationale: Archicad itself can read pictures embedded in the .gsm (by
+  numeric GDLPict index), but external render engines (Enscape, Twinmotion)
+  receive the model through the add-on API and need each texture as a real
+  image file in a loaded library; gsm-embedded pictures render flat there.
+  File names carry a content hash so identical textures dedupe across
+  objects and an already-embedded file can be skipped safely on redeploy.
 - A GDL EDGE belongs to at most 2 polygons. Non-manifold junctions are split
   into paired edge instances or Archicad silently drops the whole body while
   LP_XMLConverter's interpreter still passes it.
@@ -19,7 +24,9 @@ toolchain.py). Hard-won rules baked in here:
 
 from __future__ import annotations
 
+import hashlib
 import math
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -53,7 +60,7 @@ class BuildResult:
     b: float
     h: float
     groups: list[str] = field(default_factory=list)
-    pictures: int = 0
+    textures: list[Path] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -183,10 +190,17 @@ def _downscale(dst: Path) -> None:
         subprocess.run(["sips", "-Z", str(MAX_TEXTURE_PX), str(dst)],
                        check=True, capture_output=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
-        pass  # non-macOS or sips failure: embed the original
+        pass  # non-macOS or sips failure: ship the original
 
 
-def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path) -> BuildResult:
+def _texture_filename(src: Path) -> str:
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()[:6]
+    stem = re.sub(r"[^A-Za-z0-9]+", "_", src.stem).strip("_").lower()
+    return f"{stem}_{digest}{src.suffix.lower()}"
+
+
+def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
+              textures_dir: str | Path | None = None) -> BuildResult:
     hsf_dir = Path(hsf_dir)
     variants = cfg.variants
     frame_variants = cfg.frame_variants
@@ -220,15 +234,17 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path) -> 
             tex = None
         infos.append((spec.label, tex, spec.rgb))
 
-    # embedded picture registry: texture-backed variant roles + shared keys
+    # texture registry: (GDL texture name, source file, library file name);
+    # library file names carry a content hash so identical textures dedupe
+    # across objects and redeploys can skip files that already exist
     picts: list[tuple[str, Path, str]] = []
     for vi, (_vlabel, vmap) in enumerate(variants, 1):
         for role in sorted(used_roles):
             if isinstance(vmap.get(role), Path):
-                picts.append((f"{role}_v{vi}", vmap[role], f"{role}_{vi}.jpg"))
+                picts.append((f"{role}_v{vi}", vmap[role], _texture_filename(vmap[role])))
     for key in sorted(used_shared):
-        picts.append((key, cfg.textures[key], f"{key}.jpg"))
-    pict_index = {ref: sub for sub, (ref, _, _) in enumerate(picts, 1)}
+        picts.append((key, cfg.textures[key], _texture_filename(cfg.textures[key])))
+    pict_file = {ref: fname for ref, _, fname in picts}
 
     # ---- 3D script ----
     gdl3d = [
@@ -236,8 +252,8 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path) -> 
         f"MUL A / {_fmt(a0)}, B / {_fmt(b0)}, ZZYZX / {_fmt(h0)}",
         "",
     ]
-    for ref, _src, _emb in picts:
-        gdl3d.append(f'DEFINE TEXTURE "{ref}" {pict_index[ref]}, 1, 1, 0, 0')
+    for ref, _src, _fname in picts:
+        gdl3d.append(f'DEFINE TEXTURE "{ref}" "{pict_file[ref]}", 1, 1, 0, 0')
     gdl3d.append("")
     for i, (label, tex, rgb) in enumerate(infos, 1):
         if tex == "@frame":
@@ -310,21 +326,21 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path) -> 
         (scripts / "vl.gdl").write_text("\n".join(vl_lines) + "\n")
         vl_section = '\n\t<Script_VL SectVersion="20" SectionFlags="0" SubIdent="0"/>'
 
-    images = hsf_dir / "images"
-    pict_entries = []
+    # texture image files ship NEXT TO the .gsm, not inside it (see module
+    # docstring: external render engines need real library image files)
+    texture_files: list[Path] = []
     if picts:
-        images.mkdir(exist_ok=True)
-        for sub, (_ref, src, embedded) in enumerate(picts, 1):
-            dst = images / embedded
-            shutil.copy(src, dst)
-            _downscale(dst)
-            pict_entries.append(
-                f'\t<GDLPict MIME="image/jpeg" Name="{embedded}" '
-                f'SectVersion="19" SectionFlags="0" SubIdent="{sub}"/>'
-            )
+        tex_dir = Path(textures_dir) if textures_dir else hsf_dir.parent / "textures"
+        tex_dir.mkdir(parents=True, exist_ok=True)
+        for _ref, src, fname in picts:
+            dst = tex_dir / fname
+            if dst not in texture_files:
+                shutil.copy(src, dst)
+                _downscale(dst)
+                texture_files.append(dst)
 
     main_guid = cfg.resolve_guid(name)
-    pict_xml = ("\n" + "\n".join(pict_entries)) if pict_entries else ""
+    pict_xml = ""
     (hsf_dir / "libpartdata.xml").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <LibpartData Owner="0" Signature="1196644685" Version="46">
 \t<Identification>
@@ -427,5 +443,5 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path) -> 
 """)
 
     return BuildResult(hsf_dir=hsf_dir, guid=main_guid, a=a0, b=b0, h=h0,
-                       groups=group_summaries, pictures=len(picts),
+                       groups=group_summaries, textures=texture_files,
                        notes=list(mesh.notes))

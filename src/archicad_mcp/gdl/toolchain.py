@@ -55,7 +55,8 @@ def compile_hsf(hsf_dir: str | Path, gsm_path: str | Path) -> Path:
     return Path(gsm_path)
 
 
-def validate_gsm(gsm_path: str | Path) -> list[str]:
+def validate_gsm(gsm_path: str | Path,
+                 extra_libs: list[str | Path] | None = None) -> list[str]:
     """Round-trip the .gsm to XML and interpret its scripts.
 
     Returns warning/error lines. "Missing ancestor" lines are expected
@@ -75,10 +76,10 @@ def validate_gsm(gsm_path: str | Path) -> list[str]:
                             capture_output=True, text=True, timeout=300)
         if r1.returncode != 0:
             raise ToolchainError(f"l2x failed:\n{r1.stdout}{r1.stderr}")
-        r2 = subprocess.run(
-            [str(lp), "convertlibrary", "-interpret", "-reportlevel", "2",
-             str(xml), str(out)],
-            capture_output=True, text=True, timeout=600)
+        cmd = [str(lp), "convertlibrary", "-interpret", "-reportlevel", "2",
+               str(xml), str(out)]
+        cmd += [str(p) for p in (extra_libs or []) if Path(p).exists()]
+        r2 = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         lines = (r2.stdout + r2.stderr).splitlines()
         return [ln for ln in lines
                 if ("error" in ln.lower() or "warning" in ln.lower())

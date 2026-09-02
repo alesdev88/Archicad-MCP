@@ -26,11 +26,16 @@ archicad-gdl inspect model.3ds
    bevel): collapsing them into irregular triangles smears smooth shading
    into dark/light blotches. Frames, tubes and hidden parts decimate well.
 3. **Generate HSF** (Hierarchical Symbol Format): `libpartdata.xml`,
-   `ancestry.xml`, `paramlist.xml`, `libpartdocs.xml`, `scripts/*.gdl`,
-   `images/*`. Each material group becomes one GDL body with per-group
-   surface override parameters; finish variants become a "Finish" dropdown
-   (and frame variants a "Frame finish" dropdown) via value-list scripts.
-   Textures are embedded as GDLPict sections, downscaled to 1024 px.
+   `ancestry.xml`, `paramlist.xml`, `libpartdocs.xml`, `scripts/*.gdl`.
+   Each material group becomes one GDL body with per-group surface override
+   parameters; finish variants become a "Finish" dropdown (and frame
+   variants a "Frame finish" dropdown) via value-list scripts. Texture
+   images are written to a `textures/` folder next to the .gsm (downscaled
+   to 1024 px, named with a content hash so identical files dedupe across
+   objects); they must be deployed into a loaded library together with the
+   .gsm. Archicad could read pictures embedded inside the .gsm, but
+   external render engines (Enscape, Twinmotion) cannot, so the pipeline
+   ships textures as real library files that both can load.
 4. **Compile** with LP_XMLConverter (`hsf2libpart`), located automatically in
    the newest Archicad bundle under `/Applications/Graphisoft` (override with
    the `LP_XMLCONVERTER` environment variable).
@@ -77,9 +82,11 @@ for anyone editing it:
 
 - `TEVE` carries explicit UVs; mixing `VERT` and `TEVE` in one body silently
   disables all UVs. Groups without UVs use `VERT` and automatic wrapping.
-- `DEFINE TEXTURE` must reference embedded pictures by numeric index (the
-  GDLPict `SubIdent`); a string is resolved against loaded libraries and
-  misses the object's own pictures.
+- `DEFINE TEXTURE` references textures by file name; the file must exist in
+  a loaded library (deploy pushes the `textures/` folder into the embedded
+  library). A numeric expression would read a picture embedded in the .gsm,
+  which Archicad renders but Enscape and other external engines cannot, so
+  the pipeline does not use it.
 - Edge status vocabulary: 0 visible sharp, 1 invisible sharp, 3 invisible
   smooth. Status 1 is used between faces of very different sizes so curved
   rims cannot smear shading across large flat faces.

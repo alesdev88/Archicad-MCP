@@ -73,7 +73,8 @@ def built(tmp_path):
     )
     mesh = _cube_mesh()
     mesh.groups["wood"] = [[(0, None), (1, None), (2, None)]]
-    result = build_hsf(mesh, cfg, "Test Object", tmp_path / "hsf")
+    result = build_hsf(mesh, cfg, "Test Object", tmp_path / "hsf",
+                       textures_dir=tmp_path / "tex")
     return tmp_path / "hsf", result
 
 
@@ -81,22 +82,27 @@ def test_hsf_structure_and_manifests(built):
     hsf, result = built
     for f in ["libpartdata.xml", "ancestry.xml", "paramlist.xml",
               "libpartdocs.xml", "scripts/2d.gdl", "scripts/3d.gdl",
-              "scripts/vl.gdl", "images/top_1.jpg"]:
+              "scripts/vl.gdl"]:
         assert (hsf / f).exists(), f
     for xml in ["libpartdata.xml", "ancestry.xml", "paramlist.xml"]:
         ET.parse(hsf / xml)  # well-formed
     data = (hsf / "libpartdata.xml").read_text()
     assert result.guid in data
-    assert 'Name="top_1.jpg"' in data
+    # textures ship as library files next to the .gsm, never inside it
+    assert "GDLPict" not in data
+    assert not (hsf / "images").exists()
+    assert len(result.textures) == 1
+    assert result.textures[0].exists()
+    assert result.textures[0].name.startswith("oak_")
     assert "<Script_VL" in data
 
 
 def test_finish_dropdowns_and_materials(built):
-    hsf, _result = built
+    hsf, result = built
     gdl = (hsf / "scripts/3d.gdl").read_text()
-    # textures referenced by numeric embedded-picture index, never by string
-    assert 'DEFINE TEXTURE "top_v1" 1,' in gdl
-    assert '"top_1.jpg"' not in gdl
+    # textures referenced by library file name (external render engines need
+    # real image files; gsm-embedded pictures render flat in Enscape)
+    assert f'DEFINE TEXTURE "top_v1" "{result.textures[0].name}",' in gdl
     # variant selection chains for both dropdowns
     assert 'if finish = 2 then material "Test Object_m2_v2"' in gdl
     assert 'if frame_finish = 2 then material "Test Object_m1_f2"' in gdl

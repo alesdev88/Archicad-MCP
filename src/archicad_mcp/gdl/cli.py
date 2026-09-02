@@ -42,17 +42,21 @@ def _cmd_build(args) -> int:
     hsf_dir = out_dir / args.name
     if hsf_dir.exists():
         shutil.rmtree(hsf_dir)
-    result = generate.build_hsf(mesh, cfg, args.name, hsf_dir)
+    result = generate.build_hsf(mesh, cfg, args.name, hsf_dir,
+                                textures_dir=out_dir / "textures")
     print(f"HSF: {result.hsf_dir}")
     print(f"A={result.a:.4f} B={result.b:.4f} H={result.h:.4f} m  GUID={result.guid}")
     for line in result.groups:
         print(f"  {line}")
+    if result.textures:
+        print(f"textures: {len(result.textures)} file(s) in {out_dir / 'textures'} "
+              "(deploy them with the .gsm; render engines load them from the library)")
 
     gsm = toolchain.compile_hsf(hsf_dir, out_dir / f"{args.name}.gsm")
     print(f"GSM: {gsm} ({gsm.stat().st_size // 1024} KB)")
 
     if not args.no_validate:
-        issues = toolchain.validate_gsm(gsm)
+        issues = toolchain.validate_gsm(gsm, extra_libs=[out_dir / "textures"])
         if issues:
             print("validation findings:")
             for ln in issues:
@@ -69,9 +73,17 @@ def _cmd_deploy(args) -> int:
     from archicad_mcp.connection import get_connection
     conn = get_connection(args.port)
     gsm = Path(args.gsm)
+    tex_dir = Path(args.textures) if args.textures else gsm.parent / "textures"
+    textures = sorted(tex_dir.glob("*.jpg")) + sorted(tex_dir.glob("*.png")) \
+        if tex_dir.is_dir() else []
     deploy_mod.embed_gsm(conn, gsm)
+    added, skipped = deploy_mod.embed_textures(conn, textures)
     deploy_mod.reload_libraries(conn)
     print(f"embedded {gsm.name} and reloaded libraries (port {conn.port})")
+    if added:
+        print(f"textures added: {', '.join(added)}")
+    if skipped:
+        print(f"textures already in the embedded library (skipped): {', '.join(skipped)}")
     if args.place is not None:
         x, y = args.place
         guid = deploy_mod.place_object(conn, gsm.stem, x=x, y=y)
@@ -124,6 +136,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("gsm", help="compiled .gsm file")
     p.add_argument("--port", type=int, default=None,
                    help="Archicad port (default: auto-discover)")
+    p.add_argument("--textures", default=None,
+                   help="texture folder to embed alongside (default: "
+                        "'textures' next to the .gsm)")
     p.add_argument("--place", nargs=2, type=float, metavar=("X", "Y"),
                    help="also place an instance at model coordinates")
     p.add_argument("--preview", help="render the placed element to this PNG")
