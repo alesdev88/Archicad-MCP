@@ -1,5 +1,6 @@
 import json
 
+import jsonschema
 import pytest
 from fastmcp import Client
 
@@ -41,6 +42,26 @@ def test_local_overlay_commands_carry_a_schema():
     schema = registry["CreateRailings"].input_schema
     assert schema is not None
     assert "railingsData" in schema["properties"]
+
+
+def test_get_stair_boundaries_schema_accepts_the_addons_payload_shape():
+    """GetStairBoundaries lives only in the local overlay, and the overlay once
+    described "stairs" as a bare {"guid": ...} list (the #/ElementId shape)
+    while the add-on's Execute reads each item's "elementId" field (the
+    #/ElementIdArrayItem shape, {"elementId": {"guid": ...}}). Both halves of
+    that mismatch were only caught by actually validating a realistic payload
+    with jsonschema.validate, the same call execute.py makes: checking that the
+    schema merely resolves its $ref would have passed either way.
+    """
+    registry = build_registry()
+    schema = registry["GetStairBoundaries"].input_schema
+    payload = {"stairs": [{"elementId": {"guid": "00000000-0000-0000-0000-000000000001"}}]}
+    jsonschema.validate(payload, schema)  # must not raise
+
+    # And the shape the add-on actually rejects (a bare guid, no "elementId"
+    # wrapper) must fail validation, so the schema is not just permissive.
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"stairs": [{"guid": "00000000-0000-0000-0000-000000000001"}]}, schema)
 
 
 def _read_command_with_required_params() -> str:

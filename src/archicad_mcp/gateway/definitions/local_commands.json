@@ -13,7 +13,7 @@
             "properties": {
               "stairs": {
                 "type": "array",
-                "items": {"$ref": "#/ElementId"}
+                "items": {"$ref": "#/ElementIdArrayItem"}
               }
             },
             "additionalProperties": false,
