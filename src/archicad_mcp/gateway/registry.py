@@ -10,6 +10,7 @@ from pathlib import Path
 from multiconn_archicad.core.literal_commands import AddonCommandType
 
 DEFINITIONS_DIR = Path(__file__).parent / "definitions"
+LOCAL_DEFINITIONS = DEFINITIONS_DIR / "local_commands.json"
 OFFICIAL_DOCS = "https://archicadapi.graphisoft.com/JSONInterfaceDocumentation/"
 TAPIR_DOCS = "https://github.com/ENZYME-APD/tapir-archicad-automation"
 
@@ -100,6 +101,24 @@ def build_registry() -> dict[str, CommandInfo]:
                 name=cmd["name"], kind="tapir", group=group["name"],
                 description=cmd.get("description", ""), input_schema=resolved,
                 version=cmd.get("version"), access=classify_access(cmd["name"]))
+
+    # Commands that exist only in the local Tapir fork. They are merged here so
+    # that every route into the add-on consults one registry: without this,
+    # create_elements would reach a fork command that execute_write_api_command
+    # refuses by name. Upstream definitions win on a name clash, because a
+    # command that has landed upstream no longer needs the overlay.
+    if LOCAL_DEFINITIONS.exists():
+        local = json.loads(LOCAL_DEFINITIONS.read_text(encoding="utf-8"))
+        for group in local.get("groups", []):
+            for cmd in group.get("commands", []):
+                if cmd["name"] in registry:
+                    continue
+                schema = cmd.get("inputScheme")
+                resolved = _resolve_refs(schema, definitions) if schema is not None else None
+                registry[cmd["name"]] = CommandInfo(
+                    name=cmd["name"], kind="tapir", group=group["name"],
+                    description=cmd.get("description", ""), input_schema=resolved,
+                    version=cmd.get("version"), access=classify_access(cmd["name"]))
 
     for name in typing.get_args(AddonCommandType):
         if name in registry:

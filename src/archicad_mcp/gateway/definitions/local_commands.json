@@ -1,0 +1,42 @@
+{
+  "note": "Commands present only in the local Tapir fork, not in any upstream release. scripts/sync_tapir_defs.py does not touch this file. Remove an entry once it lands upstream and a synced release carries it.",
+  "groups": [
+    {
+      "name": "Element Commands",
+      "commands": [
+        {
+          "name": "GetStairBoundaries",
+          "version": "1.5.9",
+          "description": "Returns the left and right boundary polylines of the given Stair elements, with the type flags and elevation of every vertex.",
+          "inputScheme": {
+            "type": "object",
+            "properties": {
+              "stairs": {
+                "type": "array",
+                "items": {"$ref": "#/ElementIdArrayItem"}
+              }
+            },
+            "additionalProperties": false,
+            "required": ["stairs"]
+          }
+        },
+        {
+          "name": "CreateRailings",
+          "version": "1.5.9",
+          "description": "Creates Railing elements on the given 3D reference line polylines.",
+          "inputScheme": {
+            "type": "object",
+            "properties": {
+              "railingsData": {
+                "type": "array",
+                "items": {"type": "object"}
+              }
+            },
+            "additionalProperties": false,
+            "required": ["railingsData"]
+          }
+        }
+      ]
+    }
+  ]
+}
