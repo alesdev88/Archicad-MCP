@@ -20,7 +20,7 @@ NO_PROJECT = InstanceInfo(port=19724, version=0, build=0, project_name=None,
 def test_banner_reports_mode_and_rule_count():
     banner = format_startup_banner("full", 12, [WITH_TAPIR])
     assert "mode=full" in banner
-    assert "12 rules" in banner
+    assert "12 bundled example rules loaded" in banner
 
 
 def test_banner_names_where_the_rules_came_from():
