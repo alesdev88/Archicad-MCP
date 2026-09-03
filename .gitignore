@@ -15,3 +15,9 @@ teren/
 # Both are rebuildable from pinned inputs, and the interpreter cache alone is
 # tens of megabytes per target.
 build/
+
+# Isolated worktrees for parallel work, and the subagent-driven-development
+# scratch area (ledgers, task briefs, review packages). Both are working state
+# rebuilt on demand; the git history is the durable record.
+.worktrees/
+.superpowers/
