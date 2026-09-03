@@ -14,11 +14,15 @@ and keeps this module importable from `server` without a circular import
 from __future__ import annotations
 
 import functools
+import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from archicad_mcp.gdl import config as cfg_mod
+from archicad_mcp.gdl import generate
 from archicad_mcp.gdl import mesh as mesh_mod
+from archicad_mcp.gdl import toolchain
 from archicad_mcp.gdl.toolchain import ToolchainError
 from archicad_mcp.gdl.workspace import Workspace, WorkspaceError
 
@@ -90,6 +94,87 @@ def _inspect_source(ws: Workspace, source: str) -> dict:
     }
 
 
+def _config_for(ws: Workspace, name: str, config: dict | None):
+    """The ObjectConfig to build with, from the argument or from assets.json.
+
+    An inline config is parsed against the workspace root, so its texture and
+    source paths are workspace-relative like every other path argument.
+    """
+    if config is not None:
+        objects = cfg_mod.parse_objects({"objects": {name: config}}, ws.root)
+        return objects[name], config
+    assets = ws.assets_path()
+    objects = cfg_mod.load_config(assets) if assets.is_file() else {}
+    return cfg_mod.find_object(objects, name), None
+
+
+def _build_object(ws: Workspace, source: str, name: str,
+                  config: dict | None = None, decimate: bool = True,
+                  validate: bool = True, save_config: bool = True) -> dict:
+    ws.require_root()
+    src = ws.resolve(source)
+    if not src.is_file():
+        raise FileNotFoundError(
+            f"No such file in the GDL workspace: {source}. Call "
+            "list_gdl_sources to see what is there.")
+    gsm_path = ws.resolve(f"{name}.gsm")
+    hsf_dir = ws.resolve(name)
+
+    cfg, raw_spec = _config_for(ws, name, config)
+    try:
+        mesh = mesh_mod.load(src)
+    except ValueError as exc:
+        raise ValueError(
+            f"Failed to parse source mesh {source}: {exc}") from exc
+    notes = list(mesh.notes)
+    if cfg.decimate and decimate:
+        seen = len(mesh.notes)
+        mesh = toolchain.decimate(mesh, cfg.decimate)
+        notes += mesh.notes[seen:]
+
+    if hsf_dir.exists():
+        shutil.rmtree(hsf_dir)
+    result = generate.build_hsf(mesh, cfg, name, hsf_dir,
+                                textures_dir=ws.textures_dir())
+    try:
+        gsm = toolchain.compile_hsf(hsf_dir, gsm_path)
+    finally:
+        shutil.rmtree(hsf_dir, ignore_errors=True)
+
+    findings = (toolchain.validate_gsm(gsm, extra_libs=[ws.textures_dir()])
+                if validate else [])
+    if save_config and raw_spec is not None:
+        try:
+            cfg_mod.save_object_config(ws.assets_path(), name, raw_spec)
+        except (json.JSONDecodeError, IsADirectoryError) as exc:
+            return {
+                "gsm": gsm.name,
+                "bytes": gsm.stat().st_size,
+                "guid": result.guid,
+                "size_m": {"a": round(result.a, 4), "b": round(result.b, 4),
+                           "h": round(result.h, 4)},
+                "groups": list(result.groups),
+                "textures": [p.name for p in result.textures],
+                "notes": notes + list(result.notes),
+                "validation": [ln.strip() for ln in findings],
+                "config_saved": False,
+                "config_save_error": f"Could not save config to assets.json: {exc}",
+            }
+
+    return {
+        "gsm": gsm.name,
+        "bytes": gsm.stat().st_size,
+        "guid": result.guid,
+        "size_m": {"a": round(result.a, 4), "b": round(result.b, 4),
+                   "h": round(result.h, 4)},
+        "groups": list(result.groups),
+        "textures": [p.name for p in result.textures],
+        "notes": notes + list(result.notes),
+        "validation": [ln.strip() for ln in findings],
+        "config_saved": bool(save_config and raw_spec is not None),
+    }
+
+
 def _gdl_guarded(guarded):
     """Wrap the server's guard so GDL errors also return an error envelope.
 
@@ -130,3 +215,20 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
     @gdl_guarded
     def inspect_gdl_source(source: str) -> dict:
         return _inspect_source(ws, source)
+
+    @mcp.tool(description="Build a .gsm library part from a source mesh in the "
+                          "GDL workspace. Pass 'config' to describe the object "
+                          "(groups, textures, variants, decimate targets); it is "
+                          "saved into assets.json on success, so a later rebuild "
+                          "only needs the name. Writes <name>.gsm and textures/ "
+                          "into the workspace, which is the linked library "
+                          "folder. Does not need Archicad running. A clean "
+                          "validation does NOT prove the geometry survived: "
+                          "deploy and look at the render.",
+              **tool_meta("Build GDL library part", read_only=False, destructive=True))
+    @gdl_guarded
+    def build_gdl_object(source: str, name: str, config: dict | None = None,
+                         decimate: bool = True, validate: bool = True,
+                         save_config: bool = True) -> dict:
+        return _build_object(ws, source, name, config, decimate, validate,
+                             save_config)
