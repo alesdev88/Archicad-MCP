@@ -281,23 +281,40 @@ them are undocumented and are being mapped in
 
 ## Library parts
 
-The `archicad-gdl` command turns mesh models (OBJ, 3DS) into placeable library
-parts and pushes them into the open project, without opening the GDL editor:
+Mesh models (OBJ, 3DS) become placeable Archicad library parts without opening
+the GDL editor. The pipeline parses the mesh (units, pivots, welding),
+optionally decimates dense meshes through a background Blender, writes the HSF
+source, compiles it with the LP_XMLConverter bundled inside Archicad, and
+deploys over the same connection the server uses. Finish variants become
+dropdowns in Object Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
+
+There are two ways in.
+
+**From an MCP client**, using `list_gdl_sources`, `inspect_gdl_source`,
+`build_gdl_object` and `deploy_gdl_object`. Set the **GDL workspace folder** in
+the extension settings, and add that same folder to Archicad once via File >
+Libraries and Objects > Library Manager. Source meshes and textures go in it by
+hand; everything the tools write lands there too. Building needs no project
+open. Deploying reloads libraries, places the object, renders it and returns the
+image, then deletes the instance it placed unless you pass `keep=true`.
+
+That render is the point. Archicad silently drops defective 3D bodies while
+every offline validator passes them, so looking at the picture is the only
+automated check that catches it.
+
+This route runs inside the server process, so it works from clients whose agent
+has no shell on the machine running Archicad, which includes any sandboxed one.
+
+**From a shell**, using the `archicad-gdl` command:
 
 ```bash
 archicad-gdl build chair.3ds --name "My Chair" --config assets.json
 archicad-gdl deploy "build/My Chair.gsm" --place 0 0 --preview check.png
 ```
 
-It parses the mesh (units, pivots, welding), optionally decimates dense
-meshes through a background Blender, writes the HSF source, compiles it with
-the LP_XMLConverter bundled inside Archicad, and deploys over the same
-connection the server uses. Finish variants become dropdowns in Object
-Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
-
-This is a command line tool, so it comes with the `uv tool install` paths above
-and not with the Claude Desktop extension. The extension bundles an interpreter
-for its own use rather than putting anything on your PATH.
+The command line tool comes with the `uv tool install` paths above and not with
+the Claude Desktop extension, which bundles an interpreter for its own use
+rather than putting anything on your PATH.
 
 ## Tools
 
