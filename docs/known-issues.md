@@ -138,6 +138,38 @@ The server probes availability per command, so an older add-on degrades to
 `tapir_version` in `list_instances` come from Tapir too. Without the add-on they
 are `null` even though the instance is otherwise fine.
 
+## Teamwork reservation: what Tapir reports and what is derived
+
+Tapir 1.5.9's `ReserveElements` (present since 1.1.4, wrapping
+`ACAPI_Teamwork_ReserveElements` with dialogs off) answers with an
+`executionResult` and a `conflicts` list: the elements it could not reserve,
+each with the holding user's id and name. Nothing else. `ReleaseElements`
+answers with an `executionResult` only. So of the four outcomes
+`reserve_elements` reports, one comes from Archicad and three are derived:
+
+| Outcome | Source |
+|---|---|
+| `reserved_by_others` | Tapir `conflicts` |
+| `not_found` | GUIDs the official `GetTypesOfElements` does not know |
+| `already_mine` | Tapir `FilterElements` with `InMyWorkspace`, before the attempt |
+| `indirectly_reserved` | `InMyWorkspace` over the whole plan before and after the attempt, minus what was asked for |
+
+There is **no read that says who holds an element** without trying to reserve
+it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object sets (attributes),
+not elements. That is why the dry run stops at not-found and already-mine, and
+why the tool is confirm-gated instead of dry-run-by-default in the usual sense.
+
+**Verified live (03.09.2026, AC 29/5101, Tapir 1.5.9)** on a Teamwork project
+with 62,997 elements: the four commands are registered; `FilterElements` with
+`InMyWorkspace`, `HasAccessRight` and `IsEditable` answer, and a whole-plan
+`InMyWorkspace` sweep runs in seconds; the dry run of `reserve_elements` runs
+read-only. **Not verified live:** the `confirm=true` path. The only Teamwork
+project reachable is a client model, and a reservation is visible to the
+team, so the commit path is covered by offline tests against the shapes read
+from Tapir's source. Whether Archicad reserves linked elements on the side
+(the `indirectly_reserved` derivation) is likewise unverified live; the DevKit
+documentation is silent on it. A BIMcloud test project would settle both.
+
 ## `publish` is unvalidated
 
 The test model had no publisher sets, so `publish` has never run end to end.

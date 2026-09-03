@@ -260,3 +260,23 @@ def test_find_elements_custom_property_availability_precheck(conn, model_type):
         {"property": address, "operator": "has_value"}]}])
     print(f"{address}: {with_value['count']} of {available['count']} covered elements have a value")
     assert with_value["count"] <= available["count"]
+
+
+# ---------- Teamwork: dry runs only, never a reservation ----------
+
+def test_teamwork_dry_runs_are_read_only(conn):
+    """On a Teamwork project the dry run must classify a known element as
+    attemptable and a bogus GUID as not found without calling ReserveElements.
+    On a solo project both tools must refuse. Neither branch reserves."""
+    from archicad_mcp.core.teamwork import release_elements, reserve_elements
+    from archicad_mcp.extract import get_all_element_ids
+    guids = get_all_element_ids(conn)[:2] + ["00000000-0000-0000-0000-000000000000"]
+    reserve = reserve_elements(conn, guids)
+    release = release_elements(conn, guids)
+    if not conn.tapir("GetProjectInfo").get("isTeamwork"):
+        assert "not a Teamwork project" in reserve["error"]
+        assert "not a Teamwork project" in release["error"]
+        pytest.skip("test model is not a Teamwork project; only the refusal was checked")
+    assert reserve["dry_run"] is True and release["dry_run"] is True
+    assert reserve["not_found"] == ["00000000-0000-0000-0000-000000000000"]
+    assert set(reserve["would_attempt"]) | set(reserve["already_mine"]) == set(guids[:2])

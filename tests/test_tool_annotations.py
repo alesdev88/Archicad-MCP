@@ -34,12 +34,15 @@ WRITERS = {
     "clear_selection", "create_issue", "add_issue_comment",
     "attach_elements_to_issue", "export_issues_bcf", "import_issues_bcf",
     "publish", "edit_schedule_scheme", "execute_write_api_command",
-    "build_gdl_object", "deploy_gdl_object",
+    "build_gdl_object", "deploy_gdl_object", "reserve_elements", "release_elements",
 }
 
 # Writes that change only transient application state, never project data or a
-# file on disk. Everything else in WRITERS is destructive.
-NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection"}
+# file on disk. Everything else in WRITERS is destructive. A Teamwork
+# reservation is team-visible state, not project data, and is undone by a
+# release; it is confirm-gated in the tool instead.
+NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection",
+                           "reserve_elements", "release_elements"}
 
 
 async def _tools(mode: str):

@@ -368,6 +368,14 @@ and attribute definitions that returns the exact property address the other
 tools accept and whether the value can be written. Both are documented in
 [the query guide](docs/query.md).
 
+**Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
+confirm-gated. A dry run reports what can be known without touching the
+server: unknown GUIDs and elements already in your workspace. Who holds the
+rest is only learned by attempting, because Archicad exposes no read for it;
+with `confirm=true` the result separates reserved, reserved by others (with the
+user's name), already mine, not found, and indirectly reserved (a door's wall
+pulled in on the side). Sending and receiving stay in the gateway. Needs Tapir.
+
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
 Tapir command surface (309 commands on the verified setup), for anything the

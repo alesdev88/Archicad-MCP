@@ -139,6 +139,14 @@
       "description": "Delete elements. Dry-run by default and requires confirm=true."
     },
     {
+      "name": "reserve_elements",
+      "description": "Reserve elements in a Teamwork project. Confirm-gated; says who holds what it could not reserve."
+    },
+    {
+      "name": "release_elements",
+      "description": "Release elements from your Teamwork workspace. Confirm-gated."
+    },
+    {
       "name": "get_selection",
       "description": "Read the GUIDs of the elements currently selected in Archicad."
     },
