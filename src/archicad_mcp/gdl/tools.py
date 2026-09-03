@@ -218,9 +218,24 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
     deploy_mod.reload_libraries(conn)
     x, y = place
     guid = deploy_mod.place_object(conn, name, x=x, y=y)
-    png = deploy_mod.preview_image_bytes(conn, guid)
-    if not keep:
-        _mutate.delete_elements(conn, [guid], confirm=True)
+    png = None
+    try:
+        png = deploy_mod.preview_image_bytes(conn, guid)
+    finally:
+        if not keep:
+            try:
+                # confirm=True is safe here because this deletes only the element
+                # placed a few lines above, never user data. The tool would be
+                # unusable if every probe needed a confirmation round trip.
+                _mutate.delete_elements(conn, [guid], confirm=True)
+            except Exception as cleanup_error:
+                raise RuntimeError(
+                    f"Render failed or element leaked; cleanup also failed: {cleanup_error}. "
+                    f"Manually delete element {guid} to clean up the project.") from cleanup_error
+        if png is None:
+            raise RuntimeError(
+                f"Failed to capture preview image for element {guid}; "
+                f"it has been deleted but may need manual verification.")
 
     payload = {
         "library_part": name,
@@ -307,7 +322,10 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
     @gdl_guarded
     def deploy_gdl_object(name: str, x: float = 0.0, y: float = 0.0,
                           keep: bool = False, embed: bool = False,
-                          port: int | None = None) -> list:
+                          port: int | None = None):
+        # No return type annotation: Image cannot be serialized into an MCP
+        # outputSchema, so omitting the annotation allows FastMCP to skip
+        # schema generation and return raw content blocks instead.
         from fastmcp.utilities.types import Image
 
         conn = get_connection(port if port is not None else default_port)

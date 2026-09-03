@@ -1,11 +1,16 @@
 """GDL tool logic, exercised without a FastMCP instance or Archicad."""
 
+import base64
 import json
 
 import pytest
 
+from archicad_mcp.core import mutate as _mutate
+from archicad_mcp.gdl import deploy as deploy_mod
 from archicad_mcp.gdl import tools as gdl_tools
 from archicad_mcp.gdl.workspace import Workspace, WorkspaceError
+
+PNG = b"\x89PNG\r\n\x1a\nfake"
 
 CUBE_OBJ = """\
 v 0 0 0
@@ -334,11 +339,6 @@ def test_build_handles_assets_json_as_directory(ws, monkeypatch):
     assert result["gsm"] == "Cube.gsm"
 
 
-import base64
-
-PNG = b"\x89PNG\r\n\x1a\nfake"
-
-
 class FakeConn:
     port = 19723
 
@@ -405,3 +405,111 @@ def test_deploy_refuses_a_name_outside_the_workspace(ws):
     with pytest.raises(WorkspaceError, match="outside"):
         gdl_tools._deploy_object(ws, conn, "../Chair", place=(0.0, 0.0),
                                  keep=False, embed=False)
+
+
+@pytest.mark.asyncio
+async def test_deploy_gdl_object_through_client(ws):
+    """Integration test: verify the tool works end-to-end through FastMCP client.
+
+    This test catches the CRITICAL issue where a -> list return annotation
+    causes FastMCP to generate an outputSchema that rejects Image content.
+    """
+    import fastmcp
+    from mcp.types import ImageContent
+
+    # Create FastMCP instance
+    mcp = fastmcp.FastMCP("test", "1.0.0")
+
+    # Mock tool_meta to return the correct format for FastMCP
+    def mock_tool_meta(title, read_only, destructive):
+        return {
+            "title": title,
+            "annotations": {
+                "title": title,
+                "readOnlyHint": read_only,
+                "destructiveHint": destructive
+            }
+        }
+
+    def mock_guarded(func):
+        return func
+
+    # Register the tools with a FakeConn that will be used for all calls
+    fake_conn_instance = FakeConn()
+
+    # We need to patch get_connection to return our FakeConn
+    original_get_connection = gdl_tools.get_connection
+    try:
+        gdl_tools.get_connection = lambda port: fake_conn_instance
+
+        gdl_tools.register(mcp, 8080, ws, mock_tool_meta, mock_guarded)
+
+        # Create a client and call the tool
+        async with fastmcp.Client(mcp) as client:
+            result = await client.call_tool("deploy_gdl_object", {
+                "name": "Chair",
+                "x": 0.0,
+                "y": 0.0,
+                "keep": False,
+                "embed": False
+            })
+
+            # Verify the result has content blocks
+            assert hasattr(result, 'content'), "Result should have content blocks"
+            assert len(result.content) >= 2, "Should have at least payload and image"
+
+            # Verify the first content block is the payload (TextContent)
+            payload_block = result.content[0]
+            assert hasattr(payload_block, 'type'), "First block should have a type"
+            assert payload_block.type == "text", "First block should be TextContent"
+
+            # Verify the second content block is the image (ImageContent)
+            image_block = result.content[1]
+            assert isinstance(image_block, ImageContent), (
+                f"Second block should be ImageContent, got {type(image_block)}")
+            # MCP base64-encodes image data
+            assert base64.b64decode(image_block.data) == PNG, "Image data should match"
+            assert image_block.mimeType == "image/png", "Image mime type should be image/png"
+
+    finally:
+        # Restore original get_connection
+        gdl_tools.get_connection = original_get_connection
+
+
+def test_deploy_handles_render_failure_with_cleanup(ws):
+    """Verify cleanup happens even if render fails."""
+    conn = FakeConn()
+
+    # Make preview_image_bytes raise an exception
+    def raise_on_preview(*args, **kwargs):
+        raise RuntimeError("Simulated render failure")
+
+    original_preview = deploy_mod.preview_image_bytes
+    try:
+        import sys
+        # Patch at the module level
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = raise_on_preview
+
+        # Mock delete_elements to track if it was called
+        delete_called = []
+        def mock_delete(conn, guids, confirm=False):
+            delete_called.append((guids, confirm))
+
+        original_delete = _mutate.delete_elements
+        try:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = mock_delete
+
+            # Call deploy and expect failure but with cleanup
+            with pytest.raises(RuntimeError, match="Failed to capture preview"):
+                gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                       keep=False, embed=False)
+
+            # Verify delete was called despite the render failure
+            assert delete_called, "delete_elements should have been called"
+            assert delete_called[0][1] is True, "confirm should be True"
+
+        finally:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = original_delete
+
+    finally:
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = original_preview
