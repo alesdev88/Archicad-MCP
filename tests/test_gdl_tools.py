@@ -476,21 +476,29 @@ async def test_deploy_gdl_object_through_client(ws):
         gdl_tools.get_connection = original_get_connection
 
 
-def test_deploy_handles_render_failure_with_cleanup(ws):
-    """Verify cleanup happens even if render fails."""
+class RenderFailure(Exception):
+    """Stand-in for APIErrorBase to test exception type preservation."""
+    pass
+
+
+def test_deploy_preserves_render_exception_type_on_successful_cleanup(ws):
+    """Verify original render exception type is preserved when cleanup succeeds.
+
+    IMPORTANT: Tests that an APIErrorBase from render keeps its type (not
+    converted to RuntimeError) so _guarded can apply the modal-dialog hint.
+    """
     conn = FakeConn()
 
-    # Make preview_image_bytes raise an exception
+    # Mock to raise a RenderFailure (stands in for APIErrorBase)
     def raise_on_preview(*args, **kwargs):
-        raise RuntimeError("Simulated render failure")
+        raise RenderFailure("Modal dialog blocking API")
 
     original_preview = deploy_mod.preview_image_bytes
     try:
         import sys
-        # Patch at the module level
         sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = raise_on_preview
 
-        # Mock delete_elements to track if it was called
+        # Track delete calls
         delete_called = []
         def mock_delete(conn, guids, confirm=False):
             delete_called.append((guids, confirm))
@@ -499,14 +507,88 @@ def test_deploy_handles_render_failure_with_cleanup(ws):
         try:
             sys.modules['archicad_mcp.core.mutate'].delete_elements = mock_delete
 
-            # Call deploy and expect failure but with cleanup
-            with pytest.raises(RuntimeError, match="Failed to capture preview"):
+            # Call deploy with keep=False, render fails
+            with pytest.raises(RenderFailure):
                 gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
                                        keep=False, embed=False)
 
-            # Verify delete was called despite the render failure
+            # Verify delete was called
             assert delete_called, "delete_elements should have been called"
             assert delete_called[0][1] is True, "confirm should be True"
+
+        finally:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = original_delete
+
+    finally:
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = original_preview
+
+
+def test_deploy_does_not_delete_when_keep_true_and_render_fails(ws):
+    """Verify no delete occurs when keep=True and render fails.
+
+    IMPORTANT: Ensures error message doesn't claim deletion when it didn't happen.
+    """
+    conn = FakeConn()
+
+    def raise_on_preview(*args, **kwargs):
+        raise RenderFailure("Render failed")
+
+    original_preview = deploy_mod.preview_image_bytes
+    try:
+        import sys
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = raise_on_preview
+
+        delete_called = []
+        def mock_delete(conn, guids, confirm=False):
+            delete_called.append((guids, confirm))
+
+        original_delete = _mutate.delete_elements
+        try:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = mock_delete
+
+            # Call deploy with keep=True, render fails
+            with pytest.raises(RenderFailure):
+                gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                       keep=True, embed=False)
+
+            # Verify delete was NOT called when keep=True
+            assert not delete_called, "delete_elements should not be called when keep=True"
+
+        finally:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = original_delete
+
+    finally:
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = original_preview
+
+
+def test_deploy_cleanup_failure_includes_guid(ws):
+    """Verify cleanup failure includes the leaked element GUID in error.
+
+    IMPORTANT: When both render AND cleanup fail, operator needs GUID to remove
+    the orphaned element manually.
+    """
+    conn = FakeConn()
+
+    def raise_on_preview(*args, **kwargs):
+        raise RenderFailure("Render failed")
+
+    original_preview = deploy_mod.preview_image_bytes
+    try:
+        import sys
+        sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = raise_on_preview
+
+        # Make delete also fail
+        def mock_delete(conn, guids, confirm=False):
+            raise RuntimeError("Delete also failed")
+
+        original_delete = _mutate.delete_elements
+        try:
+            sys.modules['archicad_mcp.core.mutate'].delete_elements = mock_delete
+
+            # Call deploy with keep=False, both render and cleanup fail
+            with pytest.raises(RuntimeError, match="ABC-123"):
+                gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                       keep=False, embed=False)
 
         finally:
             sys.modules['archicad_mcp.core.mutate'].delete_elements = original_delete

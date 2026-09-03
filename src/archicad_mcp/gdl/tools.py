@@ -218,24 +218,28 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
     deploy_mod.reload_libraries(conn)
     x, y = place
     guid = deploy_mod.place_object(conn, name, x=x, y=y)
-    png = None
     try:
         png = deploy_mod.preview_image_bytes(conn, guid)
-    finally:
+    except BaseException:
+        # The render failed after the element was placed. Clean up if we were
+        # going to, then let the original error through with its type intact:
+        # an APIErrorBase carries the server's modal-dialog hint, a RuntimeError
+        # would not.
         if not keep:
             try:
-                # confirm=True is safe here because this deletes only the element
-                # placed a few lines above, never user data. The tool would be
-                # unusable if every probe needed a confirmation round trip.
                 _mutate.delete_elements(conn, [guid], confirm=True)
             except Exception as cleanup_error:
                 raise RuntimeError(
-                    f"Render failed or element leaked; cleanup also failed: {cleanup_error}. "
-                    f"Manually delete element {guid} to clean up the project.") from cleanup_error
-        if png is None:
-            raise RuntimeError(
-                f"Failed to capture preview image for element {guid}; "
-                f"it has been deleted but may need manual verification.")
+                    f"The preview render failed, and deleting the element it "
+                    f"placed also failed. Element {guid} is still in the project "
+                    f"and has to be removed by hand."
+                ) from cleanup_error
+        raise
+    if not keep:
+        # confirm=True is safe here because this deletes only the element
+        # placed a few lines above, never user data. The tool would be
+        # unusable if every probe needed a confirmation round trip.
+        _mutate.delete_elements(conn, [guid], confirm=True)
 
     payload = {
         "library_part": name,
