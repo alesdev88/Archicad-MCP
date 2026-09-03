@@ -139,11 +139,8 @@ def _build_object(ws: Workspace, source: str, name: str,
     except ValueError as exc:
         raise MeshParseError(
             f"Failed to parse source mesh {source}: {exc}") from exc
-    notes = list(mesh.notes)
     if cfg.decimate and decimate:
-        seen = len(mesh.notes)
         mesh = toolchain.decimate(mesh, cfg.decimate)
-        notes += mesh.notes[seen:]
 
     if hsf_dir.exists():
         shutil.rmtree(hsf_dir)
@@ -168,7 +165,7 @@ def _build_object(ws: Workspace, source: str, name: str,
                            "h": round(result.h, 4)},
                 "groups": list(result.groups),
                 "textures": [p.name for p in result.textures],
-                "notes": notes + list(result.notes),
+                "notes": list(result.notes),
                 "validation": [ln.strip() for ln in findings],
                 "config_saved": False,
                 "config_save_error": f"Could not save config to assets.json: {exc}",
@@ -182,7 +179,7 @@ def _build_object(ws: Workspace, source: str, name: str,
                    "h": round(result.h, 4)},
         "groups": list(result.groups),
         "textures": [p.name for p in result.textures],
-        "notes": notes + list(result.notes),
+        "notes": list(result.notes),
         "validation": [ln.strip() for ln in findings],
         "config_saved": bool(save_config and raw_spec is not None),
     }

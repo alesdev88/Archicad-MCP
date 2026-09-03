@@ -254,6 +254,41 @@ def test_build_writes_a_gsm_into_the_workspace(ws, monkeypatch):
     assert out["validation"] == []
 
 
+def test_build_reports_each_mesh_note_once(ws, monkeypatch):
+    """Parser notes reached the payload from two places and were duplicated.
+
+    build_hsf copies the mesh's notes onto its BuildResult, and _build_object was
+    also accumulating them itself, so every note appeared twice. Live use showed
+    "obj units detected: m" listed twice for a single source file.
+    """
+    _fake_toolchain(monkeypatch)
+    out = gdl_tools._build_object(ws, "cube.obj", "Cube", config=None,
+                                  decimate=True, validate=True, save_config=False)
+    assert out["notes"], "expected the parser to report at least one note"
+    assert len(out["notes"]) == len(set(out["notes"])), out["notes"]
+
+
+def test_build_keeps_notes_added_by_decimation(ws, monkeypatch):
+    """Decimation notes must survive, since _build_object no longer collects them.
+
+    toolchain.decimate returns a mesh whose notes are the originals plus its own
+    stats, and build_hsf copies that list onto the result, so the payload gets
+    them without _build_object accumulating anything. This pins that chain.
+    """
+    _fake_toolchain(monkeypatch)
+
+    def fake_decimate(mesh, targets):
+        mesh.notes = mesh.notes + ["DECIMATED steel: 12 -> 4"]
+        return mesh
+
+    monkeypatch.setattr(gdl_tools.toolchain, "decimate", fake_decimate)
+    spec = {"groups": {}, "decimate": {"steel": 4}}
+    out = gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                  decimate=True, validate=True, save_config=False)
+    assert "DECIMATED steel: 12 -> 4" in out["notes"]
+    assert len(out["notes"]) == len(set(out["notes"])), out["notes"]
+
+
 def test_build_persists_the_config(ws, monkeypatch):
     _fake_toolchain(monkeypatch)
     spec = {"groups": {"steel": {"label": "Frame", "rgb": [0.5, 0.5, 0.5]}}}
