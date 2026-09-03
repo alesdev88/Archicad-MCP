@@ -12,6 +12,9 @@ Hence a test rather than a checklist.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import pytest
 from fastmcp import Client
 
@@ -20,12 +23,18 @@ from archicad_mcp.server import build_server
 # Named rather than derived. Deriving "which tools write" from the code under
 # test would make this assert that the code agrees with itself; the whole value
 # is in a second, independent statement of the answer.
+#
+# build_gdl_object and deploy_gdl_object are destructive by this codebase's
+# wider-than-MCP-spec definition (writes a file / changes the project), same
+# as create_issue. list_gdl_sources and inspect_gdl_source are read-only and
+# stay out of this set.
 WRITERS = {
     "highlight_failures", "create_issues_from_failures", "set_element_data",
     "create_elements", "move_elements", "delete_elements", "set_selection",
     "clear_selection", "create_issue", "add_issue_comment",
     "attach_elements_to_issue", "export_issues_bcf", "import_issues_bcf",
     "publish", "edit_schedule_scheme", "execute_write_api_command",
+    "build_gdl_object", "deploy_gdl_object",
 }
 
 # Writes that change only transient application state, never project data or a
@@ -34,8 +43,14 @@ NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selecti
 
 
 async def _tools(mode: str):
-    async with Client(build_server(mode=mode)) as client:
-        return {t.name: t for t in await client.list_tools()}
+    # A workspace is always passed so the GDL tools are covered by every
+    # assertion below too. They only actually register in full mode (server.py
+    # gates them on mode == "full" regardless of the workspace), so passing one
+    # here does not make them appear in verdicts mode; it only stops them from
+    # being invisible to this file the way they were before this fix.
+    with tempfile.TemporaryDirectory() as tmp:
+        async with Client(build_server(mode=mode, gdl_workspace=Path(tmp))) as client:
+            return {t.name: t for t in await client.list_tools()}
 
 
 @pytest.mark.parametrize("mode", ["full", "verdicts"])
