@@ -63,13 +63,13 @@ def place_object(conn: ArchicadConnection, library_part_name: str,
     return result["elements"][0]["elementId"]["guid"]
 
 
-def preview_png(conn: ArchicadConnection, element_guid: str,
-                out_path: str | Path, size: int = 700) -> Path:
-    """Render the placed element to a PNG.
+def preview_image_bytes(conn: ArchicadConnection, element_guid: str,
+                        size: int = 700) -> bytes:
+    """Render the placed element and return the PNG bytes.
 
     This is the only automated gate that catches defective 3D bodies:
     LP_XMLConverter's interpreter passes scripts whose geometry Archicad
-    silently drops, so look at the picture after every deploy.
+    silently drops, so something has to actually look at the picture.
     """
     result = conn.tapir("GetElementPreviewImage", {
         "elementId": {"guid": element_guid},
@@ -78,6 +78,12 @@ def preview_png(conn: ArchicadConnection, element_guid: str,
         "width": size,
         "height": size,
     })
+    return base64.b64decode(result["previewImage"])
+
+
+def preview_png(conn: ArchicadConnection, element_guid: str,
+                out_path: str | Path, size: int = 700) -> Path:
+    """preview_image_bytes, written to a file. Used by the CLI."""
     out_path = Path(out_path)
-    out_path.write_bytes(base64.b64decode(result["previewImage"]))
+    out_path.write_bytes(preview_image_bytes(conn, element_guid, size))
     return out_path
