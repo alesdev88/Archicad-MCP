@@ -1,6 +1,6 @@
 [project]
 name = "archicad-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "MCP server for Archicad 29: delivery-readiness QA rules plus full official + Tapir API access"
 readme = "README.md"
 requires-python = ">=3.12"
