@@ -406,11 +406,14 @@ so install one on Windows before trusting a release. The 0.2.1 bundle was
 checked that way and runs. Each new release should be tested on Windows before
 being used in production.
 
-`icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
-only to redraw it and is deliberately not a project dependency:
+`icon.png` is rasterised from `icon.svg`, so the mark stays editable as vector
+art: change the SVG, then redraw the PNG the bundle ships. Pillow does that
+rasterising. It used to be pulled in just for this step, but the GDL pipeline
+now needs it to downscale textures, so it is a project dependency and the
+script can use it directly:
 
 ```bash
-uv run --with pillow python scripts/make_icon.py
+uv run python scripts/make_icon.py
 ```
 
 ## Docs
