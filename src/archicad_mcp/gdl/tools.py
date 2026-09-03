@@ -159,7 +159,7 @@ def _build_object(ws: Workspace, source: str, name: str,
     if save_config and raw_spec is not None:
         try:
             cfg_mod.save_object_config(ws.assets_path(), name, raw_spec)
-        except (json.JSONDecodeError, IsADirectoryError) as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             return {
                 "gsm": gsm.name,
                 "bytes": gsm.stat().st_size,
@@ -211,7 +211,21 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
         textures = ([p for p in sorted(tex_dir.iterdir())
                      if p.suffix.lower() in TEXTURE_SUFFIXES]
                     if tex_dir.is_dir() else [])
-        deploy_mod.embed_gsm(conn, gsm)
+        gsm_result = deploy_mod.embed_gsm(conn, gsm)
+        gsm_results = gsm_result.get("executionResults") or []
+        # Unlike a texture (whose filename carries a content hash, so a
+        # failure there means the identical file is already in place and
+        # skipping is correct), <name>.gsm carries no hash. Tapir cannot
+        # overwrite an existing embedded file, so a failed embed here means
+        # the name is already taken and the render below would silently show
+        # the PREVIOUS build under a success payload. Fail loudly instead of
+        # reloading, placing and rendering a stale object.
+        if not gsm_results or not gsm_results[0].get("success"):
+            raise ToolchainError(
+                f"Could not embed {gsm.name} into the project's embedded "
+                "library: the name is likely already there, and Tapir cannot "
+                "overwrite an existing embedded file. Deploy under a fresh "
+                "name, or use the linked library folder instead of embed=true.")
         added, skipped = deploy_mod.embed_textures(conn, textures)
         embedded = {"textures_added": added, "textures_skipped": skipped}
 
@@ -267,7 +281,16 @@ def _gdl_guarded(guarded):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except (ToolchainError, WorkspaceError, FileNotFoundError, MeshParseError) as exc:
+            # WorkspaceError, MeshParseError and json.JSONDecodeError are all
+            # ValueError subclasses already, so ValueError alone would cover
+            # them; they stay named for documentation value. The ValueError
+            # widening itself is what catches a malformed mesh or a malformed
+            # assets.json falling straight out of mesh.load()/json.loads()
+            # from tools that never wrapped those calls (inspect_gdl_source,
+            # list_gdl_sources): before this, those escaped as raw exceptions
+            # instead of the {"error": ...} envelope every other tool returns.
+            except (ToolchainError, WorkspaceError, FileNotFoundError, MeshParseError,
+                    ValueError, json.JSONDecodeError) as exc:
                 return {"error": str(exc)}
         return guarded(wrapper)
     return decorate
@@ -321,7 +344,16 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
                           "the project unchanged; pass keep=true to actually "
                           "place it. Requires Archicad running with a project "
                           "open, and the workspace folder added once as a "
-                          "linked library via Library Manager.",
+                          "linked library via Library Manager. Pass embed=true "
+                          "to also push the .gsm and its textures into the "
+                          "project's embedded library, for when the object must "
+                          "travel inside the .pln itself; this is the fallback "
+                          "if the linked-library folder does not work in your "
+                          "setup. Tapir cannot overwrite an existing embedded "
+                          "file, so each embed=true deploy of the same object "
+                          "needs a fresh name; a name already embedded fails "
+                          "with a clear error rather than silently rendering "
+                          "the previous build.",
               **tool_meta("Deploy GDL library part", read_only=False, destructive=True))
     @gdl_guarded
     def deploy_gdl_object(name: str, x: float = 0.0, y: float = 0.0,

@@ -32,6 +32,15 @@ that GDL tools are off.
 repeated builds do not stack objects at the origin. Pass `keep=true` when you
 want the object left in the project.
 
+Pass `embed=true` to also push the `.gsm` and its textures into the open
+project's embedded library, for when the object must travel inside the `.pln`
+itself rather than sitting in the linked library folder. This is the fallback
+path if the linked-library folder does not work in your setup. Tapir cannot
+overwrite an existing embedded file, so every `embed=true` deploy of the same
+object needs a fresh name once one has been embedded; deploying under a name
+already there fails with a clear error instead of silently rendering the
+previous build.
+
 ## What build does
 
 1. **Parse** the mesh. Units (mm/cm/m) are autodetected from the extent.

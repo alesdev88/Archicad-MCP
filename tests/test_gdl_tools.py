@@ -126,6 +126,64 @@ def test_gdl_guarded_wraps_file_not_found_error(tmp_path):
     assert "No such file" in result["error"]
 
 
+def test_gdl_guarded_wraps_a_malformed_mesh_through_inspect(ws):
+    """inspect_gdl_source never wrapped mesh_mod.load() the way build does, so
+    a malformed OBJ used to escape as a raw ValueError instead of the usual
+    {"error": ...} envelope. Widening _gdl_guarded's catch tuple to ValueError
+    fixes it without needing a try/except in _inspect_source itself."""
+    def mock_guarded(func):
+        return func
+
+    gdl_guarded = gdl_tools._gdl_guarded(mock_guarded)
+    (ws.root / "bad.obj").write_text("v not_a_number\n")
+
+    @gdl_guarded
+    def inspect_bad():
+        return gdl_tools._inspect_source(ws, "bad.obj")
+
+    result = inspect_bad()
+    assert isinstance(result, dict)
+    assert "error" in result
+
+
+def test_gdl_guarded_wraps_an_empty_mesh_through_inspect(ws):
+    """An OBJ with no vertices blows up inside mesh.load()'s unit-autodetect
+    (max() of an empty sequence) before _inspect_source even starts building
+    its response. Same family as the malformed-mesh case above."""
+    def mock_guarded(func):
+        return func
+
+    gdl_guarded = gdl_tools._gdl_guarded(mock_guarded)
+    (ws.root / "empty.obj").write_text("")
+
+    @gdl_guarded
+    def inspect_empty():
+        return gdl_tools._inspect_source(ws, "empty.obj")
+
+    result = inspect_empty()
+    assert isinstance(result, dict)
+    assert "error" in result
+
+
+def test_gdl_guarded_wraps_malformed_assets_json_through_list_sources(ws):
+    """A malformed assets.json raised a raw json.JSONDecodeError out of
+    list_gdl_sources (and out of build_gdl_object's read path); both go
+    through the same widened _gdl_guarded catch tuple now."""
+    def mock_guarded(func):
+        return func
+
+    gdl_guarded = gdl_tools._gdl_guarded(mock_guarded)
+    (ws.root / "assets.json").write_text("{not valid json")
+
+    @gdl_guarded
+    def list_sources():
+        return gdl_tools._list_sources(ws)
+
+    result = list_sources()
+    assert isinstance(result, dict)
+    assert "error" in result
+
+
 def test_tools_are_registered_correctly(tmp_path):
     """Verify that all tools are registered with correct metadata."""
     from unittest.mock import Mock, MagicMock
@@ -351,7 +409,21 @@ class FakeConn:
             return {"previewImage": base64.b64encode(PNG).decode()}
         if command == "CreateObjects":
             return {"elements": [{"elementId": {"guid": "ABC-123"}}]}
+        if command == "AddFilesToEmbeddedLibrary":
+            files = (params or {}).get("files", [])
+            return {"executionResults": [{"success": True} for _ in files]}
         return {}
+
+
+class FailingEmbedConn(FakeConn):
+    """AddFilesToEmbeddedLibrary reports failure for the .gsm, as Tapir does
+    when a file of that name is already in the embedded library."""
+
+    def tapir(self, command, params=None):
+        if command == "AddFilesToEmbeddedLibrary":
+            self.calls.append((command, params))
+            return {"executionResults": [{"success": False}]}
+        return super().tapir(command, params)
 
 
 def _commands(conn):
@@ -391,6 +463,18 @@ def test_deploy_embeds_when_asked(ws):
     gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0), keep=False,
                              embed=True)
     assert _commands(conn)[0] == "AddFilesToEmbeddedLibrary"
+
+
+def test_deploy_reports_a_failed_gsm_embed_instead_of_rendering_the_stale_one(ws):
+    """Tapir cannot overwrite an existing embedded file. A second embed=true
+    deploy of the same name must fail loudly, not silently reload/place/render
+    the object that is already embedded under a success payload."""
+    conn = FailingEmbedConn()
+    with pytest.raises(gdl_tools.ToolchainError, match="embed"):
+        gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                 keep=False, embed=True)
+    # Must not continue on to ReloadLibraries/CreateObjects/GetElementPreviewImage.
+    assert _commands(conn) == ["AddFilesToEmbeddedLibrary"]
 
 
 def test_deploy_refuses_a_missing_gsm(ws):
