@@ -1,79 +1,82 @@
-"""Draw icon.png, the Claude Desktop extension icon.
+"""Rasterise icon.png from icon.svg, the Claude Desktop extension icon.
 
 Not part of the package or the test suite. Pillow is a build-time-only need, so
 it is pulled in ephemerally rather than added to the project's dependencies:
 
     uv run --with pillow python scripts/make_icon.py
 
-The motif is the plan-view door swing: a wall with an opening, the leaf standing
-open, and its quarter arc. It is the most universally legible symbol in
-architectural drawing, it is nobody's trademark, and it survives being shrunk to
-a list tile because it is only three bold shapes.
+icon.svg is the source; edit that, then run this. The motif is a massing model
+with a corner cut away: the pale volume is the building, the amber faces are the
+cut, where the server reaches in. It survives being shrunk to a list tile
+because it is solid shapes rather than strokes, and because the silhouette stays
+a plain hexagon at every size.
 
-Two things drive the geometry. The walls are inset from every edge, so the mark
-reads as composed rather than as a crop that ran off the tile. And the arc is
-struck at a radius equal to the opening, which is what makes it read as a door
-rather than as a curve that happens to be nearby.
+Every shape in icon.svg is a straight-sided polygon, the squircle tile included,
+which is why this renders with Pillow and the twenty-line reader below instead
+of a real SVG library. The two candidates, cairosvg and reportlab, would each
+add a dependency to install on every machine that builds a bundle, macOS and
+Windows alike, to draw a picture that needs none of it. The price is that the
+reader understands only moveto, lineto and closepath: give icon.svg a curve and
+it raises here rather than quietly rendering the wrong thing.
 
 Drawn at 4x and downsampled, because Pillow's draw primitives are not
 antialiased.
 """
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-SIZE = 512          # design canvas, and the size shipped
 SUPERSAMPLE = 4
-N = SIZE * SUPERSAMPLE
+SVG = "{http://www.w3.org/2000/svg}"
 
-BG = (21, 35, 58)          # deep navy, a drawing ground
-WALL = (245, 247, 250)     # near white poche
-SWING = (242, 169, 59)     # amber, so the door reads apart from the wall
-
-CORNER_RADIUS = 112
-WALL_T = 66                # wall thickness
-WALL_Y = 277               # top face of the wall
-X0, X1 = 56, 456           # outer ends of the two wall segments
-JAMB_A, JAMB_B = 186, 326  # the opening
-ARC_W, LEAF_W = 20, 30
+REPO = Path(__file__).resolve().parent.parent
+SOURCE = REPO / "icon.svg"
+OUT = REPO / "icon.png"
 
 
-def u(v: float) -> float:
-    """Design units to supersampled pixels."""
-    return v * SUPERSAMPLE
+def polygons(root):
+    """Each <path> in document order, as (points, fill colour)."""
+    for path in root.iter(f"{SVG}path"):
+        fill = path.get("fill")
+        d = path.get("d", "")
+        if not fill or fill == "none":
+            raise ValueError(f"path with nothing to fill: {d[:40]}...")
+        tokens = re.findall(r"[A-Za-z]|-?\d+(?:\.\d+)?", d)
+        points, i = [], 0
+        while i < len(tokens):
+            if tokens[i] in ("M", "L"):
+                points.append((float(tokens[i + 1]), float(tokens[i + 2])))
+                i += 3
+            elif tokens[i] == "Z":
+                i += 1
+            else:
+                raise ValueError(
+                    f"icon.svg uses the path command {tokens[i]!r}, which this "
+                    f"reader does not draw; see the module docstring"
+                )
+        yield points, fill
 
 
 def render() -> Image.Image:
-    img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, N - 1, N - 1], radius=u(CORNER_RADIUS), fill=BG)
+    root = ET.parse(SOURCE).getroot()
+    _, _, width, height = (float(v) for v in root.get("viewBox").split())
+    if width != height:
+        raise ValueError(f"icon.svg is {width}x{height}; the icon must be square")
 
-    d.rectangle([u(X0), u(WALL_Y), u(JAMB_A), u(WALL_Y + WALL_T)], fill=WALL)
-    d.rectangle([u(JAMB_B), u(WALL_Y), u(X1), u(WALL_Y + WALL_T)], fill=WALL)
-
-    hinge = (JAMB_A, WALL_Y + WALL_T / 2)
-    radius = JAMB_B - JAMB_A
-    d.arc([u(hinge[0] - radius), u(hinge[1] - radius),
-           u(hinge[0] + radius), u(hinge[1] + radius)],
-          start=270, end=360, fill=SWING, width=u(ARC_W))
-
-    tip = (hinge[0], hinge[1] - radius)
-    d.line([u(hinge[0]), u(hinge[1]), u(tip[0]), u(tip[1])],
-           fill=SWING, width=u(LEAF_W))
-    # Pillow's thick lines have square ends; round both so the leaf does not
-    # read as a snapped-off bar.
-    for point in (tip, hinge):
-        r = u(LEAF_W / 2)
-        d.ellipse([u(point[0]) - r, u(point[1]) - r,
-                   u(point[0]) + r, u(point[1]) + r], fill=SWING)
-
-    return img.resize((SIZE, SIZE), Image.LANCZOS)
+    size = int(width)
+    n = size * SUPERSAMPLE
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    for points, fill in polygons(root):
+        draw.polygon([(x * SUPERSAMPLE, y * SUPERSAMPLE) for x, y in points], fill=fill)
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def main() -> None:
-    out = Path(__file__).resolve().parent.parent / "icon.png"
-    render().save(out, optimize=True)
-    print(f"wrote {out} ({out.stat().st_size} bytes)")
+    render().save(OUT, optimize=True)
+    print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":

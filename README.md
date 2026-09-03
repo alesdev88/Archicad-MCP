@@ -399,8 +399,9 @@ A cross-built Windows bundle cannot be executed by the machine that built it,
 so install one on Windows before trusting a release. The 0.2.0 bundle was
 checked that way and runs.
 
-`icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
-only to redraw it and is deliberately not a project dependency:
+`icon.png` is rasterised from `icon.svg`, so the mark stays editable as vector
+art: change the SVG, then redraw the PNG the bundle ships. Pillow is needed only
+for that step and is deliberately not a project dependency:
 
 ```bash
 uv run --with pillow python scripts/make_icon.py
