@@ -146,3 +146,37 @@ def test_config_load_and_prefix_match(tmp_path):
     assert cfg.decimate == {"Frame": 6000}
     fallback = find_object(objects, "Unknown Thing")
     assert fallback.groups == {} and fallback.guid is None
+
+
+def test_downscale_caps_the_long_edge(tmp_path):
+    from PIL import Image as PILImage
+
+    from archicad_mcp.gdl.generate import MAX_TEXTURE_PX, _downscale
+
+    src = tmp_path / "big.jpg"
+    PILImage.new("RGB", (3000, 1500), (120, 90, 60)).save(src)
+    _downscale(src)
+    with PILImage.open(src) as img:
+        assert max(img.size) == MAX_TEXTURE_PX
+        assert img.size == (MAX_TEXTURE_PX, MAX_TEXTURE_PX // 2)
+
+
+def test_downscale_leaves_small_images_alone(tmp_path):
+    from PIL import Image as PILImage
+
+    from archicad_mcp.gdl.generate import _downscale
+
+    src = tmp_path / "small.png"
+    PILImage.new("RGB", (256, 256), (10, 20, 30)).save(src)
+    before = src.read_bytes()
+    _downscale(src)
+    assert src.read_bytes() == before
+
+
+def test_downscale_ignores_a_file_it_cannot_read(tmp_path):
+    from archicad_mcp.gdl.generate import _downscale
+
+    junk = tmp_path / "notreally.jpg"
+    junk.write_text("this is not an image")
+    _downscale(junk)  # must not raise: a bad texture is not a build failure
+    assert junk.read_text() == "this is not an image"

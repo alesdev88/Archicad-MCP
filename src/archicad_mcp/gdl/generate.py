@@ -28,7 +28,6 @@ import hashlib
 import math
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,7 +37,7 @@ from archicad_mcp.gdl.mesh import Face, Mesh, face_area, face_normal, triangulat
 SOFT_EDGE_DEG = 30.0    # dihedral below which an edge is smoothed + hidden
 AREA_RATIO_HARD = 12.0  # smooth edges between faces this different in size
                         # are hidden WITHOUT smoothing (status 1)
-MAX_TEXTURE_PX = 1024   # embedded textures are downscaled to fit (sips -Z)
+MAX_TEXTURE_PX = 1024   # textures are downscaled to fit this long edge
 COORD_DECIMALS = 4      # 0.1 mm coordinate precision in generated GDL
 
 # Ancestry chain of a plain placeable Object (from the standard library)
@@ -198,11 +197,24 @@ def _flat_material(name: str, rgb) -> list[str]:
 
 
 def _downscale(dst: Path) -> None:
+    """Cap the long edge at MAX_TEXTURE_PX, in place, keeping the format.
+
+    Pillow rather than a platform image tool: the previous `sips` call worked
+    only on macOS and its failure was swallowed, so Windows silently shipped
+    source-resolution textures. A texture that cannot be read is not a build
+    failure, so it ships as-is.
+    """
     try:
-        subprocess.run(["sips", "-Z", str(MAX_TEXTURE_PX), str(dst)],
-                       check=True, capture_output=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass  # non-macOS or sips failure: ship the original
+        from PIL import Image as PILImage
+
+        with PILImage.open(dst) as img:
+            if max(img.size) <= MAX_TEXTURE_PX:
+                return
+            img.thumbnail((MAX_TEXTURE_PX, MAX_TEXTURE_PX))
+            extra = {"quality": 90} if dst.suffix.lower() in (".jpg", ".jpeg") else {}
+            img.save(dst, **extra)
+    except OSError:
+        pass  # unreadable or unwritable image: ship the original
 
 
 def _texture_filename(src: Path) -> str:
