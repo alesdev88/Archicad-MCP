@@ -159,16 +159,20 @@ it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object sets (attributes),
 not elements. That is why the dry run stops at not-found and already-mine, and
 why the tool is confirm-gated instead of dry-run-by-default in the usual sense.
 
-**Verified live (03.09.2026, AC 29/5101, Tapir 1.5.9)** on a Teamwork project
-with 62,997 elements: the four commands are registered; `FilterElements` with
-`InMyWorkspace`, `HasAccessRight` and `IsEditable` answer, and a whole-plan
-`InMyWorkspace` sweep runs in seconds; the dry run of `reserve_elements` runs
-read-only. **Not verified live:** the `confirm=true` path. The only Teamwork
-project reachable is a client model, and a reservation is visible to the
-team, so the commit path is covered by offline tests against the shapes read
-from Tapir's source. Whether Archicad reserves linked elements on the side
-(the `indirectly_reserved` derivation) is likewise unverified live; the DevKit
-documentation is silent on it. A BIMcloud test project would settle both.
+**Verified live (03.09.2026, AC 29/5101, Tapir 1.5.9)** on a BIMcloud Teamwork
+project with 62,997 elements, with the owner's go-ahead, on one selected door:
+
+| Step | Result |
+|---|---|
+| dry run | the door listed under `would_attempt`, nothing sent to Archicad |
+| `reserve_elements(confirm=true)` | the door reserved; `indirectly_reserved` held its **wall and the wall's other door**, neither asked for. 8.6 s, most of it the two whole-plan `InMyWorkspace` sweeps |
+| `release_elements(confirm=true)` on all three | all three released, `still_mine` empty. 1.7 s |
+
+So Archicad does reserve linked elements on the side, in both directions
+(door to wall, wall to its other door), and the before-and-after sweep is what
+catches it. Tapir reports none of that; the DevKit documentation is silent on
+it. Not seen live yet: a `reserved_by_others` conflict, because no teammate
+held the door at the time. Its shape is the one in Tapir's source.
 
 ## `publish` is unvalidated
 
