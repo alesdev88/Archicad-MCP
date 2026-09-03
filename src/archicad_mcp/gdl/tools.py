@@ -19,12 +19,15 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+from archicad_mcp.core import mutate as _mutate
 from archicad_mcp.gdl import config as cfg_mod
+from archicad_mcp.gdl import deploy as deploy_mod
 from archicad_mcp.gdl import generate
 from archicad_mcp.gdl import mesh as mesh_mod
 from archicad_mcp.gdl import toolchain
 from archicad_mcp.gdl.toolchain import ToolchainError
 from archicad_mcp.gdl.workspace import Workspace, WorkspaceError
+from archicad_mcp.connection import get_connection
 
 SOURCE_SUFFIXES = (".obj", ".3ds")
 TEXTURE_SUFFIXES = (".jpg", ".jpeg", ".png")
@@ -185,6 +188,54 @@ def _build_object(ws: Workspace, source: str, name: str,
     }
 
 
+def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
+                   keep: bool, embed: bool) -> tuple[dict, bytes]:
+    """Reload, place, render, and unless kept, delete again.
+
+    The render is the only automated check that catches a body Archicad
+    silently dropped, so it is not optional. But an iteration loop that leaves
+    every attempt standing at the origin is unusable, so the default is a
+    transient probe: the element created here is deleted here, leaving the
+    project net-zero.
+    """
+    ws.require_root()
+    gsm = ws.resolve(f"{name}.gsm")
+    if not gsm.is_file():
+        raise FileNotFoundError(
+            f"No such library part in the GDL workspace: {name}.gsm. Build it "
+            "first with build_gdl_object.")
+
+    embedded = None
+    if embed:
+        tex_dir = ws.textures_dir()
+        textures = ([p for p in sorted(tex_dir.iterdir())
+                     if p.suffix.lower() in TEXTURE_SUFFIXES]
+                    if tex_dir.is_dir() else [])
+        deploy_mod.embed_gsm(conn, gsm)
+        added, skipped = deploy_mod.embed_textures(conn, textures)
+        embedded = {"textures_added": added, "textures_skipped": skipped}
+
+    deploy_mod.reload_libraries(conn)
+    x, y = place
+    guid = deploy_mod.place_object(conn, name, x=x, y=y)
+    png = deploy_mod.preview_image_bytes(conn, guid)
+    if not keep:
+        _mutate.delete_elements(conn, [guid], confirm=True)
+
+    payload = {
+        "library_part": name,
+        "element_guid": guid,
+        "placed_at": {"x": x, "y": y},
+        "kept": keep,
+        "port": conn.port,
+        "note": ("Look at the render. A body Archicad dropped shows up here and "
+                 "nowhere else: the offline validator passes it."),
+    }
+    if embedded is not None:
+        payload["embedded"] = embedded
+    return payload, png
+
+
 def _gdl_guarded(guarded):
     """Wrap the server's guard so GDL errors also return an error envelope.
 
@@ -242,3 +293,23 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
                          save_config: bool = True) -> dict:
         return _build_object(ws, source, name, config, decimate, validate,
                              save_config)
+
+    @mcp.tool(description="Reload libraries, place the built library part, "
+                          "render it, and return the image. The render is the "
+                          "only check that catches a 3D body Archicad silently "
+                          "dropped, so look at it. By default the placed "
+                          "instance is deleted again after the render, leaving "
+                          "the project unchanged; pass keep=true to actually "
+                          "place it. Requires Archicad running with a project "
+                          "open, and the workspace folder added once as a "
+                          "linked library via Library Manager.",
+              **tool_meta("Deploy GDL library part", read_only=False, destructive=True))
+    @gdl_guarded
+    def deploy_gdl_object(name: str, x: float = 0.0, y: float = 0.0,
+                          keep: bool = False, embed: bool = False,
+                          port: int | None = None) -> list:
+        from fastmcp.utilities.types import Image
+
+        conn = get_connection(port if port is not None else default_port)
+        payload, png = _deploy_object(ws, conn, name, (x, y), keep, embed)
+        return [payload, Image(data=png, format="png")]

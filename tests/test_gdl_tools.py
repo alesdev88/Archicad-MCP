@@ -144,19 +144,21 @@ def test_tools_are_registered_correctly(tmp_path):
     # Register the tools
     gdl_tools.register(mcp, 8080, ws, mock_tool_meta, mock_guarded)
 
-    # Verify mcp.tool was called three times
-    assert mcp.tool.call_count == 3
+    # Verify mcp.tool was called four times
+    assert mcp.tool.call_count == 4
 
     # Verify the call arguments
     calls = mcp.tool.call_args_list
     first_call = calls[0]
     second_call = calls[1]
     third_call = calls[2]
+    fourth_call = calls[3]
 
     # Check the tool names
     assert "List GDL workspace" in str(first_call)
     assert "Inspect GDL source mesh" in str(second_call)
     assert "Build GDL library part" in str(third_call)
+    assert "Deploy GDL library part" in str(fourth_call)
 
 
 def _fake_toolchain(monkeypatch):
@@ -330,3 +332,76 @@ def test_build_handles_assets_json_as_directory(ws, monkeypatch):
     assert result["config_saved"] is False
     assert "config_save_error" in result
     assert result["gsm"] == "Cube.gsm"
+
+
+import base64
+
+PNG = b"\x89PNG\r\n\x1a\nfake"
+
+
+class FakeConn:
+    port = 19723
+
+    def __init__(self):
+        self.calls = []
+
+    def tapir(self, command, params=None):
+        self.calls.append((command, params))
+        if command == "GetElementPreviewImage":
+            return {"previewImage": base64.b64encode(PNG).decode()}
+        if command == "CreateObjects":
+            return {"elements": [{"elementId": {"guid": "ABC-123"}}]}
+        return {}
+
+
+def _commands(conn):
+    return [c for c, _ in conn.calls]
+
+
+def test_deploy_reloads_places_renders_and_deletes(ws):
+    conn = FakeConn()
+    payload, png = gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                            keep=False, embed=False)
+    assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
+                               "GetElementPreviewImage", "DeleteElements"]
+    assert png == PNG
+    assert payload["kept"] is False
+    assert payload["element_guid"] == "ABC-123"
+
+
+def test_deploy_with_keep_does_not_delete(ws):
+    conn = FakeConn()
+    payload, _ = gdl_tools._deploy_object(ws, conn, "Chair", place=(1.0, 2.0),
+                                          keep=True, embed=False)
+    assert "DeleteElements" not in _commands(conn)
+    assert payload["kept"] is True
+
+
+def test_deploy_places_at_the_requested_coordinates(ws):
+    conn = FakeConn()
+    gdl_tools._deploy_object(ws, conn, "Chair", place=(1.5, -2.5), keep=True,
+                             embed=False)
+    params = dict(conn.calls)["CreateObjects"]
+    assert params["objectsData"][0]["coordinates"] == {"x": 1.5, "y": -2.5, "z": 0.0}
+    assert params["objectsData"][0]["libraryPartName"] == "Chair"
+
+
+def test_deploy_embeds_when_asked(ws):
+    conn = FakeConn()
+    gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0), keep=False,
+                             embed=True)
+    assert _commands(conn)[0] == "AddFilesToEmbeddedLibrary"
+
+
+def test_deploy_refuses_a_missing_gsm(ws):
+    conn = FakeConn()
+    with pytest.raises(FileNotFoundError, match="Absent.gsm"):
+        gdl_tools._deploy_object(ws, conn, "Absent", place=(0.0, 0.0),
+                                 keep=False, embed=False)
+
+
+def test_deploy_refuses_a_name_outside_the_workspace(ws):
+    conn = FakeConn()
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._deploy_object(ws, conn, "../Chair", place=(0.0, 0.0),
+                                 keep=False, embed=False)
