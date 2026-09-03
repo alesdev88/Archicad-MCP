@@ -42,8 +42,8 @@ for your platform from the
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.4.0-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.4.0-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.5.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.5.0-darwin-arm64.mcpb` |
 
 There is no Intel macOS bundle. `cryptography`, which this server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
@@ -78,7 +78,7 @@ re-run the install command with the newer version's URL from the
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.0/archicad_mcp-0.5.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -109,7 +109,7 @@ editing the file.
 winget install --id=astral-sh.uv -e
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.0/archicad_mcp-0.5.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -137,7 +137,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.0/archicad_mcp-0.5.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -368,6 +368,14 @@ and attribute definitions that returns the exact property address the other
 tools accept and whether the value can be written. Both are documented in
 [the query guide](docs/query.md).
 
+**Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
+confirm-gated. A dry run reports what can be known without touching the
+server: unknown GUIDs and elements already in your workspace. Who holds the
+rest is only learned by attempting, because Archicad exposes no read for it;
+with `confirm=true` the result separates reserved, reserved by others (with the
+user's name), already mine, not found, and indirectly reserved (a door's wall
+pulled in on the side). Sending and receiving stay in the gateway. Needs Tapir.
+
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
 Tapir command surface (309 commands on the verified setup), for anything the
@@ -398,7 +406,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.4.0   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.5.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -452,8 +460,8 @@ first, because a pushed tag has to be deleted before it can be corrected, and
 the registry refuses a version it already holds:
 
 ```bash
-uv run python scripts/check_release_version.py v0.4.0
-git tag v0.4.0 && git push origin v0.4.0
+uv run python scripts/check_release_version.py v0.5.0
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,

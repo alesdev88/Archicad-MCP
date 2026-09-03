@@ -83,6 +83,9 @@ WRAPPED_BY: dict[str, list[str]] = {
     "API.GetProfileAttributes": ["list_attributes", "search_definitions"],
     "API.GetZoneCategoryAttributes": ["list_attributes", "search_definitions"],
     "PublishPublisherSet": ["publish"],
+    "ReserveElements": ["reserve_elements"],
+    "ReleaseElements": ["release_elements"],
+    "FilterElements": ["reserve_elements", "release_elements"],
     "HighlightElements": ["highlight_failures"],
 }
 
@@ -119,6 +122,11 @@ TOOLS: list[dict] = [
      "desc": "Replace the current selection with the given element GUIDs."},
     {"name": "clear_selection", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Deselect everything in the Archicad window."},
+    # Teamwork
+    {"name": "reserve_elements", "cat": "Teamwork", "mode": "full", "mutates": True,
+     "desc": "Reserve elements in a Teamwork project. Confirm-gated; reports reserved, reserved_by_others, already_mine, not_found and indirectly_reserved."},
+    {"name": "release_elements", "cat": "Teamwork", "mode": "full", "mutates": True,
+     "desc": "Release elements from your Teamwork workspace. Confirm-gated; reports released, still_mine, not_mine and not_found."},
     # QA and rules
     {"name": "list_rules", "cat": "QA & rules", "mode": "both",
      "desc": "List loaded QA rules (id, type, severity, tags) and any rule-file load errors."},

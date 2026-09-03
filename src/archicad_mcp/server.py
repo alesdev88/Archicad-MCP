@@ -378,6 +378,38 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def clear_selection(port: int | None = None) -> dict:
         return _selection.clear_selection(_conn(port))
 
+    from archicad_mcp.core import teamwork as _teamwork
+
+    @mcp.tool(description=(
+        "Reserve elements in a Teamwork project so you can edit them (Tapir). "
+        "CONFIRM-GATED: without confirm=true it only reports what it can "
+        "learn without touching the server: not_found, already_mine, and "
+        "would_attempt. Whether another user holds an element is only "
+        "learned by attempting, because Archicad exposes no read for it. "
+        "With confirm=true returns reserved, reserved_by_others (with the "
+        "user's name), already_mine, not_found, and indirectly_reserved: "
+        "elements Archicad pulled into your workspace that you did not ask "
+        "for, such as a door's wall. A reservation is visible to every "
+        "teammate and blocks their edits until released."),
+              **_tool_meta("Reserve Teamwork elements", read_only=False, destructive=False))
+    @_guarded
+    def reserve_elements(guids: list[str], confirm: bool = False,
+                         port: int | None = None) -> dict:
+        return _teamwork.reserve_elements(_conn(port), guids, confirm)
+
+    @mcp.tool(description=(
+        "Release elements from your Teamwork workspace (Tapir). CONFIRM-GATED: "
+        "without confirm=true it reports would_release (the ones actually in "
+        "your workspace), not_mine and not_found. With confirm=true releases "
+        "them and reports released and still_mine. Unsent changes on a "
+        "released element are not lost by this call; TeamworkSend is the "
+        "gateway's job."),
+              **_tool_meta("Release Teamwork elements", read_only=False, destructive=False))
+    @_guarded
+    def release_elements(guids: list[str], confirm: bool = False,
+                         port: int | None = None) -> dict:
+        return _teamwork.release_elements(_conn(port), guids, confirm)
+
     from archicad_mcp.core import attributes as _attributes
     from archicad_mcp.core import issues as _issues
     from archicad_mcp.core import project as _project
