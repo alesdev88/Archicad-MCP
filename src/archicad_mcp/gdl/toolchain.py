@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -21,6 +22,22 @@ class ToolchainError(RuntimeError):
     pass
 
 
+# (glob pattern under an install root, path from the match to the binary)
+_LP_LAYOUT = {
+    "win32": ("Archicad *", "LP_XMLConverter.exe"),
+    "darwin": ("Archicad */Archicad *.app",
+               "Contents/MacOS/LP_XMLConverter.app/Contents/MacOS/LP_XMLConverter"),
+}
+
+
+def _archicad_roots() -> list[Path]:
+    """Where Archicad installs live. A seam, so tests can point elsewhere."""
+    if sys.platform == "win32":
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        return [Path(program_files) / "GRAPHISOFT"]
+    return [Path("/Applications/Graphisoft")]
+
+
 def find_lp_xmlconverter() -> Path:
     """Locate LP_XMLConverter: env override first, then the newest Archicad."""
     env = os.environ.get("LP_XMLCONVERTER")
@@ -29,17 +46,20 @@ def find_lp_xmlconverter() -> Path:
         if p.is_file():
             return p
         raise ToolchainError(f"LP_XMLCONVERTER points to a missing file: {env}")
+    pattern, tail = _LP_LAYOUT.get(sys.platform, _LP_LAYOUT["darwin"])
     candidates = []
-    for app in Path("/Applications/Graphisoft").glob("Archicad */Archicad *.app"):
-        exe = app / "Contents/MacOS/LP_XMLConverter.app/Contents/MacOS/LP_XMLConverter"
-        if exe.is_file():
-            m = re.search(r"Archicad (\d+)", app.name)
-            candidates.append((int(m.group(1)) if m else 0, exe))
+    for root in _archicad_roots():
+        for entry in root.glob(pattern):
+            exe = entry / tail
+            if exe.is_file():
+                m = re.search(r"Archicad (\d+)", entry.name)
+                candidates.append((int(m.group(1)) if m else 0, exe))
     if not candidates:
+        looked = ", ".join(str(r) for r in _archicad_roots())
         raise ToolchainError(
-            "LP_XMLConverter not found under /Applications/Graphisoft. "
-            "Install Archicad or set the LP_XMLCONVERTER environment variable "
-            "to the binary inside the Archicad app bundle.")
+            f"LP_XMLConverter not found under {looked}. Install Archicad or set "
+            "the LP_XMLCONVERTER environment variable to the binary inside the "
+            "Archicad installation.")
     return max(candidates)[1]
 
 
@@ -115,12 +135,37 @@ bpy.ops.wm.obj_export(filepath=dst, export_materials=True, export_uv=False,
 """
 
 
+def _blender_roots() -> list[Path]:
+    if sys.platform == "win32":
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        return [Path(program_files)]
+    return [Path("/Applications")]
+
+
 def find_blender() -> Path | None:
     env = os.environ.get("BLENDER")
     if env and Path(env).is_file():
         return Path(env)
-    default = Path("/Applications/Blender.app/Contents/MacOS/Blender")
-    return default if default.is_file() else None
+    if sys.platform == "win32":
+        pattern, tail = "Blender Foundation/Blender *", "blender.exe"
+        candidates = []
+        for root in _blender_roots():
+            for entry in root.glob(pattern):
+                exe = entry / tail
+                if exe.is_file():
+                    m = re.search(r"Blender (\d+)", entry.name)
+                    candidates.append((int(m.group(1)) if m else 0, exe))
+        if candidates:
+            return max(candidates)[1]
+        return None
+    else:
+        pattern, tail = "Blender.app", "Contents/MacOS/Blender"
+        for root in _blender_roots():
+            for entry in sorted(root.glob(pattern), reverse=True):
+                exe = entry / tail
+                if exe.is_file():
+                    return exe
+        return None
 
 
 def decimate(mesh: Mesh, targets: dict[str, int]) -> Mesh:
@@ -133,9 +178,10 @@ def decimate(mesh: Mesh, targets: dict[str, int]) -> Mesh:
     """
     blender = find_blender()
     if blender is None:
+        looked = ", ".join(str(r) for r in _blender_roots())
         raise ToolchainError(
-            "Blender not found (looked at /Applications/Blender.app; set the "
-            "BLENDER environment variable to override). Decimation needs it.")
+            f"Blender not found under {looked}. Install Blender or set the "
+            "BLENDER environment variable to override. Decimation needs it.")
 
     def target_for(mat: str) -> int | None:
         for sub, t in targets.items():

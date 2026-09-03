@@ -89,3 +89,63 @@ def test_full_snapshot_builds(conn):
 
 def test_tapir_status_reported(conn):
     print(f"tapir available: {conn.tapir_available()}")
+
+
+@pytest.fixture(scope="module")
+def gdl_workspace():
+    """The GDL workspace the design spec's probe needs: a real folder already
+    added to Archicad once via File > Libraries and Objects > Library Manager
+    (see docs/gdl-pipeline.md). That one-time step has no API, so it cannot be
+    set up here; skip when it has not been done on this machine, the same way
+    the port fixture above skips when Archicad itself is absent."""
+    raw = os.environ.get("ARCHICAD_MCP_GDL_WORKSPACE")
+    if not raw:
+        pytest.skip("ARCHICAD_MCP_GDL_WORKSPACE not set; needs a folder already "
+                    "added to Archicad as a linked library via Library Manager")
+    from archicad_mcp.gdl.workspace import Workspace
+    return Workspace(raw)
+
+
+_GDL_PROBE_CUBE_OBJ = """\
+v 0 0 0
+v 1 0 0
+v 1 1 0
+v 0 1 0
+v 0 0 1
+v 1 0 1
+v 1 1 1
+v 0 1 1
+usemtl steel
+f 1 4 3 2
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+"""
+
+
+def test_gdl_deploy_with_keep_false_leaves_element_count_unchanged(conn, gdl_workspace):
+    """The design spec's Testing section requires exactly this: build a known
+    small source, deploy with keep=false, and the project's element count must
+    come back unchanged. keep=false is supposed to be a net-zero probe, not
+    just "delete the element it placed" -- this is what actually proves that."""
+    from archicad_mcp.gdl import tools as gdl_tools
+
+    (gdl_workspace.root / "gdl_live_probe_cube.obj").write_text(_GDL_PROBE_CUBE_OBJ)
+
+    build_result = gdl_tools._build_object(
+        gdl_workspace, "gdl_live_probe_cube.obj", "GdlLiveProbeCube",
+        config={"groups": {}}, decimate=False, validate=True, save_config=False)
+    assert "error" not in build_result, build_result
+
+    before = len(conn.official("API.GetAllElements")["elements"])
+    payload, _png = gdl_tools._deploy_object(
+        gdl_workspace, conn, "GdlLiveProbeCube", place=(0.0, 0.0),
+        keep=False, embed=False)
+    after = len(conn.official("API.GetAllElements")["elements"])
+
+    assert payload["kept"] is False
+    assert after == before, (
+        f"deploy with keep=false changed the project element count: "
+        f"{before} -> {after}")

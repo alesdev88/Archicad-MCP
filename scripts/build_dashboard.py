@@ -151,6 +151,17 @@ TOOLS: list[dict] = [
      "desc": "Run one read-only Archicad API command by name. A command that changes the project is refused here."},
     {"name": "execute_write_api_command", "cat": "Raw API gateway", "mode": "full", "mutates": True,
      "desc": "Run one Archicad API command that changes the project. Refuses without confirm=true."},
+    # GDL library parts. Full mode plus a configured GDL workspace folder;
+    # unlike every other row above, "mode": "full" alone does not fully
+    # describe the gate, but it is the field this table has for it.
+    {"name": "list_gdl_sources", "cat": "GDL library parts", "mode": "full",
+     "desc": "List the GDL workspace: source meshes, built .gsm files, textures, and the objects already described in assets.json."},
+    {"name": "inspect_gdl_source", "cat": "GDL library parts", "mode": "full",
+     "desc": "Parse a source mesh and report its material groups, face counts, bounding box, and detected units."},
+    {"name": "build_gdl_object", "cat": "GDL library parts", "mode": "full", "mutates": True,
+     "desc": "Compile a source mesh into a .gsm library part and write it, with its textures, into the GDL workspace."},
+    {"name": "deploy_gdl_object", "cat": "GDL library parts", "mode": "full", "mutates": True,
+     "desc": "Reload libraries, place the built library part, render it, and return the image. Deletes the placed instance again unless keep=true."},
 ]
 
 

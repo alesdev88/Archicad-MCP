@@ -95,6 +95,7 @@ def build_server(
     mode: str = "full",
     rules_dir: Path | None = None,
     port: int | None = None,
+    gdl_workspace: Path | None = None,
 ) -> FastMCP:
     if mode not in ("verdicts", "full"):
         raise ValueError(f"mode must be 'verdicts' or 'full', got {mode!r}")
@@ -232,6 +233,11 @@ def build_server(
 
     if mode == "full":
         _register_full_mode_tools(mcp, default_port)
+        if gdl_workspace is not None:
+            from archicad_mcp.gdl import tools as gdl_tools
+            from archicad_mcp.gdl.workspace import Workspace
+            gdl_tools.register(mcp, default_port, Workspace(gdl_workspace),
+                               _tool_meta, _guarded)
 
     return mcp
 
@@ -523,7 +529,8 @@ def _instance_line(info: InstanceInfo, mode: str) -> str:
 
 def format_startup_banner(mode: str, rule_count: int,
                           instances: Sequence[InstanceInfo],
-                          rule_errors: int = 0) -> str:
+                          rule_errors: int = 0,
+                          gdl_workspace: Path | None = None) -> str:
     """The diagnostic lines written to stderr at startup.
 
     This is what someone reads in mcp-server-archicad.log when the tools are
@@ -532,6 +539,11 @@ def format_startup_banner(mode: str, rule_count: int,
     head = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
     if rule_errors:
         head += f", {rule_errors} rule file(s) rejected (call list_rules for details)"
+    # GDL tools register only in full mode with a workspace folder set
+    if mode == "full" and gdl_workspace is not None:
+        head += f", GDL workspace {gdl_workspace}"
+    else:
+        head += ", GDL tools off"
     lines = [head]
     if not instances:
         first, last = PORT_RANGE[0], PORT_RANGE[-1]
@@ -544,7 +556,8 @@ def format_startup_banner(mode: str, rule_count: int,
     return "\n".join(lines)
 
 
-def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0) -> None:
+def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
+                        gdl_workspace: Path | None = None) -> None:
     """Write the banner to stderr. Never raises, never touches stdout.
 
     Under stdio transport stdout is the JSON-RPC channel: one stray byte there
@@ -555,10 +568,16 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0) -> Non
     try:
         instances = discover_instances()
     except Exception as exc:  # noqa: BLE001 - diagnostics must not break startup
-        print(f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded "
-              f"(instance discovery failed: {exc})", file=sys.stderr, flush=True)
+        prefix_config = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
+        # GDL tools register only in full mode with a workspace folder set
+        if mode == "full" and gdl_workspace is not None:
+            prefix_config += f", GDL workspace {gdl_workspace}"
+        else:
+            prefix_config += ", GDL tools off"
+        print(f"{prefix_config} (instance discovery failed: {exc})",
+              file=sys.stderr, flush=True)
         return
-    print(format_startup_banner(mode, rule_count, instances, rule_errors),
+    print(format_startup_banner(mode, rule_count, instances, rule_errors, gdl_workspace),
           file=sys.stderr, flush=True)
 
 
@@ -583,6 +602,18 @@ def resolve_rules_dir(raw: str | Path | None) -> Path | None:
     return Path(text) if text else None
 
 
+def resolve_gdl_workspace(raw: str | Path | None) -> Path | None:
+    """None for an unset or blank workspace, so the GDL tools stay unregistered.
+
+    Same trap as resolve_rules_dir: an unfilled .mcpb field arrives as an empty
+    string, and Path("") is Path("."), which is truthy. Registering the GDL
+    tools against the working directory would be worse than not registering
+    them, because builds would write .gsm files into it.
+    """
+    text = str(raw).strip() if raw is not None else ""
+    return Path(text) if text else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
@@ -592,11 +623,16 @@ def main() -> None:
                             os.environ.get("ARCHICAD_MCP_RULES_DIR")))
     parser.add_argument("--port", type=int, default=None,
                         help="Archicad API port (19723-19743); auto-detected if omitted")
+    parser.add_argument("--gdl-workspace", type=Path,
+                        default=resolve_gdl_workspace(
+                            os.environ.get("ARCHICAD_MCP_GDL_WORKSPACE")))
     args, _ = parser.parse_known_args()
     rules_dir = resolve_rules_dir(args.rules_dir)
-    server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port)
+    gdl_workspace = resolve_gdl_workspace(args.gdl_workspace)
+    server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port,
+                          gdl_workspace=gdl_workspace)
     emit_startup_banner(args.mode, server.archicad_rule_count,
-                        server.archicad_rule_errors)
+                        server.archicad_rule_errors, gdl_workspace)
     server.run()
 
 

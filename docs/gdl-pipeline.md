@@ -11,6 +11,36 @@ archicad-gdl deploy "build/My Chair.gsm" --place 0 0 --preview check.png
 archicad-gdl inspect model.3ds
 ```
 
+## From an MCP client
+
+The CLI needs a shell on the machine running Archicad. Clients whose agent runs
+elsewhere (Cowork runs it in a Linux sandbox) reach the same pipeline through
+four tools instead, which execute inside the server process:
+
+`list_gdl_sources`, `inspect_gdl_source`, `build_gdl_object`,
+`deploy_gdl_object`.
+
+These tools require two things: the extension mode must be set to `full` (not
+`verdicts`), and a GDL workspace folder must be configured in the extension
+settings. Set the workspace folder and add that same folder to Archicad once via
+File > Libraries and Objects > Library Manager. Source meshes and texture files
+go in it by hand; everything else the tools write lands there too. If either
+requirement is not met, the tools do not register and the startup banner reports
+that GDL tools are off.
+
+`deploy_gdl_object` deletes the instance it placed once it has rendered it, so
+repeated builds do not stack objects at the origin. Pass `keep=true` when you
+want the object left in the project.
+
+Pass `embed=true` to also push the `.gsm` and its textures into the open
+project's embedded library, for when the object must travel inside the `.pln`
+itself rather than sitting in the linked library folder. This is the fallback
+path if the linked-library folder does not work in your setup. Tapir cannot
+overwrite an existing embedded file, so every `embed=true` deploy of the same
+object needs a fresh name once one has been embedded; deploying under a name
+already there fails with a clear error instead of silently rendering the
+previous build.
+
 ## What build does
 
 1. **Parse** the mesh. Units (mm/cm/m) are autodetected from the extent.

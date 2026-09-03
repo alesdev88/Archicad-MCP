@@ -42,8 +42,8 @@ for your platform from the
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.2.1-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.2.1-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.3.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.3.0-darwin-arm64.mcpb` |
 
 There is no Intel macOS bundle. `cryptography`, which this server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
@@ -78,7 +78,7 @@ re-run the install command with the newer version's URL from the
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.1/archicad_mcp-0.2.1-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -109,7 +109,7 @@ editing the file.
 winget install --id=astral-sh.uv -e
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.1/archicad_mcp-0.2.1-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -137,7 +137,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.1/archicad_mcp-0.2.1-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -318,6 +318,12 @@ Every write is dry-run by default; delete and move also require `confirm=true`.
 Tapir command surface (309 commands on the verified setup), for anything the
 curated tools don't cover.
 
+**Library parts (full mode):** `list_gdl_sources`, `inspect_gdl_source`,
+`build_gdl_object`, `deploy_gdl_object`. Turn mesh models (OBJ, 3DS) into
+placeable Archicad library parts with finish variants, without opening the GDL
+editor. Requires the GDL workspace folder to be set and added as a linked
+library in Archicad once. See [the GDL pipeline guide](docs/gdl-pipeline.md).
+
 Reads and writes are separate tools throughout, and every tool declares whether
 it is read-only or destructive. Clients use those declarations to decide what to
 run without asking you: a read never prompts, a write always does. The gateway
@@ -337,7 +343,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.2.1   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.3.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -391,20 +397,23 @@ first, because a pushed tag has to be deleted before it can be corrected, and
 the registry refuses a version it already holds:
 
 ```bash
-uv run python scripts/check_release_version.py v0.2.0
-git tag v0.2.0 && git push origin v0.2.0
+uv run python scripts/check_release_version.py v0.3.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,
-so install one on Windows before trusting a release. The 0.2.0 bundle was
-checked that way and runs.
+so install one on Windows before trusting a release. The 0.2.1 bundle was
+checked that way and runs. Each new release should be tested on Windows before
+being used in production.
 
 `icon.png` is rasterised from `icon.svg`, so the mark stays editable as vector
-art: change the SVG, then redraw the PNG the bundle ships. Pillow is needed only
-for that step and is deliberately not a project dependency:
+art: change the SVG, then redraw the PNG the bundle ships. Pillow does that
+rasterising. It used to be pulled in just for this step, but the GDL pipeline
+now needs it to downscale textures, so it is a project dependency and the
+script can use it directly:
 
 ```bash
-uv run --with pillow python scripts/make_icon.py
+uv run python scripts/make_icon.py
 ```
 
 ## Docs

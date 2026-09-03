@@ -3,7 +3,7 @@
   "name": "io.github.alesdev88/archicad-mcp",
   "title": "Archicad",
   "description": "Delivery-readiness QA and full official + Tapir API access for a running Archicad 29.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "repository": {
     "url": "https://github.com/alesdev88/Archicad-MCP",
     "source": "github"
@@ -11,8 +11,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.1/archicad-mcp-0.2.1-win32.mcpb",
-      "version": "0.2.1",
+      "identifier": "https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad-mcp-0.3.0-win32.mcpb",
+      "version": "0.3.0",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
@@ -20,8 +20,8 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/alesdev88/Archicad-MCP/releases/download/v0.2.1/archicad-mcp-0.2.1-darwin-arm64.mcpb",
-      "version": "0.2.1",
+      "identifier": "https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad-mcp-0.3.0-darwin-arm64.mcpb",
+      "version": "0.3.0",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"

@@ -90,25 +90,36 @@ def _as_rgb(value) -> RGB:
     return (float(r), float(g), float(b))
 
 
-def _role_value(value, base: Path) -> Path | RGB:
+def _role_value(value, base: Path, resolve=None) -> Path | RGB:
     if isinstance(value, str):
-        return base / value
+        path = base / value if resolve is None else resolve(value)
+        return path
     return _as_rgb(value)
 
 
-def load_config(path: str | Path) -> dict[str, ObjectConfig]:
-    path = Path(path)
-    base = path.parent
-    raw = json.loads(path.read_text())
+def parse_objects(raw: dict, base: Path,
+                  resolve: callable | None = None) -> dict[str, ObjectConfig]:
+    """Parse a raw config mapping. Relative paths resolve against `base`.
+
+    Shared by the file loader and the MCP build tool's inline argument, so the
+    schema is defined once. A second copy would drift.
+
+    If `resolve` is provided, it is called for every path field (source, textures,
+    variant roles) to enforce containment or other path validation. When None,
+    paths are resolved with simple `base / path` joins.
+    """
+    if resolve is None:
+        resolve = lambda rel: base / rel
+
     objects: dict[str, ObjectConfig] = {}
     for name, spec in raw.get("objects", {}).items():
         objects[name] = ObjectConfig(
             name=name,
             guid=spec.get("guid"),
-            source=(base / spec["source"]) if spec.get("source") else None,
-            textures={k: base / v for k, v in spec.get("textures", {}).items()},
+            source=resolve(spec["source"]) if spec.get("source") else None,
+            textures={k: resolve(v) for k, v in spec.get("textures", {}).items()},
             variants=[(v["label"],
-                       {role: _role_value(val, base)
+                       {role: _role_value(val, base, resolve)
                         for role, val in v.get("roles", {}).items()})
                       for v in spec.get("variants", [])],
             frame_variants=[(v["label"], _as_rgb(v["rgb"]))
@@ -121,6 +132,23 @@ def load_config(path: str | Path) -> dict[str, ObjectConfig]:
             decimate={k: int(v) for k, v in spec.get("decimate", {}).items()},
         )
     return objects
+
+
+def load_config(path: str | Path) -> dict[str, ObjectConfig]:
+    path = Path(path)
+    return parse_objects(json.loads(path.read_text()), path.parent)
+
+
+def save_object_config(path: str | Path, name: str, spec: dict) -> None:
+    """Merge one object's raw spec into an assets.json, keeping the rest.
+
+    Read-modify-write of the whole file. The alternative of appending would
+    corrupt the JSON, and the file is small enough that rewriting it is free.
+    """
+    path = Path(path)
+    raw = json.loads(path.read_text()) if path.is_file() else {}
+    raw.setdefault("objects", {})[name] = spec
+    path.write_text(json.dumps(raw, indent=2) + "\n")
 
 
 def find_object(objects: dict[str, ObjectConfig], name: str) -> ObjectConfig:
