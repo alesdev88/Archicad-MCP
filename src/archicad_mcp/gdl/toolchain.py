@@ -178,9 +178,10 @@ def decimate(mesh: Mesh, targets: dict[str, int]) -> Mesh:
     """
     blender = find_blender()
     if blender is None:
+        looked = ", ".join(str(r) for r in _blender_roots())
         raise ToolchainError(
-            "Blender not found (looked at /Applications/Blender.app; set the "
-            "BLENDER environment variable to override). Decimation needs it.")
+            f"Blender not found under {looked}. Install Blender or set the "
+            "BLENDER environment variable to override. Decimation needs it.")
 
     def target_for(mat: str) -> int | None:
         for sub, t in targets.items():
