@@ -142,7 +142,6 @@ def test_banner_with_gdl_workspace_set(tmp_path):
 def test_banner_without_gdl_workspace_says_off():
     banner = format_startup_banner("full", 3, [WITH_TAPIR], gdl_workspace=None)
     assert "GDL tools off" in banner
-    assert "no workspace folder set" in banner
 
 
 def test_emit_with_discovery_failure_includes_gdl_workspace_status(capsys, monkeypatch, tmp_path):
@@ -166,4 +165,24 @@ def test_emit_with_discovery_failure_and_no_gdl_workspace(capsys, monkeypatch):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "GDL tools off" in captured.err
-    assert "no workspace folder set" in captured.err
+
+
+def test_banner_in_verdicts_mode_never_reports_gdl_workspace(tmp_path):
+    """GDL tools do not register in verdicts mode regardless of workspace."""
+    banner = format_startup_banner("verdicts", 3, [WITH_TAPIR], gdl_workspace=tmp_path)
+    assert "GDL tools off" in banner
+    # Must not leak the workspace path in verdicts mode
+    assert str(tmp_path) not in banner
+
+
+def test_emit_in_verdicts_mode_does_not_report_workspace(capsys, monkeypatch, tmp_path):
+    """GDL workspace should not appear in the banner when mode=verdicts."""
+    def boom():
+        raise OSError("socket layer exploded")
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", boom)
+    emit_startup_banner("verdicts", 3, gdl_workspace=tmp_path)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "GDL tools off" in captured.err
+    assert str(tmp_path) not in captured.err

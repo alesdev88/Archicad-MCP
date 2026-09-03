@@ -20,11 +20,13 @@ four tools instead, which execute inside the server process:
 `list_gdl_sources`, `inspect_gdl_source`, `build_gdl_object`,
 `deploy_gdl_object`.
 
-Set the GDL workspace folder in the extension settings, and add that same
-folder to Archicad once via File > Libraries and Objects > Library Manager.
-Source meshes and texture files go in it by hand; everything else the tools
-write lands there too. Without the field set, the tools do not register at all
-and the startup banner says so.
+These tools require two things: the extension mode must be set to `full` (not
+`verdicts`), and a GDL workspace folder must be configured in the extension
+settings. Set the workspace folder and add that same folder to Archicad once via
+File > Libraries and Objects > Library Manager. Source meshes and texture files
+go in it by hand; everything else the tools write lands there too. If either
+requirement is not met, the tools do not register and the startup banner reports
+that GDL tools are off.
 
 `deploy_gdl_object` deletes the instance it placed once it has rendered it, so
 repeated builds do not stack objects at the origin. Pass `keep=true` when you

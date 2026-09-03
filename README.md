@@ -402,8 +402,9 @@ git tag v0.3.0 && git push origin v0.3.0
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,
-so install one on Windows before trusting a release. The 0.3.0 bundle was
-checked that way and runs.
+so install one on Windows before trusting a release. The 0.2.1 bundle was
+checked that way and runs. Each new release should be tested on Windows before
+being used in production.
 
 `icon.png` is generated, not hand-drawn, so it stays editable. Pillow is needed
 only to redraw it and is deliberately not a project dependency:

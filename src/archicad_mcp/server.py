@@ -540,10 +540,11 @@ def format_startup_banner(mode: str, rule_count: int,
     head = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
     if rule_errors:
         head += f", {rule_errors} rule file(s) rejected (call list_rules for details)"
-    if gdl_workspace is not None:
+    # GDL tools register only in full mode with a workspace folder set
+    if mode == "full" and gdl_workspace is not None:
         head += f", GDL workspace {gdl_workspace}"
     else:
-        head += ", GDL tools off (no workspace folder set)"
+        head += ", GDL tools off"
     lines = [head]
     if not instances:
         first, last = PORT_RANGE[0], PORT_RANGE[-1]
@@ -569,10 +570,11 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
         instances = discover_instances()
     except Exception as exc:  # noqa: BLE001 - diagnostics must not break startup
         prefix_config = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
-        if gdl_workspace is not None:
+        # GDL tools register only in full mode with a workspace folder set
+        if mode == "full" and gdl_workspace is not None:
             prefix_config += f", GDL workspace {gdl_workspace}"
         else:
-            prefix_config += ", GDL tools off (no workspace folder set)"
+            prefix_config += ", GDL tools off"
         print(f"{prefix_config} (instance discovery failed: {exc})",
               file=sys.stderr, flush=True)
         return
