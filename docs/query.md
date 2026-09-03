@@ -31,13 +31,19 @@ possible. See "What it reads" below.
 ## `search_definitions`
 
 ```
-search_definitions(query, kind="any", alternatives=None, editable_only=False, limit=25)
+search_definitions(query, kind="any", alternatives=None, editable_only=False, limit=25, offset=0)
 ```
 
 Fuzzy, case- and accent-insensitive search over property definitions and
 attribute names. Every query word must match somewhere in the group, name, API
-name or enum values; whole-word matches rank above prefixes, prefixes above
-substrings, and a one-letter typo still finds the definition.
+name or enum values. Ranking: a whole word scores 1.0, a word start 0.9, a
+substring inside a longer word 0.7, a one-letter typo a little less. A query
+word shorter than four letters only matches as a word or a word start, so
+"rat" finds "Rating" and does not find "Curtain"; a three-letter query used to
+return 156 hits at a flat score on two letters buried in unrelated words.
+
+`total_matches` counts every hit. The page is `limit` long from `offset`; when
+more remain, `next_offset` says where the next page starts.
 
 - `kind`: `property`, `attribute` (layers, lines, fills, composites, surfaces,
   layer combinations, zone categories, profiles, pen tables, building
@@ -77,7 +83,10 @@ fallback lacks measure types, collection types and enum values.
 find_elements(groups, selection_only=False)
 ```
 
-`groups` is a non-empty list. Groups combine with **OR**. Inside a group:
+`groups` is a non-empty list, and it is **schema-typed**: the element type
+names and the 22 operators are enums in the tool's input schema, so a typo in
+either is refused by the client before anything reaches Archicad. Groups
+combine with **OR**. Inside a group:
 
 | Field | Default | Meaning |
 |---|---|---|

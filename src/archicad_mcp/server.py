@@ -20,6 +20,7 @@ from archicad_mcp.connection import (
     discover_instances,
     get_connection,
 )
+from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
 from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
     data_needs,
@@ -254,23 +255,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @mcp.tool(description=(
         "Find elements matching criteria groups. Groups combine with OR; inside "
         "a group the comparisons combine with logical_operator 'and' (default) "
-        "or 'or'. Each group: {element_types: [\"Wall\", ...] (Archicad type "
-        "names), element_types_operator: 'is'|'is_not', logical_operator, "
-        "comparisons: [{property, operator, value}]}. "
-        "'property' is 'Group/Name' for a user property, the API name for a "
-        "built-in (e.g. ModelView_LayerName), a property GUID, "
-        "'classification:<System name>' for the element's classification item, "
-        "or 'story' for the home story index (ground floor 0, basements negative; get_project_info lists them). Call search_definitions "
-        "to find the exact property address. Operators: equal, not_equal, less, "
-        "greater, less_or_equal, greater_or_equal, contains, does_not_contain, "
-        "starts_with, ends_with (strings, case-insensitive), is_in_branch_of, "
-        "is_direct_child_of, is_not_in_branch_of, is_not_direct_child_of "
-        "(classification items, by item ID like 'Wall' or GUID), and the unary "
-        "has_value, has_no_value, is_user_undefined, is_not_user_undefined, "
-        "available, not_available (no value). Numeric values use SI base "
-        "units: m for length, m2 for area, m3 for volume, radian for angles; "
-        "convert first (3000 mm -> 3). Enum values are their display text. "
-        "An element with no usable value matches no binary operator. "
+        "or 'or'. Each group may restrict element types (is / is_not) and lists "
+        "comparisons of {property, operator, value}; the schema enumerates the "
+        "element types and the 22 operators, and each field documents its "
+        "values and units. Call search_definitions to find a property's exact "
+        "address. An element with no usable value matches no binary operator. "
         "Returns GUIDs, counts, how many elements had properties read, and "
         "'coverage' ('whole-plan' with Tapir, 'model-elements-only' without: "
         "then 2D elements are invisible and 0 is not proof of absence). "
@@ -279,9 +268,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "so narrow with element_types, story or classification first."),
               **_tool_meta("Find elements by criteria", read_only=True, destructive=False))
     @_guarded
-    def find_elements(groups: list[dict], selection_only: bool = False,
+    def find_elements(groups: list[GroupSpec], selection_only: bool = False,
                       port: int | None = None) -> dict:
-        return _query.find_elements(_conn(port), groups, selection_only)
+        return _query.find_elements(_conn(port), groups_to_dicts(groups), selection_only)
 
     from archicad_mcp.core import definitions as _definitions
 
@@ -297,7 +286,10 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "'property', the exact address find_elements, get_element_data, "
         "set_element_data and rules accept, plus value_type, measure_type "
         "(Length/Area/Volume/Angle values are in m, m2, m3, radian), "
-        "collection, editable, expression_based and enum_values. Reads "
+        "collection, editable, expression_based and enum_values. Results are "
+        "ranked: whole-word matches first, then word starts, then substrings; "
+        "a query word under 4 letters must start a word. total_matches counts "
+        "everything; pass next_offset as offset to page past limit. Reads "
         "definitions only, never property values."),
               **_tool_meta("Search property and attribute definitions",
                            read_only=True, destructive=False))
@@ -305,9 +297,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def search_definitions(query: str, kind: str = "any",
                            alternatives: list[str] | None = None,
                            editable_only: bool = False, limit: int = 25,
-                           port: int | None = None) -> dict:
+                           offset: int = 0, port: int | None = None) -> dict:
         return _definitions.search_definitions(_conn(port), query, kind, alternatives,
-                                               editable_only, limit)
+                                               editable_only, limit, offset)
 
     @mcp.tool(description="Read type, layer, requested properties (address user "
                           "properties as 'Group/Name') and optionally classifications "

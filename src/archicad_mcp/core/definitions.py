@@ -87,26 +87,41 @@ def tokens(text: str) -> list[str]:
     return out
 
 
+# Minimum query-token length for a substring or typo match. A shorter token
+# matched inside unrelated words: a three-letter query once returned 156 hits
+# at a flat 0.75, most sharing two letters buried in a longer word. Short
+# tokens must start a word.
+SUBSTRING_MIN = 4
+
+
 def _token_score(query_token: str, hay_tokens: list[str], hay_text: str) -> float:
     best = 0.0
+    long_enough = len(query_token) >= SUBSTRING_MIN
     for ht in hay_tokens:
         if ht == query_token:
             return 1.0
         if ht.startswith(query_token):
             best = max(best, 0.9)
+        elif not long_enough:
+            continue
         elif query_token in ht:
-            best = max(best, 0.75)
-        elif len(query_token) >= 4:
+            best = max(best, 0.7)
+        else:
             ratio = difflib.SequenceMatcher(None, query_token, ht).ratio()
             if ratio >= 0.8:
-                best = max(best, ratio * 0.7)
-    if best == 0.0 and query_token in hay_text:
-        best = 0.6   # spans a token boundary ("firerating" vs "fire rating")
+                best = max(best, ratio * 0.6)
+    if best == 0.0 and long_enough and query_token in hay_text:
+        best = 0.5   # spans a token boundary ("firerating" vs "fire rating")
     return best
 
 
 def score(query: str, haystack: Iterable[str]) -> float:
-    """0 when any query token fails to match; else the mean token score."""
+    """0 when any query token fails to match; else the mean token score.
+
+    Whole-word matches score 1.0, word starts 0.9, substrings inside longer
+    words 0.7 and near-misses less; a token shorter than SUBSTRING_MIN only
+    matches as a word or a word start.
+    """
     q_tokens = tokens(query)
     if not q_tokens:
         return 0.0
@@ -229,7 +244,8 @@ def _attribute_definitions(conn: ArchicadConnection, notes: list[str]) -> list[D
 
 def search_definitions(conn: ArchicadConnection, query: str, kind: str = "any",
                        alternatives: list[str] | None = None,
-                       editable_only: bool = False, limit: int = 25) -> dict:
+                       editable_only: bool = False, limit: int = 25,
+                       offset: int = 0) -> dict:
     if kind not in KINDS:
         return {"error": f"kind must be one of {KINDS}, got {kind!r}"}
     terms = [query, *(alternatives or [])]
@@ -239,6 +255,7 @@ def search_definitions(conn: ArchicadConnection, query: str, kind: str = "any",
     if len(alternatives or []) > 6:
         return {"error": "at most 6 alternatives"}
     limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
 
     notes: list[str] = []
     definitions: list[Definition] = []
@@ -256,10 +273,11 @@ def search_definitions(conn: ArchicadConnection, query: str, kind: str = "any",
             scored.append((best, d))
     scored.sort(key=lambda x: (-x[0], x[1].kind, x[1].name))
 
-    result = {"query": query, "total_matches": len(scored),
-              "matches": [d.to_dict(s) for s, d in scored[:limit]]}
-    if len(scored) > limit:
-        result["truncated"] = True
+    page = scored[offset:offset + limit]
+    result = {"query": query, "total_matches": len(scored), "offset": offset,
+              "matches": [d.to_dict(s) for s, d in page]}
+    if offset + limit < len(scored):
+        result["next_offset"] = offset + limit
     if notes:
         result["notes"] = notes
     return result

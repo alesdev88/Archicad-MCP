@@ -67,9 +67,13 @@ async def test_find_selection_only(core):
 
 
 async def test_find_rejects_a_malformed_query_without_touching_archicad(core):
+    """A query the schema accepts but the language rejects (a unary operator
+    given a value) must come back as an error before any Archicad call.
+    Unknown operators and type names never get this far: the typed schema
+    refuses them (tests/test_query_schema.py)."""
     payload = await call("find_elements", {"groups": [{"comparisons": [
-        {"property": "x", "operator": "like", "value": 1}]}]})
-    assert "unknown operator" in payload["error"]
+        {"property": "x", "operator": "has_value", "value": 1}]}]})
+    assert "takes no 'value'" in payload["error"]
     assert core.calls == []
 
 

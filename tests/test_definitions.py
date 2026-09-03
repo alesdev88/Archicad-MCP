@@ -40,6 +40,30 @@ def test_score_tolerates_a_typo_and_a_missing_space():
     assert score("firerating", ["OFFICE/Fire Rating"]) > 0
 
 
+def test_short_queries_must_start_a_word():
+    """A three-letter query once matched 156 definitions at a flat 0.75 on two
+    letters buried inside unrelated words."""
+    assert score("ire", ["OFFICE/Fire Rating"]) == 0.0      # inside "fire"
+    assert score("rat", ["OFFICE/Fire Rating"]) == pytest.approx(0.9)   # starts "rating"
+    assert score("ating", ["OFFICE/Fire Rating"]) == pytest.approx(0.7)  # long enough
+
+
+def test_ranking_puts_whole_words_before_starts_before_substrings():
+    assert score("area", ["Zone/Area"]) > score("area", ["Zone/Areas"]) > score("area", ["Zone/Subarea"])
+
+
+def test_offset_pages_past_the_limit():
+    first = search_definitions(make_conn(), "a", limit=2)
+    assert len(first["matches"]) == 2 and first["offset"] == 0
+    assert first["next_offset"] == 2
+    second = search_definitions(make_conn(), "a", limit=2, offset=first["next_offset"])
+    assert second["offset"] == 2
+    assert [m["name"] for m in second["matches"]] != [m["name"] for m in first["matches"]]
+    assert first["total_matches"] == second["total_matches"]
+    last = search_definitions(make_conn(), "a", limit=200)
+    assert "next_offset" not in last
+
+
 # ---------- the tool ----------
 
 def test_property_matches_carry_the_address_the_other_tools_accept():
@@ -88,7 +112,7 @@ def test_kind_any_mixes_both_and_alternatives_widen_the_search():
 
 def test_limit_and_truncation():
     payload = search_definitions(make_conn(), "a", limit=1)
-    assert len(payload["matches"]) == 1 and payload["truncated"] is True
+    assert len(payload["matches"]) == 1 and payload["next_offset"] == 1
 
 
 def test_validation_errors():
