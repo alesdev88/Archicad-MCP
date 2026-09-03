@@ -33,7 +33,11 @@ f 4 1 5 8
 
 @pytest.fixture
 def ws(tmp_path):
-    (tmp_path / "cube.obj").write_text(CUBE_OBJ)
+    # write_bytes, not write_text: on Windows text mode translates "\n" to
+    # "\r\n", which makes the file 15 bytes longer than the string and breaks
+    # the size assertion below. The tool reports the real on-disk size, so it
+    # is the fixture that has to be byte-exact.
+    (tmp_path / "cube.obj").write_bytes(CUBE_OBJ.encode())
     (tmp_path / "textures").mkdir()
     (tmp_path / "textures" / "oak_ab12cd.jpg").write_bytes(b"jpeg")
     (tmp_path / "Chair.gsm").write_bytes(b"gsm")
