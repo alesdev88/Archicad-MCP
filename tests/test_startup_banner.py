@@ -130,3 +130,40 @@ def test_emit_survives_a_discovery_failure(capsys, monkeypatch):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "mode=full" in captured.err
+
+
+def test_banner_with_gdl_workspace_set(tmp_path):
+    from pathlib import Path
+    banner = format_startup_banner("full", 3, [WITH_TAPIR], gdl_workspace=tmp_path)
+    assert "GDL workspace" in banner
+    assert str(tmp_path) in banner
+
+
+def test_banner_without_gdl_workspace_says_off():
+    banner = format_startup_banner("full", 3, [WITH_TAPIR], gdl_workspace=None)
+    assert "GDL tools off" in banner
+    assert "no workspace folder set" in banner
+
+
+def test_emit_with_discovery_failure_includes_gdl_workspace_status(capsys, monkeypatch, tmp_path):
+    def boom():
+        raise OSError("socket layer exploded")
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", boom)
+    emit_startup_banner("full", 3, gdl_workspace=tmp_path)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "GDL workspace" in captured.err
+    assert str(tmp_path) in captured.err
+
+
+def test_emit_with_discovery_failure_and_no_gdl_workspace(capsys, monkeypatch):
+    def boom():
+        raise OSError("socket layer exploded")
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", boom)
+    emit_startup_banner("full", 3, gdl_workspace=None)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "GDL tools off" in captured.err
+    assert "no workspace folder set" in captured.err
