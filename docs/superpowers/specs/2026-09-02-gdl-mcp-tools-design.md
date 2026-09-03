@@ -60,6 +60,24 @@ following is **documented, not demonstrated**:
 Implementation opens with a single manual probe: drop a `.gsm` into a linked
 folder by hand, reload, place, look. Nothing else gets built until it passes.
 
+**Demonstrated 2026-09-03.** The probe ran against a local Archicad 29 model
+(build 5101, Tapir 1.5.9) with a workspace folder added once via Library
+Manager. Both halves hold:
+
+- `ReloadLibraries` picked up a `.gsm` newly written into the linked folder,
+  with no Library Manager interaction, and `CreateObjects` resolved it by name.
+  The placed element rendered correctly and the transient probe deleted it
+  again, leaving the project element count exactly where it started.
+- A rebuild of the same object under the same name, followed by
+  `ReloadLibraries` alone, updated an already-placed instance in place. The
+  element was never re-placed and its own GUID was untouched; only the library
+  part behind it changed, and the re-render showed the change. The library
+  part's GUID stayed stable across the rebuild, which is what makes this work.
+
+So the linked-library path in this design is verified, not assumed, and the
+embedded-library fallback described below is a fallback rather than a
+likelihood.
+
 This is not ceremony. Four documented or header-evident API facts in this
 project were false when actually run, and the one design step that skipped a
 probe produced an elevation formula that would have put every railing a storey
