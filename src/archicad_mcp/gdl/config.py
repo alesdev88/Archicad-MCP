@@ -90,27 +90,36 @@ def _as_rgb(value) -> RGB:
     return (float(r), float(g), float(b))
 
 
-def _role_value(value, base: Path) -> Path | RGB:
+def _role_value(value, base: Path, resolve=None) -> Path | RGB:
     if isinstance(value, str):
-        return base / value
+        path = base / value if resolve is None else resolve(value)
+        return path
     return _as_rgb(value)
 
 
-def parse_objects(raw: dict, base: Path) -> dict[str, ObjectConfig]:
+def parse_objects(raw: dict, base: Path,
+                  resolve: callable | None = None) -> dict[str, ObjectConfig]:
     """Parse a raw config mapping. Relative paths resolve against `base`.
 
     Shared by the file loader and the MCP build tool's inline argument, so the
     schema is defined once. A second copy would drift.
+
+    If `resolve` is provided, it is called for every path field (source, textures,
+    variant roles) to enforce containment or other path validation. When None,
+    paths are resolved with simple `base / path` joins.
     """
+    if resolve is None:
+        resolve = lambda rel: base / rel
+
     objects: dict[str, ObjectConfig] = {}
     for name, spec in raw.get("objects", {}).items():
         objects[name] = ObjectConfig(
             name=name,
             guid=spec.get("guid"),
-            source=(base / spec["source"]) if spec.get("source") else None,
-            textures={k: base / v for k, v in spec.get("textures", {}).items()},
+            source=resolve(spec["source"]) if spec.get("source") else None,
+            textures={k: resolve(v) for k, v in spec.get("textures", {}).items()},
             variants=[(v["label"],
-                       {role: _role_value(val, base)
+                       {role: _role_value(val, base, resolve)
                         for role, val in v.get("roles", {}).items()})
                       for v in spec.get("variants", [])],
             frame_variants=[(v["label"], _as_rgb(v["rgb"]))

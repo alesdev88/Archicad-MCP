@@ -30,6 +30,11 @@ SOURCE_SUFFIXES = (".obj", ".3ds")
 TEXTURE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
 
+class MeshParseError(ValueError):
+    """Raised when a source mesh file cannot be parsed."""
+    pass
+
+
 def _entry(path: Path) -> dict:
     stat = path.stat()
     return {
@@ -97,14 +102,19 @@ def _inspect_source(ws: Workspace, source: str) -> dict:
 def _config_for(ws: Workspace, name: str, config: dict | None):
     """The ObjectConfig to build with, from the argument or from assets.json.
 
-    An inline config is parsed against the workspace root, so its texture and
-    source paths are workspace-relative like every other path argument.
+    All paths (inline or saved) are validated through ws.resolve() to enforce
+    workspace containment. Absolute paths and ".." traversals are rejected.
     """
     if config is not None:
-        objects = cfg_mod.parse_objects({"objects": {name: config}}, ws.root)
+        objects = cfg_mod.parse_objects({"objects": {name: config}}, ws.root,
+                                        resolve=ws.resolve)
         return objects[name], config
     assets = ws.assets_path()
-    objects = cfg_mod.load_config(assets) if assets.is_file() else {}
+    if assets.is_file():
+        raw = json.loads(assets.read_text())
+        objects = cfg_mod.parse_objects(raw, assets.parent, resolve=ws.resolve)
+    else:
+        objects = {}
     return cfg_mod.find_object(objects, name), None
 
 
@@ -124,7 +134,7 @@ def _build_object(ws: Workspace, source: str, name: str,
     try:
         mesh = mesh_mod.load(src)
     except ValueError as exc:
-        raise ValueError(
+        raise MeshParseError(
             f"Failed to parse source mesh {source}: {exc}") from exc
     notes = list(mesh.notes)
     if cfg.decimate and decimate:
@@ -187,7 +197,7 @@ def _gdl_guarded(guarded):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except (ToolchainError, WorkspaceError, FileNotFoundError) as exc:
+            except (ToolchainError, WorkspaceError, FileNotFoundError, MeshParseError) as exc:
                 return {"error": str(exc)}
         return guarded(wrapper)
     return decorate

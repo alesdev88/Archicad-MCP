@@ -236,3 +236,97 @@ def test_build_skips_decimation_when_asked(ws, monkeypatch):
     gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
                             decimate=False, validate=True, save_config=False)
     assert called == []
+
+
+def test_build_rejects_absolute_source_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"source": "/etc/passwd", "groups": {}}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_traversal_in_source_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"source": "../../etc/passwd", "groups": {}}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_absolute_texture_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"groups": {}, "textures": {"logo": "/etc/passwd"}}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_traversal_in_texture_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"groups": {}, "textures": {"logo": "../outside/secret.txt"}}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_absolute_variant_role_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"groups": {}, "variants": [{"label": "Test",
+                                        "roles": {"face": "/etc/passwd"}}]}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_traversal_in_variant_role_path(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"groups": {}, "variants": [{"label": "Test",
+                                        "roles": {"face": "../outside/secret.txt"}}]}
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_rejects_poisoned_assets_json(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    spec = {"groups": {}, "textures": {"logo": "textures/oak_ab12cd.jpg"}}
+    gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                            decimate=True, validate=True, save_config=True)
+    poisoned = json.loads((ws.root / "assets.json").read_text())
+    poisoned["objects"]["Cube"]["textures"]["logo"] = "../outside/secret.txt"
+    (ws.root / "assets.json").write_text(json.dumps(poisoned))
+    with pytest.raises(WorkspaceError, match="outside"):
+        gdl_tools._build_object(ws, "cube.obj", "Cube", config=None,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_handles_malformed_source_mesh(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    (ws.root / "bad.obj").write_text("v not_a_number\n")
+    with pytest.raises(gdl_tools.MeshParseError):
+        gdl_tools._build_object(ws, "bad.obj", "BadMesh", config=None,
+                                decimate=True, validate=True, save_config=False)
+
+
+def test_build_handles_corrupted_assets_json_on_save(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    (ws.root / "assets.json").write_text("{invalid json")
+    spec = {"groups": {}}
+    result = gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                     decimate=True, validate=True, save_config=True)
+    assert result["config_saved"] is False
+    assert "config_save_error" in result
+    assert result["gsm"] == "Cube.gsm"
+
+
+def test_build_handles_assets_json_as_directory(ws, monkeypatch):
+    _fake_toolchain(monkeypatch)
+    (ws.root / "assets.json").unlink()
+    (ws.root / "assets.json").mkdir()
+    spec = {"groups": {}}
+    result = gdl_tools._build_object(ws, "cube.obj", "Cube", config=spec,
+                                     decimate=True, validate=True, save_config=True)
+    assert result["config_saved"] is False
+    assert "config_save_error" in result
+    assert result["gsm"] == "Cube.gsm"
