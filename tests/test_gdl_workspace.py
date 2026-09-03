@@ -37,7 +37,16 @@ def test_symlink_out_is_refused(tmp_path):
     root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (root / "escape").symlink_to(outside)
+    # target_is_directory matters on Windows: without it, symlink_to() makes a
+    # file-type symlink there, which is not traversable, so resolve() leaves it
+    # unresolved, it lands inside the root, and the containment check never
+    # gets exercised. A real Windows directory symlink IS followed by
+    # resolve(), so this is a test-only fix; containment itself is fine.
+    try:
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation not permitted (common on Windows "
+                    "without developer mode)")
     ws = Workspace(root)
     with pytest.raises(WorkspaceError, match="outside"):
         ws.resolve("escape/secrets.txt")
