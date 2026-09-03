@@ -238,7 +238,6 @@ def build_server(
             from archicad_mcp.gdl.workspace import Workspace
             gdl_tools.register(mcp, default_port, Workspace(gdl_workspace),
                                _tool_meta, _guarded)
-    mcp.archicad_gdl_workspace = gdl_workspace
 
     return mcp
 
