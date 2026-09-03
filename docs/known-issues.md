@@ -203,7 +203,8 @@ Confirmed against a live Archicad 29.0 model on 2026-07-16:
 - The layer name is **`ModelView_LayerName`**. There is no `General_LayerName`.
 - Zone number and name are **`Zone_ZoneNumber`** and **`Zone_ZoneName`**.
 - An element's **story is not a property**. It comes from Tapir
-  `GetDetailsOfElements.floorIndex`, a **0-based index**, which is why the
+  `GetDetailsOfElements.floorIndex`, the **story index** (ground floor 0,
+  basements negative), which is why the
   `story` address in `find_elements` and the `get_model_summary` breakdowns key
   on floorIndex.
 

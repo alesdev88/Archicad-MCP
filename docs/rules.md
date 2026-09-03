@@ -59,7 +59,8 @@ interactively pastes straight into a rule:
 ```
 
 `property` addresses a property (`Group/Name`, a built-in API name, or a
-property GUID), the home story as `story` (0-based index), or the element's
+property GUID), the home story as `story` (Archicad's story index: ground floor 0,
+basements negative), or the element's
 item in a classification system as `classification:<System name>`. Every
 operator from `find_elements` works except the four branch operators
 (`is_in_branch_of` and friends): a rule snapshot carries item GUIDs and not the

@@ -98,7 +98,7 @@ official selection command cannot see).
 |---|---|---|
 | `Group/Name`, an API name, or a GUID | A property. `search_definitions` hands these out. | `OFFICE/Fire Rating`, `ModelView_LayerName` |
 | `classification:<System name>` | The element's item in that classification system. Values are item IDs as Archicad shows them (`Wall`) or item GUIDs. | `classification:Archicad Classification` |
-| `story` | The home story, as a 0-based index (Tapir `floorIndex`). | `story` |
+| `story` | The home story, as Archicad's story index (Tapir `floorIndex`): ground floor `0`, basements negative, upper floors positive. Read the indices with `get_project_info`. | `story` |
 
 ### Operators
 
@@ -208,7 +208,7 @@ Everything classified under Site that is not a mesh:
   {"property": "classification:Archicad Classification", "operator": "is_in_branch_of", "value": "Site"}]}]}
 ```
 
-Selected elements on the ground floor whose layer starts with `A-`:
+Selected elements on the ground floor (story index 0) whose layer starts with `A-`:
 
 ```json
 {"groups": [{"element_types": ["all"], "comparisons": [

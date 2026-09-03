@@ -260,7 +260,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "'property' is 'Group/Name' for a user property, the API name for a "
         "built-in (e.g. ModelView_LayerName), a property GUID, "
         "'classification:<System name>' for the element's classification item, "
-        "or 'story' for the 0-based home story index. Call search_definitions "
+        "or 'story' for the home story index (ground floor 0, basements negative; get_project_info lists them). Call search_definitions "
         "to find the exact property address. Operators: equal, not_equal, less, "
         "greater, less_or_equal, greater_or_equal, contains, does_not_contain, "
         "starts_with, ends_with (strings, case-insensitive), is_in_branch_of, "

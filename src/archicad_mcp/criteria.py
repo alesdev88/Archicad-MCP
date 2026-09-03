@@ -15,7 +15,8 @@ A comparison addresses one of three kinds of element data through a single
   built-in property by its API name), or a property GUID.
 * ``"classification:<System name>"``: the element's classification item in
   that system. Values are item IDs as shown in Archicad ("Wall") or item GUIDs.
-* ``"story"``: the home story as a 0-based index (Tapir floorIndex).
+* ``"story"``: the home story as Archicad's story index (Tapir floorIndex):
+  ground floor 0, basements negative.
 
 Live-verified value semantics (AC 29, JSON API schema bundled in gateway/):
 a property cell carries ``status`` normal / userUndefined / notAvailable, and
