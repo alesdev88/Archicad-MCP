@@ -185,7 +185,34 @@ Tapir add-on missing (the line names which tools degrade).
 
 ## Rules
 
-Point `ARCHICAD_MCP_RULES_DIR` (or `--rules-dir`) at a directory of YAML files:
+The server loads rules from **one directory**, and where that directory is set
+depends on how the server was installed. Nothing else is read: the bundled
+examples load only when no directory is set.
+
+| Install | Where to set the rules directory |
+|---|---|
+| Claude Desktop extension (`.mcpb`) | Claude Desktop > Settings > Extensions > Archicad > **Office rules folder**. This fills `ARCHICAD_MCP_RULES_DIR` for you; the field is empty after install and stays empty until you set it. |
+| `uv tool install` + Claude Desktop config | `"env": { "ARCHICAD_MCP_RULES_DIR": "/absolute/path/to/office-rules" }` on the server entry in `claude_desktop_config.json`, as in the examples above. |
+| `uv tool install` + Claude Code | `claude mcp add archicad -e ARCHICAD_MCP_RULES_DIR=/absolute/path/to/office-rules -- archicad-mcp --mode full`, or edit the entry's `env` in `~/.claude.json`. |
+| Any shell | `archicad-mcp --rules-dir /absolute/path/to/office-rules`, or export `ARCHICAD_MCP_RULES_DIR`. The flag wins over the variable. |
+
+Use an absolute path. A relative one resolves against whatever working
+directory the client happened to spawn the server in.
+
+Check what actually loaded before trusting an audit. The startup line in the
+log says where the rules came from and how many there are:
+
+```
+archicad-mcp: mode=full, 1 rule loaded from /Users/YOU/office-rules
+archicad-mcp: mode=full, 3 bundled example rules loaded (no rules directory set)
+```
+
+and `list_rules` returns the same `source` plus every rule id and any file that
+failed to parse. A low count with the right directory usually means the file
+holds templates that are still commented out, which is how the starter file
+ships. The count is of rules, not files.
+
+A rule file is a YAML **list** of rules:
 
 ```yaml
 - id: walls-fire-rating

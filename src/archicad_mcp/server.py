@@ -105,6 +105,7 @@ def build_server(
     # Carried on the server so main() can report it without loading rules twice.
     mcp.archicad_rule_count = len(loaded.rules)
     mcp.archicad_rule_errors = len(loaded.errors)
+    mcp.archicad_rule_source = None if rules_dir is None else str(rules_dir)
 
     def _rules_subset(ruleset: str | None = None, rule_id: str | None = None):
         rules = loaded.rules
@@ -570,16 +571,28 @@ def _instance_line(info: InstanceInfo, mode: str) -> str:
     return f"{_BANNER_PREFIX} " + ", ".join(parts)
 
 
+def _rules_phrase(rule_count: int, rules_source: str | None) -> str:
+    """'1 rule loaded from /x' or '3 bundled example rules loaded (no rules
+    directory set)'. A bare count was read as "scoring against nothing" when
+    it was the office folder holding one uncommented rule, so the count has
+    to carry where it came from."""
+    noun = "rule" if rule_count == 1 else "rules"
+    if rules_source:
+        return f"{rule_count} {noun} loaded from {rules_source}"
+    return f"{rule_count} bundled example {noun} loaded (no rules directory set)"
+
+
 def format_startup_banner(mode: str, rule_count: int,
                           instances: Sequence[InstanceInfo],
                           rule_errors: int = 0,
-                          gdl_workspace: Path | None = None) -> str:
+                          gdl_workspace: Path | None = None,
+                          rules_source: str | None = None) -> str:
     """The diagnostic lines written to stderr at startup.
 
     This is what someone reads in mcp-server-archicad.log when the tools are
     not behaving, so every line has to be actionable on its own.
     """
-    head = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
+    head = f"{_BANNER_PREFIX} mode={mode}, {_rules_phrase(rule_count, rules_source)}"
     if rule_errors:
         head += f", {rule_errors} rule file(s) rejected (call list_rules for details)"
     # GDL tools register only in full mode with a workspace folder set
@@ -600,7 +613,8 @@ def format_startup_banner(mode: str, rule_count: int,
 
 
 def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
-                        gdl_workspace: Path | None = None) -> None:
+                        gdl_workspace: Path | None = None,
+                        rules_source: str | None = None) -> None:
     """Write the banner to stderr. Never raises, never touches stdout.
 
     Under stdio transport stdout is the JSON-RPC channel: one stray byte there
@@ -611,7 +625,8 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
     try:
         instances = discover_instances()
     except Exception as exc:  # noqa: BLE001 - diagnostics must not break startup
-        prefix_config = f"{_BANNER_PREFIX} mode={mode}, {rule_count} rules loaded"
+        prefix_config = (f"{_BANNER_PREFIX} mode={mode}, "
+                         f"{_rules_phrase(rule_count, rules_source)}")
         # GDL tools register only in full mode with a workspace folder set
         if mode == "full" and gdl_workspace is not None:
             prefix_config += f", GDL workspace {gdl_workspace}"
@@ -620,7 +635,8 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
         print(f"{prefix_config} (instance discovery failed: {exc})",
               file=sys.stderr, flush=True)
         return
-    print(format_startup_banner(mode, rule_count, instances, rule_errors, gdl_workspace),
+    print(format_startup_banner(mode, rule_count, instances, rule_errors, gdl_workspace,
+                                rules_source),
           file=sys.stderr, flush=True)
 
 
@@ -675,7 +691,8 @@ def main() -> None:
     server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port,
                           gdl_workspace=gdl_workspace)
     emit_startup_banner(args.mode, server.archicad_rule_count,
-                        server.archicad_rule_errors, gdl_workspace)
+                        server.archicad_rule_errors, gdl_workspace,
+                        server.archicad_rule_source)
     server.run()
 
 

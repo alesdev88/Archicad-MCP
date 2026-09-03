@@ -23,6 +23,31 @@ def test_banner_reports_mode_and_rule_count():
     assert "12 rules" in banner
 
 
+def test_banner_names_where_the_rules_came_from():
+    """'1 rules loaded' was read as the extension scoring against nothing when
+    it was the office folder holding one uncommented rule. The count must say
+    which directory it counted, or that no directory was set."""
+    office = format_startup_banner("full", 1, [WITH_TAPIR], rules_source="/office/rules")
+    assert "1 rule loaded from /office/rules" in office
+    bundled = format_startup_banner("full", 3, [WITH_TAPIR])
+    assert "3 bundled example rules loaded (no rules directory set)" in bundled
+
+
+def test_emit_names_the_rules_source_even_when_discovery_fails(capsys, monkeypatch):
+    def boom():
+        raise OSError("socket layer exploded")
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", boom)
+    emit_startup_banner("full", 1, rules_source="/office/rules")
+    assert "1 rule loaded from /office/rules" in capsys.readouterr().err
+
+
+def test_build_server_records_the_rules_source(tmp_path):
+    from archicad_mcp.server import build_server
+    assert build_server(mode="full").archicad_rule_source is None
+    assert build_server(mode="full", rules_dir=tmp_path).archicad_rule_source == str(tmp_path)
+
+
 def test_resolve_rules_dir_treats_blank_as_unset():
     # Path("") is Path("."), which is truthy, so a blank env var silently
     # scanned the working directory and loaded zero rules instead of falling
