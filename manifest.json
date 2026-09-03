@@ -71,7 +71,7 @@
     "gdl_workspace": {
       "type": "directory",
       "title": "GDL workspace folder",
-      "description": "Folder holding source meshes, textures, assets.json and the .gsm library parts this server builds. Add the same folder to Archicad once via Library Manager so rebuilds update placed objects in place. Leave empty to switch the GDL tools off.",
+      "description": "Folder holding source meshes, textures, assets.json and the .gsm library parts this server builds. Add the same folder to Archicad once via Library Manager so rebuilds update placed objects in place. The GDL tools need Mode set to 'full' as well as this folder; leave this empty, or leave Mode on 'verdicts', to switch the GDL tools off.",
       "multiple": false,
       "required": false
     }
