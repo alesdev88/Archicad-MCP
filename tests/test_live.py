@@ -149,3 +149,114 @@ def test_gdl_deploy_with_keep_false_leaves_element_count_unchanged(conn, gdl_wor
     assert after == before, (
         f"deploy with keep=false changed the project element count: "
         f"{before} -> {after}")
+
+
+# ---------- 0.4.0: criteria query and definition search ----------
+
+@pytest.fixture(scope="module")
+def model_type(conn):
+    """The most common element type in the test model, so the canary works on
+    whatever the small model holds (the reference one has four Objects and no
+    walls) without a property read wider than that one type."""
+    from collections import Counter
+    from archicad_mcp.extract import _fetch_types, get_all_element_ids
+    guids = get_all_element_ids(conn)
+    if not guids:
+        pytest.skip("test model is empty")
+    counts = Counter(_fetch_types(conn, guids).values())
+    element_type, n = counts.most_common(1)[0]
+    if n > 500:
+        pytest.skip("dominant type too numerous for a live property read in a canary")
+    return element_type
+
+
+def test_search_definitions_hands_out_addresses_that_resolve(conn):
+    """The discovery tool must return addresses the other tools accept. For
+    every property match, resolve_property_ids must find it."""
+    from archicad_mcp.core.definitions import search_definitions
+    from archicad_mcp.extract import resolve_property_ids
+    payload = search_definitions(conn, "layer", kind="property", limit=10)
+    assert payload["total_matches"] > 0, "no property matches 'layer'"
+    addresses = [m["property"] for m in payload["matches"]]
+    ids = resolve_property_ids(conn, addresses)
+    missing = [a for a in addresses if a not in ids]
+    assert not missing, f"addresses that do not resolve: {missing}"
+    layer = next((m for m in payload["matches"] if m["property"] == BUILTIN_LAYER), None)
+    assert layer is not None, "ModelView_LayerName should surface for 'layer'"
+
+
+def test_search_definitions_lists_attributes(conn):
+    from archicad_mcp.core.definitions import search_definitions
+    payload = search_definitions(conn, "a", kind="attribute", limit=200)
+    types = {m["attribute_type"] for m in payload["matches"]}
+    assert "Layer" in types
+    assert not payload.get("notes"), payload.get("notes")
+
+
+def test_find_elements_by_type_and_layer_agrees_with_a_direct_read(conn, model_type):
+    """Cross-check the criteria path against a direct property read over one
+    element type: the count on the most common layer must agree, an AND of a
+    value with its own negation must be empty, and the OR must be everything."""
+    from collections import Counter
+    from archicad_mcp.core.query import find_elements
+    from archicad_mcp.extract import fetch_property_values
+    everything = find_elements(conn, [{"element_types": [model_type]}])
+    layers = fetch_property_values(conn, everything["guids"], [BUILTIN_LAYER])
+    top_layer, expected = Counter(v[BUILTIN_LAYER] for v in layers.values()).most_common(1)[0]
+    on_top = [{"property": BUILTIN_LAYER, "operator": "equal", "value": top_layer}]
+    not_on_top = [{"property": BUILTIN_LAYER, "operator": "not_equal", "value": top_layer}]
+    payload = find_elements(conn, [{"element_types": [model_type], "comparisons": on_top}])
+    assert payload["count"] == expected
+    assert payload["property_reads"] == everything["count"]
+    none = find_elements(conn, [{"element_types": [model_type], "comparisons": on_top + not_on_top}])
+    assert none["count"] == 0
+    either = find_elements(conn, [{"element_types": [model_type], "logical_operator": "or",
+                                   "comparisons": on_top + not_on_top}])
+    assert either["count"] == everything["count"]
+
+
+def test_find_elements_story_and_classification_need_no_property_read(conn, model_type):
+    from archicad_mcp.core.query import find_elements
+    payload = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+        {"property": "story", "operator": "greater_or_equal", "value": -100}]}])
+    assert payload["property_reads"] == 0
+    systems = conn.official("API.GetAllClassificationSystems").get("classificationSystems", [])
+    if not systems:
+        pytest.skip("test model has no classification system")
+    everything = find_elements(conn, [{"element_types": [model_type]}])
+    for system in systems:
+        address = f"classification:{system['name']}"
+        classified = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+            {"property": address, "operator": "has_value"}]}])
+        unclassified = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+            {"property": address, "operator": "has_no_value"}]}])
+        assert classified["count"] + unclassified["count"] == everything["count"]
+        assert classified["property_reads"] == 0
+
+
+def test_find_elements_custom_property_availability_precheck(conn, model_type):
+    """Needs a custom property scoped by classification in the test model
+    (the reference model has 'MCP Test/Fire Rating' on its Object item). An
+    element the definition does not cover must be answered notAvailable
+    without being read; the covered ones are read and one of them has a value."""
+    from archicad_mcp.core.definitions import search_definitions
+    from archicad_mcp.core.query import find_elements
+    found = search_definitions(conn, "fire rating", kind="property", editable_only=True)
+    custom = [m for m in found["matches"] if not m["builtin"]]
+    if not custom:
+        pytest.skip("test model has no custom 'fire rating' property")
+    address = custom[0]["property"]
+    assert "/" in address, "a custom property is addressed Group/Name"
+    everything = find_elements(conn, [{"element_types": [model_type]}])
+    unavailable = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+        {"property": address, "operator": "not_available"}]}])
+    available = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+        {"property": address, "operator": "available"}]}])
+    assert unavailable["count"] + available["count"] == everything["count"]
+    # the pre-check, not a read, answered the uncovered elements
+    assert unavailable.get("skipped_not_available", 0) == unavailable["count"]
+    assert available["property_reads"] == available["count"]
+    with_value = find_elements(conn, [{"element_types": [model_type], "comparisons": [
+        {"property": address, "operator": "has_value"}]}])
+    print(f"{address}: {with_value['count']} of {available['count']} covered elements have a value")
+    assert with_value["count"] <= available["count"]

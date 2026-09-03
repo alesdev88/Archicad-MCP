@@ -18,11 +18,11 @@ class ClassificationRequiredRule:
 
     @property
     def needs(self) -> frozenset[str]:
-        return frozenset({"elements", "classifications"})
+        return frozenset({"elements", "classifications"}) | self.applies_to.needs
 
     @property
     def needed_properties(self) -> frozenset[str]:
-        return frozenset()
+        return frozenset() | self.applies_to.needed_properties
 
     @classmethod
     def from_config(cls, cfg: dict) -> "ClassificationRequiredRule":

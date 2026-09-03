@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Iterable
 
 from multiconn_archicad.errors import APIErrorBase
@@ -28,7 +29,7 @@ PROPERTY_FETCH_CHUNK = 500
 # chunking alone did NOT prevent it on a 16k-element model, because a single
 # un-composable property on any element in any chunk still aborts Archicad.
 # So we refuse, with an actionable error, rather than risk crashing the
-# user's Archicad. Scope the query first (query_elements / rule applies_to),
+# user's Archicad. Scope the query first (find_elements / rule applies_to),
 # or raise the ceiling deliberately via ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS.
 def _int_env(name: str, default: int) -> int:
     raw = os.environ.get(name)
@@ -71,6 +72,10 @@ class PropertyFetchTooWideError(ArchicadUnavailableError):
     """Raised before a property fetch that could crash Archicad's API bridge."""
 
 
+_PROPERTY_GUID = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
 def _property_name_payload(name: str) -> dict:
     """User-defined properties are addressed 'Group/Name'; everything else BuiltIn."""
     if "/" in name:
@@ -80,15 +85,26 @@ def _property_name_payload(name: str) -> dict:
 
 
 def resolve_property_ids(conn: ArchicadConnection, names: Iterable[str]) -> dict[str, dict]:
+    """name -> propertyId. A name may also be a property GUID, which needs no
+    lookup: Tapir lists ~1000 built-in definitions (live count on AC 29) that
+    have no official non-localized name, and the GUID is the only address
+    search_definitions can hand out for those."""
     names = list(names)
     if not names:
         return {}
-    payload = [_property_name_payload(n) for n in names]
-    response = conn.official("API.GetPropertyIds", {"properties": payload})
     out: dict[str, dict] = {}
-    for name, item in zip(names, response.get("properties", [])):
-        if "propertyId" in item:
-            out[name] = item["propertyId"]
+    to_resolve = []
+    for n in names:
+        if _PROPERTY_GUID.match(n):
+            out[n] = {"guid": n}
+        else:
+            to_resolve.append(n)
+    if to_resolve:
+        payload = [_property_name_payload(n) for n in to_resolve]
+        response = conn.official("API.GetPropertyIds", {"properties": payload})
+        for name, item in zip(to_resolve, response.get("properties", [])):
+            if "propertyId" in item:
+                out[name] = item["propertyId"]
     return out
 
 
@@ -170,7 +186,8 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
             f"Refusing to read properties across {len(guids)} elements "
             f"(limit {MAX_PROPERTY_FETCH_ELEMENTS}). Wide property queries have "
             "crashed Archicad's API on large models. Scope the query first "
-            "(query_elements by type/layer/story, or a rule's applies_to), or "
+            "(find_elements by element type, story or classification, or a rule's "
+            "applies_to), or "
             "raise ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS if you accept the risk.")
     ids = resolve_property_ids(conn, names)
     resolved = [n for n in names if n in ids]
@@ -217,7 +234,12 @@ def _fetch_classifications(conn, guids: list[str]) -> dict[str, dict[str, str | 
                 cid = item.get("classificationId", {})
                 system_guid = cid.get("classificationSystemId", {}).get("guid")
                 name = system_names.get(system_guid, system_guid or "?")
-                inner = cid.get("classificationId")
+                # Live shape (AC 29, 2026-09-03): the item sits under
+                # "classificationItemId" and is absent when the element is
+                # unclassified in that system. The key used to be read as
+                # "classificationId", which never exists here, so every element
+                # looked unclassified.
+                inner = cid.get("classificationItemId")
                 per_system[name] = inner.get("guid") if inner else None
             out[guid] = per_system
     return out

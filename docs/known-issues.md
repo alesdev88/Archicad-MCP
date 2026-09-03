@@ -39,6 +39,17 @@ Consequences:
   walls, say) reads only walls. An audit is refused only when a rule targets
   *all* elements and the model exceeds the ceiling. Scope the rule, or raise the
   env var.
+- **`find_elements`** has to read values to evaluate a property comparison,
+  because nothing in the official API or Tapir filters by property server-side
+  (probed across all 311 commands on 03.09.2026, AC 29/5101, Tapir 1.5.9). It
+  narrows by element type server-side, drops elements on story and
+  classification before any property read, and pre-checks user-defined
+  properties against their classification availability so a pair the
+  definition does not cover is never sent to Archicad. That pre-check is aimed
+  at the suspected trigger above and predicted availability correctly on 228
+  of 228 custom definitions checked live, but it is bounding, not a fix: built-in
+  properties have no such check. The result reports `property_reads` so the
+  blast radius of a query is visible. See [Finding elements](query.md).
 
 ## Element coverage: the official API sees only model elements
 
@@ -71,7 +82,26 @@ plan and reading back every element's type, so a typed query no longer costs
 
 **Still marker-blind:** `get_selection` reads the selection with the official
 `API.GetSelectedElements`, which returns `[]` when a marker (a CutPlane, say) is
-selected. `query_elements(selection_only=true)` does not have this problem.
+selected. `find_elements(selection_only=true)` does not have this problem.
+
+## Classifications were read from the wrong key until 0.4.0
+
+`API.GetClassificationsOfElements` returns each element's item under
+`classificationItemId`, and omits that key when the element is unclassified in
+the system. The extractor read a key named `classificationId` that never exists
+at that level, so **every element looked unclassified**: `classification-required`
+rules failed every element they looked at, and `query_elements(classification_system=…)`
+returned nothing. Found by the 0.4.0 live probe (AC 29/5101, 03.09.2026), fixed
+in the extractor and the recorded fixture. If an old audit reported every wall
+as unclassified, that was this.
+
+## Attribute types the official API accepts
+
+`API.GetAttributesByType` on AC 29 build 5101 answers for Layer, Line, Fill,
+Composite, Surface, LayerCombination, ZoneCategory, Profile, PenTable and
+BuildingMaterial, and refuses MEPSystem and OperationProfile with error 4002
+even though the schema lists them. `search_definitions` searches the ten that
+work; `list_attributes` still offers its original six.
 
 ## Teamwork credentials are stripped from `get_project_info`
 
@@ -137,15 +167,16 @@ Confirmed against a live Archicad 29.0 model on 2026-07-16:
 - The layer name is **`ModelView_LayerName`**. There is no `General_LayerName`.
 - Zone number and name are **`Zone_ZoneNumber`** and **`Zone_ZoneName`**.
 - An element's **story is not a property**. It comes from Tapir
-  `GetDetailsOfElements.floorIndex`, a **0-based index**, which is why
-  `query_elements(story=…)` and the `get_model_summary` breakdowns key on
-  floorIndex.
+  `GetDetailsOfElements.floorIndex`, a **0-based index**, which is why the
+  `story` address in `find_elements` and the `get_model_summary` breakdowns key
+  on floorIndex.
 
 ## Validated end to end
 
 Live-run against Archicad 29.0/4006:
 
-- Instance discovery, `get_model_summary`, `query_elements` (type + story filters)
+- Instance discovery, `get_model_summary`, `query_elements` (type + story filters;
+  replaced by `find_elements` in 0.4.0, whose live canary is in `tests/test_live.py`)
 - `get_element_data`, `set_element_data` (dry-run, commit, read-back)
 - `get_selection`, `set_selection` (replaces rather than appends), `clear_selection`
 - `create_elements`, then `move_elements`, then `delete_elements`, including
@@ -165,6 +196,20 @@ without changing what they send to Archicad: `manage_selection` became
 `list_issues` and five single-purpose write tools, and `execute_api_command`
 became `execute_read_api_command` and `execute_write_api_command`. The offline
 suite covers the new surface; the live re-run is still owed.
+
+Live-run against Archicad 29.0/5101 with Tapir 1.5.9 on 03.09.2026, on a
+four-element test model carrying a classification system and a
+classification-scoped custom property:
+
+- `search_definitions`: every property address it returned resolved through
+  `GetPropertyIds`; attribute search covered all ten working types.
+- `find_elements`: a layer comparison agreed with a direct property read; `and`
+  of a value with its own negation was empty and the `or` was everything;
+  story and classification comparisons made zero property reads; the
+  availability pre-check answered the two uncovered elements without a read,
+  and the covered ones split cleanly into one `equal`, one `is_user_undefined`,
+  with `has_no_value` counting all three non-values. Branch tests ran against
+  the live tree.
 
 Not validated: `publish`.
 

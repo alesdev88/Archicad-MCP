@@ -68,24 +68,27 @@ async def call(tool, args=None):
         return json.loads(result.content[0].text)
 
 
-# ---------- query_elements ----------
+# ---------- find_elements ----------
 
 async def test_query_by_type_finds_a_2d_marker(core):
     """The regression: this used to return a silent count of 0."""
-    payload = await call("query_elements", {"element_type": "InteriorElevation"})
+    payload = await call("find_elements", {"groups": [{"element_types": ["InteriorElevation"]}]})
     assert payload["count"] == 1
     assert payload["guids"] == ["ie-1"]
 
 
 async def test_query_by_type_does_not_sweep_types_of_the_whole_plan(core):
     """Asking Tapir for one type replaces 'fetch everything, filter here'."""
-    await call("query_elements", {"element_type": "Wall"})
+    await call("find_elements", {"groups": [{"element_types": ["Wall"]}]})
     assert not any(c == "API.GetTypesOfElements" for c, _ in core.calls)
     assert any(c == "GetElementsByType" for c, _ in core.calls)
 
 
 async def test_query_unfiltered_covers_the_whole_plan(core):
-    payload = await call("query_elements")
+    payload = await call("find_elements", {"groups": [{"element_types": ["Zone"],
+                                                        "element_types_operator": "is_not"}]})
+    assert payload["count"] == 3
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
     assert payload["count"] == 4
     assert payload["by_type"]["InteriorElevation"] == 1
     assert payload["coverage"] == "whole-plan"
@@ -93,13 +96,14 @@ async def test_query_unfiltered_covers_the_whole_plan(core):
 
 async def test_query_selection_sees_a_selected_marker(monkeypatch):
     _install(monkeypatch, make_core(selected=("ie-1",)))
-    payload = await call("query_elements", {"selection_only": True})
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}],
+                                           "selection_only": True})
     assert payload["guids"] == ["ie-1"]
 
 
 async def test_query_without_tapir_says_coverage_is_partial(monkeypatch):
     _install(monkeypatch, make_core(tapir_on=False))
-    payload = await call("query_elements")
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
     assert payload["count"] == 3
     assert payload["coverage"] == "model-elements-only"
     assert "Tapir" in payload["coverage_note"]
@@ -107,7 +111,7 @@ async def test_query_without_tapir_says_coverage_is_partial(monkeypatch):
 
 async def test_query_by_type_without_tapir_still_filters(monkeypatch):
     _install(monkeypatch, make_core(tapir_on=False))
-    payload = await call("query_elements", {"element_type": "Wall"})
+    payload = await call("find_elements", {"groups": [{"element_types": ["Wall"]}]})
     assert set(payload["guids"]) == {"w-1", "w-2"}
     assert payload["coverage"] == "model-elements-only"
 
