@@ -96,10 +96,12 @@ def _role_value(value, base: Path) -> Path | RGB:
     return _as_rgb(value)
 
 
-def load_config(path: str | Path) -> dict[str, ObjectConfig]:
-    path = Path(path)
-    base = path.parent
-    raw = json.loads(path.read_text())
+def parse_objects(raw: dict, base: Path) -> dict[str, ObjectConfig]:
+    """Parse a raw config mapping. Relative paths resolve against `base`.
+
+    Shared by the file loader and the MCP build tool's inline argument, so the
+    schema is defined once. A second copy would drift.
+    """
     objects: dict[str, ObjectConfig] = {}
     for name, spec in raw.get("objects", {}).items():
         objects[name] = ObjectConfig(
@@ -121,6 +123,23 @@ def load_config(path: str | Path) -> dict[str, ObjectConfig]:
             decimate={k: int(v) for k, v in spec.get("decimate", {}).items()},
         )
     return objects
+
+
+def load_config(path: str | Path) -> dict[str, ObjectConfig]:
+    path = Path(path)
+    return parse_objects(json.loads(path.read_text()), path.parent)
+
+
+def save_object_config(path: str | Path, name: str, spec: dict) -> None:
+    """Merge one object's raw spec into an assets.json, keeping the rest.
+
+    Read-modify-write of the whole file. The alternative of appending would
+    corrupt the JSON, and the file is small enough that rewriting it is free.
+    """
+    path = Path(path)
+    raw = json.loads(path.read_text()) if path.is_file() else {}
+    raw.setdefault("objects", {})[name] = spec
+    path.write_text(json.dumps(raw, indent=2) + "\n")
 
 
 def find_object(objects: dict[str, ObjectConfig], name: str) -> ObjectConfig:
