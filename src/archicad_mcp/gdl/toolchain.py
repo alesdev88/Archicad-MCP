@@ -148,14 +148,24 @@ def find_blender() -> Path | None:
         return Path(env)
     if sys.platform == "win32":
         pattern, tail = "Blender Foundation/Blender *", "blender.exe"
+        candidates = []
+        for root in _blender_roots():
+            for entry in root.glob(pattern):
+                exe = entry / tail
+                if exe.is_file():
+                    m = re.search(r"Blender (\d+)", entry.name)
+                    candidates.append((int(m.group(1)) if m else 0, exe))
+        if candidates:
+            return max(candidates)[1]
+        return None
     else:
         pattern, tail = "Blender.app", "Contents/MacOS/Blender"
-    for root in _blender_roots():
-        for entry in sorted(root.glob(pattern), reverse=True):
-            exe = entry / tail
-            if exe.is_file():
-                return exe
-    return None
+        for root in _blender_roots():
+            for entry in sorted(root.glob(pattern), reverse=True):
+                exe = entry / tail
+                if exe.is_file():
+                    return exe
+        return None
 
 
 def decimate(mesh: Mesh, targets: dict[str, int]) -> Mesh:
