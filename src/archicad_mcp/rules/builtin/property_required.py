@@ -18,11 +18,11 @@ class PropertyRequiredRule:
 
     @property
     def needs(self) -> frozenset[str]:
-        return frozenset({"elements", "properties"})
+        return frozenset({"elements", "properties"}) | self.applies_to.needs
 
     @property
     def needed_properties(self) -> frozenset[str]:
-        return frozenset({self.property_name})
+        return frozenset({self.property_name}) | self.applies_to.needed_properties
 
     @classmethod
     def from_config(cls, cfg: dict) -> "PropertyRequiredRule":

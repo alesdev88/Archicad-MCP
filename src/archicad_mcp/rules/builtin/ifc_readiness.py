@@ -18,11 +18,11 @@ class IfcPropertyRequiredRule:
 
     @property
     def needs(self) -> frozenset[str]:
-        return frozenset({"elements", "ifc"})
+        return frozenset({"elements", "ifc"}) | self.applies_to.needs
 
     @property
     def needed_properties(self) -> frozenset[str]:
-        return frozenset()
+        return frozenset() | self.applies_to.needed_properties
 
     @classmethod
     def from_config(cls, cfg: dict) -> "IfcPropertyRequiredRule":

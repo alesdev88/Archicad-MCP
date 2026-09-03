@@ -29,14 +29,47 @@ taking the server down.
 | `type` | yes | n/a | One of the five below. |
 | `severity` | no | `error` | `error` or `warning`. Only `error` rules can fail the audit. |
 | `tags` | no | `[]` | Free-form. `audit_delivery_readiness(ruleset="…")` filters on these. |
-| `applies_to` | no | all elements | `{ element_type: Wall }`. Omit it, or use `*`, to match everything. |
+| `applies_to` | no | all elements | `{ element_type: Wall, where: [...] }`. Omit it, or use `*`, to match everything. |
 
 Scoping `applies_to` is worth doing: an audit only fetches properties for the
 element types its rules target, and a rule that targets everything can push the
 audit over the element ceiling and get refused. See
 [Known issues](known-issues.md#the-element-ceiling-is-blast-radius-control-not-a-fix).
 
-A value counts as **missing** when it is `null` or an empty string.
+A value counts as **missing** when it is `null`, an empty string or an empty
+list. That is the `has_no_value` sense of the [criteria language](query.md).
+
+### `applies_to.where`
+
+`where` narrows the scope further with a list of criteria, all of which must
+hold. They take exactly the shape `find_elements` takes, so a scope worked out
+interactively pastes straight into a rule:
+
+```yaml
+- id: external-walls-fire-rating
+  type: property-required
+  property: "OFFICE/Fire Rating"
+  applies_to:
+    element_type: Wall
+    where:
+      - { property: "OFFICE/Wall Type", operator: equal, value: External }
+      - { property: story, operator: greater_or_equal, value: 0 }
+      - { property: "classification:Archicad Classification", operator: has_value }
+  severity: error
+```
+
+`property` addresses a property (`Group/Name`, a built-in API name, or a
+property GUID), the home story as `story` (0-based index), or the element's
+item in a classification system as `classification:<System name>`. Every
+operator from `find_elements` works except the four branch operators
+(`is_in_branch_of` and friends): a rule snapshot carries item GUIDs and not the
+tree, so those are refused at load time. Compare a classification with `equal`
+against an item GUID, or test `has_value` / `has_no_value`.
+
+Properties named in `where` are fetched with the rule's own, and `story` or
+`classification:` criteria add the story or classification read. The
+element-type scope still decides how many elements are read, so keep
+`element_type` set.
 
 ## Rule types
 
@@ -177,6 +210,11 @@ properties that tell the engine what to fetch:
   and `properties` is the one that can crash Archicad.
 - **`needed_properties`**: the exact property names to fetch, so the engine can
   request them in one batch.
+
+`archicad_mcp.criteria` is importable without a connection. A custom rule can
+evaluate a `find_elements`-style comparison over an `ElementInfo` with
+`Cell.from_value` and `comparison_matches`, which is what `applies_to.where`
+does, so a plugin rule and a YAML rule agree on what "empty" or "equal" means.
 
 Plugin import failures are caught and reported through `list_rules`; user code
 never takes the server down.

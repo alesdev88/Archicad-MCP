@@ -250,20 +250,63 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def _conn(port: int | None):
         return get_connection(port if port is not None else default_port)
 
-    @mcp.tool(description="Query elements with AND-combined filters: element_type, "
-                          "layer, story, classification_system, selection_only. "
-                          "Returns GUIDs and counts, plus 'coverage': 'whole-plan' "
-                          "with the Tapir add-on, 'model-elements-only' without it "
-                          "(2D elements such as markers, labels and section lines "
-                          "are then invisible, so a count of 0 is not proof of "
-                          "absence).",
-              **_tool_meta("Query elements", read_only=True, destructive=False))
+    @mcp.tool(description=(
+        "Find elements matching criteria groups. Groups combine with OR; inside "
+        "a group the comparisons combine with logical_operator 'and' (default) "
+        "or 'or'. Each group: {element_types: [\"Wall\", ...] (Archicad type "
+        "names), element_types_operator: 'is'|'is_not', logical_operator, "
+        "comparisons: [{property, operator, value}]}. "
+        "'property' is 'Group/Name' for a user property, the API name for a "
+        "built-in (e.g. ModelView_LayerName), a property GUID, "
+        "'classification:<System name>' for the element's classification item, "
+        "or 'story' for the 0-based home story index. Call search_definitions "
+        "to find the exact property address. Operators: equal, not_equal, less, "
+        "greater, less_or_equal, greater_or_equal, contains, does_not_contain, "
+        "starts_with, ends_with (strings, case-insensitive), is_in_branch_of, "
+        "is_direct_child_of, is_not_in_branch_of, is_not_direct_child_of "
+        "(classification items, by item ID like 'Wall' or GUID), and the unary "
+        "has_value, has_no_value, is_user_undefined, is_not_user_undefined, "
+        "available, not_available (no value). Numeric values use SI base "
+        "units: m for length, m2 for area, m3 for volume, radian for angles; "
+        "convert first (3000 mm -> 3). Enum values are their display text. "
+        "An element with no usable value matches no binary operator. "
+        "Returns GUIDs, counts, how many elements had properties read, and "
+        "'coverage' ('whole-plan' with Tapir, 'model-elements-only' without: "
+        "then 2D elements are invisible and 0 is not proof of absence). "
+        "Property comparisons read values in the server (no API filters by "
+        "property); a read spanning more than the element ceiling is refused, "
+        "so narrow with element_types, story or classification first."),
+              **_tool_meta("Find elements by criteria", read_only=True, destructive=False))
     @_guarded
-    def query_elements(element_type: str | None = None, layer: str | None = None,
-                       story: int | None = None, classification_system: str | None = None,
-                       selection_only: bool = False, port: int | None = None) -> dict:
-        return _query.query_elements(_conn(port), element_type, layer, story,
-                                     classification_system, selection_only)
+    def find_elements(groups: list[dict], selection_only: bool = False,
+                      port: int | None = None) -> dict:
+        return _query.find_elements(_conn(port), groups, selection_only)
+
+    from archicad_mcp.core import definitions as _definitions
+
+    @mcp.tool(description=(
+        "Fuzzy search over property and attribute definitions, so a caller "
+        "does not need to know the exact 'Group/Name'. Matches names, groups "
+        "and enum values; case- and accent-insensitive. kind: 'property', "
+        "'attribute' (layers, fills, surfaces, composites, profiles, pen "
+        "tables, ...) or 'any'. alternatives: up to 6 synonyms or translations "
+        "searched too (useful on non-English projects). editable_only: keep "
+        "only properties whose value can be written on at least one element "
+        "type; check it before set_element_data. Each property match carries "
+        "'property', the exact address find_elements, get_element_data, "
+        "set_element_data and rules accept, plus value_type, measure_type "
+        "(Length/Area/Volume/Angle values are in m, m2, m3, radian), "
+        "collection, editable, expression_based and enum_values. Reads "
+        "definitions only, never property values."),
+              **_tool_meta("Search property and attribute definitions",
+                           read_only=True, destructive=False))
+    @_guarded
+    def search_definitions(query: str, kind: str = "any",
+                           alternatives: list[str] | None = None,
+                           editable_only: bool = False, limit: int = 25,
+                           port: int | None = None) -> dict:
+        return _definitions.search_definitions(_conn(port), query, kind, alternatives,
+                                               editable_only, limit)
 
     @mcp.tool(description="Read type, layer, requested properties (address user "
                           "properties as 'Group/Name') and optionally classifications "

@@ -42,8 +42,8 @@ for your platform from the
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.3.0-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.3.0-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.4.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.4.0-darwin-arm64.mcpb` |
 
 There is no Intel macOS bundle. `cryptography`, which this server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
@@ -78,7 +78,7 @@ re-run the install command with the newer version's URL from the
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -109,7 +109,7 @@ editing the file.
 winget install --id=astral-sh.uv -e
 
 # 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -137,7 +137,7 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.3.0/archicad_mcp-0.3.0-py3-none-any.whl
+uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.4.0/archicad_mcp-0.4.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -322,13 +322,24 @@ rather than putting anything on your PATH.
 `run_rule`, `audit_delivery_readiness`, `verify_ifc_export_readiness`,
 `highlight_failures`, `create_issues_from_failures`
 
-**Core (full mode):** `query_elements`, `get_element_data`, `set_element_data`,
-`create_elements`, `move_elements`, `delete_elements`, `get_selection`,
-`set_selection`, `clear_selection`, `get_project_info`, `list_attributes`,
-`list_issues`, `create_issue`, `add_issue_comment`, `attach_elements_to_issue`,
-`export_issues_bcf`, `import_issues_bcf`, `publish`, `read_schedule_scheme`,
-`edit_schedule_scheme`, `validate_schedule_scheme`.
+**Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
+`set_element_data`, `create_elements`, `move_elements`, `delete_elements`,
+`get_selection`, `set_selection`, `clear_selection`, `get_project_info`,
+`list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `publish`,
+`read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
+No other Archicad MCP server does this: Graphisoft's own writes on the first
+call, so an agent pointed at a live project has no rehearsal step there.
+
+`find_elements` is a criteria query in the shape of Archicad's Find & Select:
+groups of property comparisons, AND or OR within a group, OR between groups,
+an element-type filter per group, 22 operators including string matching,
+classification branch tests and the four senses of "empty". `search_definitions`
+is the discovery step before it: fuzzy, accent-insensitive search over property
+and attribute definitions that returns the exact property address the other
+tools accept and whether the value can be written. Both are documented in
+[the query guide](docs/query.md).
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
@@ -360,7 +371,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.3.0   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.4.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -414,8 +425,8 @@ first, because a pushed tag has to be deleted before it can be corrected, and
 the registry refuses a version it already holds:
 
 ```bash
-uv run python scripts/check_release_version.py v0.3.0
-git tag v0.3.0 && git push origin v0.3.0
+uv run python scripts/check_release_version.py v0.4.0
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,

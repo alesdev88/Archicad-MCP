@@ -90,15 +90,25 @@ def get_classifications(parameters):
     result = []
     for el in parameters["elements"]:
         item = by_guid[el["elementId"]["guid"]]
+        # Live shape: the item is "classificationItemId", omitted when the
+        # element is unclassified in the system.
         one = {"classificationSystemId": {"guid": "cs-1"}}
         if item:
-            one["classificationId"] = item["classificationId"]
+            one["classificationItemId"] = item["classificationId"]
         result.append({"classificationIds": [{"classificationId": one}]})
     return {"elementClassifications": result}
 
 
-GET_ATTRIBUTES_BY_TYPE = {"attributeIds": [{"attributeId": {"guid": "layer-1"}},
-                                           {"attributeId": {"guid": "layer-2"}}]}
+_ATTRIBUTE_IDS = {"Layer": ["layer-1", "layer-2"], "Line": ["line-1"]}
+
+
+def get_attributes_by_type(parameters):
+    """Ids per attribute type; a type the fixture project has none of answers []."""
+    return {"attributeIds": [{"attributeId": {"guid": g}}
+                             for g in _ATTRIBUTE_IDS.get(parameters["attributeType"], [])]}
+
+
+GET_ATTRIBUTES_BY_TYPE = get_attributes_by_type
 
 GET_LAYER_ATTRIBUTES = {"attributes": [
     {"layerAttribute": {"attributeId": {"guid": "layer-1"}, "name": "A-WALL"}},
@@ -153,3 +163,72 @@ TAPIR = {
         {"elementId": {"guid": g}} for g, t in ELEMENT_TYPES.items()
         if t == p["elementType"]]},
 }
+
+
+# ---------- definitions (live shapes, AC 29 / Tapir 1.5.9, 2026-09-03) ----------
+
+# Tapir GetAllProperties: one entry per definition, built-in and custom alike.
+TAPIR_ALL_PROPERTIES = {"properties": [
+    {"propertyId": {"guid": "pid-ModelView_LayerName"}, "propertyType": "StaticBuiltIn",
+     "propertyGroupName": "Model View", "propertyName": "Layer Name",
+     "propertyCollectionType": "Single", "propertyValueType": "String",
+     "propertyMeasureType": "Default", "propertyIsEditable": True, "isExpressionBased": False},
+    {"propertyId": {"guid": "11111111-1111-1111-1111-111111111111"}, "propertyType": "DynamicBuiltIn",
+     "propertyGroupName": "Geometry", "propertyName": "Wall Height",
+     "propertyCollectionType": "Single", "propertyValueType": "Real",
+     "propertyMeasureType": "Length", "propertyIsEditable": False, "isExpressionBased": False},
+    {"propertyId": {"guid": "pid-OFFICE/Fire Rating"}, "propertyType": "Custom",
+     "propertyGroupName": "OFFICE", "propertyName": "Fire Rating",
+     "propertyCollectionType": "Single", "propertyValueType": "String",
+     "propertyMeasureType": "Default", "propertyIsEditable": True, "isExpressionBased": False},
+    {"propertyId": {"guid": "pid-OFFICE/Status"}, "propertyType": "Custom",
+     "propertyGroupName": "OFFICE", "propertyName": "Status",
+     "propertyCollectionType": "SingleChoiceEnumeration", "propertyValueType": "String",
+     "propertyMeasureType": "Default", "propertyIsEditable": True, "isExpressionBased": False,
+     "possibleEnumValues": [{"enumValue": {"displayValue": "Approved", "nonLocalizedValue": "Approved",
+                                           "guid": "00000000-0000-0000-0000-000000000000"}},
+                            {"enumValue": {"displayValue": "Draft", "nonLocalizedValue": "Draft",
+                                           "guid": "00000000-0000-0000-0000-000000000000"}}]},
+]}
+
+
+def get_property_definition_availability(parameters):
+    """Custom definitions list the classification items they apply to
+    (expanded: parents and children both present); built-ins list nothing."""
+    avail = {"pid-OFFICE/Fire Rating": ["c-wall"], "pid-OFFICE/Status": ["c-wall"]}
+    return {"propertyDefinitionAvailabilityList": [
+        {"propertyDefinitionAvailability": {
+            "propertyId": p["propertyId"],
+            "availableClassifications": [{"classificationItemId": {"guid": g}}
+                                         for g in avail.get(p["propertyId"]["guid"], [])]}}
+        for p in parameters["propertyIds"]]}
+
+
+# Tree of the one system: Building > (Wall, Slab); Site.
+CLASSIFICATION_TREE = {"classificationItems": [
+    {"classificationItem": {"classificationItemId": {"guid": "c-building"}, "id": "Building",
+                            "name": "", "description": "", "children": [
+        {"classificationItem": {"classificationItemId": {"guid": "c-wall"}, "id": "Wall",
+                                "name": "", "description": ""}},
+        {"classificationItem": {"classificationItemId": {"guid": "c-slab"}, "id": "Slab",
+                                "name": "", "description": ""}},
+    ]}},
+    {"classificationItem": {"classificationItemId": {"guid": "c-zone"}, "id": "Zone",
+                            "name": "", "description": ""}},
+]}
+
+GET_LINE_ATTRIBUTES = {"attributes": [
+    {"lineAttribute": {"attributeId": {"guid": "line-1"}, "name": "Dashed"}}]}
+
+OFFICIAL.update({
+    "API.GetPropertyDefinitionAvailability": get_property_definition_availability,
+    "API.GetAllClassificationsInSystem": CLASSIFICATION_TREE,
+    "API.GetDetailsOfProperties": lambda p: {"propertyDefinitions": [
+        {"propertyDefinition": {"propertyId": x["propertyId"],
+                                "group": {"name": x["propertyId"]["guid"].split("/")[0].replace("pid-", "")},
+                                "name": x["propertyId"]["guid"].split("/")[-1],
+                                "isEditable": True, "type": "string"}}
+        for x in p["properties"]]},
+    "API.GetLineAttributes": GET_LINE_ATTRIBUTES,
+})
+TAPIR["GetAllProperties"] = TAPIR_ALL_PROPERTIES

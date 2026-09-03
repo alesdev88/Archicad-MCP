@@ -35,29 +35,42 @@ async def test_full_mode_registers_tier2(core):
     mcp = build_server(mode="full")
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}
-    assert {"query_elements", "get_element_data", "set_element_data"} <= names
+    assert {"find_elements", "search_definitions", "get_element_data",
+            "set_element_data"} <= names
+    assert "query_elements" not in names  # replaced in 0.4.0, not kept alongside
 
 
 async def test_verdicts_mode_hides_tier2(core):
     mcp = build_server(mode="verdicts")
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}
-    assert "query_elements" not in names
+    assert "find_elements" not in names
 
 
-async def test_query_by_type(core):
-    payload = await call("query_elements", {"element_type": "Wall"})
+async def test_find_by_type(core):
+    payload = await call("find_elements", {"groups": [{"element_types": ["Wall"]}]})
     assert payload["count"] == 2 and set(payload["guids"]) == {"w-1", "w-2"}
 
 
-async def test_query_by_type_and_layer(core):
-    payload = await call("query_elements", {"element_type": "Wall", "layer": "Sketch"})
+async def test_find_by_type_and_layer(core):
+    payload = await call("find_elements", {"groups": [{
+        "element_types": ["Wall"],
+        "comparisons": [{"property": "ModelView_LayerName", "operator": "equal",
+                         "value": "Sketch"}]}]})
     assert payload["guids"] == ["w-2"]
 
 
-async def test_query_selection_only(core):
-    payload = await call("query_elements", {"selection_only": True})
+async def test_find_selection_only(core):
+    payload = await call("find_elements", {"groups": [{"element_types": ["Wall", "Zone"]}],
+                                           "selection_only": True})
     assert payload["guids"] == ["w-1"]
+
+
+async def test_find_rejects_a_malformed_query_without_touching_archicad(core):
+    payload = await call("find_elements", {"groups": [{"comparisons": [
+        {"property": "x", "operator": "like", "value": 1}]}]})
+    assert "unknown operator" in payload["error"]
+    assert core.calls == []
 
 
 async def test_get_element_data_returns_values(core):

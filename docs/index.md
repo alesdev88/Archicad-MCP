@@ -16,6 +16,8 @@ reference documents it links to.
   by `scripts/build_dashboard.py`.
 - **[Known issues](known-issues.md)**: the property-read crash, the element
   ceiling, verified property names, and what has been validated end to end.
+- **[Finding elements](query.md)**: the `find_elements` criteria language,
+  `search_definitions`, and what each one reads from Archicad.
 - **[Writing rules](rules.md)**: every rule type, field, and the scoring model.
 - **[Schedule criteria codes](scheme-criteria-codes.md)**: the empirical
   `Param_Type` and `Relation_Index` table, and how to extend it.
