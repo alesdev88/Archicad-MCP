@@ -1,7 +1,7 @@
 # Archicad MCP
 
 An MCP server for **Archicad 29** on macOS and Windows. It connects Claude
-Desktop, Claude Code, or any MCP client to a *running* Archicad instance and
+Desktop, Claude Code, ChatGPT, or any MCP client to a *running* Archicad instance and
 does two jobs:
 
 1. **Delivery-readiness QA.** Your office standards, written as YAML rules and
@@ -141,6 +141,56 @@ uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
+## Use with ChatGPT
+
+ChatGPT only talks to *remote* MCP servers over HTTPS. It cannot spawn a local
+server the way Claude Desktop does, and this server has to run on the machine
+that runs Archicad, because it reaches Archicad on localhost. So the recipe is:
+serve over HTTP on the Archicad machine, tunnel that to a public HTTPS URL, and
+register the URL as a custom connector.
+
+> [!CAUTION]
+> Whoever reaches that URL drives your open Archicad model: every property is
+> readable, and in `full` mode elements can be edited, deleted, and published.
+> ChatGPT custom connectors authenticate with OAuth or not at all, so this
+> server adds no token of its own. Put access control in front of the tunnel
+> (Cloudflare Access, ngrok's OAuth or IP restrictions), prefer `--mode
+> verdicts`, and stop the server when you are done.
+
+The `--transport` flag is newer than the first release. If `archicad-mcp --help`
+does not list it, install from `main` as described under
+[Development](#development).
+
+```bash
+# 1. On the Archicad machine, serve over HTTP. Binds to localhost only.
+archicad-mcp --mode verdicts --transport http --http-port 8000
+
+# 2. In a second terminal, tunnel it. One of:
+cloudflared tunnel --url http://localhost:8000
+ngrok http 8000
+```
+
+The tunnel prints a public URL. The MCP endpoint is that URL plus `/mcp`.
+
+3. In ChatGPT on the web, open **Settings > Connectors > Advanced** and turn
+   on **Developer mode**. Then **Settings > Connectors > Create**: name it
+   `Archicad`, paste `https://<your-tunnel>/mcp` as the URL, tick *I trust this
+   provider*, and create it. Developer mode needs a Plus, Pro, Business,
+   Enterprise, or Edu account; without it ChatGPT rejects any server that lacks
+   `search` and `fetch` tools.
+4. In a new chat, open **+ > More > Developer mode** and enable the Archicad
+   connector. This is per chat.
+
+Then ask it to **list Archicad instances**, as under [Check it works](#check-it-works).
+The crash warning at the top applies to every client, ChatGPT included.
+
+**Codex instead of ChatGPT.** OpenAI's Codex CLI runs stdio servers directly,
+so there is no tunnel and nothing leaves the machine:
+
+```bash
+codex mcp add archicad -- archicad-mcp --mode full
+```
+
 ## Check it works
 
 With Archicad open, ask the client to **list Archicad instances**. The
@@ -174,6 +224,9 @@ Tapir add-on missing (the line names which tools degrade).
 | `--mode` | `ARCHICAD_MCP_MODE` | `full` | `full` or `verdicts` (see below) |
 | `--rules-dir` | `ARCHICAD_MCP_RULES_DIR` | bundled examples | Directory of YAML rule files |
 | `--port` | n/a | auto-detect `19723`-`19743` | Pin when several Archicads run at once |
+| `--transport` | `ARCHICAD_MCP_TRANSPORT` | `stdio` | `stdio` for Claude Desktop, Claude Code, Codex; `http` (Streamable HTTP at `/mcp`) for ChatGPT and other remote clients |
+| `--host` | n/a | `127.0.0.1` | Bind address, `--transport http` only |
+| `--http-port` | n/a | `8000` | Listen port, `--transport http` only. Not the Archicad port |
 | n/a | `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` | `5000` | Refuse property fetches spanning more elements than this |
 
 ### Modes

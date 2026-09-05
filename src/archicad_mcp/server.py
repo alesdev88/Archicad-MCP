@@ -697,6 +697,15 @@ def resolve_gdl_workspace(raw: str | Path | None) -> Path | None:
     return Path(text) if text else None
 
 
+def resolve_transport(raw: str | None) -> str:
+    """Fall back to 'stdio' for an unset or blank transport.
+
+    Same reasoning as resolve_mode: a set-but-empty env var must select the
+    default, not crash argparse at startup.
+    """
+    return raw.strip() if raw and raw.strip() else "stdio"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
@@ -709,6 +718,17 @@ def main() -> None:
     parser.add_argument("--gdl-workspace", type=Path,
                         default=resolve_gdl_workspace(
                             os.environ.get("ARCHICAD_MCP_GDL_WORKSPACE")))
+    parser.add_argument("--transport", choices=["stdio", "http"],
+                        default=resolve_transport(
+                            os.environ.get("ARCHICAD_MCP_TRANSPORT")),
+                        help="stdio for Claude Desktop, Claude Code and Codex; "
+                             "http (Streamable HTTP at /mcp) for ChatGPT and "
+                             "other remote clients")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="bind address for --transport http")
+    parser.add_argument("--http-port", type=int, default=8000,
+                        help="listen port for --transport http "
+                             "(not the Archicad port; see --port)")
     args, _ = parser.parse_known_args()
     rules_dir = resolve_rules_dir(args.rules_dir)
     gdl_workspace = resolve_gdl_workspace(args.gdl_workspace)
@@ -717,7 +737,10 @@ def main() -> None:
     emit_startup_banner(args.mode, server.archicad_rule_count,
                         server.archicad_rule_errors, gdl_workspace,
                         server.archicad_rule_source)
-    server.run()
+    if args.transport == "http":
+        server.run(transport="http", host=args.host, port=args.http_port)
+    else:
+        server.run(transport="stdio")
 
 
 if __name__ == "__main__":
