@@ -4,6 +4,7 @@ import argparse
 import functools
 import os
 import sys
+import threading
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -664,6 +665,26 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
           file=sys.stderr, flush=True)
 
 
+def start_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
+                         gdl_workspace: Path | None = None,
+                         rules_source: str | None = None) -> threading.Thread:
+    """Emit the banner from a daemon thread so it never delays the handshake.
+
+    The banner is a diagnostic, not a precondition for answering initialize:
+    tools connect on demand, so nothing downstream waits on discovery. Every
+    probe is also bounded by PROBE_TIMEOUT, but 21 ports times that bound is
+    still longer than the desktop app's startup deadline, so the scan has to
+    leave the startup path entirely. Daemon, so a stuck probe cannot keep the
+    process alive after the client closes stdin.
+    """
+    worker = threading.Thread(
+        target=emit_startup_banner,
+        args=(mode, rule_count, rule_errors, gdl_workspace, rules_source),
+        name="archicad-mcp-startup-banner", daemon=True)
+    worker.start()
+    return worker
+
+
 def resolve_mode(raw: str | None) -> str:
     """Fall back to 'full' for an unset or blank mode.
 
@@ -734,9 +755,9 @@ def main() -> None:
     gdl_workspace = resolve_gdl_workspace(args.gdl_workspace)
     server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port,
                           gdl_workspace=gdl_workspace)
-    emit_startup_banner(args.mode, server.archicad_rule_count,
-                        server.archicad_rule_errors, gdl_workspace,
-                        server.archicad_rule_source)
+    start_startup_banner(args.mode, server.archicad_rule_count,
+                         server.archicad_rule_errors, gdl_workspace,
+                         server.archicad_rule_source)
     if args.transport == "http":
         server.run(transport="http", host=args.host, port=args.http_port)
     else:

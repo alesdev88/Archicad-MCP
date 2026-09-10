@@ -161,3 +161,44 @@ def test_refused_probe_error_names_the_modal_dialog_cause(monkeypatch):
     assert "no project is open" in message
     assert "close any open dialog" in message.lower()
     assert "code 4001: Invalid program status" in message
+
+
+def test_probe_port_bounds_every_request_with_a_timeout():
+    """The desktop app gives the server a few seconds to answer initialize.
+    Discovery ran before the transport with httpx timeout=None, so one
+    Archicad that accepted TCP but did not answer (mid-launch, opening a big
+    project) stalled startup past that deadline (seen live 2026-09-09 with an
+    idle Archicad 30 next to Archicad 29)."""
+    from archicad_mcp.connection import PROBE_TIMEOUT, probe_port
+
+    class RecordingCore:
+        def __init__(self):
+            self.timeouts = []
+
+        def post_command(self, command, parameters=None, timeout=None):
+            self.timeouts.append(timeout)
+            if command == "API.GetProductInfo":
+                return {"version": 29, "buildNumber": 4006}
+            return {"available": False}
+
+        def post_tapir_command(self, command, parameters=None, timeout=None):
+            self.timeouts.append(timeout)
+            return {}
+
+    core = RecordingCore()
+    assert probe_port(19723, core=core) is not None
+    assert core.timeouts, "probe made no requests"
+    assert all(t == PROBE_TIMEOUT for t in core.timeouts), core.timeouts
+    assert 0 < PROBE_TIMEOUT <= 5
+
+
+def test_probe_port_treats_a_timed_out_instance_as_absent():
+    from multiconn_archicad.errors import CommandTimeoutError
+
+    from archicad_mcp.connection import probe_port
+
+    class HungCore:
+        def post_command(self, *a, **k):
+            raise CommandTimeoutError("timed out")
+
+    assert probe_port(19723, core=HungCore()) is None

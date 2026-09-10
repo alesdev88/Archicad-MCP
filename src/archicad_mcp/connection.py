@@ -14,6 +14,13 @@ from multiconn_archicad.errors import (
 
 PORT_RANGE = range(19723, 19744)
 
+# Seconds a discovery probe may wait on one port. The desktop app gives the
+# server only a few seconds to answer initialize, and discovery used to run
+# before the transport with no timeout at all, so one Archicad that accepted
+# TCP but did not answer (mid-launch, opening a big project) stalled startup
+# past that deadline (seen live 2026-09-09: an idle Archicad 30 beside AC 29).
+PROBE_TIMEOUT = 3.0
+
 def _tapir_probe(command: str = "GetAddOnVersion") -> dict:
     return {"addOnCommandId": {"commandNamespace": "TapirCommand",
                                "commandName": command}}
@@ -53,14 +60,17 @@ class InstanceInfo:
 
 
 class ArchicadConnection:
-    def __init__(self, port: int, core=None):
+    def __init__(self, port: int, core=None, timeout: float | None = None):
         self.port = port
         self._core = core if core is not None else CoreCommands(Port(port))
+        # None means "wait as long as Archicad takes": right for real commands
+        # (a big publish can run minutes), wrong for probes, which set it.
+        self.timeout = timeout
         self._tapir_available: bool | None = None
         self._command_availability: dict[str, bool] = {}
 
     def official(self, command: str, parameters: dict | None = None) -> dict:
-        return self._core.post_command(command, parameters)
+        return self._core.post_command(command, parameters, timeout=self.timeout)
 
     def tapir_available(self) -> bool:
         """True when the Tapir add-on answers on this port.
@@ -112,11 +122,12 @@ class ArchicadConnection:
                 "https://github.com/ENZYME-APD/tapir-archicad-automation/releases "
                 "(Options > Add-On Manager), then retry."
             )
-        return self._core.post_tapir_command(command, parameters)
+        return self._core.post_tapir_command(command, parameters, timeout=self.timeout)
 
 
-def probe_port(port: int, core=None) -> InstanceInfo | None:
-    conn = ArchicadConnection(port, core=core)
+def probe_port(port: int, core=None,
+               timeout: float | None = PROBE_TIMEOUT) -> InstanceInfo | None:
+    conn = ArchicadConnection(port, core=core, timeout=timeout)
     try:
         product = conn.official("API.GetProductInfo")
     except (APIConnectionError, RequestError, CommandTimeoutError):
