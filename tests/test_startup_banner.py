@@ -211,3 +211,35 @@ def test_emit_in_verdicts_mode_does_not_report_workspace(capsys, monkeypatch, tm
     assert captured.out == ""
     assert "GDL tools off" in captured.err
     assert str(tmp_path) not in captured.err
+
+
+def test_banner_thread_does_not_block_on_a_hung_discovery(monkeypatch):
+    """The banner is a diagnostic, never a precondition for answering
+    initialize. Discovery that hangs must not delay server.run()."""
+    import threading
+
+    from archicad_mcp.server import start_startup_banner
+
+    gate = threading.Event()
+
+    def hang():
+        gate.wait(timeout=5)
+        return []
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", hang)
+    worker = start_startup_banner("full", 1, rules_source="/office/rules")
+    assert worker.is_alive(), "start_startup_banner must return before discovery finishes"
+    assert worker.daemon, "a stuck probe must not keep the process alive at exit"
+    gate.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+
+
+def test_banner_thread_still_writes_the_banner(capsys, monkeypatch):
+    from archicad_mcp.server import start_startup_banner
+
+    monkeypatch.setattr("archicad_mcp.server.discover_instances", lambda: [WITH_TAPIR])
+    start_startup_banner("full", 1, rules_source="/office/rules").join(timeout=5)
+    err = capsys.readouterr().err
+    assert "1 rule loaded from /office/rules" in err
+    assert "Test House" in err
