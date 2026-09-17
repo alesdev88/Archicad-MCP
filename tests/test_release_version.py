@@ -57,6 +57,20 @@ def test_the_readme_install_commands_are_found():
     assert len(readme_version_refs(text)) == 4
 
 
+def test_the_pypi_distribution_name_is_found_too():
+    """The wheel and sdist are named after the PyPI distribution,
+    archicad-mcp-server, which the bundle is not. Both spellings have to be
+    counted, and the trailing platform suffix must still be ignored."""
+    text = """
+    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.4/archicad_mcp_server-0.5.4-py3-none-any.whl
+    curl -O https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.4/archicad_mcp_server-0.5.4.tar.gz
+    Download `archicad-mcp-0.5.4-darwin-arm64.mcpb` from the latest release.
+    """
+    assert {v for _, v in readme_version_refs(text)} == {"0.5.4"}
+    # Five references: two URL tags, the wheel, the sdist, and the bundle.
+    assert len(readme_version_refs(text)) == 5
+
+
 def test_version_numbers_that_are_not_this_project_are_ignored():
     """The load-bearing test. The README is full of other version numbers, and
     a scanner that treated any of them as the project's own would block every

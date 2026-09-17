@@ -42,8 +42,8 @@ for your platform from the
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.5.3-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.5.3-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.5.4-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.5.4-darwin-arm64.mcpb` |
 
 There is no Intel macOS bundle. `cryptography`, which this server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
@@ -66,10 +66,12 @@ under **Organization settings > Connectors > Desktop**, which makes it a
 one-click install for everyone instead of a file to pass around.
 
 If you would rather wire it up by hand, or you are on Claude Code, use one of
-the sections below instead. Those install the wheel from a tagged release, so
-you get a known version rather than whatever `main` happens to be. To upgrade,
-re-run the install command with the newer version's URL from the
-[releases page](https://github.com/alesdev88/Archicad-MCP/releases).
+the sections below instead. Those install the server from PyPI, where it is
+published as `archicad-mcp-server` (the plain name was already taken by an
+unrelated project), so `uv tool upgrade archicad-mcp-server` moves you to the
+next release. Each section also shows the wheel URL of the current release, for
+when you want to pin exactly this version rather than whatever PyPI holds when
+you run the command.
 
 ## Install on macOS
 
@@ -77,8 +79,10 @@ re-run the install command with the newer version's URL from the
 # 1. Install uv (skip if you already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.3/archicad_mcp-0.5.3-py3-none-any.whl
+# 2. Install the server from PyPI
+uv tool install archicad-mcp-server
+#    or pin this exact release instead:
+#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.4/archicad_mcp_server-0.5.4-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -108,8 +112,10 @@ editing the file.
 # 1. Install uv (skip if you already have it)
 winget install --id=astral-sh.uv -e
 
-# 2. Install the server from the latest release
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.3/archicad_mcp-0.5.3-py3-none-any.whl
+# 2. Install the server from PyPI
+uv tool install archicad-mcp-server
+#    or pin this exact release instead:
+#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.4/archicad_mcp_server-0.5.4-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -137,7 +143,9 @@ Desktop after editing the file.
 Claude Code inherits your shell's `PATH`, so the bare command name works:
 
 ```bash
-uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.3/archicad_mcp-0.5.3-py3-none-any.whl
+uv tool install archicad-mcp-server
+# or pin this exact release instead:
+# uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.5.4/archicad_mcp_server-0.5.4-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -460,7 +468,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.5.3   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.5.4   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -506,16 +514,17 @@ if they drift:
 uv run python scripts/check_release_version.py
 ```
 
-Releasing is a tag push. `.github/workflows/release.yml` refuses the tag unless
+Releasing is a tag push. `.github/workflows/publish.yml` refuses the tag unless
 all four files and the tag itself agree, then builds both bundles, the wheel and
-the sdist, attaches them to a GitHub release, stamps each bundle's SHA-256 into
-`server.json`, and publishes that to the MCP registry. Run the check by hand
-first, because a pushed tag has to be deleted before it can be corrected, and
-the registry refuses a version it already holds:
+the sdist, attaches them to a GitHub release, publishes the wheel and sdist to
+PyPI as `archicad-mcp-server`, stamps each bundle's SHA-256 into `server.json`,
+and publishes that to the MCP registry. Run the check by hand first, because a
+pushed tag has to be deleted before it can be corrected, and both PyPI and the
+registry refuse a version they already hold:
 
 ```bash
-uv run python scripts/check_release_version.py v0.5.3
-git tag v0.5.3 && git push origin v0.5.3
+uv run python scripts/check_release_version.py v0.5.4
+git tag v0.5.4 && git push origin v0.5.4
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,

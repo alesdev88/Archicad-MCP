@@ -7,10 +7,13 @@ on:
 
 # Two privileged things happen here, and this is the whole grant for both.
 # contents creates the release. id-token mints a short-lived OIDC token that
-# the MCP registry accepts as proof this run is from this repository, which is
-# why publishing to the registry needs no stored credential: there is nothing
-# to rotate, nothing to leak, and a token that is worthless minutes later.
-# Every other step reads the checkout and writes to the runner.
+# PyPI and the MCP registry each accept as proof this run is from this
+# repository, which is why publishing to either needs no stored credential:
+# there is nothing to rotate, nothing to leak, and a token that is worthless
+# minutes later. PyPI matches the token against this file's name, so renaming
+# publish.yml silently ends PyPI publishing until the trusted publisher on
+# pypi.org is re-registered to match. Every other step reads the checkout and
+# writes to the runner.
 permissions:
   contents: write
   id-token: write
@@ -143,11 +146,10 @@ jobs:
 
       # gh is preinstalled on the runner and is the same command this would be
       # by hand, so there is no third-party release action to pin and keep
-      # current. The wheel and sdist go up alongside the bundle because every
-      # install path in README that is not the extension is a git URL, and
-      # without these there is nowhere to get a built distribution of one
-      # named version. A prerelease is labelled as one rather than offered from
-      # the releases page as the current version to download.
+      # current. The wheel and sdist go up alongside the bundle as well as to
+      # PyPI, so that a pinned install can name a release asset by URL without
+      # depending on a second service. A prerelease is labelled as one rather
+      # than offered from the releases page as the current version to download.
       #
       # Create, or re-upload if the release already exists. The registry publish
       # below is the last step and the one most likely to fail on its own terms,
@@ -170,6 +172,35 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # The wheel and sdist, and only those: dist/ also holds the bundles by
+      # now, and uv publish would try to upload whatever it is handed. Named
+      # archicad-mcp-server on PyPI because archicad-mcp was already taken
+      # there by an unrelated project; the import package, the extension and
+      # the registry entry all keep the shorter name, so the distribution name
+      # in pyproject.toml is the only place the two differ.
+      #
+      # uv publish does trusted publishing natively over the id-token grant
+      # above, which is what keeps this a plain command rather than a
+      # third-party action to pin, the same reason gh is used for the release.
+      # "always" rather than the default "automatic" so that a run that cannot
+      # get a token fails here with that reason, instead of falling through to
+      # a password prompt that has nothing to read from.
+      #
+      # --check-url is what makes a re-run survivable. PyPI refuses a file it
+      # already holds, and the registry step below is the one most likely to
+      # fail, so without it every registry failure would also be a PyPI
+      # failure on the retry. With it, files already on the index are skipped
+      # and the run proceeds to the step that actually needs re-running.
+      #
+      # Prereleases go up too. PyPI understands them, and pip and uv leave
+      # them alone unless asked, so publishing one hands nobody a release
+      # candidate by default, which is the reason the registry step skips them.
+      - name: Publish to PyPI
+        run: |
+          uv publish --trusted-publishing always \
+            --check-url https://pypi.org/simple/ \
+            dist/*.whl dist/*.tar.gz
 
       # After the release exists, never before. The registry stores the
       # bundle's download URL and hands it to clients verbatim, so publishing

@@ -57,8 +57,11 @@ README_PATTERNS = (
     # The version inside a built artifact's filename. The bundle is built once
     # per platform and names the platform after the version, so that suffix is
     # matched and discarded here; without it the version group would swallow
-    # "-win32" and every release would fail this check.
-    re.compile(r"archicad[-_]mcp-(?P<version>\d[^\s\"')]*?)"
+    # "-win32" and every release would fail this check. The wheel and sdist
+    # carry the PyPI distribution name, archicad-mcp-server, because the bare
+    # name was already taken there; the bundle keeps the shorter one, so the
+    # suffix is optional rather than required.
+    re.compile(r"archicad[-_]mcp(?:[-_]server)?-(?P<version>\d[^\s\"')]*?)"
                r"(?:-(?:win32|darwin-arm64))?"
                r"(?:-py3-none-any\.whl|\.tar\.gz|\.mcpb)"),
     # A source install pinned to a release tag.

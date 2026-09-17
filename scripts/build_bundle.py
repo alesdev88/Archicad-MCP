@@ -48,7 +48,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 # Pinned, both of them, and for the same reason the mcpb packer is pinned in
-# release.yml: these two decide what the shipped interpreter actually is. A
+# publish.yml: these two decide what the shipped interpreter actually is. A
 # floating "latest" would mean two releases built a week apart contain
 # different Pythons, with nothing in the repository recording that they do.
 PBS_TAG = "20260825"

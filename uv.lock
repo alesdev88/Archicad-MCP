@@ -52,8 +52,8 @@ wheels = [
 ]
 
 [[package]]
-name = "archicad-mcp"
-version = "0.5.3"
+name = "archicad-mcp-server"
+version = "0.5.4"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
