@@ -98,6 +98,7 @@ def build_server(
     rules_dir: Path | None = None,
     port: int | None = None,
     gdl_workspace: Path | None = None,
+    enable_scripts: bool = False,
 ) -> FastMCP:
     if mode not in ("verdicts", "full"):
         raise ValueError(f"mode must be 'verdicts' or 'full', got {mode!r}")
@@ -241,6 +242,9 @@ def build_server(
             from archicad_mcp.gdl.workspace import Workspace
             gdl_tools.register(mcp, default_port, Workspace(gdl_workspace),
                                _tool_meta, _guarded)
+        if enable_scripts:
+            from archicad_mcp.scripting import tools as script_tools
+            script_tools.register(mcp, default_port, _tool_meta, _guarded)
 
     return mcp
 
@@ -315,7 +319,13 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Write element property values. DRY-RUN BY DEFAULT: returns "
                           "planned changes (current -> new) without touching the model. "
-                          "Pass dry_run=false to commit.",
+                          "Pass dry_run=false to commit. A commit returns 'applied'; "
+                          "'failed', Archicad's refusals grouped by code and message "
+                          "with a count and sample GUIDs; 'skipped' for changes not "
+                          "sent (property type, enum, or an element that is not "
+                          "editable: inside a hotlinked module, or not reserved in "
+                          "Teamwork); and 'stopped' if a batch was refused outright "
+                          "after earlier batches landed.",
               **_tool_meta("Write element properties", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,
@@ -607,11 +617,26 @@ def _rules_phrase(rule_count: int, rules_source: str | None) -> str:
     return f"{rule_count} bundled example {noun} loaded (no rules directory set)"
 
 
+def _tool_gates(mode: str, gdl_workspace: Path | None, scripts_enabled: bool) -> str:
+    """The ', GDL ...' and ', scripts ...' tail of the banner's config line."""
+    # GDL tools register only in full mode with a workspace folder set
+    if mode == "full" and gdl_workspace is not None:
+        tail = f", GDL workspace {gdl_workspace}"
+    else:
+        tail = ", GDL tools off"
+    if not scripts_enabled:
+        return tail + ", scripts off"
+    if mode != "full":
+        return tail + ", scripts ignored in verdicts mode"
+    return tail + ", scripts on"
+
+
 def format_startup_banner(mode: str, rule_count: int,
                           instances: Sequence[InstanceInfo],
                           rule_errors: int = 0,
                           gdl_workspace: Path | None = None,
-                          rules_source: str | None = None) -> str:
+                          rules_source: str | None = None,
+                          scripts_enabled: bool = False) -> str:
     """The diagnostic lines written to stderr at startup.
 
     This is what someone reads in mcp-server-archicad.log when the tools are
@@ -620,11 +645,7 @@ def format_startup_banner(mode: str, rule_count: int,
     head = f"{_BANNER_PREFIX} mode={mode}, {_rules_phrase(rule_count, rules_source)}"
     if rule_errors:
         head += f", {rule_errors} rule file(s) rejected (call list_rules for details)"
-    # GDL tools register only in full mode with a workspace folder set
-    if mode == "full" and gdl_workspace is not None:
-        head += f", GDL workspace {gdl_workspace}"
-    else:
-        head += ", GDL tools off"
+    head += _tool_gates(mode, gdl_workspace, scripts_enabled)
     lines = [head]
     if not instances:
         first, last = PORT_RANGE[0], PORT_RANGE[-1]
@@ -639,7 +660,8 @@ def format_startup_banner(mode: str, rule_count: int,
 
 def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
                         gdl_workspace: Path | None = None,
-                        rules_source: str | None = None) -> None:
+                        rules_source: str | None = None,
+                        scripts_enabled: bool = False) -> None:
     """Write the banner to stderr. Never raises, never touches stdout.
 
     Under stdio transport stdout is the JSON-RPC channel: one stray byte there
@@ -652,22 +674,19 @@ def emit_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
     except Exception as exc:  # noqa: BLE001 - diagnostics must not break startup
         prefix_config = (f"{_BANNER_PREFIX} mode={mode}, "
                          f"{_rules_phrase(rule_count, rules_source)}")
-        # GDL tools register only in full mode with a workspace folder set
-        if mode == "full" and gdl_workspace is not None:
-            prefix_config += f", GDL workspace {gdl_workspace}"
-        else:
-            prefix_config += ", GDL tools off"
+        prefix_config += _tool_gates(mode, gdl_workspace, scripts_enabled)
         print(f"{prefix_config} (instance discovery failed: {exc})",
               file=sys.stderr, flush=True)
         return
     print(format_startup_banner(mode, rule_count, instances, rule_errors, gdl_workspace,
-                                rules_source),
+                                rules_source, scripts_enabled=scripts_enabled),
           file=sys.stderr, flush=True)
 
 
 def start_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
                          gdl_workspace: Path | None = None,
-                         rules_source: str | None = None) -> threading.Thread:
+                         rules_source: str | None = None,
+                         scripts_enabled: bool = False) -> threading.Thread:
     """Emit the banner from a daemon thread so it never delays the handshake.
 
     The banner is a diagnostic, not a precondition for answering initialize:
@@ -679,7 +698,7 @@ def start_startup_banner(mode: str, rule_count: int, rule_errors: int = 0,
     """
     worker = threading.Thread(
         target=emit_startup_banner,
-        args=(mode, rule_count, rule_errors, gdl_workspace, rules_source),
+        args=(mode, rule_count, rule_errors, gdl_workspace, rules_source, scripts_enabled),
         name="archicad-mcp-startup-banner", daemon=True)
     worker.start()
     return worker
@@ -727,6 +746,31 @@ def resolve_transport(raw: str | None) -> str:
     return raw.strip() if raw and raw.strip() else "stdio"
 
 
+def resolve_flag(raw: str | None) -> bool:
+    """True for 1, true or yes, case-insensitive. Unset or blank is False.
+
+    An .mcpb bundle passes a boolean user_config field as the text "true" or
+    "false", and an unfilled one as an empty string.
+    """
+    return (raw or "").strip().lower() in {"1", "true", "yes"}
+
+
+def check_script_transport(enable_scripts: bool, mode: str, transport: str,
+                           allow_over_http: bool) -> str | None:
+    """Why this configuration must not start, or None.
+
+    run_script executes arbitrary Python on this machine. Over stdio only the
+    local client that launched the server can reach it; over http, anything that
+    reaches the listening port can. That second case has to be asked for twice.
+    """
+    if enable_scripts and mode == "full" and transport == "http" and not allow_over_http:
+        return ("--enable-scripts runs arbitrary Python on this machine, and "
+                "--transport http lets any client that reaches the port call it. "
+                "Pass --allow-scripts-over-http as well if that is intended, or "
+                "drop --enable-scripts.")
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
@@ -750,14 +794,24 @@ def main() -> None:
     parser.add_argument("--http-port", type=int, default=8000,
                         help="listen port for --transport http "
                              "(not the Archicad port; see --port)")
+    parser.add_argument("--enable-scripts", action="store_true",
+                        default=resolve_flag(os.environ.get("ARCHICAD_MCP_SCRIPTS")),
+                        help="register run_script and apply_changeset (full mode "
+                             "only); they run arbitrary Python on this machine")
+    parser.add_argument("--allow-scripts-over-http", action="store_true",
+                        help="permit --enable-scripts together with --transport http")
     args, _ = parser.parse_known_args()
+    refusal = check_script_transport(args.enable_scripts, args.mode, args.transport,
+                                     args.allow_scripts_over_http)
+    if refusal is not None:
+        parser.error(refusal)
     rules_dir = resolve_rules_dir(args.rules_dir)
     gdl_workspace = resolve_gdl_workspace(args.gdl_workspace)
     server = build_server(mode=args.mode, rules_dir=rules_dir, port=args.port,
-                          gdl_workspace=gdl_workspace)
+                          gdl_workspace=gdl_workspace, enable_scripts=args.enable_scripts)
     start_startup_banner(args.mode, server.archicad_rule_count,
                          server.archicad_rule_errors, gdl_workspace,
-                         server.archicad_rule_source)
+                         server.archicad_rule_source, scripts_enabled=args.enable_scripts)
     if args.transport == "http":
         server.run(transport="http", host=args.host, port=args.http_port)
     else:

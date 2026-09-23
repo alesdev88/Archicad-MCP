@@ -449,6 +449,14 @@ placeable Archicad library parts with finish variants, without opening the GDL
 editor. Requires the GDL workspace folder to be set and added as a linked
 library in Archicad once. See [the GDL pipeline guide](docs/gdl-pipeline.md).
 
+**Scripting (opt-in, full mode):** `run_script`, `apply_changeset`. `run_script`
+runs a short Python script next to Archicad and returns only what it returns;
+its writes are planned into a changeset instead of sent. `apply_changeset`
+writes that changeset after `confirm=true` and reads the values back. Off by
+default: enable with `--enable-scripts`, `ARCHICAD_MCP_SCRIPTS=1`, or **Enable
+scripts** in the extension settings. There is no sandbox. See
+[Scripting](docs/scripting.md).
+
 Reads and writes are separate tools throughout, and every tool declares whether
 it is read-only or destructive. Clients use those declarations to decide what to
 run without asking you: a read never prompts, a write always does. The gateway
@@ -551,6 +559,8 @@ uv run python scripts/make_icon.py
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
   finish dropdowns, and the GDL fine print the generator encodes.
+- **[Scripting](docs/scripting.md)**: `run_script` and `apply_changeset`, the
+  `ac` object a script sees, and the trust model behind the opt-in switch.
 - **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
   every one of the 309 reachable commands, grouped, showing which have a
   dedicated tool and which are gateway-only. Generated rather than written;

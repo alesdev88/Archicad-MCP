@@ -40,7 +40,8 @@
         "ARCHICAD_MCP_MODE": "${user_config.mode}",
         "ARCHICAD_MCP_RULES_DIR": "${user_config.rules_dir}",
         "ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS": "${user_config.max_property_elements}",
-        "ARCHICAD_MCP_GDL_WORKSPACE": "${user_config.gdl_workspace}"
+        "ARCHICAD_MCP_GDL_WORKSPACE": "${user_config.gdl_workspace}",
+        "ARCHICAD_MCP_SCRIPTS": "${user_config.enable_scripts}"
       }
     }
   },
@@ -73,6 +74,13 @@
       "title": "GDL workspace folder",
       "description": "Folder holding source meshes, textures, assets.json and the .gsm library parts this server builds. Add the same folder to Archicad once via Library Manager so rebuilds update placed objects in place. The GDL tools need Mode set to 'full' as well as this folder; leave this empty, or leave Mode on 'verdicts', to switch the GDL tools off.",
       "multiple": false,
+      "required": false
+    },
+    "enable_scripts": {
+      "type": "boolean",
+      "title": "Enable scripts",
+      "description": "Register run_script and apply_changeset, which run Python on this computer next to Archicad so bulk tasks take two calls instead of hundreds. There is no sandbox: turn this on only for clients you trust. Needs Mode set to 'full'. Scripts never write directly; apply_changeset writes what a script planned, after confirmation.",
+      "default": false,
       "required": false
     }
   },
@@ -237,6 +245,14 @@
     {
       "name": "deploy_gdl_object",
       "description": "Reload libraries, place the object, and return a render of it."
+    },
+    {
+      "name": "run_script",
+      "description": "Run a Python script next to Archicad; writes are recorded into a changeset, never applied."
+    },
+    {
+      "name": "apply_changeset",
+      "description": "Apply a changeset planned by run_script. Requires confirm=true."
     }
   ],
   "compatibility": {

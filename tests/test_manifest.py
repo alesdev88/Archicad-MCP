@@ -11,7 +11,7 @@ MANIFEST = Path(__file__).resolve().parents[1] / "manifest.json"
 async def test_manifest_lists_every_registered_tool(tmp_path):
     raw = json.loads(MANIFEST.read_text())
     advertised = {t["name"] for t in raw["tools"]}
-    server = build_server(mode="full", gdl_workspace=tmp_path)
+    server = build_server(mode="full", gdl_workspace=tmp_path, enable_scripts=True)
     tools = await server.list_tools()
     registered = {tool.name for tool in tools}
     assert registered == advertised
@@ -23,3 +23,11 @@ def test_manifest_declares_the_gdl_workspace_field():
     assert field["type"] == "directory"
     assert raw["server"]["mcp_config"]["env"]["ARCHICAD_MCP_GDL_WORKSPACE"] == \
         "${user_config.gdl_workspace}"
+
+
+def test_manifest_declares_the_enable_scripts_switch():
+    raw = json.loads(MANIFEST.read_text())
+    field = raw["user_config"]["enable_scripts"]
+    assert field["type"] == "boolean" and field["default"] is False
+    assert raw["server"]["mcp_config"]["env"]["ARCHICAD_MCP_SCRIPTS"] == \
+        "${user_config.enable_scripts}"

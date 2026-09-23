@@ -109,7 +109,10 @@ async def test_set_element_data_commit(core):
 async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
     official = dict(api_replays.OFFICIAL)
     official["API.SetPropertyValuesOfElements"] = {
-        "executionResults": [{"success": True}, {"success": False}]}
+        "executionResults": [{"success": True},
+                             {"success": False,
+                              "error": {"code": 6001,
+                                        "message": "TeamWork permission denied"}}]}
     fake_core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
     monkeypatch.setattr(server_mod, "get_connection",
                         lambda port: ArchicadConnection(19723, core=fake_core))
@@ -118,8 +121,30 @@ async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
         {"guid": "w-2", "property": "OFFICE/Status", "value": "Approved"}],
         "dry_run": False})
     assert payload["applied"] == 1
-    assert payload["failed"] == 1
+    # Which element failed and why, not just how many: without the GUID the
+    # only way to find it is a second query pass over the whole set.
+    assert payload["failed"] == [{"code": 6001,
+                                  "message": "TeamWork permission denied",
+                                  "count": 1,
+                                  "sample": [{"guid": "w-2",
+                                              "property": "OFFICE/Status"}]}]
     assert "skipped" not in payload
+
+
+async def test_set_element_data_failure_without_error_detail(monkeypatch):
+    official = dict(api_replays.OFFICIAL)
+    official["API.SetPropertyValuesOfElements"] = {
+        "executionResults": [{"success": False}]}
+    fake_core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    monkeypatch.setattr(server_mod, "get_connection",
+                        lambda port: ArchicadConnection(19723, core=fake_core))
+    payload = await call("set_element_data", {"changes": [
+        {"guid": "w-1", "property": "OFFICE/Fire Rating", "value": "EI30"}],
+        "dry_run": False})
+    assert payload["applied"] == 0
+    assert payload["failed"] == [{"code": None, "message": None, "count": 1,
+                                  "sample": [{"guid": "w-1",
+                                              "property": "OFFICE/Fire Rating"}]}]
 
 
 async def test_set_element_data_commit_skips_unresolved_property(monkeypatch):

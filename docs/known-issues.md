@@ -122,6 +122,16 @@ as either an object or a JSON-encoded object. The parsed value still goes
 through schema validation. A string that is not JSON gets an explicit error and
 no command is sent.
 
+## Elements in hotlinked modules cannot be written
+
+Archicad refuses property writes to elements placed through a hotlinked module
+with code 6001, `TeamWork permission denied`, even when the project is not a
+Teamwork project. With Tapir, `set_element_data` and `run_script` detect these
+elements before writing (Tapir `FilterElements` with `IsEditable`) and list
+them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
+modules of a local copy of a large project. Edit them in the module's source
+file.
+
 ## Writing enum properties is not supported
 
 `singleEnum` and `multiEnum` properties need an `EnumValueId`, not a plain value.
@@ -280,3 +290,13 @@ duplicate is **not yet confirmed**. Graphisoft's documentation says duplicate
 names are auto-numbered, but exported schemes carry stable IDs that suggest an
 in-place match may be possible. Test on a scratch project before relying on
 either behaviour.
+
+## Scripts keep the property-read ceiling
+
+`ac.props` and `ac.details` in `run_script` refuse to read across more than
+`ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default 5000) in one call, like
+every other property read. Read in scoped chunks.
+
+`ac.set_props` hits the same ceiling: planning reads each element's current
+value, so one call that changes more than 5000 elements is refused. Split the
+changes into several `set_props` calls; they still end up in one changeset.
