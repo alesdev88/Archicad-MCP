@@ -6,6 +6,7 @@ from multiconn_archicad.errors import StandardAPIError
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.element_data import (
     cap_list,
+    group_failures,
     plan_property_writes,
     send_property_writes,
     set_element_data,
@@ -187,7 +188,7 @@ def test_set_element_data_keeps_the_count_when_a_batch_fails():
                    "stopped": {"code": 4001, "message": "Invalid program status"}}
 
 
-def test_set_element_data_caps_the_failed_list():
+def test_set_element_data_groups_the_failed_list():
     guids = [f"g-{i}" for i in range(60)]
 
     def refuse_all(params):
@@ -199,10 +200,86 @@ def test_set_element_data_caps_the_failed_list():
     out = set_element_data(conn, [{"guid": g, "property": "D/P", "value": "new"}
                                   for g in guids], dry_run=False)
     assert out["applied"] == 0
-    assert len(out["failed"]) == 50 and out["failed_not_shown"] == 10
-    assert out["failed"][0]["guid"] == "g-0"
+    # One group per distinct refusal: 60 identical entries told the caller
+    # nothing that one count and a few GUIDs do not.
+    assert out["failed"] == [{"code": 6001, "message": "denied", "count": 60,
+                              "sample": [{"guid": f"g-{i}", "property": "D/P"}
+                                         for i in range(5)]}]
 
 
 def test_cap_list():
     assert cap_list(list(range(3)), 5) == ([0, 1, 2], 0)
     assert cap_list(list(range(8)), 5) == ([0, 1, 2, 3, 4], 3)
+
+
+def test_group_failures_by_code_and_message_largest_first():
+    failed = ([{"guid": f"a-{i}", "property": "P", "code": 4012, "message": "x"}
+               for i in range(2)]
+              + [{"guid": f"b-{i}", "property": "P", "code": 6001, "message": "denied"}
+                 for i in range(7)])
+    groups = group_failures(failed)
+    assert [(g["code"], g["count"]) for g in groups] == [(6001, 7), (4012, 2)]
+    assert len(groups[0]["sample"]) == 5
+    assert groups[1]["sample"] == [{"guid": "a-0", "property": "P"},
+                                   {"guid": "a-1", "property": "P"}]
+
+
+# ---------- elements Archicad would refuse to write ----------
+
+def _conn_with_filters(cells, editable, mine=None, teamwork=False):
+    """Like _conn_with_cells, with FilterElements answering per filter."""
+    conn, core = _conn_with_cells(cells)
+    passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ())}
+
+    def filter_elements(params):
+        [name] = params["filters"]
+        return {"elements": [e for e in params["elements"]
+                             if e["elementId"]["guid"] in passing[name]]}
+
+    core.tapir_responses["FilterElements"] = filter_elements
+    info = dict(core.tapir_responses["GetProjectInfo"])
+    info["isTeamwork"] = teamwork
+    core.tapir_responses["GetProjectInfo"] = info
+    return conn, core
+
+
+_TWO_STRING_CELLS = {("d-1", "D/P"): {"type": "string", "status": "normal", "value": "0"},
+                     ("d-2", "D/P"): {"type": "string", "status": "normal", "value": "0"}}
+_TWO_CHANGES = [{"guid": "d-1", "property": "D/P", "value": "001"},
+                {"guid": "d-2", "property": "D/P", "value": "002"}]
+
+
+def test_plan_skips_an_element_inside_a_hotlink():
+    # Live 23.09.2026: 113 doors in hotlinked modules planned fine and were then
+    # refused one by one at apply with a misleading "TeamWork permission denied",
+    # in a file that was not a Teamwork project at all.
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"})
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert [p["guid"] for p in planned] == ["d-1"]
+    assert skipped[0]["guid"] == "d-2"
+    assert "hotlinked module" in skipped[0]["reason"]
+
+
+def test_plan_names_an_unreserved_teamwork_element_as_such():
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"}, mine={"d-1"},
+                                 teamwork=True)
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert "not reserved" in skipped[0]["reason"]
+    assert "reserve_elements" in skipped[0]["reason"]
+
+
+def test_plan_calls_a_reserved_but_locked_teamwork_element_a_hotlink():
+    # Reserved yet still not editable: the hotlinked-module case on a Teamwork
+    # project, where reserve_elements reports it as already mine.
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"},
+                                 mine={"d-1", "d-2"}, teamwork=True)
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert "hotlinked module" in skipped[0]["reason"]
+
+
+def test_plan_without_tapir_leaves_editability_to_archicad():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable=set())
+    core.official_responses["API.IsAddOnCommandAvailable"] = {"available": False}
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert len(planned) == 2 and skipped == []
+    assert not any(c == "FilterElements" for c, _ in core.calls)

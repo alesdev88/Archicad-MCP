@@ -9,6 +9,7 @@ from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core.element_data import (
     REPORT_CAP,
     cap_list,
+    group_failures,
     error_fields,
     send_property_writes,
 )
@@ -80,12 +81,9 @@ def _command_outcome(name: str, response) -> dict:
 
 def _report(applied: int, failed: list[dict], mismatched: list[dict],
             commands: list[dict], stopped: dict | None = None) -> dict:
-    shown_failed, failed_rest = cap_list(failed, REPORT_CAP)
     shown_mismatched, mismatched_rest = cap_list(mismatched, REPORT_CAP)
-    result = {"applied": applied, "failed": shown_failed,
+    result = {"applied": applied, "failed": group_failures(failed),
               "mismatched": shown_mismatched, "commands": commands}
-    if failed_rest:
-        result["failed_not_shown"] = failed_rest
     if mismatched_rest:
         result["mismatched_not_shown"] = mismatched_rest
     if stopped is not None:

@@ -16,6 +16,10 @@ from datetime import datetime, timedelta, timezone
 TTL_SECONDS = 30 * 60
 CAPACITY = 20
 SAMPLE = 20
+# Skipped changes are shown per reason, not one by one: a preview repeating one
+# long reason twenty times says nothing a count does not.
+SKIP_REASONS = 10
+SKIP_SAMPLE = 5
 
 
 class ChangesetError(Exception):
@@ -103,6 +107,29 @@ class ChangesetStore:
             del self._items[key]
 
 
+def group_skipped(skipped: list[dict]) -> tuple[list[dict], int]:
+    """Skipped changes grouped by reason, largest first, and how many reasons
+    were left out. Each group shows its count and up to SKIP_SAMPLE elements."""
+    groups: dict[str, dict] = {}
+    for s in skipped:
+        group = groups.setdefault(s["reason"], {"reason": s["reason"], "count": 0,
+                                                "sample": []})
+        group["count"] += 1
+        if len(group["sample"]) < SKIP_SAMPLE:
+            group["sample"].append({"guid": s["guid"], "property": s["property"]})
+    ordered = sorted(groups.values(), key=lambda g: -g["count"])
+    return ordered[:SKIP_REASONS], max(len(ordered) - SKIP_REASONS, 0)
+
+
+def skipped_report(skipped: list[dict]) -> dict:
+    """The preview fields describing skipped changes."""
+    groups, not_shown = group_skipped(skipped)
+    report = {"skipped": len(skipped), "skipped_reasons": groups}
+    if not_shown:
+        report["skipped_reasons_not_shown"] = not_shown
+    return report
+
+
 def summarize(cs: Changeset) -> dict:
     writes = cs.property_writes()
     return {
@@ -113,8 +140,7 @@ def summarize(cs: Changeset) -> dict:
         "teamwork": cs.identity["is_teamwork"] if cs.identity else None,
         "property_writes": len(writes),
         "commands": cs.command_counts(),
-        "skipped": len(cs.skipped),
         "sample": [{k: w[k] for k in ("guid", "property", "current", "new")}
                    for w in writes[:SAMPLE]],
-        "skipped_sample": cs.skipped[:SAMPLE],
+        **skipped_report(cs.skipped),
     }

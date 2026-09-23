@@ -159,6 +159,9 @@ TAPIR = {
     # tests/test_element_coverage.py builds a plan where they differ.
     "GetAllElements": GET_ALL_ELEMENTS,
     "GetSelectedElements": {"elements": []},
+    # Every fixture element passes every filter (editable, in my workspace);
+    # tests that need a locked element install their own FilterElements.
+    "FilterElements": lambda p: {"elements": p["elements"]},
     "GetElementsByType": lambda p: {"elements": [
         {"elementId": {"guid": g}} for g, t in ELEMENT_TYPES.items()
         if t == p["elementType"]]},

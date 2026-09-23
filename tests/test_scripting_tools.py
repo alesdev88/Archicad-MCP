@@ -115,7 +115,9 @@ def test_skipped_changes_are_shown_even_with_nothing_to_apply(wired):
               "operations": [], "skipped": skipped})
     out = tools_mod.execute_script(tools_mod.ChangesetStore(), "c", None, 120, 20000)
     assert "changeset" not in out
-    assert out["skipped"] == 1 and out["skipped_sample"] == skipped
+    assert out["skipped"] == 1
+    assert out["skipped_reasons"] == [{"reason": "cannot hold '001'", "count": 1,
+                                       "sample": [{"guid": "d-1", "property": "D/P"}]}]
 
 
 def test_an_error_is_passed_through_without_a_changeset(wired):

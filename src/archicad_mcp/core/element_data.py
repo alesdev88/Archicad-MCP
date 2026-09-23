@@ -3,6 +3,7 @@ from __future__ import annotations
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
+from archicad_mcp.core.teamwork import FILTER_CHUNK, _in_my_workspace, _is_teamwork
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     PROPERTY_FETCH_CHUNK,
@@ -18,15 +19,72 @@ from archicad_mcp.extract import (
 # is out of scope for this tool; the gateway can do it with an explicit id.
 _ENUM_TYPES = frozenset({"singleEnum", "multiEnum"})
 
-# How many per-element failures a write report lists. A set of thousands of
-# unreserved Teamwork elements would otherwise return thousands of identical
-# refusals; the count of the rest is enough to act on.
+# How many readback mismatches a write report lists; the count of the rest is
+# enough to act on.
 REPORT_CAP = 50
+
+# GUIDs shown per group of identical refusals.
+FAILURE_SAMPLE = 5
 
 
 def cap_list(items: list, limit: int = REPORT_CAP) -> tuple[list, int]:
     """The first `limit` items, and how many were left out."""
     return items[:limit], max(len(items) - limit, 0)
+
+
+def group_failures(failed: list[dict]) -> list[dict]:
+    """Refusals grouped by (code, message), largest group first.
+
+    Refusals come in bulk and alike: 113 doors in hotlinked modules came back
+    as 113 identical "TeamWork permission denied" entries in the live run,
+    half the characters of the whole task. One count per reason, with a few
+    GUIDs to look at, carries the same information.
+    """
+    groups: dict[tuple, dict] = {}
+    for f in failed:
+        group = groups.setdefault((f["code"], f["message"]), {
+            "code": f["code"], "message": f["message"], "count": 0, "sample": []})
+        group["count"] += 1
+        if len(group["sample"]) < FAILURE_SAMPLE:
+            group["sample"].append({"guid": f["guid"], "property": f["property"]})
+    return sorted(groups.values(), key=lambda g: -g["count"])
+
+
+_HOTLINKED = ("not editable: it is inside a hotlinked module or otherwise "
+              "locked, so Archicad would refuse the write")
+_UNRESERVED = ("not reserved in Teamwork; reserve it (reserve_elements) and "
+               "plan again")
+
+
+def _editable(conn: ArchicadConnection, guids: list[str]) -> set[str]:
+    editable: set[str] = set()
+    for start in range(0, len(guids), FILTER_CHUNK):
+        chunk = guids[start:start + FILTER_CHUNK]
+        response = conn.tapir("FilterElements", {"elements": element_payload(chunk),
+                                                 "filters": ["IsEditable"]})
+        editable.update(e["elementId"]["guid"] for e in response.get("elements", []))
+    return editable
+
+
+def _write_refusals(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
+    """guid -> why Archicad would refuse to write it, for elements it would.
+
+    Archicad refuses writes to elements in hotlinked modules with 6001
+    "TeamWork permission denied", in plain files too, and only per element
+    after the batch is sent. Tapir's IsEditable filter answers it up front. On
+    a Teamwork project an element that is not editable is either not reserved,
+    which the caller can fix, or reserved and still locked, which is the
+    hotlink case (reserve_elements reports those as already mine). Without
+    Tapir the check is skipped and Archicad's own refusal is still reported.
+    """
+    if not guids or not conn.tapir_command_available("FilterElements"):
+        return {}
+    editable = _editable(conn, guids)
+    locked = [g for g in guids if g not in editable]
+    if not locked:
+        return {}
+    mine = _in_my_workspace(conn, locked) if _is_teamwork(conn) else set(locked)
+    return {g: _HOTLINKED if g in mine else _UNRESERVED for g in locked}
 
 
 # Property value types that take a plain number. The measure types are numbers
@@ -86,6 +144,7 @@ def plan_property_writes(conn: ArchicadConnection,
     # payload must echo back (a bare {"value": ...} is rejected by the API).
     cells = fetch_property_cells(conn, guids, prop_names)
     ids = resolve_property_ids(conn, prop_names)
+    refusals = _write_refusals(conn, guids)
     planned: list[dict] = []
     skipped: list[dict] = []
     for c in changes:
@@ -95,6 +154,8 @@ def plan_property_writes(conn: ArchicadConnection,
         send = c["value"]
         if prop not in ids:
             reason = "property name did not resolve"
+        elif guid in refusals:
+            reason = refusals[guid]
         elif value_type is None:
             reason = ("could not determine the property's value type "
                       "(is it available on this element?)")
@@ -146,7 +207,8 @@ def send_property_writes(
                 continue
             # Each failure names its element and Archicad's reason (6001 is a
             # Teamwork reservation, including elements inside a hotlink), so
-            # the caller can act on it without a second query pass.
+            # the caller can act on it without a second query pass. Callers
+            # group them with group_failures before reporting.
             error = outcome.get("error") or {}
             failed.append({"guid": p["guid"], "property": p["property"],
                            "code": error.get("code"), "message": error.get("message")})
@@ -194,9 +256,7 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
         applied, failed, error = send_property_writes(conn, planned)
         result["applied"] = applied
         if failed:
-            result["failed"], not_shown = cap_list(failed)
-            if not_shown:
-                result["failed_not_shown"] = not_shown
+            result["failed"] = group_failures(failed)
         if error is not None:
             # Earlier batches landed; an {"error"} alone would hide them.
             result["stopped"] = error_fields(error)

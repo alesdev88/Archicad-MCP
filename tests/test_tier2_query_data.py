@@ -123,9 +123,11 @@ async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
     assert payload["applied"] == 1
     # Which element failed and why, not just how many: without the GUID the
     # only way to find it is a second query pass over the whole set.
-    assert payload["failed"] == [{"guid": "w-2", "property": "OFFICE/Status",
-                                  "code": 6001,
-                                  "message": "TeamWork permission denied"}]
+    assert payload["failed"] == [{"code": 6001,
+                                  "message": "TeamWork permission denied",
+                                  "count": 1,
+                                  "sample": [{"guid": "w-2",
+                                              "property": "OFFICE/Status"}]}]
     assert "skipped" not in payload
 
 
@@ -140,8 +142,9 @@ async def test_set_element_data_failure_without_error_detail(monkeypatch):
         {"guid": "w-1", "property": "OFFICE/Fire Rating", "value": "EI30"}],
         "dry_run": False})
     assert payload["applied"] == 0
-    assert payload["failed"] == [{"guid": "w-1", "property": "OFFICE/Fire Rating",
-                                  "code": None, "message": None}]
+    assert payload["failed"] == [{"code": None, "message": None, "count": 1,
+                                  "sample": [{"guid": "w-1",
+                                              "property": "OFFICE/Fire Rating"}]}]
 
 
 async def test_set_element_data_commit_skips_unresolved_property(monkeypatch):

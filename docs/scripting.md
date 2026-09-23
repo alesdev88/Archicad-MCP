@@ -33,10 +33,12 @@ directly; that is the trust model above, not something `ac` can stop.
 1. `run_script(code, port)` runs the script in a separate process, stopped
    after `timeout_s` (default 120, at most 600). It returns `result`, captured
    `stdout` and, if the script planned writes, a `changeset`: its id, counts,
-   20 sample changes (current and new value) and skipped changes with reasons.
+   20 sample changes (current and new value) and the skipped changes, grouped
+   by reason with a count and up to 5 sample elements each.
 2. `apply_changeset(changeset_id, confirm=true)` writes exactly what was
    previewed, in order, then reads every written property back. It returns
-   `applied`, `failed` (guid, property, Archicad's code and message),
+   `applied`, `failed` (Archicad's refusals grouped by code and message, each
+   with a count and up to 5 sample elements),
    `mismatched` readbacks, and `commands` (one outcome per recorded API
    command; when a command answers per element, the entry counts the
    elements it refused under `failed`, with a sample).
@@ -77,6 +79,13 @@ An Integer property cannot take `"001"`; that change is skipped with a reason
 naming the fix (a whole number, or change the property to String in Property
 Manager). Enum properties are skipped too; set them with `ac.cmd` and the
 enum's id.
+
+With Tapir, `set_props` also skips elements Archicad would refuse to write.
+An element inside a hotlinked module is not editable, and Archicad refuses it
+with a misleading `TeamWork permission denied`, even in a file that is not a
+Teamwork project; the preview names the real reason instead. On a Teamwork
+project, an element you have not reserved is skipped with a pointer to
+`reserve_elements`; reserve it and run the script again.
 
 Property and detail reads keep the element ceiling
 (`ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS`, default 5000), because wide reads have

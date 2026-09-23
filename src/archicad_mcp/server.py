@@ -319,9 +319,13 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description="Write element property values. DRY-RUN BY DEFAULT: returns "
                           "planned changes (current -> new) without touching the model. "
-                          "Pass dry_run=false to commit. A commit returns 'applied' "
-                          "and, per element that Archicad refused, 'failed' entries "
-                          "with guid, property, code and message.",
+                          "Pass dry_run=false to commit. A commit returns 'applied'; "
+                          "'failed', Archicad's refusals grouped by code and message "
+                          "with a count and sample GUIDs; 'skipped' for changes not "
+                          "sent (property type, enum, or an element that is not "
+                          "editable: inside a hotlinked module, or not reserved in "
+                          "Teamwork); and 'stopped' if a batch was refused outright "
+                          "after earlier batches landed.",
               **_tool_meta("Write element properties", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,

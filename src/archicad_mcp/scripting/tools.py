@@ -20,7 +20,7 @@ from archicad_mcp.core.project import project_identity
 from archicad_mcp.gateway.registry import build_registry
 from archicad_mcp.scripting import child
 from archicad_mcp.scripting.apply import apply_changeset as _apply
-from archicad_mcp.scripting.changesets import SAMPLE, ChangesetStore, summarize
+from archicad_mcp.scripting.changesets import ChangesetStore, skipped_report, summarize
 from archicad_mcp.scripting.execute import cap_result, cap_text
 
 MAX_TIMEOUT_S = 600.0
@@ -42,7 +42,9 @@ RUN_DESCRIPTION = (
     "ac.ArchicadError. Set `result` to what you want back; print() is captured "
     "too; both are capped at max_output_chars. NEVER WRITES: set_props and "
     "write commands are recorded into a changeset, returned as counts, 20 sample "
-    "changes (current -> new) and skipped changes with reasons. Apply it with "
+    "changes (current -> new) and skipped changes grouped by reason (type "
+    "mismatch, enum, or an element that is not editable: in a hotlinked module "
+    "or not reserved). Apply it with "
     "apply_changeset. Runs in a separate process, stopped after timeout_s "
     "(max 600).")
 
@@ -53,7 +55,8 @@ APPLY_DESCRIPTION = (
     "models). Refuses without confirm=true, and refuses if a different project "
     "is now open on the port (name, Teamwork state and location, with Tapir). "
     "Single use; changesets expire after 30 minutes. Returns applied, failed "
-    "(guid, property, code, message per refused element), mismatched readbacks, "
+    "(refusals grouped by code and message, with a count and sample GUIDs), "
+    "mismatched readbacks, "
     "and command outcomes with per-element refusals counted; a command that "
     "raises or a batch refused as a whole stops the run, reported in stopped.")
 
@@ -102,8 +105,7 @@ def execute_script(store: ChangesetStore, code: str, port: int | None,
         out["changeset"] = summarize(cs)
     elif reply.get("skipped"):
         # Nothing to apply, but the caller has to learn why its writes vanished.
-        out["skipped"] = len(reply["skipped"])
-        out["skipped_sample"] = reply["skipped"][:SAMPLE]
+        out.update(skipped_report(reply["skipped"]))
     if truncated:
         out["truncated"] = truncated
     return out
