@@ -163,7 +163,7 @@ Each change is checked when planned, reading the element's current cell:
 
 "Fits the type": `string` takes a `str`; `integer` takes an `int`, or a `str`
 whose `int()` round-trips exactly (so `"12"` fits and `"001"` does not);
-`number` takes an `int` or `float`; `boolean` takes a `bool`. Other types pass
+`number` and the measure types (`length`, `area`, `volume`, `angle`) take an `int` or `float`; `boolean` takes a `bool`. Other types pass
 through unchecked and are left to Archicad, with any refusal reported per element
 at apply time.
 
@@ -185,6 +185,7 @@ New package `src/archicad_mcp/scripting/`:
 | `runner.py` | child entry point (`python -I -m archicad_mcp.scripting.runner`): reads `{code, port}` JSON on stdin, builds a real connection and `ac`, calls `execute`, writes one JSON document on stdout |
 | `child.py` | the server side: spawns the runner with `sys.executable`, enforces the timeout, parses the reply |
 | `changesets.py` | in-memory store: id, port, project, operations, created time; 30-minute expiry, at most 20 kept (oldest evicted), single use |
+| `apply.py` | `apply_changeset`: confirm gate, project check, ordered writes, readback |
 | `tools.py` | `register(mcp, default_port, tool_meta, guarded)`, mirroring `gdl/tools.py` |
 
 Flow of `run_script`:
@@ -230,7 +231,7 @@ Rules:
 | Case | Response |
 |---|---|
 | no Archicad, several instances, no project | the usual `get_connection` error; no child started |
-| timeout | `error: "script timed out after N s"`, stdout so far; no changeset |
+| timeout | `error: "script timed out after N s"`; no stdout (it is buffered inside the killed child); no changeset |
 | exception in the script | `error`, last 30 traceback lines, stdout; no changeset |
 | child exits without a valid reply | `error` plus the last 2000 characters of its stderr |
 
