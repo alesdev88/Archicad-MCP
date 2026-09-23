@@ -184,6 +184,13 @@ TOOLS: list[dict] = [
      "desc": "Compile a source mesh into a .gsm library part and write it, with its textures, into the GDL workspace."},
     {"name": "deploy_gdl_object", "cat": "GDL library parts", "mode": "full", "mutates": True,
      "desc": "Reload libraries, place the built library part, render it, and return the image. Deletes the placed instance again unless keep=true."},
+
+    # Scripting. Full mode plus --enable-scripts; as with the GDL rows, "mode"
+    # alone does not describe the gate.
+    {"name": "run_script", "cat": "Scripting", "mode": "full", "mutates": True,
+     "desc": "Run a Python script next to Archicad with an ac object for reads. Writes are recorded into a changeset and previewed, never applied."},
+    {"name": "apply_changeset", "cat": "Scripting", "mode": "full", "mutates": True,
+     "desc": "Apply a changeset planned by run_script, then read the values back. Refuses without confirm=true or when another project is open."},
 ]
 
 

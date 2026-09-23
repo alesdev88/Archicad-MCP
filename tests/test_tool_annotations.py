@@ -35,6 +35,9 @@ WRITERS = {
     "attach_elements_to_issue", "export_issues_bcf", "import_issues_bcf",
     "publish", "edit_schedule_scheme", "execute_write_api_command",
     "build_gdl_object", "deploy_gdl_object", "reserve_elements", "release_elements",
+    # run_script never writes through `ac`, but its code is unsandboxed Python,
+    # so claiming readOnlyHint would let a client run arbitrary code unprompted.
+    "run_script", "apply_changeset",
 }
 
 # Writes that change only transient application state, never project data or a
@@ -50,9 +53,12 @@ async def _tools(mode: str):
     # assertion below too. They only actually register in full mode (server.py
     # gates them on mode == "full" regardless of the workspace), so passing one
     # here does not make them appear in verdicts mode; it only stops them from
-    # being invisible to this file the way they were before this fix.
+    # being invisible to this file the way they were before this fix. Scripts
+    # are enabled for the same reason: mode == "verdicts" still ignores the
+    # switch, so this only covers the conditional tools in full mode.
     with tempfile.TemporaryDirectory() as tmp:
-        async with Client(build_server(mode=mode, gdl_workspace=Path(tmp))) as client:
+        async with Client(build_server(mode=mode, gdl_workspace=Path(tmp),
+                                       enable_scripts=True)) as client:
             return {t.name: t for t in await client.list_tools()}
 
 
