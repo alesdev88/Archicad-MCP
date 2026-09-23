@@ -280,3 +280,9 @@ duplicate is **not yet confirmed**. Graphisoft's documentation says duplicate
 names are auto-numbered, but exported schemes carry stable IDs that suggest an
 in-place match may be possible. Test on a scratch project before relying on
 either behaviour.
+
+## Scripts keep the property-read ceiling
+
+`ac.props` and `ac.details` in `run_script` refuse to read across more than
+`ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default 5000) in one call, like
+every other property read. Read in scoped chunks.
