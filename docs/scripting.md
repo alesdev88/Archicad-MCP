@@ -85,5 +85,7 @@ result = {"doors": len(doors),
 
 `run_script` returns the counts and a preview; `apply_changeset` with the
 returned id and `confirm=true` writes them. Against an Integer property, the
-preview lists these changes under `skipped` with the reason, and nothing is
-applied; send whole numbers instead.
+zero-padded values (`"001"` to `"099"`) are listed under `skipped` with the
+reason, while `"100"` and up are planned as whole numbers, so check the
+preview's skipped count before applying; send whole numbers, or change the
+property to String.
