@@ -6,7 +6,15 @@ refusal to serve scripts over http without a second flag, are the boundary.
 """
 from __future__ import annotations
 
-from archicad_mcp.connection import ArchicadConnection, get_connection, probe_port
+from multiconn_archicad.errors import APIErrorBase
+
+from archicad_mcp.connection import (
+    ArchicadConnection,
+    ArchicadUnavailableError,
+    get_connection,
+    probe_port,
+)
+from archicad_mcp.core.project import project_identity
 from archicad_mcp.gateway.registry import build_registry
 from archicad_mcp.scripting import child
 from archicad_mcp.scripting.apply import apply_changeset as _apply
@@ -51,6 +59,11 @@ def execute_script(store: ChangesetStore, code: str, port: int | None,
     conn = get_connection(port)
     info = probe_port(conn.port)
     project = info.project_name if info is not None else None
+    try:
+        # Recorded so apply can tell apart two projects that share a name.
+        identity = project_identity(conn)
+    except (APIErrorBase, ArchicadUnavailableError):
+        identity = None
     timeout = min(max(float(timeout_s), 1.0), MAX_TIMEOUT_S)
     limit = max(int(max_output_chars), 1)
     reply = child.run_child(code, conn.port, timeout)
@@ -71,7 +84,8 @@ def execute_script(store: ChangesetStore, code: str, port: int | None,
             if reply.get(key):
                 out[key] = reply[key]
     elif reply.get("operations"):
-        cs = store.add(conn.port, project, reply["operations"], reply.get("skipped", []))
+        cs = store.add(conn.port, project, reply["operations"],
+                       reply.get("skipped", []), identity=identity)
         out["changeset"] = summarize(cs)
     elif reply.get("skipped"):
         # Nothing to apply, but the caller has to learn why its writes vanished.

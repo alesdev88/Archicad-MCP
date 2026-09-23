@@ -7,6 +7,7 @@ so a preview cannot be applied long after the model has moved on.
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -31,6 +32,9 @@ class Changeset:
     created: float
     expires_at: datetime
     applied: bool = False
+    # {"name", "is_teamwork", "location"} from project_identity at plan time,
+    # or None without Tapir, when apply can only compare names.
+    identity: dict | None = None
 
     def property_writes(self) -> list[dict]:
         return [w for op in self.operations if op["kind"] == "props"
@@ -48,19 +52,38 @@ class ChangesetStore:
         self._capacity = capacity
         self._clock = clock
         self._items: dict[str, Changeset] = {}  # insertion order is age
+        # fastmcp runs sync tools on a threadpool, so two calls can reach the
+        # store at once. Without the lock, expiry can iterate while another
+        # call adds, and two applies can both see a changeset as unused.
+        self._lock = threading.Lock()
 
     def add(self, port: int, project: str | None, operations: list[dict],
-            skipped: list[dict]) -> Changeset:
-        self._expire()
-        cs = Changeset(id=f"cs-{secrets.token_hex(6)}", port=port, project=project,
-                       operations=operations, skipped=skipped, created=self._clock(),
-                       expires_at=datetime.now(timezone.utc) + timedelta(seconds=self._ttl))
-        self._items[cs.id] = cs
-        while len(self._items) > self._capacity:
-            self._items.pop(next(iter(self._items)))
-        return cs
+            skipped: list[dict], identity: dict | None = None) -> Changeset:
+        with self._lock:
+            self._expire()
+            cs = Changeset(id=f"cs-{secrets.token_hex(6)}", port=port,
+                           project=project, operations=operations, skipped=skipped,
+                           created=self._clock(),
+                           expires_at=datetime.now(timezone.utc)
+                           + timedelta(seconds=self._ttl),
+                           identity=identity)
+            self._items[cs.id] = cs
+            while len(self._items) > self._capacity:
+                self._items.pop(next(iter(self._items)))
+            return cs
 
     def lookup(self, changeset_id: str) -> Changeset:
+        with self._lock:
+            return self._get(changeset_id)
+
+    def take(self, changeset_id: str) -> Changeset:
+        """Look up and mark applied in one step, so only one apply can win."""
+        with self._lock:
+            cs = self._get(changeset_id)
+            cs.applied = True
+            return cs
+
+    def _get(self, changeset_id: str) -> Changeset:
         self._expire()
         cs = self._items.get(changeset_id)
         if cs is None:
@@ -87,6 +110,7 @@ def summarize(cs: Changeset) -> dict:
         "expires_at": cs.expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "port": cs.port,
         "project": cs.project,
+        "teamwork": cs.identity["is_teamwork"] if cs.identity else None,
         "property_writes": len(writes),
         "commands": cs.command_counts(),
         "skipped": len(cs.skipped),

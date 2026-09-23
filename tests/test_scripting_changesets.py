@@ -283,3 +283,197 @@ def test_apply_command_not_in_registry(world):
                                 "message": "command is not in this server's registry"}]
     assert "stopped" in out and out["stopped"]["at"] == "NonexistentCommand"
     assert ("w-2", "pid-OFFICE/Fire Rating") not in model.values
+
+
+# ---------- partial progress, command outcomes, identity ----------
+
+def test_apply_keeps_the_progress_of_batches_sent_before_a_failed_one(world):
+    from multiconn_archicad.errors import StandardAPIError
+    model, core, _, run = world
+    batches = []
+
+    def set_then_fail(params):
+        batches.append(params)
+        if len(batches) == 2:
+            raise StandardAPIError(message="Invalid program status", code=4001)
+        return model.set(params)
+
+    core.official_responses["API.SetPropertyValuesOfElements"] = set_then_fail
+    store = ChangesetStore()
+    writes = [_write(f"g-{i}", f"x{i}") for i in range(1000)]
+    cs = store.add(19723, "Test House", [_props(*writes)], [])
+    out = run(store, cs.id)
+    assert out["applied"] == 500
+    assert out["stopped"] == {"at": "property writes", "code": 4001,
+                              "message": "Invalid program status"}
+    # Only the batch that was sent is read back, and it all reads back.
+    assert out["mismatched"] == []
+    reads = [p for c, p in core.calls if c == "API.GetPropertyValuesOfElements"]
+    read_guids = {el["elementId"]["guid"] for p in reads for el in p["elements"]}
+    assert read_guids == {f"g-{i}" for i in range(500)}
+
+
+def test_a_property_written_twice_is_read_back_against_the_last_value(world):
+    model, _, _, run = world
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House",
+                   [_props(_write("w-1", "EI30"), _write("w-1", "EI90"))], [])
+    out = run(store, cs.id)
+    assert out["applied"] == 2
+    assert out["mismatched"] == []
+
+
+def test_command_stops_share_one_shape(world):
+    _, _, _, run = world
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House", [
+        {"kind": "command", "name": "NonexistentCommand", "params": {}}], [])
+    out = run(store, cs.id)
+    assert out["stopped"] == {"at": "NonexistentCommand", "code": None,
+                              "message": "command is not in this server's registry"}
+    cs = store.add(19723, "Test House", [
+        {"kind": "command", "name": "HighlightElements", "params": {}}], [])
+    out = run(store, cs.id)
+    assert out["stopped"] == {"at": "HighlightElements", "code": None,
+                              "message": "FakeCore: no canned response for "
+                                         "HighlightElements"}
+
+
+def test_per_element_command_failures_are_reported_without_stopping(world):
+    model, core, _, run = world
+    refusals = [{"success": False, "error": {"code": 6001, "message": f"denied {i}"}}
+                for i in range(7)]
+    core.tapir_responses["SetGDLParametersOfElements"] = {
+        "executionResults": [{"success": True}, *refusals]}
+    store = ChangesetStore()
+    ops = [{"kind": "command", "name": "SetGDLParametersOfElements", "params": {}},
+           _props(_write("w-2", "EI90"))]
+    cs = store.add(19723, "Test House", ops, [])
+    out = run(store, cs.id)
+    assert out["commands"] == [{"name": "SetGDLParametersOfElements", "ok": False,
+                                "failed": 7, "sample": refusals[:5]}]
+    assert "stopped" not in out
+    assert out["applied"] == 1  # the write after the command still ran
+
+
+def test_a_command_whose_elements_all_succeed_reports_zero_failed(world):
+    _, core, _, run = world
+    core.tapir_responses["SetGDLParametersOfElements"] = {
+        "executionResults": [{"success": True}, {"success": True}]}
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House", [
+        {"kind": "command", "name": "SetGDLParametersOfElements", "params": {}}], [])
+    out = run(store, cs.id)
+    assert out["commands"] == [{"name": "SetGDLParametersOfElements", "ok": True,
+                                "failed": 0}]
+
+
+IDENTITY = {"name": "Test House", "is_teamwork": False,
+            "location": "/Users/tester/Test House.pln"}
+
+
+def test_apply_refuses_a_same_name_project_at_another_location(world):
+    _, core, _, run = world
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House", [_props(_write("w-1", "EI30"))], [],
+                   identity=dict(IDENTITY))
+    core.tapir_responses["GetProjectInfo"] = {
+        "projectName": "Test House", "isUntitled": False, "isTeamwork": False,
+        "projectLocation": "/Users/tester/scratch/Test House.pln",
+        "projectPath": "/Users/tester/scratch/Test House.pln"}
+    out = run(store, cs.id)
+    assert "Nothing was written" in out["error"] and "location" in out["error"]
+    assert _sets(core) == []
+    assert store.lookup(cs.id) is cs  # nothing ran, so it can still be applied
+
+
+def test_apply_refuses_when_teamwork_state_differs(world):
+    _, core, _, run = world
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House", [_props(_write("w-1", "EI30"))], [],
+                   identity=dict(IDENTITY))
+    core.tapir_responses["GetProjectInfo"] = {
+        "projectName": "Test House", "isTeamwork": True,
+        "projectLocation": "teamwork://u:eyJhbGciOiJI.eyJzdWIiOiIx.sig@host/"
+                           "Users/tester/Test House.pln"}
+    out = run(store, cs.id)
+    assert "Nothing was written" in out["error"]
+    assert "eyJ" not in out["error"]  # the token never reaches the reply
+    assert _sets(core) == []
+
+
+def test_apply_proceeds_when_the_identity_matches(world):
+    _, core, _, run = world
+    store = ChangesetStore()
+    cs = store.add(19723, "Test House", [_props(_write("w-1", "EI30"))], [],
+                   identity=dict(IDENTITY))
+    out = run(store, cs.id)
+    assert out["applied"] == 1
+
+
+def test_project_identity_strips_the_teamwork_token():
+    from archicad_mcp.core.project import project_identity
+    core = FakeCore(official=dict(api_replays.OFFICIAL), tapir={
+        **api_replays.TAPIR, "GetProjectInfo": {
+            "projectName": "CVP", "isTeamwork": True,
+            "projectLocation": "teamwork://ales:eyJhbGciOiJI.eyJzdWIiOiIx.sig"
+                               "@bimcloud.example:22000/Projects/CVP?token=abc"}})
+    identity = project_identity(ArchicadConnection(19723, core=core))
+    assert identity == {"name": "CVP", "is_teamwork": True,
+                        "location": "teamwork://bimcloud.example:22000/Projects/CVP"}
+
+
+def test_project_identity_is_none_without_tapir():
+    from archicad_mcp.core.project import project_identity
+    official = dict(api_replays.OFFICIAL)
+    official["API.IsAddOnCommandAvailable"] = {"available": False}
+    core = FakeCore(official=official, tapir={})
+    assert project_identity(ArchicadConnection(19723, core=core)) is None
+
+
+def test_summary_says_whether_the_project_is_teamwork():
+    cs = ChangesetStore().add(19723, "Test House", [], [], identity=dict(IDENTITY))
+    assert summarize(cs)["teamwork"] is False
+    assert summarize(ChangesetStore().add(19723, "P", [], []))["teamwork"] is None
+
+
+# ---------- single use under concurrency ----------
+
+def test_take_marks_applied_and_a_second_take_refuses():
+    store = ChangesetStore()
+    cs = store.add(19723, "P", [], [])
+    assert store.take(cs.id) is cs and cs.applied
+    with pytest.raises(ChangesetError, match="already applied"):
+        store.take(cs.id)
+
+
+def test_concurrent_adds_and_lookups_do_not_break_the_store():
+    import sys
+    import threading
+    store = ChangesetStore(capacity=5)
+    errors = []
+
+    def churn():
+        try:
+            for _ in range(2000):
+                cs = store.add(19723, "P", [], [])
+                try:
+                    store.lookup(cs.id)
+                except ChangesetError:
+                    pass  # evicted by another thread: fine
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    # fastmcp runs sync tools on a threadpool. A tiny switch interval makes
+    # the interleaving that broke eviction and expiry happen within the test.
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=churn) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        sys.setswitchinterval(interval)
+    assert errors == []

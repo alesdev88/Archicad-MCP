@@ -176,3 +176,16 @@ async def test_run_then_apply_through_the_tools(wired, monkeypatch):
             "apply_changeset", {"changeset_id": cs_id, "confirm": True})).content[0].text)
     assert done["applied"] == 1
     assert written == [{"elementId": {"guid": "w-1"}}]
+
+
+def test_the_changeset_records_the_project_identity(wired):
+    fake_run, _ = wired
+    fake_run({"result": None, "stdout": "", "error": None, "traceback": None,
+              "operations": [{"kind": "props", "writes": [_write("w-1")]}],
+              "skipped": []})
+    store = tools_mod.ChangesetStore()
+    out = tools_mod.execute_script(store, "code", None, 120, 20000)
+    assert out["changeset"]["teamwork"] is False
+    assert store.lookup(out["changeset"]["id"]).identity == {
+        "name": "Test House", "is_teamwork": False,
+        "location": "/Users/tester/Test House.pln"}

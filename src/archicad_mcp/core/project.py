@@ -34,6 +34,24 @@ def sanitize_project_info(info: dict) -> dict:
     return {key: _scrub(value) for key, value in info.items()}
 
 
+def project_identity(conn: ArchicadConnection) -> dict | None:
+    """What tells two open projects apart, or None without Tapir.
+
+    The name alone does not: a scratch copy and the live Teamwork project can
+    share it. The location is scrubbed like get_project_info's, and its query
+    is dropped too, so no credential is kept in memory or compared.
+    """
+    if not conn.tapir_available():
+        return None
+    info = conn.tapir("GetProjectInfo")
+    location = info.get("projectLocation") or info.get("projectPath")
+    if isinstance(location, str):
+        location = _scrub(location).split("?", 1)[0]
+    return {"name": info.get("projectName"),
+            "is_teamwork": bool(info.get("isTeamwork")),
+            "location": location}
+
+
 def get_project_info(conn: ArchicadConnection) -> dict:
     product = conn.official("API.GetProductInfo")
     out: dict = {"archicad_version": product.get("version"),

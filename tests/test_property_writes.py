@@ -1,10 +1,14 @@
 """Planning and sending property writes, shared by set_element_data and scripts."""
 import pytest
 
+from multiconn_archicad.errors import StandardAPIError
+
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.element_data import (
+    cap_list,
     plan_property_writes,
     send_property_writes,
+    set_element_data,
     value_fit,
 )
 from tests.conftest import FakeCore
@@ -129,7 +133,8 @@ def test_send_batches_and_reports_each_refused_element():
             for item in items]}
 
     conn, core = _conn_with_cells({}, set_results=set_results)
-    applied, failed = send_property_writes(conn, _planned(501))
+    applied, failed, error = send_property_writes(conn, _planned(501))
+    assert error is None
     assert applied == 500
     assert failed == [{"guid": "g-500", "property": "D/P", "code": 6001,
                        "message": "TeamWork permission denied"}]
@@ -139,5 +144,65 @@ def test_send_batches_and_reports_each_refused_element():
 
 def test_send_nothing_sends_nothing():
     conn, core = _conn_with_cells({})
-    assert send_property_writes(conn, []) == (0, [])
+    assert send_property_writes(conn, []) == (0, [], None)
     assert core.calls == []
+
+
+def _fail_on_batch(n):
+    """SetPropertyValuesOfElements that succeeds except for batch number `n`."""
+    batches = []
+
+    def set_results(params):
+        batches.append(len(params["elementPropertyValues"]))
+        if len(batches) == n:
+            raise StandardAPIError(message="Invalid program status", code=4001)
+        return {"executionResults": [{"success": True}
+                                     for _ in params["elementPropertyValues"]]}
+    return set_results, batches
+
+
+def test_a_failed_batch_stops_sending_and_keeps_the_progress():
+    set_results, batches = _fail_on_batch(2)
+    conn, _ = _conn_with_cells({}, set_results=set_results)
+    applied, failed, error = send_property_writes(conn, _planned(1500))
+    # The first 500 landed before the second batch was refused; the third
+    # batch is never sent.
+    assert applied == 500 and failed == []
+    assert isinstance(error, StandardAPIError) and error.code == 4001
+    assert batches == [500, 500]
+
+
+def _string_cells(guids):
+    return {(g, "D/P"): {"type": "string", "status": "normal", "value": "old"}
+            for g in guids}
+
+
+def test_set_element_data_keeps_the_count_when_a_batch_fails():
+    guids = [f"g-{i}" for i in range(1000)]
+    set_results, _ = _fail_on_batch(2)
+    conn, _ = _conn_with_cells(_string_cells(guids), set_results=set_results)
+    out = set_element_data(conn, [{"guid": g, "property": "D/P", "value": "new"}
+                                  for g in guids], dry_run=False)
+    assert out == {"dry_run": False, "applied": 500,
+                   "stopped": {"code": 4001, "message": "Invalid program status"}}
+
+
+def test_set_element_data_caps_the_failed_list():
+    guids = [f"g-{i}" for i in range(60)]
+
+    def refuse_all(params):
+        return {"executionResults": [
+            {"success": False, "error": {"code": 6001, "message": "denied"}}
+            for _ in params["elementPropertyValues"]]}
+
+    conn, _ = _conn_with_cells(_string_cells(guids), set_results=refuse_all)
+    out = set_element_data(conn, [{"guid": g, "property": "D/P", "value": "new"}
+                                  for g in guids], dry_run=False)
+    assert out["applied"] == 0
+    assert len(out["failed"]) == 50 and out["failed_not_shown"] == 10
+    assert out["failed"][0]["guid"] == "g-0"
+
+
+def test_cap_list():
+    assert cap_list(list(range(3)), 5) == ([0, 1, 2], 0)
+    assert cap_list(list(range(8)), 5) == ([0, 1, 2, 3, 4], 3)

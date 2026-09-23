@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from archicad_mcp.connection import ArchicadConnection
+from multiconn_archicad.errors import APIErrorBase
+
+from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     PROPERTY_FETCH_CHUNK,
@@ -15,6 +17,17 @@ from archicad_mcp.extract import (
 # Enum-valued properties need an EnumValueId, not a plain scalar. Writing them
 # is out of scope for this tool; the gateway can do it with an explicit id.
 _ENUM_TYPES = frozenset({"singleEnum", "multiEnum"})
+
+# How many per-element failures a write report lists. A set of thousands of
+# unreserved Teamwork elements would otherwise return thousands of identical
+# refusals; the count of the rest is enough to act on.
+REPORT_CAP = 50
+
+
+def cap_list(items: list, limit: int = REPORT_CAP) -> tuple[list, int]:
+    """The first `limit` items, and how many were left out."""
+    return items[:limit], max(len(items) - limit, 0)
+
 
 # Property value types that take a plain number. The measure types are numbers
 # in the API; the unit is the project's, not part of the value.
@@ -102,15 +115,27 @@ def plan_property_writes(conn: ArchicadConnection,
     return planned, skipped
 
 
-def send_property_writes(conn: ArchicadConnection,
-                         planned: list[dict]) -> tuple[int, list[dict]]:
-    """Send planned writes in batches. Returns (applied, failed per element)."""
+def send_property_writes(
+        conn: ArchicadConnection, planned: list[dict],
+) -> tuple[int, list[dict], APIErrorBase | ArchicadUnavailableError | None]:
+    """Send planned writes in batches.
+
+    Returns (applied, failed per element, the error that stopped sending). A
+    batch Archicad refuses as a whole stops the sending, but the batches before
+    it have already landed, so their count and refusals come back with the
+    error rather than being lost to an exception. The error is None when every
+    batch was sent; applied plus the failed count is then how many were sent.
+    """
     applied = 0
     failed: list[dict] = []
     for start in range(0, len(planned), PROPERTY_FETCH_CHUNK):
         chunk = planned[start:start + PROPERTY_FETCH_CHUNK]
-        response = conn.official("API.SetPropertyValuesOfElements",
-                                 {"elementPropertyValues": [p["payload"] for p in chunk]})
+        try:
+            response = conn.official(
+                "API.SetPropertyValuesOfElements",
+                {"elementPropertyValues": [p["payload"] for p in chunk]})
+        except (APIErrorBase, ArchicadUnavailableError) as exc:
+            return applied, failed, exc
         results = (response or {}).get("executionResults", [])
         for i, p in enumerate(chunk):
             # Lenient: missing/short executionResults (or a missing "success" key)
@@ -125,7 +150,14 @@ def send_property_writes(conn: ArchicadConnection,
             error = outcome.get("error") or {}
             failed.append({"guid": p["guid"], "property": p["property"],
                            "code": error.get("code"), "message": error.get("message")})
-    return applied, failed
+    return applied, failed, None
+
+
+def error_fields(exc: APIErrorBase | ArchicadUnavailableError) -> dict:
+    """{"code", "message"} of an error that stopped a write run."""
+    if isinstance(exc, APIErrorBase):
+        return {"code": getattr(exc, "code", None), "message": exc.message}
+    return {"code": None, "message": str(exc)}
 
 
 def get_element_data(conn: ArchicadConnection, guids: list[str],
@@ -159,10 +191,15 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
     planned, skipped = plan_property_writes(conn, changes)
     result: dict = {"dry_run": False, "applied": 0}
     if planned:
-        applied, failed = send_property_writes(conn, planned)
+        applied, failed, error = send_property_writes(conn, planned)
         result["applied"] = applied
         if failed:
-            result["failed"] = failed
+            result["failed"], not_shown = cap_list(failed)
+            if not_shown:
+                result["failed_not_shown"] = not_shown
+        if error is not None:
+            # Earlier batches landed; an {"error"} alone would hide them.
+            result["stopped"] = error_fields(error)
     if skipped:
         result["skipped"] = skipped
     return result
