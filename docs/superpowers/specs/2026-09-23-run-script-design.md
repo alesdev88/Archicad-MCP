@@ -182,7 +182,7 @@ New package `src/archicad_mcp/scripting/`:
 |---|---|
 | `api.py` | the `ac` class and `ArchicadError`; a `Recorder` that holds planned operations |
 | `execute.py` | `execute(code, ac) -> Outcome`: runs code with `ac` and `result` bound, captures stdout and traceback. No process handling, so it is testable against `FakeCore`. |
-| `runner.py` | child entry point (`python -I -m archicad_mcp.scripting.runner`): reads `{code, port}` JSON on stdin, builds a real connection and `ac`, calls `execute`, writes one JSON document on stdout |
+| `runner.py` | child entry point (`python -I -X utf8 -m archicad_mcp.scripting.runner`): reads `{code, port}` JSON on stdin, builds a real connection and `ac`, calls `execute`, writes one JSON document on stdout |
 | `child.py` | the server side: spawns the runner with `sys.executable`, enforces the timeout, parses the reply |
 | `changesets.py` | in-memory store: id, port, project, operations, created time; 30-minute expiry, at most 20 kept (oldest evicted), single use |
 | `apply.py` | `apply_changeset`: confirm gate, project check, ordered writes, readback |
@@ -192,9 +192,12 @@ Flow of `run_script`:
 
 1. Resolve the port with `get_connection`, as every tool does. This also
    reports "several instances, pass port" before any child starts.
-2. Read the project name from `probe_port` for the changeset.
-3. Spawn the runner with `sys.executable -I` so the bundled interpreter is used
-   and no user `PYTHONPATH` or user `site-packages` leaks in. Send `{code, port}`
+2. Read the project identity for the changeset: the name from `probe_port`, and
+   with Tapir also `isTeamwork` and the sanitized project location, so apply
+   can tell a scratch copy from the live model when both carry the same name.
+3. Spawn the runner with `sys.executable -I -X utf8` so the bundled interpreter
+   is used, no user `PYTHONPATH` or user `site-packages` leaks in, and both pipes
+   are UTF-8 on every platform. Send `{code, port}`
    on stdin.
 4. Wait up to `timeout_s`. On timeout kill the child.
 5. Parse the reply, store the operations as a changeset if any, cap outputs.
