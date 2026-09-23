@@ -5,8 +5,9 @@ import math
 
 from multiconn_archicad.errors import APIErrorBase
 
+from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core.element_data import send_property_writes
-from archicad_mcp.extract import fetch_property_cells
+from archicad_mcp.extract import MAX_PROPERTY_FETCH_ELEMENTS, fetch_property_cells
 from archicad_mcp.gateway.execute import _dispatch
 from archicad_mcp.scripting.changesets import ChangesetError, ChangesetStore, summarize
 
@@ -22,20 +23,37 @@ def _same(read, sent) -> bool:
     return read == sent
 
 
+def _message(exc: APIErrorBase | ArchicadUnavailableError) -> str:
+    """Extract error message from both APIErrorBase and ArchicadUnavailableError."""
+    if isinstance(exc, APIErrorBase):
+        return exc.message
+    return str(exc)
+
+
 def _read_back(conn, writes: list[dict], failed: list[dict]) -> list[dict]:
-    """Writes Archicad accepted but that do not read back as sent."""
+    """Writes Archicad accepted but that do not read back as sent.
+
+    Slices large batches by MAX_PROPERTY_FETCH_ELEMENTS to avoid hitting
+    the ceiling on wide property queries.
+    """
     refused = {(f["guid"], f["property"]) for f in failed}
     done = [w for w in writes if (w["guid"], w["property"]) not in refused]
     if not done:
         return []
-    cells = fetch_property_cells(conn, list(dict.fromkeys(w["guid"] for w in done)),
-                                 sorted({w["property"] for w in done}))
     out = []
-    for w in done:
-        read = cells.get(w["guid"], {}).get(w["property"], {}).get("value")
-        if not _same(read, w["new"]):
-            out.append({"guid": w["guid"], "property": w["property"],
-                        "sent": w["new"], "read": read})
+    guids_list = list(dict.fromkeys(w["guid"] for w in done))
+    properties = sorted({w["property"] for w in done})
+    # Slice by MAX_PROPERTY_FETCH_ELEMENTS to avoid ceiling.
+    for i in range(0, len(guids_list), MAX_PROPERTY_FETCH_ELEMENTS):
+        slice_guids = guids_list[i:i + MAX_PROPERTY_FETCH_ELEMENTS]
+        cells = fetch_property_cells(conn, slice_guids, properties)
+        for w in done:
+            if w["guid"] not in slice_guids:
+                continue
+            read = cells.get(w["guid"], {}).get(w["property"], {}).get("value")
+            if not _same(read, w["new"]):
+                out.append({"guid": w["guid"], "property": w["property"],
+                            "sent": w["new"], "read": read})
     return out
 
 
@@ -84,22 +102,29 @@ def apply_changeset(store: ChangesetStore, changeset_id: str, confirm: bool,
         if op["kind"] == "props":
             try:
                 count, refused = send_property_writes(conn, op["writes"])
-            except APIErrorBase as exc:
+                applied += count
+                failed.extend(refused)
+                mismatched.extend(_read_back(conn, op["writes"], refused))
+            except (APIErrorBase, ArchicadUnavailableError) as exc:
                 return _report(applied, failed, mismatched, commands,
                                stopped={"at": "property writes",
                                         "code": getattr(exc, "code", None),
-                                        "message": exc.message})
-            applied += count
-            failed.extend(refused)
-            mismatched.extend(_read_back(conn, op["writes"], refused))
+                                        "message": _message(exc)})
             continue
-        try:
-            _dispatch(conn, registry[op["name"]], op["params"])
-        except APIErrorBase as exc:
-            # Later operations may depend on this one, so nothing after it runs.
-            commands.append({"name": op["name"], "ok": False,
-                             "code": getattr(exc, "code", None), "message": exc.message})
+        # Check registry before attempting dispatch.
+        name = op["name"]
+        if name not in registry:
+            commands.append({"name": name, "ok": False, "code": None,
+                             "message": "command is not in this server's registry"})
             return _report(applied, failed, mismatched, commands,
-                           stopped={"at": op["name"]})
-        commands.append({"name": op["name"], "ok": True})
+                           stopped={"at": name})
+        try:
+            _dispatch(conn, registry[name], op["params"])
+        except (APIErrorBase, ArchicadUnavailableError) as exc:
+            # Later operations may depend on this one, so nothing after it runs.
+            commands.append({"name": name, "ok": False,
+                             "code": getattr(exc, "code", None), "message": _message(exc)})
+            return _report(applied, failed, mismatched, commands,
+                           stopped={"at": name})
+        commands.append({"name": name, "ok": True})
     return _report(applied, failed, mismatched, commands)

@@ -221,3 +221,65 @@ def test_apply_caps_long_reports(world):
     out = run(store, cs.id)
     assert len(out["failed"]) == 50
     assert out["failed_not_shown"] == 10
+
+
+def test_apply_readback_over_ceiling(world, monkeypatch):
+    model, _, _, run = world
+    # Monkeypatch both module constants to trigger slicing.
+    import archicad_mcp.scripting.apply
+    import archicad_mcp.extract
+    monkeypatch.setattr(archicad_mcp.scripting.apply, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
+    monkeypatch.setattr(archicad_mcp.extract, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
+
+    store = ChangesetStore()
+    writes = [_write(f"g-{i}", f"x{i}") for i in range(5)]
+    cs = store.add(19723, "Test House", [_props(*writes)], [])
+    out = run(store, cs.id)
+    # All 5 writes should be applied and read back without hitting ceiling.
+    assert out["applied"] == 5
+    assert out["failed"] == []
+    assert out["mismatched"] == []
+    assert out["commands"] == []
+
+
+def test_apply_command_dispatch_unavailable(world, monkeypatch):
+    from archicad_mcp.connection import ArchicadUnavailableError
+    model, core, _, run = world
+    # Monkeypatch _dispatch to raise ArchicadUnavailableError for the command.
+    import archicad_mcp.scripting.apply
+    original_dispatch = archicad_mcp.scripting.apply._dispatch
+    def mock_dispatch(conn, info, params):
+        if info.name == "HighlightElements":
+            raise ArchicadUnavailableError("Tapir unavailable")
+        return original_dispatch(conn, info, params)
+    monkeypatch.setattr(archicad_mcp.scripting.apply, "_dispatch", mock_dispatch)
+
+    store = ChangesetStore()
+    ops = [_props(_write("w-1", "EI30")),
+           {"kind": "command", "name": "HighlightElements", "params": {}},
+           _props(_write("w-2", "EI90"))]
+    cs = store.add(19723, "Test House", ops, [])
+    out = run(store, cs.id)
+    # First props op should succeed, command should fail with exception,
+    # second props should not run.
+    assert out["applied"] == 1
+    assert out["commands"] == [{"name": "HighlightElements", "ok": False,
+                                "code": None, "message": "Tapir unavailable"}]
+    assert "stopped" in out and out["stopped"]["at"] == "HighlightElements"
+    assert ("w-2", "pid-OFFICE/Fire Rating") not in model.values
+
+
+def test_apply_command_not_in_registry(world):
+    model, _, _, run = world
+    store = ChangesetStore()
+    ops = [_props(_write("w-1", "EI30")),
+           {"kind": "command", "name": "NonexistentCommand", "params": {}},
+           _props(_write("w-2", "EI90"))]
+    cs = store.add(19723, "Test House", ops, [])
+    out = run(store, cs.id)
+    assert out["applied"] == 1
+    assert out["commands"] == [{"name": "NonexistentCommand", "ok": False,
+                                "code": None,
+                                "message": "command is not in this server's registry"}]
+    assert "stopped" in out and out["stopped"]["at"] == "NonexistentCommand"
+    assert ("w-2", "pid-OFFICE/Fire Rating") not in model.values
