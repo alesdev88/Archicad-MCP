@@ -49,6 +49,7 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
         return {"dry_run": True, "planned_changes": planned}
     ids = resolve_property_ids(conn, prop_names)
     payload = []
+    sources = []  # the change each payload entry came from, index for index
     skipped = []
     for c in changes:
         cell = cells.get(c["guid"], {}).get(c["property"], {})
@@ -66,6 +67,7 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
                                       "not a plain value; set it via execute_write_api_command "
                                       "with the enum's id"})
         else:
+            sources.append(c)
             payload.append({
                 "elementId": {"guid": c["guid"]},
                 "propertyId": ids[c["property"]],
@@ -78,16 +80,21 @@ def set_element_data(conn: ArchicadConnection, changes: list[dict],
                                  {"elementPropertyValues": payload})
         execution_results = (response or {}).get("executionResults", [])
         applied = 0
-        failed = 0
-        for i in range(len(payload)):
+        failed = []
+        for i, c in enumerate(sources):
             # Lenient: missing/short executionResults (or a missing "success" key)
             # are treated as success rather than crashing.
-            success = (execution_results[i].get("success", True)
-                       if i < len(execution_results) else True)
-            if success:
+            outcome = execution_results[i] if i < len(execution_results) else {}
+            if outcome.get("success", True):
                 applied += 1
             else:
-                failed += 1
+                # Each failure names its element and Archicad's reason (6001 is
+                # a Teamwork reservation, including elements inside a hotlink),
+                # so the caller can act on it without a second query pass.
+                error = outcome.get("error") or {}
+                failed.append({"guid": c["guid"], "property": c["property"],
+                               "code": error.get("code"),
+                               "message": error.get("message")})
         result["applied"] = applied
         if failed:
             result["failed"] = failed
