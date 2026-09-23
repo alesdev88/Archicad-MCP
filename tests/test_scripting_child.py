@@ -50,3 +50,59 @@ def test_a_huge_print_does_not_corrupt_the_reply():
     reply = run_child("print('x' * 200000)\nresult = 1", PORT, 30)
     assert reply["result"] == 1
     assert len(reply["stdout"]) == 200001
+
+
+def test_a_recorded_write_is_dropped_when_the_script_then_raises():
+    # DeleteElements with no elements is a valid, recordable write that
+    # sends nothing even if it were applied.
+    reply = run_child('ac.cmd("DeleteElements", {"elements": []})\n'
+                      'raise RuntimeError("x")', PORT, 30)
+    assert reply["error"] == "RuntimeError: x"
+    assert reply["operations"] == []
+
+
+def test_a_subprocess_writing_to_stdout_does_not_corrupt_the_reply():
+    reply = run_child("import subprocess, sys\n"
+                      "subprocess.run([sys.executable, '-c', \"print('hi')\"])\n"
+                      "result = 1", PORT, 30)
+    assert reply["result"] == 1
+    assert reply["error"] is None
+
+
+def test_writing_to_the_original_stdout_does_not_corrupt_the_reply():
+    reply = run_child("import sys\nsys.__stdout__.write('junk')\n"
+                      "sys.__stdout__.flush()\nresult = 1", PORT, 30)
+    assert reply["result"] == 1
+
+
+def test_a_result_json_cannot_carry_comes_back_as_text_with_the_plan():
+    reply = run_child('ac.cmd("DeleteElements", {"elements": []})\n'
+                      'result = {(1, 2): 3}', PORT, 30)
+    assert reply["result"] == "{(1, 2): 3}"
+    assert "could not be converted" in reply["result_note"]
+    assert reply["operations"] == [{"kind": "command", "name": "DeleteElements",
+                                    "params": {"elements": []}}]
+
+
+def test_a_circular_result_comes_back_as_text():
+    reply = run_child("a = []\na.append(a)\nresult = a", PORT, 30)
+    assert reply["result"] == "[[...]]"
+    assert "result_note" in reply
+
+
+def test_bytes_that_are_not_utf8_on_stderr_do_not_break_the_reply():
+    reply = run_child("import sys\nsys.stderr.buffer.write(b'\\xe8\\n')\n"
+                      "sys.stderr.flush()\nresult = 1", PORT, 30)
+    assert reply["result"] == 1
+
+
+def test_a_missing_interpreter_is_an_error_not_an_exception(monkeypatch):
+    import archicad_mcp.scripting.child as child_mod
+    monkeypatch.setattr(child_mod.sys, "executable", "/nonexistent/python")
+    reply = run_child("result = 1", PORT, 30)
+    assert "could not start" in reply["error"]
+
+
+def test_an_invalid_timeout_is_an_error_not_an_exception():
+    reply = run_child("result = 1", PORT, float("nan"))
+    assert "error" in reply

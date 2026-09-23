@@ -189,3 +189,22 @@ def test_the_changeset_records_the_project_identity(wired):
     assert store.lookup(out["changeset"]["id"]).identity == {
         "name": "Test House", "is_teamwork": False,
         "location": "/Users/tester/Test House.pln"}
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), "nan"])
+def test_a_non_finite_timeout_falls_back_to_the_default(wired, timeout):
+    fake_run, calls = wired
+    fake_run({"result": None, "stdout": "", "error": None, "traceback": None,
+              "operations": [], "skipped": []})
+    tools_mod.execute_script(tools_mod.ChangesetStore(), "c", None, timeout, 20000)
+    assert calls[0][2] == 120.0
+
+
+def test_a_result_note_is_passed_through(wired):
+    fake_run, _ = wired
+    fake_run({"result": "{(1, 2): 3}", "result_note": "result could not be "
+              "converted to JSON; returned as text", "stdout": "", "error": None,
+              "traceback": None, "operations": [], "skipped": []})
+    out = tools_mod.execute_script(tools_mod.ChangesetStore(), "c", None, 120, 20000)
+    assert out["result"] == "{(1, 2): 3}"
+    assert "could not be converted" in out["result_note"]

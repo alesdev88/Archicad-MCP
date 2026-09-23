@@ -6,6 +6,8 @@ refusal to serve scripts over http without a second flag, are the boundary.
 """
 from __future__ import annotations
 
+import math
+
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import (
@@ -22,6 +24,7 @@ from archicad_mcp.scripting.changesets import SAMPLE, ChangesetStore, summarize
 from archicad_mcp.scripting.execute import cap_result, cap_text
 
 MAX_TIMEOUT_S = 600.0
+DEFAULT_TIMEOUT_S = 120.0
 
 # Module-level so tests can replace it; apply opens its own connection because
 # the changeset, not the caller, names the port.
@@ -64,7 +67,12 @@ def execute_script(store: ChangesetStore, code: str, port: int | None,
         identity = project_identity(conn)
     except (APIErrorBase, ArchicadUnavailableError):
         identity = None
-    timeout = min(max(float(timeout_s), 1.0), MAX_TIMEOUT_S)
+    timeout = float(timeout_s)
+    # NaN passes min and max unchanged and then breaks subprocess.run, so a
+    # timeout that is not a finite number gets the default instead.
+    if not math.isfinite(timeout):
+        timeout = DEFAULT_TIMEOUT_S
+    timeout = min(max(timeout, 1.0), MAX_TIMEOUT_S)
     limit = max(int(max_output_chars), 1)
     reply = child.run_child(code, conn.port, timeout)
 
@@ -74,6 +82,8 @@ def execute_script(store: ChangesetStore, code: str, port: int | None,
         out["result"], cut = cap_result(reply["result"], limit)
         if cut:
             truncated.append("result")
+        if reply.get("result_note"):
+            out["result_note"] = reply["result_note"]
     if reply.get("stdout"):
         out["stdout"], cut = cap_text(reply["stdout"], limit)
         if cut:
@@ -103,7 +113,8 @@ def register(mcp, default_port, tool_meta, guarded) -> None:
     @mcp.tool(description=RUN_DESCRIPTION,
               **tool_meta("Run a script", read_only=False, destructive=True))
     @guarded
-    def run_script(code: str, port: int | None = None, timeout_s: float = 120,
+    def run_script(code: str, port: int | None = None,
+                   timeout_s: float = DEFAULT_TIMEOUT_S,
                    max_output_chars: int = 20000) -> dict:
         return execute_script(store, code, port if port is not None else default_port,
                               timeout_s, max_output_chars)
