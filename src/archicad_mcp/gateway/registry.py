@@ -16,7 +16,8 @@ TAPIR_DOCS = "https://github.com/ENZYME-APD/tapir-archicad-automation"
 
 # Read verbs, anchored so that a prefix only matches a whole leading word: "Get"
 # and "IsAlive" are reads, a hypothetical "Issue..." would not be caught by "Is".
-_READ_VERB = re.compile(r"^(?:Get|Is)(?=[A-Z]|$)")
+# A digit also ends the verb, for Get2DBoundingBoxes and Get3DBoundingBoxes.
+_READ_VERB = re.compile(r"^(?:Get|Is)(?=[A-Z0-9]|$)")
 
 # The reads whose names do not begin with a read verb. FilterElements is handed a
 # list of GUIDs and returns the subset matching a filter: it inspects, it does not

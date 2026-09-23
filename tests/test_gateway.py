@@ -228,3 +228,16 @@ async def test_gates_answer_without_a_connection(monkeypatch):
     # And the connection is still genuinely needed once a command clears them.
     allowed = await call("execute_read_api_command", {"name": "API.GetAllElements"})
     assert "no Archicad running" in allowed["error"]
+
+
+@pytest.mark.parametrize("name", ["API.Get2DBoundingBoxes", "API.Get3DBoundingBoxes",
+                                  "Get3DBoundingBoxes"])
+def test_bounding_box_queries_are_reads(name):
+    # "Get" followed by a digit is still the read verb: these only measure.
+    from archicad_mcp.gateway.registry import classify_access
+    assert classify_access(name) == "read"
+
+
+def test_a_word_merely_starting_with_get_is_not_a_read():
+    from archicad_mcp.gateway.registry import classify_access
+    assert classify_access("Getaway") == "write"
