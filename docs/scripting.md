@@ -69,11 +69,14 @@ classification.
 
 ## Example: number doors per storey
 
+This assumes `Pozicija` is a String property: a zero-padded number like `"001"`
+needs String, since leading zeros do not fit an Integer.
+
 ```python
 doors = ac.find([{"element_types": ["Door"]}])
 floors = {g: d["floorIndex"] for g, d in ac.details(doors).items()}
 ordered = sorted(doors, key=lambda g: floors[g])
-ac.set_props([(g, "ELEA - Vrata/Pozicija", f"{i:03d}")
+ac.set_props([(g, "ELEA - Vrata/Pozicija", f"{i:03d}")  # a String property: an Integer one cannot hold "001"
               for i, g in enumerate(ordered, start=1)])
 result = {"doors": len(doors),
           "per_storey": {f: sum(1 for g in doors if floors[g] == f)
@@ -81,4 +84,6 @@ result = {"doors": len(doors),
 ```
 
 `run_script` returns the counts and a preview; `apply_changeset` with the
-returned id and `confirm=true` writes them.
+returned id and `confirm=true` writes them. Against an Integer property, the
+preview lists these changes under `skipped` with the reason, and nothing is
+applied; send whole numbers instead.
