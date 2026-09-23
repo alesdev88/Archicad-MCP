@@ -48,11 +48,14 @@ RUN_DESCRIPTION = (
 
 APPLY_DESCRIPTION = (
     "Apply a changeset planned by run_script: writes exactly what was previewed, "
-    "in order, then reads every written property back. Refuses without "
-    "confirm=true, and refuses if a different project is now open on the port. "
+    "in order, then reads every written property back (ask the user to save "
+    "first: that readback is the read that has crashed Archicad on large "
+    "models). Refuses without confirm=true, and refuses if a different project "
+    "is now open on the port (name, Teamwork state and location, with Tapir). "
     "Single use; changesets expire after 30 minutes. Returns applied, failed "
     "(guid, property, code, message per refused element), mismatched readbacks, "
-    "and command outcomes; a failed command stops the run.")
+    "and command outcomes with per-element refusals counted; a command that "
+    "raises or a batch refused as a whole stops the run, reported in stopped.")
 
 
 def execute_script(store: ChangesetStore, code: str, port: int | None,

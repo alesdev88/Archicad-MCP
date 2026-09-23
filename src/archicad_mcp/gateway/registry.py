@@ -53,7 +53,8 @@ class CommandInfo:
     # command with a "since" version). None for official API commands.
     version: str | None = None
     # "read" or "write", from classify_access. Decides which of the two gateway
-    # tools will run this command, and nothing else reads it.
+    # tools will run this command, and whether ac.cmd in a script runs it now
+    # or records it for apply_changeset.
     access: str = "write"
 
     def to_dict(self) -> dict:

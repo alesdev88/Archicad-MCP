@@ -2,9 +2,10 @@
 
 Reads go straight to Archicad. Writes never do: property writes are planned
 (checked and turned into finished payloads) and write-classified commands are
-validated, and both are appended to a Recorder. The server turns the recording
-into a changeset that apply_changeset sends later, so nothing a script does can
-change the model before the user has seen the preview.
+schema-checked where a schema exists (Tapir commands only), and both are
+appended to a Recorder. The server turns the recording into a changeset that
+apply_changeset sends later, so nothing a script does through `ac` can change
+the model before the user has seen the preview.
 """
 from __future__ import annotations
 
@@ -132,8 +133,9 @@ class ScriptAPI:
             raise ValueError(error["error"])
         if info.access == "read":
             return _dispatch(self._conn, info, params)
-        # Validated now, so a malformed payload fails in the preview rather
-        # than halfway through apply_changeset.
+        # Tapir commands were validated above, so a malformed payload fails
+        # in the preview rather than halfway through apply_changeset. Official
+        # commands have no schema here and are checked only by Archicad.
         return {"recorded": self._recorder.add_command(name, params)}
 
     @_translated

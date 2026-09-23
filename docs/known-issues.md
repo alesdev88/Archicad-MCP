@@ -286,3 +286,7 @@ either behaviour.
 `ac.props` and `ac.details` in `run_script` refuse to read across more than
 `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` elements (default 5000) in one call, like
 every other property read. Read in scoped chunks.
+
+`ac.set_props` hits the same ceiling: planning reads each element's current
+value, so one call that changes more than 5000 elements is refused. Split the
+changes into several `set_props` calls; they still end up in one changeset.

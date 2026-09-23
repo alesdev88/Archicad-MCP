@@ -19,11 +19,14 @@ With `--transport http` the server refuses to start unless you also pass
 There is no sandbox. A script is ordinary Python running as your user on the
 machine that runs Archicad, and it can do anything you can. The switch is the
 boundary: enable scripts only for clients you trust, and do not expose them
-over http to anything you would not let run code on this computer.
+over http to anything you would not let run code on this computer. Listening
+on 127.0.0.1 is not enough on its own: any local process can reach it, and so
+can a web page in your browser through DNS rebinding.
 
-What the design does guarantee is that nothing written through `ac` reaches
-the model before you have seen it: `run_script` only plans, and
-`apply_changeset` needs `confirm=true`.
+What the design does guarantee is that nothing written through `ac`'s methods
+reaches the model before you have seen it: `run_script` only plans, and
+`apply_changeset` needs `confirm=true`. A script can still call other code
+directly; that is the trust model above, not something `ac` can stop.
 
 ## The flow
 
@@ -35,13 +38,26 @@ the model before you have seen it: `run_script` only plans, and
    previewed, in order, then reads every written property back. It returns
    `applied`, `failed` (guid, property, Archicad's code and message),
    `mismatched` readbacks, and `commands` (one outcome per recorded API
-   command). If a property batch or a command fails, apply stops there:
-   the report carries a `stopped` field naming where it stopped, and nothing
-   queued after that point runs. What already applied stays applied.
+   command; when a command answers per element, the entry counts the
+   elements it refused under `failed`, with a sample).
+   Elements Archicad refuses one by one, in a property batch or a command,
+   are reported and do not stop the run. Apply stops only when a whole
+   request fails: a property batch the API refuses outright, or a command
+   that raises. The report then carries `stopped` (`at`, `code`, `message`),
+   and nothing queued after that point runs. What already applied stays
+   applied and is counted.
+
+Save the project before applying. The readback uses
+`GetPropertyValuesOfElements`, the read that has crashed Archicad 29 on large
+models (see [known issues](known-issues.md)), and it runs right after the
+writes.
 
 A changeset applies once, expires after 30 minutes, and is refused if a
-different project is now open on its port. A server restart loses it; rerun
-the script.
+different project is now open on its port. With Tapir, "different" means the
+name, the Teamwork state or the project's location changed since the script
+ran, so a scratch copy with the same name as the live project is refused too.
+Without Tapir only the name can be compared. A server restart loses a
+changeset; rerun the script.
 
 ## The `ac` object
 
@@ -50,7 +66,7 @@ the script.
 | `ac.find(groups, selection_only=False)` | GUIDs, with the same groups as `find_elements` |
 | `ac.props(guids, ["Group/Name", ...])` | `{guid: {name: value}}` |
 | `ac.details(guids)` | `{guid: details}` from Tapir `GetDetailsOfElements` (`floorIndex`, `id`, `layerIndex`, and per type data such as a wall's `begCoordinate`) |
-| `ac.cmd(name, params)` | a read's response; a write is validated and recorded, returning `{"recorded": n}` |
+| `ac.cmd(name, params)` | a read's response; a write is recorded, returning `{"recorded": n}`. Tapir commands are checked against their schema first; official API commands have no schema here, so a malformed one fails only at apply |
 | `ac.set_props([(guid, "Group/Name", value), ...])` | `{"planned": n, "skipped": m}` |
 | `ac.port` | the Archicad port |
 
