@@ -41,7 +41,27 @@ def test_system_rename_and_bad_date():
 def test_system_rename_onto_existing_name_is_an_error():
     conn, _ = _conn()
     result = edit_classifications(conn, [{"system": "ELEA", "name": "ELEA 2"}])
-    assert result["skipped"][0]["errors"] == ["a classification system 'ELEA 2' already exists"]
+    assert result["skipped"][0]["errors"] == [
+        "a classification system 'ELEA 2' already exists in version '1'"]
+
+
+def test_renaming_into_a_free_version_is_allowed():
+    conn, _ = _conn()
+    result = edit_classifications(conn, [{"system": "ELEA", "name": "ELEA 2", "version": "2"}])
+    assert "skipped" not in result
+
+
+def test_system_edit_on_a_shared_name_is_ambiguous():
+    from tests.conftest import FakeCore
+    systems = {"classificationSystems": [
+        {"classificationSystemId": {"guid": "u1"}, "name": "Uniclass", "version": "1.30"},
+        {"classificationSystemId": {"guid": "u2"}, "name": "Uniclass", "version": "1.31"}]}
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True},
+                              "API.GetAllClassificationSystems": systems,
+                              "API.GetAllClassificationsInSystem": {"classificationItems": []}})
+    result = edit_classifications(ArchicadConnection(19724, core=core),
+                                  [{"system": "Uniclass", "description": "x"}])
+    assert "names 2 systems" in result["skipped"][0]["errors"][0]
 
 
 def test_commit_sends_systems_then_items():

@@ -80,28 +80,39 @@ class ClassSystem:
     version: str
     date: str
     roots: list[str] = field(default_factory=list)
+    # How addresses name this system: the plain name, or "name version" when
+    # another system has the same name (Archicad only requires name+version unique).
+    label: str = ""
 
 
 class ClassificationIndex:
     """Every classification system and item of the open project, by name and code."""
 
     def __init__(self) -> None:
-        self.systems: dict[str, ClassSystem] = {}
+        self.systems: dict[str, ClassSystem] = {}      # by label
+        self.by_guid: dict[str, ClassSystem] = {}
+        self.ambiguous: dict[str, list[str]] = {}     # shared name -> labels
         self.items: dict[str, ClassItem] = {}
 
     @classmethod
     def load(cls, conn: ArchicadConnection) -> "ClassificationIndex":
         index = cls()
-        response = conn.official("API.GetAllClassificationSystems")
-        for s in response.get("classificationSystems", []):
+        raw = conn.official("API.GetAllClassificationSystems").get("classificationSystems", [])
+        names = [s.get("name", "") for s in raw]
+        for s in raw:
             system = ClassSystem(
                 guid=s["classificationSystemId"]["guid"], name=s.get("name", ""),
                 description=s.get("description", ""), source=s.get("source", ""),
                 version=s.get("version", ""), date=s.get("date", ""))
-            index.systems[system.name] = system
+            shared = names.count(system.name) > 1
+            system.label = f"{system.name} {system.version}" if shared else system.name
+            if shared:
+                index.ambiguous.setdefault(system.name, []).append(system.label)
+            index.systems[system.label] = system
+            index.by_guid[system.guid] = system
             tree = conn.official("API.GetAllClassificationsInSystem",
                                  {"classificationSystemId": s["classificationSystemId"]})
-            system.roots = index._walk(tree.get("classificationItems", []), system.name, None)
+            system.roots = index._walk(tree.get("classificationItems", []), system.label, None)
         return index
 
     def _walk(self, wrappers: list[dict], system: str, parent: str | None) -> list[str]:
@@ -119,7 +130,7 @@ class ClassificationIndex:
         return guids
 
     def system_of_guid(self, guid: str) -> ClassSystem | None:
-        return next((s for s in self.systems.values() if s.guid == guid), None)
+        return self.by_guid.get(guid)
 
     def label(self, guid: str) -> str:
         item = self.items.get(guid)
@@ -150,6 +161,11 @@ class ClassificationIndex:
                 if matches:
                     return None, f"'{ref}' matches {len(matches)} items; address it by GUID"
                 return None, f"no classification item '{ref}' (code '{code}' in system '{name}')"
+        for name, labels in self.ambiguous.items():
+            if ref.startswith(name + "/"):
+                return None, (f"'{name}' names {len(labels)} systems ({', '.join(labels)}); "
+                              "write the version too, e.g. "
+                              f"'{labels[0]}/{ref[len(name) + 1:]}'")
         known = ", ".join(sorted(self.systems)) or "none"
         return None, f"no classification item '{ref}': write System/Code; systems here: {known}"
 

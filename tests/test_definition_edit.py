@@ -380,3 +380,37 @@ def test_availability_that_is_not_an_object_is_an_error():
     plan = plan_property_change({"property": "ELEA/Sifra",
                                  "availability": ["ELEA/40"]}, defs, index)
     assert plan.errors == ["availability takes an object with set, or add and/or remove"]
+
+
+def _twin_systems_index():
+    """Two systems named "Uniclass" that differ only by version, as Archicad allows."""
+    from tests.conftest import FakeCore
+    systems = {"classificationSystems": [
+        {"classificationSystemId": {"guid": "u1"}, "name": "Uniclass", "version": "1.30"},
+        {"classificationSystemId": {"guid": "u2"}, "name": "Uniclass", "version": "1.31"}]}
+    trees = {"u1": {"classificationItems": [{"classificationItem": {
+                 "classificationItemId": {"guid": "u1-a"}, "id": "Ss_20", "name": "", "description": ""}}]},
+             "u2": {"classificationItems": [{"classificationItem": {
+                 "classificationItemId": {"guid": "u2-a"}, "id": "Ss_20", "name": "", "description": ""}}]}}
+    core = FakeCore(official={"API.GetAllClassificationSystems": systems,
+                              "API.GetAllClassificationsInSystem":
+                                  lambda p: trees[p["classificationSystemId"]["guid"]]})
+    return ClassificationIndex.load(ArchicadConnection(19724, core=core))
+
+
+def test_systems_sharing_a_name_are_both_kept():
+    index = _twin_systems_index()
+    assert {s.guid for s in index.by_guid.values()} == {"u1", "u2"}
+    assert index.siblings("u1-a") == [] and index.siblings("u2-a") == []
+
+
+def test_a_name_shared_by_two_systems_is_ambiguous():
+    index = _twin_systems_index()
+    guids, err = index.resolve("Uniclass/Ss_20")
+    assert guids == [] and "2 systems" in err
+
+
+def test_a_shared_name_resolves_with_its_version():
+    index = _twin_systems_index()
+    assert index.resolve("Uniclass 1.31/Ss_20") == (["u2-a"], None)
+    assert index.label("u2-a") == "Uniclass 1.31/Ss_20"

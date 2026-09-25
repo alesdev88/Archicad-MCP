@@ -28,10 +28,14 @@ _ITEM_FIELDS = {"code": "id", "name": "name", "description": "description"}
 def _plan_system(change: dict, index: ClassificationIndex) -> PlannedEdit:
     ref = str(change["system"])
     system = index.systems.get(ref) or index.system_of_guid(ref)
+    if system is None and ref in index.ambiguous:
+        return PlannedEdit(ref, {}, errors=[
+            f"'{ref}' names {len(index.ambiguous[ref])} systems "
+            f"({', '.join(index.ambiguous[ref])}); name one of those, or use its GUID"])
     if system is None:
         return PlannedEdit(ref, {}, errors=[f"no classification system '{ref}'; "
                                             f"systems here: {sorted(index.systems)}"])
-    plan = PlannedEdit(system.name, {"classificationSystemId": {"guid": system.guid}})
+    plan = PlannedEdit(system.label, {"classificationSystemId": {"guid": system.guid}})
     unknown = sorted(set(change) - {"system", *_SYSTEM_FIELDS})
     if unknown:
         plan.errors.append(f"unknown field(s) {unknown}; allowed: {sorted(_SYSTEM_FIELDS)}")
@@ -43,8 +47,11 @@ def _plan_system(change: dict, index: ClassificationIndex) -> PlannedEdit:
     if "date" in change and not _DATE.match(str(change["date"])):
         plan.errors.append("date must be YYYY-MM-DD")
     new_name = change.get("name", system.name)
-    if new_name != system.name and new_name in index.systems:
-        plan.errors.append(f"a classification system '{new_name}' already exists")
+    new_version = change.get("version", system.version)
+    if (new_name, new_version) != (system.name, system.version) and any(
+            (s.name, s.version) == (new_name, new_version) for s in index.by_guid.values()):
+        plan.errors.append(f"a classification system '{new_name}' already exists"
+                           + (f" in version '{new_version}'" if new_version else ""))
     if len(plan.payload) == 1 and not plan.errors:
         plan.warnings.append("nothing to change")
     return plan
