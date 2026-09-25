@@ -411,6 +411,13 @@ def plan_property_change(change: dict, defs: Definitions,
             plan.payload["defaultValue"] = payload
             plan.changes["default"] = [p.default_state(), change["default"]]
 
+    # The enum plan cannot know whether a new default follows, so the check that a
+    # removed option is not left as the default lives here.
+    removed = {r["enumValueId"]["guid"] for r in plan.payload.get("removeEnumValues", [])}
+    removed_texts = {d for g, d in p.enum if g in removed}
+    if p.default in removed_texts and "defaultValue" not in plan.payload:
+        plan.errors.append(f"'{p.default}' is the default; send a new default in the same change")
+
     if "availability" in change:
         if index is None:
             plan.errors.append("availability needs the classification index")
@@ -422,6 +429,77 @@ def plan_property_change(change: dict, defs: Definitions,
     return plan
 
 
+_ENUM_KEYS = frozenset({"rename", "remove", "add", "order"})
+
+
 def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
-    """Filled in by Task 10. Returns the option texts after the edit."""
-    return [d for _, d in p.enum]
+    """Plan enum option edits, applied in Tapir's order: rename, remove, add,
+    order. Returns the option texts after the edit.
+
+    Options are tracked as (guid, text) pairs so a rename or removal hits exactly
+    the option named even when two options share a text; such an option is
+    named by its GUID instead."""
+    current = [d for _, d in p.enum]
+    if p.collection not in _ENUM:
+        plan.errors.append(f"'{p.address}' is not an enumeration property")
+        return current
+    unknown = sorted(set(spec) - _ENUM_KEYS)
+    if unknown:
+        plan.errors.append(f"unknown enum field(s) {unknown}; allowed: {sorted(_ENUM_KEYS)}")
+        return current
+
+    def guid_of(ref: str) -> str | None:
+        if any(g == ref for g, _ in p.enum):
+            return ref
+        guids = [g for g, d in p.enum if d == ref]
+        if len(guids) == 1:
+            return guids[0]
+        plan.errors.append(
+            f"enum option '{ref}' does not exist; options: {current}" if not guids else
+            f"enum option '{ref}' matches {len(guids)} options; address it by its GUID")
+        return None
+
+    renames: dict[str, str] = spec.get("rename", {})
+    removes: list[str] = spec.get("remove", [])
+    clash = sorted(set(renames) & set(removes))
+    for ref in clash:
+        plan.errors.append(f"enum option '{ref}' is both renamed and removed")
+    if clash:
+        return current
+
+    after: list[list[str]] = [[g, d] for g, d in p.enum]
+    if renames:
+        out = []
+        for ref, new in renames.items():
+            guid = guid_of(ref)
+            if guid:
+                out.append({"enumValueId": {"guid": guid}, "displayValue": new})
+                next(o for o in after if o[0] == guid)[1] = new
+        plan.payload["renameEnumValues"] = out
+    if removes:
+        out, gone = [], []
+        for ref in removes:
+            guid = guid_of(ref)
+            if guid:
+                out.append({"enumValueId": {"guid": guid}})
+                gone.append(guid)
+        after = [o for o in after if o[0] not in gone]
+        plan.payload["removeEnumValues"] = out
+        plan.warnings.append(
+            f"removing {removes}: elements holding these options lose that value. Not "
+            "counted, because counting needs property value reads, which can crash Archicad")
+    texts = [d for _, d in after]
+    adds = [t for t in spec.get("add", []) if t not in texts]
+    if adds:
+        plan.payload["possibleEnumValues"] = [{"enumValue": {"displayValue": t}} for t in adds]
+        texts.extend(adds)
+    if "order" in spec:
+        order = list(spec["order"])
+        if sorted(order) != sorted(texts) or len(set(order)) != len(order):
+            plan.errors.append(f"order must list every option exactly once: {texts}")
+        else:
+            plan.payload["enumOrder"] = order
+            texts = order
+    if texts != current:
+        plan.changes["enum"] = [current, texts]
+    return texts

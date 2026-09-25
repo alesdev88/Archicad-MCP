@@ -168,3 +168,81 @@ def test_nothing_to_change_is_reported_not_sent():
     plan = plan_property_change({"property": "ELEA/Sifra", "name": "Sifra"}, defs, index)
     assert plan.payload == {"propertyId": {"guid": "p-code"}}
     assert plan.warnings == ["nothing to change"]
+
+
+# ---------- Task 10: enum option edits ----------
+
+def test_enum_rename_remove_add_order():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija", "enum": {
+        "rename": {"Kuhinja": "Kuhinjska oprema"}, "remove": ["Staro"],
+        "add": ["Pisarna"], "order": ["Pisarna", "Kuhinjska oprema", "Sanitarije"]},
+        "default": "Kuhinjska oprema"}, defs, index)
+    assert plan.errors == []
+    assert plan.payload["renameEnumValues"] == [
+        {"enumValueId": {"guid": "e-k"}, "displayValue": "Kuhinjska oprema"}]
+    assert plan.payload["removeEnumValues"] == [{"enumValueId": {"guid": "e-o"}}]
+    assert plan.payload["possibleEnumValues"] == [{"enumValue": {"displayValue": "Pisarna"}}]
+    assert plan.payload["enumOrder"] == ["Pisarna", "Kuhinjska oprema", "Sanitarije"]
+    assert plan.changes["enum"] == [["Kuhinja", "Sanitarije", "Staro"],
+                                    ["Pisarna", "Kuhinjska oprema", "Sanitarije"]]
+    assert any("Staro" in w and "lose" in w for w in plan.warnings)
+
+
+def test_enum_text_matching_two_options_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Dvojnik",
+                                 "enum": {"remove": ["A"]}}, defs, index)
+    assert plan.errors == ["enum option 'A' matches 2 options; address it by its GUID"]
+
+
+def test_duplicate_text_option_can_be_named_by_guid():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Dvojnik",
+                                 "enum": {"rename": {"e-a2": "A2"}}}, defs, index)
+    assert plan.errors == []
+    assert plan.changes["enum"] == [["A", "A", "B"], ["A", "A2", "B"]]
+
+
+def test_unknown_enum_option_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"rename": {"Nope": "X"}}}, defs, index)
+    assert plan.errors == ["enum option 'Nope' does not exist; options: "
+                           "['Kuhinja', 'Sanitarije', 'Staro']"]
+
+
+def test_removing_the_default_option_needs_a_new_default():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"remove": ["Kuhinja"]}}, defs, index)
+    assert plan.errors == ["'Kuhinja' is the default; send a new default in the same change"]
+
+
+def test_order_must_name_every_option_once():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"order": ["Staro", "Kuhinja"]}}, defs, index)
+    assert plan.errors[0].startswith("order must list every option exactly once")
+
+
+def test_enum_edit_on_a_non_enum_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra",
+                                 "enum": {"add": ["X"]}}, defs, index)
+    assert plan.errors == ["'ELEA/Sifra' is not an enumeration property"]
+
+
+def test_rename_and_remove_of_the_same_option_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija", "enum": {
+        "rename": {"Staro": "Old"}, "remove": ["Staro"]}}, defs, index)
+    assert plan.errors == ["enum option 'Staro' is both renamed and removed"]
+
+
+def test_adding_an_existing_option_is_a_no_op():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"add": ["Staro"]}}, defs, index)
+    assert "possibleEnumValues" not in plan.payload
+    assert plan.warnings == ["nothing to change"]
