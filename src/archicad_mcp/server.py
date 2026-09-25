@@ -332,6 +332,56 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                          port: int | None = None) -> dict:
         return _element_data.set_element_data(_conn(port), changes, dry_run)
 
+    from archicad_mcp.core import classification_edit as _classification_edit
+    from archicad_mcp.core import definition_edit as _definition_edit
+
+    @mcp.tool(description=(
+        "Edit custom property DEFINITIONS in place (not element values): name, "
+        "description, group, default value or expressions, availability, enum "
+        "options. DRY-RUN BY DEFAULT: returns each property's before/after and "
+        "warnings; pass dry_run=false to commit. Address properties as 'Group/Name' "
+        "(search_definitions) or GUID; availability entries as 'System/Code', with "
+        "'/*' for the item and everything below it; enum options by their text (or "
+        "GUID when two options share a text). Example change: {\"property\": "
+        "\"Office/Status\", \"name\": \"Approval\", \"availability\": {\"add\": "
+        "[\"Uniclass/Ss_25/*\"]}, \"enum\": {\"rename\": {\"Old\": \"New\"}, "
+        "\"remove\": [\"X\"], \"add\": [\"Y\"], \"order\": [...]}, \"default\": "
+        "\"New\"}. GUIDs are kept, so element values survive everything except "
+        "removing an option (those elements show <Undefined>) or availability. Needs "
+        "the Tapir build with UpdateClassificationItems."),
+        **_tool_meta("Edit property definitions", read_only=False, destructive=True))
+    @_guarded
+    def edit_property_definitions(changes: list[dict], dry_run: bool = True,
+                                  port: int | None = None) -> dict:
+        return _definition_edit.edit_property_definitions(_conn(port), changes, dry_run)
+
+    @mcp.tool(description=(
+        "Edit classification systems and items in place. DRY-RUN BY DEFAULT; pass "
+        "dry_run=false to commit. Items: {\"item\": \"System/Code\", \"code\"?, "
+        "\"name\"?, \"description\"?}. Systems: {\"system\": \"Name\", \"name\"?, "
+        "\"description\"?, \"source\"?, \"version\"?, \"date\"? (YYYY-MM-DD)}. Items "
+        "keep their GUID, so classified elements and property availability stay "
+        "attached. Moving an item to another parent is not supported."),
+        **_tool_meta("Edit classifications", read_only=False, destructive=True))
+    @_guarded
+    def edit_classifications(changes: list[dict], dry_run: bool = True,
+                             port: int | None = None) -> dict:
+        return _classification_edit.edit_classifications(_conn(port), changes, dry_run)
+
+    @mcp.tool(description=(
+        "Import a Property Manager (kind='property') or Classification Manager "
+        "(kind='classification') XML file. DRY-RUN BY DEFAULT: lists what is new and "
+        "what collides with existing names, and what the conflict policy does. "
+        "conflict: property append|replace|skip; classification merge|replace|skip "
+        "(item_conflict replace|skip). Commit returns what was created and removed."),
+        **_tool_meta("Import definitions XML", read_only=False, destructive=True))
+    @_guarded
+    def import_definitions(kind: str, xml_path: str, conflict: str,
+                           item_conflict: str = "skip", dry_run: bool = True,
+                           port: int | None = None) -> dict:
+        return _classification_edit.import_definitions(
+            _conn(port), kind, xml_path, conflict, item_conflict, dry_run)
+
     from archicad_mcp.core import create as _create
     from archicad_mcp.core import mutate as _mutate
     from archicad_mcp.core import selection as _selection
