@@ -438,6 +438,18 @@ user's name), already mine, not found, and indirectly reserved. Verified live:
 reserving one door also pulled in its wall and the wall's other door, and the
 tool reported both. Sending and receiving stay in the gateway. Needs Tapir.
 
+**Definitions (full mode):** `edit_property_definitions`, `edit_classifications`,
+`import_definitions`. They edit property definitions and classification systems in
+place, instead of exporting XML from Property Manager or Classification Manager,
+editing it and importing it back. A property can be renamed, moved to another group,
+given a new default or expressions, made available for a classification branch
+(`System/Code/*`), and have its enum options renamed, removed, added or reordered.
+Classification items take a new code, name or description. Everything keeps its
+GUID, so values and classifications on elements survive, except where you remove
+an enum option (those elements show `<Undefined>`) or availability. All three are
+dry-run by default. They need a Tapir add-on that has `UpdateClassificationItems`;
+with an older Tapir they refuse plainly and send nothing.
+
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
 Tapir command surface (309 commands on the verified setup), for anything the

@@ -135,6 +135,18 @@
       "description": "Write property values to elements. Dry-run by default."
     },
     {
+      "name": "edit_property_definitions",
+      "description": "Edit custom property definitions in place. Dry-run by default."
+    },
+    {
+      "name": "edit_classifications",
+      "description": "Edit classification systems and items in place. Dry-run by default."
+    },
+    {
+      "name": "import_definitions",
+      "description": "Import Property or Classification Manager XML. Dry-run by default."
+    },
+    {
       "name": "create_elements",
       "description": "Create walls, slabs, columns, beams, and objects. Dry-run by default."
     },

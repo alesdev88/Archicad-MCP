@@ -280,3 +280,92 @@ def test_teamwork_dry_runs_are_read_only(conn):
     assert reserve["dry_run"] is True and release["dry_run"] is True
     assert reserve["not_found"] == ["00000000-0000-0000-0000-000000000000"]
     assert set(reserve["would_attempt"]) | set(reserve["already_mine"]) == set(guids[:2])
+
+
+# ---------- 0.7.0: definition editing (needs the property-classification-editing Tapir) ----------
+
+@pytest.fixture(scope="module")
+def definition_model(conn):
+    """These canaries edit definitions, so they run only on the dedicated test
+    project. A port number is not enough: on 2026-09-25 the port the notes named
+    as the test model was serving a production project."""
+    name = conn.tapir("GetProjectInfo").get("projectName")
+    if name != "MCP-Test":
+        pytest.skip(f"definition canaries run only on the MCP-Test project, not {name!r}")
+    from archicad_mcp.core.definition_edit import editing_unavailable
+    if editing_unavailable(conn):
+        pytest.skip("Tapir lacks UpdateClassificationItems")
+    return conn
+
+
+def test_live_rename_property_and_back(definition_model):
+    from archicad_mcp.core.definition_edit import edit_property_definitions
+    conn = definition_model
+    try:
+        r = edit_property_definitions(conn, [{"property": "MCP Test/Fire Rating",
+                                              "name": "Fire Rating Canary"}], dry_run=False)
+        assert r["applied"][0]["now"]["name"] == "Fire Rating Canary"
+    finally:
+        edit_property_definitions(conn, [{"property": "MCP Test/Fire Rating Canary",
+                                          "name": "Fire Rating"}], dry_run=False)
+
+
+def test_live_availability_branch_and_restore(definition_model):
+    from archicad_mcp.core.definition_edit import Definitions, edit_property_definitions
+    conn = definition_model
+    before = Definitions.load(conn).by_address["MCP Test/Fire Rating"].availability
+    try:
+        r = edit_property_definitions(conn, [{"property": "MCP Test/Fire Rating",
+            "availability": {"add": ["MCP Test/Building/*"]}}], dry_run=False)
+        assert "failed" not in r and "error" not in r
+        now = Definitions.load(conn).by_address["MCP Test/Fire Rating"].availability
+        assert len(now) == 4   # Building, Wall, Slab, Object
+    finally:
+        edit_property_definitions(conn, [{"property": "MCP Test/Fire Rating",
+            "availability": {"set": before}}], dry_run=False)
+    after = Definitions.load(conn).by_address["MCP Test/Fire Rating"].availability
+    assert sorted(after) == sorted(before)
+
+
+def test_live_classification_code_and_back(definition_model):
+    from archicad_mcp.core.classification_edit import edit_classifications
+    conn = definition_model
+    try:
+        r = edit_classifications(conn, [{"item": "MCP Test/Site", "code": "Site-Canary"}],
+                                 dry_run=False)
+        assert r["applied"] == ["MCP Test/Site"]
+    finally:
+        edit_classifications(conn, [{"item": "MCP Test/Site-Canary", "code": "Site"}],
+                             dry_run=False)
+
+
+def test_live_enum_round_trip_and_default_clear(definition_model):
+    """Every enum edit and a cleared default, through the real MCP payloads, on a
+    throwaway property this canary creates and deletes."""
+    from archicad_mcp.core.definition_edit import Definitions, edit_property_definitions
+    conn = definition_model
+    created = conn.tapir("CreatePropertyDefinitions", {"propertyDefinitions": [{"propertyDefinition": {
+        "name": "Enum Canary", "description": "", "type": "multiEnum", "isEditable": True,
+        "availability": [], "group": {"name": "MCP Test"},
+        "possibleEnumValues": [{"enumValue": {"displayValue": v}} for v in ("A", "B", "Old")],
+        "defaultValue": {"basicDefaultValue": {"status": "normal", "type": "multiEnum", "value": [
+            {"enumValueId": {"type": "displayValue", "displayValue": "A"}},
+            {"enumValueId": {"type": "displayValue", "displayValue": "B"}}]}}}}]})
+    pid = created["propertyIds"][0]["propertyId"]
+    try:
+        p = Definitions.load(conn).by_address["MCP Test/Enum Canary"]
+        assert len(p.default_enum) == 2           # defaultEnumValueIds reported by Tapir
+        refused = edit_property_definitions(conn, [{"property": "MCP Test/Enum Canary",
+                                                    "enum": {"remove": ["A"]}}])
+        assert "part of the default" in refused["skipped"][0]["errors"][0]
+        r = edit_property_definitions(conn, [{"property": "MCP Test/Enum Canary",
+            "enum": {"rename": {"B": "Bee"}, "remove": ["Old"], "add": ["C"],
+                     "order": ["C", "Bee", "A"]}}], dry_run=False)
+        assert "failed" not in r and "error" not in r, r
+        assert r["applied"][0]["now"]["enum"] == ["C", "Bee", "A"]
+        cleared = edit_property_definitions(conn, [{"property": "MCP Test/Enum Canary",
+                                                    "default": None}], dry_run=False)
+        assert "failed" not in cleared and "error" not in cleared, cleared
+        assert Definitions.load(conn).by_address["MCP Test/Enum Canary"].default_enum == []
+    finally:
+        conn.tapir("DeletePropertyDefinitions", {"propertyIds": [{"propertyId": pid}]})
