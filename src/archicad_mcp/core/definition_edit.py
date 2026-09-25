@@ -211,6 +211,10 @@ class PropDef:
     group_guid: str | None
     default: str | None
     availability: list[str]
+    # Option GUIDs the default holds (enum properties). Compared by GUID, because a
+    # multi-choice default's display text joins several options, and two options
+    # can share a text.
+    default_enum: list[str] = field(default_factory=list)
 
     @property
     def address(self) -> str:
@@ -258,7 +262,8 @@ class Definitions:
                 group_guid=p.get("propertyGroupId", {}).get("guid"),
                 default=p.get("defaultValueDisplay"),
                 availability=[a["classificationItemId"]["guid"]
-                              for a in p.get("availability", [])]))
+                              for a in p.get("availability", [])],
+                default_enum=[e["guid"] for e in p.get("defaultEnumValueIds", [])]))
         groups = {g["name"]: g["propertyGroupId"]["guid"]
                   for g in raw.get("propertyGroups", []) if g.get("isCustom")}
         return cls(props, groups)
@@ -446,9 +451,13 @@ def plan_property_change(change: dict, defs: Definitions,
     # The enum plan cannot know whether a new default follows, so the check that a
     # removed option is not left as the default lives here.
     removed = {r["enumValueId"]["guid"] for r in plan.payload.get("removeEnumValues", [])}
-    removed_texts = {d for g, d in p.enum if g in removed}
-    if p.default in removed_texts and "defaultValue" not in plan.payload:
-        plan.errors.append(f"'{p.default}' is the default; send a new default in the same change")
+    if "defaultValue" not in plan.payload:
+        texts = dict(p.enum)
+        part = "the default" if p.collection == "SingleChoiceEnumeration" else "part of the default"
+        for guid in p.default_enum:
+            if guid in removed:
+                plan.errors.append(f"'{texts.get(guid, guid)}' is {part}; send a new default "
+                                   "in the same change")
 
     if "availability" in change:
         if index is None:

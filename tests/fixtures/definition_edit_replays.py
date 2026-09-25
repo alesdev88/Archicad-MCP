@@ -35,7 +35,7 @@ TREES = {
 
 def _custom(guid, group, name, collection="Single", value="String", measure="Default",
             enum=None, availability=(), default=None, expressions=None,
-            group_guid=None, description=""):
+            group_guid=None, description="", default_ids=None):
     p = {"propertyId": {"guid": guid}, "propertyType": "Custom",
          "propertyGroupName": group, "propertyName": name,
          "propertyCollectionType": collection, "propertyValueType": value,
@@ -50,6 +50,8 @@ def _custom(guid, group, name, collection="Single", value="String", measure="Def
         p["defaultValueDisplay"] = default
     if expressions is not None:
         p["expressions"] = expressions
+    if default_ids is not None:
+        p["defaultEnumValueIds"] = [{"guid": g} for g in default_ids]
     return p
 
 
@@ -58,9 +60,13 @@ ALL_PROPERTIES = {
         _custom("p-code", "ELEA", "Sifra", default="/", availability=["i-40", "i-40-10"]),
         _custom("p-cat", "ELEA", "Kategorija", collection="SingleChoiceEnumeration",
                 enum=[("e-k", "Kuhinja"), ("e-s", "Sanitarije"), ("e-o", "Staro")],
-                default="Kuhinja", availability=["i-40"]),
+                default="Kuhinja", availability=["i-40"], default_ids=["e-k"]),
         _custom("p-dup", "ELEA", "Dvojnik", collection="SingleChoiceEnumeration",
-                enum=[("e-a", "A"), ("e-a2", "A"), ("e-b", "B")], default="B"),
+                enum=[("e-a", "A"), ("e-a2", "A"), ("e-b", "B")], default="A",
+                default_ids=["e-a"]),
+        _custom("p-multi", "ELEA", "Vec", collection="MultipleChoiceEnumeration",
+                enum=[("m-a", "A"), ("m-b", "B"), ("m-c", "C")], default="A; B",
+                default_ids=["m-a", "m-b"]),
         _custom("p-len", "ELEA", "Dolzina", value="Real", measure="Length", default="0.00"),
         _custom("p-expr", "ELEA", "Povrsina", value="Real", expressions=["{Property:Area}"]),
         _custom("p-slash", "A/B", "C", group_guid="g-slash"),

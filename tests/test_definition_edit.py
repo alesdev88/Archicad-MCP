@@ -414,3 +414,24 @@ def test_a_shared_name_resolves_with_its_version():
     index = _twin_systems_index()
     assert index.resolve("Uniclass 1.31/Ss_20") == (["u2-a"], None)
     assert index.label("u2-a") == "Uniclass 1.31/Ss_20"
+
+
+def test_removing_an_option_of_a_multi_enum_default_needs_a_new_default():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Vec", "enum": {"remove": ["A"]}}, defs, index)
+    assert plan.errors == ["'A' is part of the default; send a new default in the same change"]
+
+
+def test_removing_a_multi_enum_option_outside_the_default_is_fine():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Vec", "enum": {"remove": ["C"]}}, defs, index)
+    assert plan.errors == []
+
+
+def test_removing_the_twin_of_the_default_by_guid_is_allowed():
+    # Options e-a and e-a2 both read "A"; the default is e-a. Removing e-a2 must
+    # not be refused just because its text matches the default's.
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Dvojnik",
+                                 "enum": {"remove": ["e-a2"]}}, defs, index)
+    assert plan.errors == []
