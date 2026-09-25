@@ -185,16 +185,16 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
             defs = Definitions.load(conn)
             names = [f"{g}/{n}" for g, n in parse_property_xml(text)]
             existing = set(defs.by_address)
+            result: dict = {"dry_run": dry_run, "kind": kind,
+                            "new": _capped_names([n for n in names if n not in existing]),
+                            "collisions": _capped_names([n for n in names if n in existing])}
         else:
             index = ClassificationIndex.load(conn)
-            names = [f"{s}/{c}" for s, codes in parse_classification_xml(text) for c in codes]
-            existing = {index.label(g) for g in index.items}
+            result = {"dry_run": dry_run, "kind": kind,
+                      **_classification_preview(parse_classification_xml(text), index, conflict)}
     except ValueError as exc:
         return {"error": str(exc)}
-    result: dict = {"dry_run": dry_run, "kind": kind,
-                    "new": _capped_names([n for n in names if n not in existing]),
-                    "collisions": _capped_names([n for n in names if n in existing]),
-                    "policy": POLICY_EFFECT[(kind, conflict)]}
+    result["policy"] = POLICY_EFFECT[(kind, conflict)]
     if dry_run:
         return result
 
@@ -214,14 +214,55 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
         return result
     created = [c["guid"] for c in response.get("created", [])]
     removed = [c["guid"] for c in response.get("removed", [])]
+    # Created things exist only after the import, removed ones only before it.
     if kind == "property":
         after = Definitions.load(conn)
-
-        def label(guid: str) -> str:
-            return after.by_guid[guid].address if guid in after.by_guid else guid
+        result["created"] = _capped_names([_property_label(after, g) for g in created])
+        result["removed"] = _capped_names([_property_label(defs, g) for g in removed])
     else:
         after_index = ClassificationIndex.load(conn)
-        label = after_index.label
-    result["created"] = _capped_names([label(g) for g in created])
-    result["removed"] = _capped_names(removed)
+        result["created"] = _capped_names([_class_label(after_index, g) for g in created])
+        result["removed"] = _capped_names([_class_label(index, g) for g in removed])
     return result
+
+
+def _property_label(defs: Definitions, guid: str) -> str:
+    return defs.by_guid[guid].address if guid in defs.by_guid else guid
+
+
+def _class_label(index: ClassificationIndex, guid: str) -> str:
+    if guid in index.by_guid:
+        return index.by_guid[guid].label
+    return index.label(guid)
+
+
+def _classification_preview(systems: list[tuple[str, list[str]]],
+                            index: ClassificationIndex, conflict: str) -> dict:
+    """What the import would do, per the system policy. skip and replace act on
+    whole systems, merge on items, so an item-level list alone misleads."""
+    existing_names = {s.name for s in index.by_guid.values()}
+    existing_codes: dict[str, set[str]] = {}
+    for item in index.items.values():
+        existing_codes.setdefault(index.systems[item.system].name, set()).add(item.code)
+    new_systems = [n for n, _ in systems if n not in existing_names]
+    colliding = [n for n, _ in systems if n in existing_names]
+    new, collisions, skipped, dropped = [], [], [], []
+    for name, codes in systems:
+        have = existing_codes.get(name, set())
+        labels = [f"{name}/{c}" for c in codes]
+        if name not in existing_names:
+            new += labels
+        elif conflict == "skip":
+            skipped += labels
+        else:
+            new += [f"{name}/{c}" for c in codes if c not in have]
+            collisions += [f"{name}/{c}" for c in codes if c in have]
+            if conflict == "replace":
+                dropped += [f"{name}/{c}" for c in sorted(have - set(codes))]
+    out = {"systems": {"new": new_systems, "colliding": colliding},
+           "new": _capped_names(new), "collisions": _capped_names(collisions)}
+    if skipped:
+        out["skipped"] = _capped_names(skipped)
+    if dropped:
+        out["removed_if_replaced"] = _capped_names(dropped)
+    return out

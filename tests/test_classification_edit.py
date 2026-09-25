@@ -154,3 +154,57 @@ def test_import_refuses_malformed_xml(tmp_path):
     conn, _ = _conn()
     result = import_definitions(conn, "property", str(path), "skip")
     assert result["error"].startswith("not valid XML")
+
+
+_ELEA_XML = """<BuildingInformation><Classification>
+<System><Name>ELEA</Name><Items>
+  <Item><ID>40</ID><Children><Item><ID>40.10</ID></Item><Item><ID>40.99</ID></Item></Children></Item>
+</Items></System>
+<System><Name>Brand New</Name><Items><Item><ID>A</ID></Item></Items></System>
+</Classification></BuildingInformation>"""
+
+
+def _elea_xml(tmp_path):
+    path = tmp_path / "c.xml"
+    path.write_text(_ELEA_XML, encoding="utf-8")
+    return str(path)
+
+
+def test_classification_skip_preview_drops_the_colliding_systems_items(tmp_path):
+    conn, _ = _conn()
+    result = import_definitions(conn, "classification", _elea_xml(tmp_path), "skip")
+    assert result["systems"] == {"new": ["Brand New"], "colliding": ["ELEA"]}
+    assert result["new"] == ["Brand New/A"]
+    assert result["skipped"] == ["ELEA/40", "ELEA/40.10", "ELEA/40.99"]
+
+
+def test_classification_merge_preview_is_per_item(tmp_path):
+    conn, _ = _conn()
+    result = import_definitions(conn, "classification", _elea_xml(tmp_path), "merge",
+                                item_conflict="replace")
+    assert result["new"] == ["ELEA/40.99", "Brand New/A"]
+    assert result["collisions"] == ["ELEA/40", "ELEA/40.10"]
+
+
+def test_classification_replace_preview_lists_items_the_file_lacks(tmp_path):
+    conn, _ = _conn()
+    result = import_definitions(conn, "classification", _elea_xml(tmp_path), "replace")
+    assert result["removed_if_replaced"] == ["ELEA/40.20", "ELEA/40.20.1"]
+
+
+def test_import_removed_are_labelled_from_the_state_before():
+    response = {"executionResult": {"success": True}, "created": [], "removed": [{"guid": "p-code"}]}
+    conn, _ = _conn(extra_tapir={"ImportPropertiesXml": response})
+    result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
+                                "replace", dry_run=False)
+    assert result["removed"] == ["ELEA/Sifra"]
+
+
+def test_import_created_systems_are_labelled_by_name(tmp_path):
+    response = {"executionResult": {"success": True},
+                "created": [{"guid": "sys-elea2"}, {"guid": "j-40"}], "removed": [{"guid": "i-40-20"}]}
+    conn, _ = _conn(extra_tapir={"ImportClassificationsXml": response})
+    result = import_definitions(conn, "classification", _elea_xml(tmp_path), "merge",
+                                dry_run=False)
+    assert result["created"] == ["ELEA 2", "ELEA 2/40"]
+    assert result["removed"] == ["ELEA/40.20"]
