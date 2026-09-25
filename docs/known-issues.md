@@ -138,6 +138,31 @@ file.
 `set_element_data` reports them as `skipped` with a reason rather than silently
 failing. To set one, use `execute_write_api_command` with the enum's id.
 
+## Editing definitions needs the new Tapir commands
+
+`edit_property_definitions`, `edit_classifications` and `import_definitions`
+need a Tapir add-on that has `UpdateClassificationItems`. Tapir 1.5.4 to 1.5.9
+upstream accept `UpdatePropertyDefinitions`, but only for expressions and adding
+enum values, and silently ignore the other fields. So the tools check for the new
+command first and send nothing without it.
+
+Verified live on AC 29 (2026-09-25, the MCP-Test project):
+
+- **Removing an enum option** leaves every element that held it at
+  `<Undefined>`. It does not fall back to the property's default. The tools
+  cannot say how many elements are affected, because counting needs property
+  value reads (see the crash above), so the dry run warns instead.
+- **Importing with `replace`** keeps the property's GUID and updates the
+  definition in place: description changed, availability kept, nothing created
+  or removed. Element values survive it. The same has not been checked for
+  classification systems, so `merge` is the safer policy there.
+- **A Property Manager export holds both** the classification systems and the
+  property groups, in one `BuildingInformation` file. Availability in it names
+  classifications by system name, system version and item code, not by GUID.
+- **Teamwork: not yet verified.** Archicad answers `APIERR_NOACCESSRIGHT` per
+  item when the user lacks the right, and the tools pass that on in plain words.
+  Which Teamwork right that is has not been checked on a real project.
+
 ## Tapir version matters
 
 IFC commands (`GetIFCPropertiesOfElements`) only exist in newer Tapir releases.
@@ -275,6 +300,13 @@ ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
 
 Pinning the port is deliberate: it stops the suite finding and touching whatever
 model happens to be open.
+
+The definition-editing canaries write (and restore) definitions, so they also
+check the project name and skip unless it is `MCP-Test`: a blank project from the
+default template with an "MCP Test" classification system (Building > Wall, Slab,
+Object; Site) and an "MCP Test/Fire Rating" property available for Wall and
+Object. Ports are handed out per launch, so a port alone does not identify a
+test model.
 
 ## Schedules
 
