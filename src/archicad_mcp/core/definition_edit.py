@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from archicad_mcp.connection import ArchicadConnection
-from archicad_mcp.core.element_data import value_fit
+from multiconn_archicad.errors import APIErrorBase
+
+from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
+from archicad_mcp.core.element_data import error_fields, value_fit
 
 EDIT_MARKER = "UpdateClassificationItems"
 FAILURE_SAMPLE = 5
@@ -503,3 +505,47 @@ def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
     if texts != current:
         plan.changes["enum"] = [current, texts]
     return texts
+
+
+def _now(p: PropDef, index: ClassificationIndex | None, keys) -> dict:
+    state = {"name": p.name, "group": p.group, "description": p.description,
+             "default": p.default_state(), "enum": [d for _, d in p.enum]}
+    if index is not None:
+        state["availability"] = _capped([index.label(g) for g in p.availability])
+    return {k: state[k] for k in keys if k in state}
+
+
+def edit_property_definitions(conn: ArchicadConnection, changes: list[dict],
+                              dry_run: bool = True) -> dict:
+    gate = editing_unavailable(conn)
+    if gate:
+        return gate
+    defs = Definitions.load(conn)
+    index = (ClassificationIndex.load(conn)
+             if any("availability" in c for c in changes) else None)
+    plans = [plan_property_change(c, defs, index) for c in changes]
+    to_send = [p for p in plans if not p.errors and len(p.payload) > 1]
+    result: dict = {"dry_run": dry_run,
+                    "planned": [p.entry() for p in plans if not p.errors]}
+    skipped = [p.entry() for p in plans if p.errors]
+    if skipped:
+        result["skipped"] = skipped
+    if dry_run or not to_send:
+        return result
+
+    try:
+        response = conn.tapir("UpdatePropertyDefinitions",
+                              {"propertyDefinitions": [p.payload for p in to_send]})
+    except (APIErrorBase, ArchicadUnavailableError) as exc:
+        result["error"] = error_fields(exc)
+        return result
+    applied, failed = split_results([p.target for p in to_send], response)
+    after = Definitions.load(conn)
+    by_target = {p.target: p for p in to_send}
+    result["applied"] = [
+        {"target": t, "now": _now(after.by_guid[by_target[t].payload["propertyId"]["guid"]],
+                                  index, by_target[t].changes)}
+        for t in applied if by_target[t].payload["propertyId"]["guid"] in after.by_guid]
+    if failed:
+        result["failed"] = group_by_error(failed)
+    return result

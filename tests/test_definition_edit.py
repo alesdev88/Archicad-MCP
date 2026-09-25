@@ -246,3 +246,64 @@ def test_adding_an_existing_option_is_a_no_op():
                                  "enum": {"add": ["Staro"]}}, defs, index)
     assert "possibleEnumValues" not in plan.payload
     assert plan.warnings == ["nothing to change"]
+
+
+# ---------- Task 11: entry point ----------
+
+from archicad_mcp.core.definition_edit import edit_property_definitions
+
+
+def test_dry_run_sends_nothing():
+    conn, core = _conn()
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}])
+    assert result["dry_run"] is True
+    assert result["planned"][0]["changes"] == {"name": ["Sifra", "X"]}
+    assert not any(cmd == "UpdatePropertyDefinitions" for cmd, _ in core.calls)
+
+
+def test_commit_sends_one_batch_of_valid_changes_and_skips_bad_ones():
+    conn, core = _conn()
+    result = edit_property_definitions(conn, [
+        {"property": "ELEA/Sifra", "name": "X"},
+        {"property": "ELEA/Nope", "name": "Y"},
+        {"property": "ELEA/Dolzina", "description": "d"}], dry_run=False)
+    sent = [p for cmd, p in core.calls if cmd == "UpdatePropertyDefinitions"]
+    assert len(sent) == 1
+    assert [i["propertyId"]["guid"] for i in sent[0]["propertyDefinitions"]] == ["p-code", "p-len"]
+    assert result["skipped"][0]["target"] == "ELEA/Nope"
+    assert [a["target"] for a in result["applied"]] == ["ELEA/Sifra", "ELEA/Dolzina"]
+
+
+def test_nothing_to_change_is_not_sent():
+    conn, core = _conn()
+    edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "Sifra"}], dry_run=False)
+    assert not any(cmd == "UpdatePropertyDefinitions" for cmd, _ in core.calls)
+
+
+def test_archicad_refusals_are_grouped():
+    def refuse(params):
+        return {"executionResults": [{"success": False, "error": {
+            "code": 1, "message": "no access right: in Teamwork this needs the right "
+                                  "to modify properties or classifications"}}
+            for _ in params["propertyDefinitions"]]}
+    conn, _ = _conn(update=refuse)
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"},
+                                              {"property": "ELEA/Dolzina", "name": "Y"}],
+                                       dry_run=False)
+    assert result["failed"][0]["count"] == 2
+    assert "Teamwork" in result["failed"][0]["message"]
+
+
+def test_no_property_values_are_ever_read():
+    conn, core = _conn()
+    edit_property_definitions(conn, [{"property": "ELEA/Kategorija",
+                                      "enum": {"add": ["X"]}}], dry_run=False)
+    assert not any("PropertyValues" in cmd for cmd, _ in core.calls)
+
+
+def test_entry_point_refuses_old_tapir():
+    conn, core = _conn(marker=False)
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}],
+                                       dry_run=False)
+    assert "UpdateClassificationItems" in result["error"]
+    assert not any(cmd == "UpdatePropertyDefinitions" for cmd, _ in core.calls)
