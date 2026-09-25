@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.element_data import value_fit
 
 EDIT_MARKER = "UpdateClassificationItems"
 FAILURE_SAMPLE = 5
@@ -162,3 +163,265 @@ class ClassificationIndex:
         if guid is None:
             return [], err
         return ([guid, *self.descendants(guid)] if branch else [guid]), None
+
+
+# ---------- property definitions ----------
+
+_BUILTIN = frozenset({"StaticBuiltIn", "DynamicBuiltIn"})
+_ENUM = frozenset({"SingleChoiceEnumeration", "MultipleChoiceEnumeration"})
+_SCALAR = {("String", "Default"): "string", ("Integer", "Default"): "integer",
+           ("Boolean", "Default"): "boolean", ("Real", "Default"): "number",
+           ("Real", "Length"): "length", ("Real", "Area"): "area",
+           ("Real", "Volume"): "volume", ("Real", "Angle"): "angle"}
+FIELDS = frozenset({"property", "name", "description", "group", "default",
+                    "expressions", "availability", "enum"})
+LIST_CAP = 20
+
+
+@dataclass
+class PropDef:
+    guid: str
+    group: str
+    name: str
+    builtin: bool
+    collection: str
+    value_type: str
+    measure: str
+    expressions: list[str] | None
+    enum: list[tuple[str, str]]
+    description: str
+    group_guid: str | None
+    default: str | None
+    availability: list[str]
+
+    @property
+    def address(self) -> str:
+        return f"{self.group}/{self.name}"
+
+    @property
+    def type_key(self) -> str | None:
+        """The Tapir type name (CreatePropertyDefinitions `type`) of this definition."""
+        if self.collection == "SingleChoiceEnumeration":
+            return "singleEnum"
+        if self.collection == "MultipleChoiceEnumeration":
+            return "multiEnum"
+        scalar = _SCALAR.get((self.value_type, self.measure))
+        if scalar and self.collection == "List":
+            return scalar + "List"
+        return scalar if self.collection == "Single" else None
+
+    def default_state(self):
+        return {"expressions": self.expressions} if self.expressions is not None else self.default
+
+
+class Definitions:
+    """Every property definition, by address ("Group/Name", custom only) and guid."""
+
+    def __init__(self, props: list[PropDef], groups: dict[str, str]):
+        self.by_guid = {p.guid: p for p in props}
+        self.by_address = {p.address: p for p in props if not p.builtin}
+        self.groups = groups
+
+    @classmethod
+    def load(cls, conn: ArchicadConnection) -> "Definitions":
+        raw = conn.tapir("GetAllProperties")
+        props = []
+        for p in raw.get("properties", []):
+            props.append(PropDef(
+                guid=p["propertyId"]["guid"], group=p.get("propertyGroupName", ""),
+                name=p.get("propertyName", ""), builtin=p.get("propertyType") in _BUILTIN,
+                collection=p.get("propertyCollectionType", ""),
+                value_type=p.get("propertyValueType", ""),
+                measure=p.get("propertyMeasureType", ""),
+                expressions=p.get("expressions") if p.get("isExpressionBased") else None,
+                enum=[(e["enumValue"].get("guid", ""), e["enumValue"].get("displayValue", ""))
+                      for e in p.get("possibleEnumValues", [])],
+                description=p.get("propertyDescription", ""),
+                group_guid=p.get("propertyGroupId", {}).get("guid"),
+                default=p.get("defaultValueDisplay"),
+                availability=[a["classificationItemId"]["guid"]
+                              for a in p.get("availability", [])]))
+        groups = {g["name"]: g["propertyGroupId"]["guid"]
+                  for g in raw.get("propertyGroups", []) if g.get("isCustom")}
+        return cls(props, groups)
+
+    def resolve(self, ref: str) -> tuple[PropDef | None, str | None]:
+        # Whole-string match: group names may contain "/", so never split.
+        p = self.by_address.get(ref) or self.by_guid.get(ref)
+        if p is None:
+            return None, (f"no property '{ref}'; address custom properties as Group/Name "
+                          "(search_definitions finds the exact address) or by GUID")
+        return p, None
+
+
+@dataclass
+class PlannedEdit:
+    target: str
+    payload: dict
+    changes: dict = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def entry(self) -> dict:
+        out = {"target": self.target, "changes": self.changes}
+        if self.warnings:
+            out["warnings"] = self.warnings
+        if self.errors:
+            out["errors"] = self.errors
+        return out
+
+
+def _capped(labels: list[str]) -> list[str]:
+    labels = sorted(labels)
+    if len(labels) > LIST_CAP:
+        return labels[:LIST_CAP] + [f"... and {len(labels) - LIST_CAP} more"]
+    return labels
+
+
+def _default_payload(p: PropDef, value, options: list[str]) -> tuple[dict | None, str | None]:
+    if value is None:
+        return {"basicDefaultValue": {"status": "userUndefined"}}, None
+    key = p.type_key
+    if key == "singleEnum":
+        if options.count(value) != 1:
+            return None, f"default '{value}' is not exactly one option of {options}"
+        return {"basicDefaultValue": {"status": "normal", "type": key, "value": {
+            "type": "displayValue", "displayValue": value}}}, None
+    if key == "multiEnum":
+        values = value if isinstance(value, list) else [value]
+        bad = [v for v in values if options.count(v) != 1]
+        if bad:
+            return None, f"default options {bad} are not exactly one option each of {options}"
+        return {"basicDefaultValue": {"status": "normal", "type": key, "value": [
+            {"enumValueId": {"type": "displayValue", "displayValue": v}} for v in values]}}, None
+    if key is None:
+        return None, f"cannot set a default on a {p.collection} {p.value_type} property"
+    if key.endswith("List"):
+        if not isinstance(value, list):
+            return None, f"'{key}' default takes a list"
+        sent = []
+        for v in value:
+            fitted, err = value_fit(key[:-4], v)
+            if err:
+                return None, err
+            sent.append(fitted)
+        return {"basicDefaultValue": {"status": "normal", "type": key, "value": sent}}, None
+    fitted, err = value_fit(key, value)
+    if err:
+        return None, err
+    return {"basicDefaultValue": {"status": "normal", "type": key, "value": fitted}}, None
+
+
+def _plan_availability(spec: dict, p: PropDef, index: ClassificationIndex,
+                       plan: PlannedEdit) -> None:
+    if "set" in spec and ("add" in spec or "remove" in spec):
+        plan.errors.append("availability takes either set, or add and/or remove")
+        return
+
+    def expand(addresses: list[str]) -> list[str]:
+        out: list[str] = []
+        for a in addresses:
+            guids, err = index.resolve(a)
+            if err:
+                plan.errors.append(err)
+            out.extend(g for g in guids if g not in out)
+        return out
+
+    def ids(guids: list[str]) -> list[dict]:
+        return [{"classificationItemId": {"guid": g}} for g in guids]
+
+    current = set(p.availability)
+    if "set" in spec:
+        wanted = expand(spec["set"])
+        new = set(wanted)
+        plan.payload["availability"] = {"set": ids(wanted)}
+    else:
+        add, remove = expand(spec.get("add", [])), expand(spec.get("remove", []))
+        new = (current | set(add)) - set(remove)
+        payload = {}
+        if add:
+            payload["add"] = ids(add)
+        if remove:
+            payload["remove"] = ids(remove)
+        plan.payload["availability"] = payload
+    added, removed = new - current, current - new
+    if added or removed:
+        plan.changes["availability"] = {"added": _capped([index.label(g) for g in added]),
+                                        "removed": _capped([index.label(g) for g in removed])}
+    if removed:
+        plan.warnings.append(
+            f"no longer available for {len(removed)} classification item(s): values on "
+            "elements with those classifications become not applicable")
+
+
+def plan_property_change(change: dict, defs: Definitions,
+                         index: ClassificationIndex | None) -> PlannedEdit:
+    ref = str(change.get("property", ""))
+    p, err = defs.resolve(ref)
+    if p is None:
+        return PlannedEdit(ref, {}, errors=[err])
+    plan = PlannedEdit(p.address if not p.builtin else ref, {"propertyId": {"guid": p.guid}})
+    if p.builtin:
+        plan.errors.append("built-in properties cannot be edited")
+        return plan
+    unknown = sorted(set(change) - FIELDS)
+    if unknown:
+        plan.errors.append(f"unknown field(s) {unknown}; allowed: {sorted(FIELDS - {'property'})}")
+        return plan
+
+    new_name, new_group = p.name, p.group
+    if "name" in change and change["name"] != p.name:
+        new_name = change["name"]
+        plan.payload["name"] = new_name
+        plan.changes["name"] = [p.name, new_name]
+    if "description" in change and change["description"] != p.description:
+        plan.payload["description"] = change["description"]
+        plan.changes["description"] = [p.description, change["description"]]
+    if "group" in change and change["group"] != p.group:
+        guid = defs.groups.get(change["group"])
+        if guid is None:
+            plan.errors.append(f"no custom property group '{change['group']}'; create it "
+                               "first (Tapir CreatePropertyGroups)")
+        else:
+            new_group = change["group"]
+            plan.payload["groupId"] = {"guid": guid}
+            plan.changes["group"] = [p.group, new_group]
+    target = f"{new_group}/{new_name}"
+    if target != p.address and target in defs.by_address:
+        plan.errors.append(f"'{target}' already exists")
+
+    options = [d for _, d in p.enum]
+    if "enum" in change:
+        options = _plan_enum(change["enum"], p, plan)
+
+    if "default" in change and "expressions" in change:
+        plan.errors.append("send default or expressions, not both")
+    elif "expressions" in change:
+        exprs = change["expressions"]
+        if not isinstance(exprs, list) or not exprs:
+            plan.errors.append("expressions takes a non-empty list of expression strings")
+        else:
+            plan.payload["defaultValue"] = {"expressions": exprs}
+            plan.changes["default"] = [p.default_state(), {"expressions": exprs}]
+    elif "default" in change:
+        payload, err = _default_payload(p, change["default"], options)
+        if err:
+            plan.errors.append(err)
+        else:
+            plan.payload["defaultValue"] = payload
+            plan.changes["default"] = [p.default_state(), change["default"]]
+
+    if "availability" in change:
+        if index is None:
+            plan.errors.append("availability needs the classification index")
+        else:
+            _plan_availability(change["availability"], p, index, plan)
+
+    if len(plan.payload) == 1 and not plan.errors:
+        plan.warnings.append("nothing to change")
+    return plan
+
+
+def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
+    """Filled in by Task 10. Returns the option texts after the edit."""
+    return [d for _, d in p.enum]

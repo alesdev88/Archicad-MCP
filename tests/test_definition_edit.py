@@ -60,3 +60,111 @@ def test_failures_group_by_message():
     groups = group_by_error(failed)
     assert groups[0] == {"message": "no access right", "count": 2,
                          "sample": ["ELEA/Sifra", "ELEA/Kategorija"]}
+
+
+# ---------- Task 9: property definitions and the non-enum plan ----------
+
+from archicad_mcp.core.definition_edit import Definitions, plan_property_change
+
+
+def _defs():
+    conn, _ = _conn()
+    return Definitions.load(conn), ClassificationIndex.load(conn)
+
+
+def test_resolve_property_whose_group_contains_a_slash():
+    defs, _ = _defs()
+    p, err = defs.resolve("A/B/C")
+    assert err is None and p.guid == "p-slash"
+
+
+def test_builtin_properties_are_refused():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "b-layer", "name": "X"}, defs, index)
+    assert plan.errors == ["built-in properties cannot be edited"]
+
+
+def test_rename_and_move_group():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "name": "Sifra opreme",
+                                 "group": "ELEA Oprema"}, defs, index)
+    assert plan.errors == []
+    assert plan.payload == {"propertyId": {"guid": "p-code"}, "name": "Sifra opreme",
+                            "groupId": {"guid": "g-ELEA Oprema"}}
+    assert plan.changes == {"name": ["Sifra", "Sifra opreme"], "group": ["ELEA", "ELEA Oprema"]}
+
+
+def test_rename_onto_an_existing_address_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "name": "Kategorija"}, defs, index)
+    assert plan.errors == ["'ELEA/Kategorija' already exists"]
+
+
+def test_missing_group_is_an_error_not_a_create():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "group": "Nope"}, defs, index)
+    assert "no custom property group 'Nope'" in plan.errors[0]
+
+
+def test_unknown_field_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "colour": "red"}, defs, index)
+    assert "unknown field" in plan.errors[0]
+
+
+def test_plain_default_is_type_checked():
+    defs, index = _defs()
+    ok = plan_property_change({"property": "ELEA/Dolzina", "default": 2.5}, defs, index)
+    assert ok.payload["defaultValue"] == {"basicDefaultValue": {
+        "status": "normal", "type": "length", "value": 2.5}}
+    bad = plan_property_change({"property": "ELEA/Dolzina", "default": "long"}, defs, index)
+    assert "takes a number" in bad.errors[0]
+
+
+def test_default_none_means_undefined():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "default": None}, defs, index)
+    assert plan.payload["defaultValue"] == {"basicDefaultValue": {"status": "userUndefined"}}
+
+
+def test_expressions_replace_the_default():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Povrsina",
+                                 "expressions": ["{Property:Volume}"]}, defs, index)
+    assert plan.payload["defaultValue"] == {"expressions": ["{Property:Volume}"]}
+    assert plan.changes["default"] == [{"expressions": ["{Property:Area}"]},
+                                       {"expressions": ["{Property:Volume}"]}]
+
+
+def test_default_and_expressions_together_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Povrsina", "default": 1,
+                                 "expressions": ["1"]}, defs, index)
+    assert plan.errors == ["send default or expressions, not both"]
+
+
+def test_availability_add_branch_and_remove_warns():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "availability": {
+        "add": ["ELEA/40.20/*"], "remove": ["ELEA/40.10"]}}, defs, index)
+    assert plan.errors == []
+    assert plan.payload["availability"] == {
+        "add": [{"classificationItemId": {"guid": g}} for g in ["i-40-20", "i-40-20-1"]],
+        "remove": [{"classificationItemId": {"guid": "i-40-10"}}]}
+    assert plan.changes["availability"] == {"added": ["ELEA/40.20", "ELEA/40.20.1"],
+                                            "removed": ["ELEA/40.10"]}
+    assert any("not applicable" in w for w in plan.warnings)
+
+
+def test_availability_set_with_add_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "availability": {
+        "set": ["ELEA/40"], "add": ["ELEA/40.10"]}}, defs, index)
+    assert plan.errors == ["availability takes either set, or add and/or remove"]
+
+
+def test_nothing_to_change_is_reported_not_sent():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra", "name": "Sifra"}, defs, index)
+    assert plan.payload == {"propertyId": {"guid": "p-code"}}
+    assert plan.warnings == ["nothing to change"]
