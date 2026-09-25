@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<BuildingInformation>
+	<Classification>
+		<System>
+			<Name>MCP Test</Name>
+			<EditionVersion>1</EditionVersion>
+			<EditionDate>
+				<Year>2026</Year>
+				<Month>9</Month>
+				<Day>25</Day>
+			</EditionDate>
+			<Description>Test system for archicad-mcp live canaries</Description>
+			<Source />
+			<Items>
+				<Item>
+					<ID>Building</ID>
+					<Name>Building</Name>
+					<Description />
+					<Children>
+						<Item>
+							<ID>Wall</ID>
+							<Name>Wall</Name>
+							<Description />
+							<Children />
+						</Item>
+						<Item>
+							<ID>Slab</ID>
+							<Name>Slab</Name>
+							<Description />
+							<Children />
+						</Item>
+						<Item>
+							<ID>Object</ID>
+							<Name>Object</Name>
+							<Description />
+							<Children />
+						</Item>
+					</Children>
+				</Item>
+				<Item>
+					<ID>Site</ID>
+					<Name>Site</Name>
+					<Description />
+					<Children />
+				</Item>
+			</Items>
+		</System>
+	</Classification>
+</BuildingInformation>

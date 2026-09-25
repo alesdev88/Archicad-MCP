@@ -8,12 +8,15 @@ detach every element.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.definition_edit import (
-    ClassificationIndex, PlannedEdit, editing_unavailable, group_by_error, split_results)
+    ClassificationIndex, Definitions, PlannedEdit, editing_unavailable, group_by_error,
+    split_results)
+from archicad_mcp.core.definition_xml import parse_classification_xml, parse_property_xml
 from archicad_mcp.core.element_data import error_fields
 
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -120,4 +123,98 @@ def edit_classifications(conn: ArchicadConnection, changes: list[dict],
     result["applied"] = applied
     if failed:
         result["failed"] = group_by_error(failed)
+    return result
+
+
+# ---------- import_definitions ----------
+
+POLICIES = {"property": ["append", "replace", "skip"],
+            "classification": ["merge", "replace", "skip"]}
+ITEM_POLICIES = ["replace", "skip"]
+MAX_XML_BYTES = 20 * 1024 * 1024
+POLICY_EFFECT = {
+    ("property", "append"): "colliding properties are imported under a new, unused name; "
+                            "existing ones stay",
+    # Verified live on AC 29 (2026-09-25): replace keeps the property GUID.
+    ("property", "replace"): "colliding properties are updated in place from the file; they "
+                             "keep their GUID, so element values survive",
+    ("property", "skip"): "colliding properties stay as they are; the imported ones are dropped",
+    ("classification", "merge"): "colliding systems are merged: new items are added, and "
+                                 "colliding items follow item_conflict",
+    ("classification", "replace"): "colliding systems are replaced by the imported ones "
+                                   "(whether item GUIDs survive is not verified; merge is safer)",
+    ("classification", "skip"): "colliding systems stay as they are; the imported ones are dropped",
+}
+IMPORT_CAP = 50
+
+
+def _capped_names(names: list[str]) -> list[str]:
+    if len(names) <= IMPORT_CAP:
+        return names
+    return names[:IMPORT_CAP] + [f"... and {len(names) - IMPORT_CAP} more"]
+
+
+def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, conflict: str,
+                       item_conflict: str = "skip", dry_run: bool = True) -> dict:
+    if kind not in POLICIES:
+        return {"error": "kind is 'property' or 'classification'"}
+    if conflict not in POLICIES[kind]:
+        return {"error": f"conflict for {kind} imports is one of {POLICIES[kind]}"}
+    if kind == "classification" and item_conflict not in ITEM_POLICIES:
+        return {"error": f"item_conflict is one of {ITEM_POLICIES}"}
+    path = Path(xml_path).expanduser()
+    try:
+        if path.stat().st_size > MAX_XML_BYTES:
+            return {"error": f"{path} is larger than 20 MB"}
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"error": f"cannot read {path}: {exc.strerror or exc}"}
+    gate = editing_unavailable(conn)
+    if gate:
+        return gate
+
+    try:
+        if kind == "property":
+            defs = Definitions.load(conn)
+            names = [f"{g}/{n}" for g, n in parse_property_xml(text)]
+            existing = set(defs.by_address)
+        else:
+            index = ClassificationIndex.load(conn)
+            names = [f"{s}/{c}" for s, codes in parse_classification_xml(text) for c in codes]
+            existing = {index.label(g) for g in index.items}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    result: dict = {"dry_run": dry_run, "kind": kind,
+                    "new": _capped_names([n for n in names if n not in existing]),
+                    "collisions": _capped_names([n for n in names if n in existing]),
+                    "policy": POLICY_EFFECT[(kind, conflict)]}
+    if dry_run:
+        return result
+
+    if kind == "property":
+        command, params = "ImportPropertiesXml", {"xml": text, "conflictPolicy": conflict}
+    else:
+        command, params = "ImportClassificationsXml", {
+            "xml": text, "systemConflictPolicy": conflict, "itemConflictPolicy": item_conflict}
+    try:
+        response = conn.tapir(command, params)
+    except (APIErrorBase, ArchicadUnavailableError) as exc:
+        result["error"] = error_fields(exc)
+        return result
+    outcome = response.get("executionResult", {})
+    if not outcome.get("success"):
+        result["error"] = outcome.get("error", {}).get("message", "import refused")
+        return result
+    created = [c["guid"] for c in response.get("created", [])]
+    removed = [c["guid"] for c in response.get("removed", [])]
+    if kind == "property":
+        after = Definitions.load(conn)
+
+        def label(guid: str) -> str:
+            return after.by_guid[guid].address if guid in after.by_guid else guid
+    else:
+        after_index = ClassificationIndex.load(conn)
+        label = after_index.label
+    result["created"] = _capped_names([label(g) for g in created])
+    result["removed"] = _capped_names(removed)
     return result

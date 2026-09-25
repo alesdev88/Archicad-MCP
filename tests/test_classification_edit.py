@@ -60,3 +60,77 @@ def test_classification_edit_refuses_old_tapir():
     result = edit_classifications(conn, [{"item": "ELEA/40.10", "name": "K"}], dry_run=False)
     assert "UpdateClassificationItems" in result["error"]
     assert not any(cmd.startswith("Update") for cmd, _ in core.calls)
+
+
+# ---------- import_definitions ----------
+
+from pathlib import Path
+
+from archicad_mcp.core.classification_edit import import_definitions
+
+XML = Path(__file__).parent / "fixtures" / "xml"
+
+_SIFRA_XML = """<BuildingInformation><PropertyDefinitionGroups><PropertyDefinitionGroup>
+<Name>ELEA</Name><PropertyDefinitions>
+<PropertyDefinition><Name>Sifra</Name></PropertyDefinition>
+<PropertyDefinition><Name>Nova</Name></PropertyDefinition>
+</PropertyDefinitions></PropertyDefinitionGroup></PropertyDefinitionGroups></BuildingInformation>"""
+
+
+def test_import_dry_run_reports_new_and_colliding(tmp_path):
+    path = tmp_path / "p.xml"
+    path.write_text(_SIFRA_XML, encoding="utf-8")
+    conn, core = _conn()
+    result = import_definitions(conn, "property", str(path), "skip")
+    assert result["dry_run"] is True
+    assert result["new"] == ["ELEA/Nova"]
+    assert result["collisions"] == ["ELEA/Sifra"]
+    assert "stay as they are" in result["policy"]
+    assert not any(cmd.startswith("Import") for cmd, _ in core.calls)
+
+
+def test_import_classification_dry_run_uses_system_and_code():
+    conn, _ = _conn()
+    result = import_definitions(conn, "classification",
+                                str(XML / "classifications_mcp_test.xml"), "merge")
+    assert "MCP Test/Wall" in result["new"] and result["collisions"] == []
+
+
+def test_import_rejects_an_unknown_policy():
+    conn, _ = _conn()
+    result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"), "merge")
+    assert result["error"] == "conflict for property imports is one of ['append', 'replace', 'skip']"
+
+
+def test_import_commit_sends_the_file_and_reports_created():
+    created = {"executionResult": {"success": True},
+               "created": [{"guid": "p-code"}], "removed": []}
+    conn, core = _conn(extra_tapir={"ImportPropertiesXml": created})
+    result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
+                                "append", dry_run=False)
+    sent = [p for cmd, p in core.calls if cmd == "ImportPropertiesXml"][0]
+    assert sent["conflictPolicy"] == "append" and sent["xml"].lstrip().startswith("<")
+    assert result["created"] == ["ELEA/Sifra"]
+
+
+def test_import_refused_by_archicad_reports_the_message():
+    refused = {"executionResult": {"success": False, "error": {"code": 1, "message": "invalid property XML"}},
+               "created": [], "removed": []}
+    conn, _ = _conn(extra_tapir={"ImportPropertiesXml": refused})
+    result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
+                                "skip", dry_run=False)
+    assert result["error"] == "invalid property XML"
+
+
+def test_import_refuses_a_missing_file():
+    conn, _ = _conn()
+    result = import_definitions(conn, "property", "/nope/missing.xml", "skip")
+    assert "cannot read" in result["error"]
+
+
+def test_import_refuses_malformed_xml(tmp_path):
+    path = tmp_path / "bad.xml"
+    path.write_text("<unclosed>", encoding="utf-8")
+    conn, _ = _conn()
+    result = import_definitions(conn, "property", str(path), "skip")
+    assert result["error"].startswith("not valid XML")

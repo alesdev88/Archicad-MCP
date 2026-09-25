@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<BuildingInformation>
+	<PropertyDefinitionGroups>
+		<PropertyDefinitionGroup>
+			<Name>MCP Test</Name>
+			<Description />
+			<PropertyDefinitions>
+				<PropertyDefinition>
+					<Name>Canary Enum</Name>
+					<Description>enum-removal probe</Description>
+					<ValueDescriptor Type="EnumerationValueDescriptor" Version="2">
+						<EnumerationValueDescriptorWithStoredValues>
+							<ValueType>3</ValueType>
+							<Values>
+								<Key>CFA853E3-02C5-F249-89CF-8953FF14512C</Key>
+								<Value Empty="false">
+									<Variant Type="StringVariant">
+										<Status>Normal</Status>
+										<Value>Keep</Value>
+									</Variant>
+								</Value>
+							</Values>
+						</EnumerationValueDescriptorWithStoredValues>
+						<HasMultiValue>false</HasMultiValue>
+					</ValueDescriptor>
+					<MeasureType>Default</MeasureType>
+					<DefaultValue>
+						<DefaultValueType>Basic</DefaultValueType>
+						<Variant Type="GuidVariant">
+							<Status>Normal</Status>
+							<Value>CFA853E3-02C5-F249-89CF-8953FF14512C</Value>
+						</Variant>
+					</DefaultValue>
+					<ClassificationIDs>
+						<ClassificationID>
+							<ItemID>Slab</ItemID>
+							<SystemIDName>MCP Test</SystemIDName>
+							<SystemIDVersion>1</SystemIDVersion>
+						</ClassificationID>
+					</ClassificationIDs>
+				</PropertyDefinition>
+				<PropertyDefinition>
+					<Name>Fire Rating</Name>
+					<Description />
+					<ValueDescriptor Type="SingleValueDescriptor">
+						<ValueType>String</ValueType>
+					</ValueDescriptor>
+					<MeasureType>Default</MeasureType>
+					<DefaultValue>
+						<DefaultValueType>Basic</DefaultValueType>
+						<Variant Type="StringVariant">
+							<Status>Normal</Status>
+							<Value>-</Value>
+						</Variant>
+					</DefaultValue>
+					<ClassificationIDs>
+						<ClassificationID>
+							<ItemID>Wall</ItemID>
+							<SystemIDName>MCP Test</SystemIDName>
+							<SystemIDVersion>1</SystemIDVersion>
+						</ClassificationID>
+						<ClassificationID>
+							<ItemID>Object</ItemID>
+							<SystemIDName>MCP Test</SystemIDName>
+							<SystemIDVersion>1</SystemIDVersion>
+						</ClassificationID>
+					</ClassificationIDs>
+				</PropertyDefinition>
+			</PropertyDefinitions>
+		</PropertyDefinitionGroup>
+	</PropertyDefinitionGroups>
+</BuildingInformation>

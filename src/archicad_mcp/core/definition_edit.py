@@ -488,8 +488,9 @@ def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
         after = [o for o in after if o[0] not in gone]
         plan.payload["removeEnumValues"] = out
         plan.warnings.append(
-            f"removing {removes}: elements holding these options lose that value. Not "
-            "counted, because counting needs property value reads, which can crash Archicad")
+            f"removing {removes}: elements holding these options lose that value and show "
+            "<Undefined>, not the default (verified on AC 29). Not counted, because "
+            "counting needs property value reads, which can crash Archicad")
     texts = [d for _, d in after]
     adds = [t for t in spec.get("add", []) if t not in texts]
     if adds:
