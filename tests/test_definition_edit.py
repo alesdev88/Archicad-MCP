@@ -335,3 +335,48 @@ def test_live_failed_result_shape_is_split():
     from tests.fixtures.definition_edit_replays import LIVE_UPDATE_FAILED
     applied, failed = split_results(["x"], LIVE_UPDATE_FAILED)
     assert applied == [] and failed == [{"target": "x", "message": "built-in properties cannot be changed"}]
+
+
+# ---------- final review fixes ----------
+
+def test_rename_onto_another_options_text_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"rename": {"Staro": "Kuhinja"}}}, defs, index)
+    assert plan.errors == ["after this edit two options would read 'Kuhinja'; option texts must stay unique"]
+
+
+def test_adding_a_text_twice_is_one_option():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"add": ["Pisarna", "Pisarna"]}}, defs, index)
+    assert plan.payload["possibleEnumValues"] == [{"enumValue": {"displayValue": "Pisarna"}}]
+
+
+def test_enum_add_given_as_a_string_is_an_error_not_six_letters():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"add": "Pisarna"}}, defs, index)
+    assert plan.errors == ["enum 'add' takes a list of option texts"]
+    assert "possibleEnumValues" not in plan.payload
+
+
+def test_enum_rename_given_as_a_list_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Kategorija",
+                                 "enum": {"rename": ["Kuhinja", "K"]}}, defs, index)
+    assert plan.errors == ["enum 'rename' takes an object of old text to new text"]
+
+
+def test_availability_given_as_a_string_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra",
+                                 "availability": {"add": "ELEA/40"}}, defs, index)
+    assert plan.errors == ["availability 'add' takes a list of System/Code addresses"]
+
+
+def test_availability_that_is_not_an_object_is_an_error():
+    defs, index = _defs()
+    plan = plan_property_change({"property": "ELEA/Sifra",
+                                 "availability": ["ELEA/40"]}, defs, index)
+    assert plan.errors == ["availability takes an object with set, or add and/or remove"]

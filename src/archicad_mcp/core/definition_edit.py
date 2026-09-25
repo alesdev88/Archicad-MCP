@@ -273,6 +273,10 @@ class PlannedEdit:
         return out
 
 
+def _str_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
 def _capped(labels: list[str]) -> list[str]:
     labels = sorted(labels)
     if len(labels) > LIST_CAP:
@@ -319,8 +323,15 @@ def _default_payload(p: PropDef, value, options: list[str]) -> tuple[dict | None
 
 def _plan_availability(spec: dict, p: PropDef, index: ClassificationIndex,
                        plan: PlannedEdit) -> None:
+    if not isinstance(spec, dict):
+        plan.errors.append("availability takes an object with set, or add and/or remove")
+        return
     if "set" in spec and ("add" in spec or "remove" in spec):
         plan.errors.append("availability takes either set, or add and/or remove")
+        return
+    bad = [k for k in ("set", "add", "remove") if k in spec and not _str_list(spec[k])]
+    if bad:
+        plan.errors.extend(f"availability '{k}' takes a list of System/Code addresses" for k in bad)
         return
 
     def expand(addresses: list[str]) -> list[str]:
@@ -452,6 +463,18 @@ def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
     if unknown:
         plan.errors.append(f"unknown enum field(s) {unknown}; allowed: {sorted(_ENUM_KEYS)}")
         return current
+    # LLM clients send "add": "X" for a single option; iterating that string
+    # would plan one option per letter.
+    shape_errors = []
+    rename_spec = spec.get("rename", {})
+    if not (isinstance(rename_spec, dict)
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in rename_spec.items())):
+        shape_errors.append("enum 'rename' takes an object of old text to new text")
+    shape_errors += [f"enum '{k}' takes a list of option texts"
+                     for k in ("remove", "add", "order") if k in spec and not _str_list(spec[k])]
+    if shape_errors:
+        plan.errors.extend(shape_errors)
+        return current
 
     def guid_of(ref: str) -> str | None:
         if any(g == ref for g, _ in p.enum):
@@ -481,6 +504,11 @@ def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
                 out.append({"enumValueId": {"guid": guid}, "displayValue": new})
                 next(o for o in after if o[0] == guid)[1] = new
         plan.payload["renameEnumValues"] = out
+        renamed = {r["enumValueId"]["guid"] for r in out}
+        for guid, text in after:
+            if guid in renamed and any(t == text and g != guid for g, t in after):
+                plan.errors.append(f"after this edit two options would read '{text}'; "
+                                   "option texts must stay unique")
     if removes:
         out, gone = [], []
         for ref in removes:
@@ -495,7 +523,10 @@ def _plan_enum(spec: dict, p: PropDef, plan: PlannedEdit) -> list[str]:
             "<Undefined>, not the default (verified on AC 29). Not counted, because "
             "counting needs property value reads, which can crash Archicad")
     texts = [d for _, d in after]
-    adds = [t for t in spec.get("add", []) if t not in texts]
+    adds: list[str] = []
+    for t in spec.get("add", []):
+        if t not in texts and t not in adds:
+            adds.append(t)
     if adds:
         plan.payload["possibleEnumValues"] = [{"enumValue": {"displayValue": t}} for t in adds]
         texts.extend(adds)
