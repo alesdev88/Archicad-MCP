@@ -281,9 +281,12 @@ def _capped(labels: list[str]) -> list[str]:
 
 
 def _default_payload(p: PropDef, value, options: list[str]) -> tuple[dict | None, str | None]:
-    if value is None:
-        return {"basicDefaultValue": {"status": "userUndefined"}}, None
     key = p.type_key
+    if value is None:
+        if key is None:
+            return None, f"cannot set a default on a {p.collection} {p.value_type} property"
+        # The schema requires type next to status, or the whole batch is rejected.
+        return {"basicDefaultValue": {"status": "userUndefined", "type": key}}, None
     if key == "singleEnum":
         if options.count(value) != 1:
             return None, f"default '{value}' is not exactly one option of {options}"

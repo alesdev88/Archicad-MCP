@@ -124,7 +124,10 @@ def test_plain_default_is_type_checked():
 def test_default_none_means_undefined():
     defs, index = _defs()
     plan = plan_property_change({"property": "ELEA/Sifra", "default": None}, defs, index)
-    assert plan.payload["defaultValue"] == {"basicDefaultValue": {"status": "userUndefined"}}
+    # Archicad's UserUndefinedPropertyValue schema requires type as well as status;
+    # without it the whole UpdatePropertyDefinitions batch is rejected.
+    assert plan.payload["defaultValue"] == {"basicDefaultValue": {
+        "status": "userUndefined", "type": "string"}}
 
 
 def test_expressions_replace_the_default():
