@@ -103,3 +103,94 @@ def fake_editing_core(update=None, extra_tapir=None, marker=True):
              "UpdateClassificationItems": update or ok}
     tapir.update(extra_tapir or {})
     return FakeCore(official=official, tapir=tapir)
+
+
+# ---------- live shapes (AC 29, property-classification-editing build, 2026-09-25) ----------
+# Recorded on the MCP-Test project: the "MCP Test" group and system only, plus one
+# built-in property and group so both kinds are covered.
+
+LIVE_GET_ALL_PROPERTIES = {'properties': [{'propertyId': {'guid': '5A6C957A-0B61-4E4E-9BAB-A03BF9278B38'},
+                 'propertyType': 'Custom',
+                 'propertyGroupName': 'MCP Test',
+                 'propertyName': 'Fire Rating',
+                 'propertyCollectionType': 'Single',
+                 'propertyValueType': 'String',
+                 'propertyMeasureType': 'Default',
+                 'propertyIsEditable': True,
+                 'isExpressionBased': False,
+                 'propertyGroupId': {'guid': 'DA4D5B3B-000B-3142-9511-F633B9C9151B'},
+                 'propertyDescription': '',
+                 'defaultValueDisplay': '-',
+                 'availability': [{'classificationItemId': {'guid': '4C55826D-C08A-724E-88D4-D2B92E1D1338'}},
+                                  {'classificationItemId': {'guid': 'CFEC33A3-91B5-8842-A494-885B781E07B3'}}]},
+                {'propertyId': {'guid': '655E3DAE-046B-3C4B-A8F2-F494A7DFAFBB'},
+                 'propertyType': 'Custom',
+                 'propertyGroupName': 'MCP Test',
+                 'propertyName': 'Canary Enum',
+                 'propertyCollectionType': 'SingleChoiceEnumeration',
+                 'propertyValueType': 'String',
+                 'propertyMeasureType': 'Default',
+                 'propertyIsEditable': True,
+                 'isExpressionBased': False,
+                 'propertyGroupId': {'guid': 'DA4D5B3B-000B-3142-9511-F633B9C9151B'},
+                 'propertyDescription': 'enum-removal probe',
+                 'defaultValueDisplay': 'Keep',
+                 'availability': [{'classificationItemId': {'guid': '7054B35D-A76D-0242-AA39-4F9BDA13F40E'}}],
+                 'possibleEnumValues': [{'enumValue': {'displayValue': 'Keep',
+                                                       'guid': 'CFA853E3-02C5-F249-89CF-8953FF14512C'}}]},
+                {'propertyId': {'guid': '7B8A48A1-A078-4E58-A2B0-0F82AA9A5EAD'},
+                 'propertyType': 'StaticBuiltIn',
+                 'propertyGroupName': 'Window/Door',
+                 'propertyName': 'W/D Opening Volume (Archicad 20)',
+                 'propertyCollectionType': 'Single',
+                 'propertyValueType': 'Real',
+                 'propertyMeasureType': 'Volume',
+                 'propertyIsEditable': False,
+                 'isExpressionBased': False,
+                 'propertyGroupId': {'guid': '572F56FE-5F89-4357-A9C3-C4FBB16D7ED4'},
+                 'propertyDescription': ''}],
+ 'propertyGroups': [{'propertyGroupId': {'guid': 'DA4D5B3B-000B-3142-9511-F633B9C9151B'},
+                     'name': 'MCP Test',
+                     'description': '',
+                     'isCustom': True},
+                    {'propertyGroupId': {'guid': '572F56FE-5F89-4357-A9C3-C4FBB16D7ED4'},
+                     'name': 'Window/Door',
+                     'description': '',
+                     'isCustom': False}]}
+
+LIVE_CLASSIFICATION_SYSTEMS = {'classificationSystems': [{'classificationSystemId': {'guid': '9E51DF4F-D453-E543-9BC6-A7628632EC38'},
+                            'name': 'MCP Test',
+                            'description': 'Test system for archicad-mcp live canaries',
+                            'source': '',
+                            'version': '1',
+                            'date': '2026-09-25'}]}
+
+LIVE_CLASSIFICATION_TREE = {'classificationItems': [{'classificationItem': {'classificationItemId': {'guid': '7224B8EE-7E2B-D949-95B3-1FD6AC18E548'},
+                                                 'id': 'Building',
+                                                 'name': 'Building',
+                                                 'description': '',
+                                                 'children': [{'classificationItem': {'classificationItemId': {'guid': '4C55826D-C08A-724E-88D4-D2B92E1D1338'},
+                                                                                      'id': 'Wall',
+                                                                                      'name': 'Wall',
+                                                                                      'description': ''}},
+                                                              {'classificationItem': {'classificationItemId': {'guid': '7054B35D-A76D-0242-AA39-4F9BDA13F40E'},
+                                                                                      'id': 'Slab',
+                                                                                      'name': 'Slab',
+                                                                                      'description': ''}},
+                                                              {'classificationItem': {'classificationItemId': {'guid': 'CFEC33A3-91B5-8842-A494-885B781E07B3'},
+                                                                                      'id': 'Object',
+                                                                                      'name': 'Object',
+                                                                                      'description': ''}}]}},
+                         {'classificationItem': {'classificationItemId': {'guid': 'C2E32E45-C556-7643-A80B-26D9088D6CFE'},
+                                                 'id': 'Site',
+                                                 'name': 'Site',
+                                                 'description': ''}}]}
+
+LIVE_UPDATE_OK = {'executionResults': [{'success': True}]}
+
+LIVE_UPDATE_FAILED = {'executionResults': [{'error': {'code': -2130313112,
+                                 'message': 'built-in properties cannot be changed'},
+                       'success': False}]}
+
+LIVE_IMPORT_RESPONSE = {'executionResult': {'success': True}, 'created': [], 'removed': []}
+

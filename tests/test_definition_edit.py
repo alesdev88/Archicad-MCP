@@ -307,3 +307,28 @@ def test_entry_point_refuses_old_tapir():
                                        dry_run=False)
     assert "UpdateClassificationItems" in result["error"]
     assert not any(cmd == "UpdatePropertyDefinitions" for cmd, _ in core.calls)
+
+
+# ---------- recorded live shapes ----------
+
+def test_live_get_all_properties_shape_parses():
+    from tests.conftest import FakeCore
+    from tests.fixtures import definition_edit_replays as r
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True},
+                              "API.GetAllClassificationSystems": r.LIVE_CLASSIFICATION_SYSTEMS,
+                              "API.GetAllClassificationsInSystem": r.LIVE_CLASSIFICATION_TREE},
+                    tapir={"GetAllProperties": r.LIVE_GET_ALL_PROPERTIES})
+    conn = ArchicadConnection(19723, core=core)
+    defs, index = Definitions.load(conn), ClassificationIndex.load(conn)
+    fire = defs.by_address["MCP Test/Fire Rating"]
+    assert fire.default == "-" and fire.group_guid
+    assert sorted(index.label(g) for g in fire.availability) == ["MCP Test/Object", "MCP Test/Wall"]
+    assert "MCP Test" in defs.groups
+    assert index.resolve("MCP Test/Building/*")[0][1:] and index.resolve("MCP Test/Site")[1] is None
+
+
+def test_live_failed_result_shape_is_split():
+    from archicad_mcp.core.definition_edit import split_results
+    from tests.fixtures.definition_edit_replays import LIVE_UPDATE_FAILED
+    applied, failed = split_results(["x"], LIVE_UPDATE_FAILED)
+    assert applied == [] and failed == [{"target": "x", "message": "built-in properties cannot be changed"}]
