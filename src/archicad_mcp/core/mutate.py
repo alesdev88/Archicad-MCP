@@ -13,9 +13,9 @@ from __future__ import annotations
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.core.editability import refusals
+from archicad_mcp.core.editability import present, refusals
 from archicad_mcp.core.element_data import cap_list, error_fields
-from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
+from archicad_mcp.extract import element_payload
 
 
 def _group(reasons: dict[str, str]) -> list[dict]:
@@ -44,28 +44,6 @@ def _outcome(requested: int, key: str, count: int, reasons: dict[str, str],
     if stopped is not None:
         result["stopped"] = error_fields(stopped)
     return result
-
-
-def _still_present(conn: ArchicadConnection, guids: list[str]) -> set[str]:
-    """The elements a read of the active window's database still finds.
-
-    Tapir GetDetailsOfElements reads the current database, the one
-    DeleteElements acted on, and answers an error entry for an element that is
-    not there. Sent without `fields` (Tapir 1.5.9+) so older add-ons answer
-    too; a deleted element errors at once, so only survivors cost a full read.
-    An element with no entry at all counts as present: unconfirmed is not
-    deleted.
-    """
-    present: set[str] = set()
-    for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
-        chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
-        response = conn.tapir("GetDetailsOfElements", {"elements": element_payload(chunk)})
-        items = response.get("detailsOfElements", [])
-        for i, guid in enumerate(chunk):
-            item = items[i] if i < len(items) else None
-            if not isinstance(item, dict) or "error" not in item:
-                present.add(guid)
-    return present
 
 
 def _survivor_reason(response: dict,
@@ -123,7 +101,8 @@ def delete_elements(conn: ArchicadConnection, guids: list[str],
         except (APIErrorBase, ArchicadUnavailableError) as exc:
             # Archicad may have acted before the error; the read says what went.
             response, stopped = {}, exc
-        remaining = _still_present(conn, send)
+        # Read from the database the delete acted on (see editability.present).
+        remaining = present(conn, send)
         survivor = _survivor_reason(response or {}, stopped)
         for guid in send:
             if guid in remaining:

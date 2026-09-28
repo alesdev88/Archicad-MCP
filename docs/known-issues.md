@@ -181,11 +181,27 @@ Since then:
 - `deploy_gdl_object` checks the deletion of its preview probe and says so in
   `cleanup_failed` when the element is still there.
 
-A GUID that does not exist also fails `IsEditable`, so a refused element whose
-type cannot be read is reported as not found rather than as locked.
+`IsEditable` does not say why, so the reason for a refused element is built
+from further reads, in this order:
 
-The fixed flow is covered offline by a fake with a floor plan and a layout
-database; it has not yet been run live.
+| Reason | Read |
+|---|---|
+| not found | Tapir `GetDetailsOfElements` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| hidden layer | `FilterElements` with `IsVisibleByLayer` |
+| not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
+| locked | whatever is left: a hotlinked module, a locked layer, or another lock |
+
+The official `GetTypesOfElements` cannot answer "does it exist": live on
+28.09.2026 it answered 7203 "Element not supported" for every label, existing
+ones included.
+
+**Run live (28.09.2026, read-only, floor plan active)** on the 12 GUIDs of the
+report. By then 10 had been deleted from the floor plan and 2 kept and released
+from the workspace. The 10 came back "not found" and the 2 "not reserved in
+Teamwork", which is their actual state. `GetDetailsOfElements` with
+`fields: ["type"]` answered `{"type": "Label"}` for a kept one and an error
+entry for a deleted one. Not yet run live: the same check from a Layout, and a
+delete that goes through.
 
 ## Writing enum properties is not supported
 

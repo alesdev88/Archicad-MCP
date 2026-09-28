@@ -9,8 +9,9 @@ call deleted them.
 
 The fake below behaves that way: every Tapir element command acts on the
 active window's database only, and DeleteElements answers success whatever it
-did. The official GetTypesOfElements sees every database here, the harder case
-for telling a caller why an element was not deleted.
+did. The official GetTypesOfElements answers 7203 "Element not supported" for
+a label, as it did live for every label on 28.09.2026, so it cannot say
+whether one exists; Tapir GetDetailsOfElements can.
 """
 import pytest
 from multiconn_archicad.errors import StandardAPIError
@@ -25,10 +26,12 @@ BAD_ID = -2130313112
 
 class Project:
     def __init__(self, floor_plan=(), layout=(), window="FloorPlan", locked=(),
-                 teamwork=False, mine=None):
+                 teamwork=False, mine=None, hidden=(), details_take_fields=True):
         self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout)}
         self.window = window
         self.locked = set(locked)
+        self.hidden = set(hidden)          # on a layer hidden in the active view
+        self.details_take_fields = details_take_fields  # Tapir 1.5.9+
         self.teamwork = teamwork
         self.mine = set(mine) if mine is not None else self.everywhere()
         self.survivors: set[str] = set()   # reported deleted, still there
@@ -47,10 +50,12 @@ class Project:
 
     def _editable(self, guid):
         return (guid in self.active and guid not in self.locked
+                and guid not in self.hidden
                 and (not self.teamwork or guid in self.mine))
 
     def filter_elements(self, p):
         tests = {"IsEditable": self._editable,
+                 "IsVisibleByLayer": lambda g: g in self.active and g not in self.hidden,
                  "InMyWorkspace": lambda g: g in self.active and g in self.mine}
         [name] = p["filters"]
         return {"elements": [e for e in p["elements"]
@@ -58,12 +63,12 @@ class Project:
 
     def types(self, p):
         return {"typesOfElements": [
-            {"typeOfElement": {"elementId": e["elementId"], "elementType": "Label"}}
-            if e["elementId"]["guid"] in self.everywhere()
-            else {"error": {"code": BAD_ID, "message": "The element does not exist."}}
-            for e in p["elements"]]}
+            {"error": {"code": 7203, "message": "Element not supported"}}
+            for _ in p["elements"]]}
 
     def details(self, p):
+        if "fields" in p and not self.details_take_fields:
+            raise StandardAPIError(message="Invalid parameters", code=None)
         return {"detailsOfElements": [
             {"type": "Label", "floorIndex": 0} if e["elementId"]["guid"] in self.active
             else {"error": {"code": BAD_ID,
@@ -183,6 +188,23 @@ def test_delete_skips_an_element_inside_a_hotlink():
     group = _only_group(out, "not_deleted")
     assert group["guids"] == ["b"] and "hotlinked module" in group["reason"]
     assert out["active_window"] == "FloorPlan"
+
+
+def test_delete_names_an_element_on_a_hidden_layer():
+    # Live 28.09.2026: labels on a layer the working view kept off were not
+    # editable until the layer was turned on.
+    project = Project(floor_plan=["a", "b"], hidden={"b"}, teamwork=True)
+    out = delete_elements(project.connect(), ["a", "b"], confirm=True)
+    assert out["deleted"] == 1
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["b"] and "hidden layer" in group["reason"]
+
+
+def test_delete_works_with_a_tapir_that_predates_the_fields_filter():
+    project = Project(floor_plan=["a", "b"], locked={"b"}, details_take_fields=False)
+    out = delete_elements(project.connect(), ["a", "b"], confirm=True)
+    assert out["deleted"] == 1
+    assert "hotlinked module" in _only_group(out, "not_deleted")["reason"]
 
 
 def test_delete_names_an_unknown_guid_as_not_found():

@@ -37,17 +37,17 @@ def _conn_with_cells(cells: dict, set_results=None):
         return {"propertyValuesForElements": rows}
 
     official["API.GetPropertyValuesOfElements"] = values
-    # The elements named in `cells` exist; any other GUID does not.
-    known = {guid for guid, _ in cells}
-    official["API.GetTypesOfElements"] = lambda params: {"typesOfElements": [
-        {"typeOfElement": {"elementId": el["elementId"], "elementType": "Door"}}
-        if el["elementId"]["guid"] in known
-        else {"error": {"code": -2130313112, "message": "The element does not exist."}}
-        for el in params["elements"]]}
     official["API.SetPropertyValuesOfElements"] = set_results or (
         lambda p: {"executionResults": [{"success": True}
                                         for _ in p["elementPropertyValues"]]})
-    core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    tapir = dict(api_replays.TAPIR)
+    # The elements named in `cells` exist; any other GUID does not.
+    known = {guid for guid, _ in cells}
+    tapir["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
+        {"type": "Door"} if el["elementId"]["guid"] in known
+        else {"error": {"code": -2130313112, "message": "Failed to get the details"}}
+        for el in params["elements"]]}
+    core = FakeCore(official=official, tapir=tapir)
     return ArchicadConnection(19723, core=core), core
 
 
@@ -237,7 +237,8 @@ def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="Floor
     """Like _conn_with_cells, with FilterElements answering per filter."""
     conn, core = _conn_with_cells(cells)
     core.tapir_responses["GetCurrentWindowType"] = {"currentWindowType": window}
-    passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ())}
+    passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ()),
+               "IsVisibleByLayer": {guid for guid, _ in cells}}
 
     def filter_elements(params):
         [name] = params["filters"]
