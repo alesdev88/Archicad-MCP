@@ -158,6 +158,8 @@ TAPIR = {
                        "projectLocation": "/Users/tester/Test House.pln",
                        "projectPath": "/Users/tester/Test House.pln"},
     "GetAddOnVersion": {"version": "1.8.2"},
+    # Archicad changes only elements of the active window's database.
+    "GetCurrentWindowType": {"currentWindowType": "FloorPlan"},
     # Tapir sees the whole plan; the official API.GetAllElements sees model
     # elements only. This fixture model has no 2D elements, so both agree --
     # tests/test_element_coverage.py builds a plan where they differ.

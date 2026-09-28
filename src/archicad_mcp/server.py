@@ -323,7 +323,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "'failed', Archicad's refusals grouped by code and message "
                           "with a count and sample GUIDs; 'skipped' for changes not "
                           "sent (property type, enum, or an element that is not "
-                          "editable: inside a hotlinked module, or not reserved in "
+                          "editable: in another view's database than the active "
+                          "window's, inside a hotlinked module, or not reserved in "
                           "Teamwork); and 'stopped' if a batch was refused outright "
                           "after earlier batches landed.",
               **_tool_meta("Write element properties", read_only=False, destructive=True))
@@ -397,14 +398,34 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _create.create_elements(_conn(port), element_type, items, dry_run)
 
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
-                          "confirm=true.",
+                          "confirm=true. Archicad changes only elements in the "
+                          "database of the active window, so elements it would "
+                          "refuse (another view's, on a hidden layer, not "
+                          "reserved in Teamwork, locked, in a hotlinked module, "
+                          "or not found) are not "
+                          "sent. Returns requested; moved, counted from "
+                          "Archicad's per-element results; not_moved grouped by "
+                          "reason with the GUIDs; and active_window when "
+                          "anything was refused up front.",
               **_tool_meta("Move elements", read_only=False, destructive=True))
     @_guarded
     def move_elements(guids: list[str], vector: dict, confirm: bool = False,
                       port: int | None = None) -> dict:
         return _mutate.move_elements(_conn(port), guids, vector, confirm)
 
-    @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true.",
+    @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true. "
+                          "Archicad deletes only elements in the database of the "
+                          "active window and still answers success for the rest "
+                          "(a floor-plan label cannot be deleted while a Layout "
+                          "is active), so elements it would refuse (another "
+                          "view's, on a hidden layer, not reserved in Teamwork, "
+                          "locked, in a hotlinked module, or not found) are not "
+                          "sent, and the "
+                          "rest are read back afterwards. Returns requested; "
+                          "deleted, the count that is really gone; not_deleted "
+                          "grouped by reason with the GUIDs; active_window when "
+                          "anything was refused up front; and stopped if the "
+                          "delete command itself errored.",
               **_tool_meta("Delete elements", read_only=False, destructive=True))
     @_guarded
     def delete_elements(guids: list[str], confirm: bool = False,

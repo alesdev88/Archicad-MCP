@@ -180,6 +180,60 @@ them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
 modules of a local copy of a large project. Edit them in the module's source
 file.
 
+## Archicad changes only the active window's database
+
+Archicad acts on elements in the database of the active window and passes over
+the rest without an error. Verified live on 28.09.2026 (AC 29/5101, Tapir
+1.5.10, a Teamwork project): with a Layout window active, Tapir `DeleteElements`
+on 12 reserved floor-plan labels answered success and deleted none of them, and
+`delete_elements` reported `{"deleted": 12}`. Tapir `FilterElements` with
+`IsEditable` had said 0 of 12 beforehand. With the floor plan active, the same
+call deleted all 12.
+
+Since then:
+
+- `delete_elements` and `move_elements` run the same `IsEditable` check as
+  `set_element_data` and send only the elements that pass. The rest come back
+  under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
+  (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
+  plan names the window first, because from a Layout even a reserved element
+  reads as not editable and "not reserved" alone is the wrong lead.
+- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`, which
+  per Tapir's source reads the current database, the one `DeleteElements`
+  acted on), never the requested count. `DeleteElements` answers one success
+  for the whole batch, so its answer alone proves nothing.
+- `moved` counts Tapir's per-element `executionResults`, which `MoveElements`
+  does report. Positions are not read back: there is no single position read
+  that covers every element type, and the pre-check removes the case that
+  failed silently.
+- `set_element_data` already counted per-element results and still does; its
+  values are not read back either, because that is the property read that has
+  crashed Archicad (see above). `apply_changeset` does read back.
+- `deploy_gdl_object` checks the deletion of its preview probe and says so in
+  `cleanup_failed` when the element is still there.
+
+`IsEditable` does not say why, so the reason for a refused element is built
+from further reads, in this order:
+
+| Reason | Read |
+|---|---|
+| not found | Tapir `GetDetailsOfElements` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| hidden layer | `FilterElements` with `IsVisibleByLayer` |
+| not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
+| locked | whatever is left: a hotlinked module, a locked layer, or another lock |
+
+The official `GetTypesOfElements` cannot answer "does it exist": live on
+28.09.2026 it answered 7203 "Element not supported" for every label, existing
+ones included.
+
+**Run live (28.09.2026, read-only, floor plan active)** on the 12 GUIDs of the
+report. By then 10 had been deleted from the floor plan and 2 kept and released
+from the workspace. The 10 came back "not found" and the 2 "not reserved in
+Teamwork", which is their actual state. `GetDetailsOfElements` with
+`fields: ["type"]` answered `{"type": "Label"}` for a kept one and an error
+entry for a deleted one. Not yet run live: the same check from a Layout, and a
+delete that goes through.
+
 ## Writing enum properties is not supported
 
 `singleEnum` and `multiEnum` properties need an `EnumValueId`, not a plain value.

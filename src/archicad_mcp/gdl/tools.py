@@ -185,6 +185,21 @@ def _build_object(ws: Workspace, source: str, name: str,
     }
 
 
+def _delete_probe(conn, guid: str) -> str | None:
+    """Delete the element a deploy placed. None when it is gone, else why not.
+
+    confirm=True is safe here because this deletes only the element the deploy
+    placed, never user data; the tool would be unusable if every probe needed a
+    confirmation round trip. The count is read back by delete_elements, because
+    Archicad can answer success for a delete that removed nothing.
+    """
+    result = _mutate.delete_elements(conn, [guid], confirm=True)
+    if result.get("deleted") == 1:
+        return None
+    reasons = [group["reason"] for group in result.get("not_deleted", [])]
+    return "; ".join(reasons) or "the deletion could not be confirmed"
+
+
 def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
                    keep: bool, embed: bool) -> tuple[dict, bytes]:
     """Reload, place, render, and unless kept, delete again.
@@ -238,19 +253,20 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
         # would not.
         if not keep:
             try:
-                _mutate.delete_elements(conn, [guid], confirm=True)
+                problem = _delete_probe(conn, guid)
             except Exception as cleanup_error:
                 raise RuntimeError(
                     f"The preview render failed, and deleting the element it "
                     f"placed also failed. Element {guid} is still in the project "
                     f"and has to be removed by hand."
                 ) from cleanup_error
+            if problem is not None:
+                raise RuntimeError(
+                    f"The preview render failed, and the element it placed was "
+                    f"not deleted ({problem}). Element {guid} is still in the "
+                    f"project and has to be removed by hand.")
         raise
-    if not keep:
-        # confirm=True is safe here because this deletes only the element
-        # placed a few lines above, never user data. The tool would be
-        # unusable if every probe needed a confirmation round trip.
-        _mutate.delete_elements(conn, [guid], confirm=True)
+    problem = _delete_probe(conn, guid) if not keep else None
 
     payload = {
         "library_part": name,
@@ -263,6 +279,11 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
     }
     if embedded is not None:
         payload["embedded"] = embedded
+    if problem is not None:
+        payload["cleanup_failed"] = (
+            f"Element {guid} was not deleted after the render ({problem}), so it "
+            "is still in the project. Delete it by hand, or with delete_elements "
+            "once the cause is fixed.")
     return payload, png
 
 

@@ -43,8 +43,8 @@ RUN_DESCRIPTION = (
     "too; both are capped at max_output_chars. NEVER WRITES: set_props and "
     "write commands are recorded into a changeset, returned as counts, 20 sample "
     "changes (current -> new) and skipped changes grouped by reason (type "
-    "mismatch, enum, or an element that is not editable: in a hotlinked module "
-    "or not reserved). Apply it with "
+    "mismatch, enum, or an element that is not editable: in a hotlinked module, "
+    "not reserved, or not in the active window's database). Apply it with "
     "apply_changeset. Runs in a separate process, stopped after timeout_s "
     "(max 600).")
 

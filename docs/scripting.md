@@ -85,7 +85,10 @@ An element inside a hotlinked module is not editable, and Archicad refuses it
 with a misleading `TeamWork permission denied`, even in a file that is not a
 Teamwork project; the preview names the real reason instead. On a Teamwork
 project, an element you have not reserved is skipped with a pointer to
-`reserve_elements`; reserve it and run the script again.
+`reserve_elements`; reserve it and run the script again. Archicad also changes
+only elements in the database of the active window, so with a Layout active
+every floor-plan element reads as not editable; the reason then names the
+window first.
 
 Property and detail reads keep the element ceiling
 (`ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS`, default 5000), because wide reads have

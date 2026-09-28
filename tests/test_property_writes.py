@@ -40,7 +40,14 @@ def _conn_with_cells(cells: dict, set_results=None):
     official["API.SetPropertyValuesOfElements"] = set_results or (
         lambda p: {"executionResults": [{"success": True}
                                         for _ in p["elementPropertyValues"]]})
-    core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    tapir = dict(api_replays.TAPIR)
+    # The elements named in `cells` exist; any other GUID does not.
+    known = {guid for guid, _ in cells}
+    tapir["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
+        {"type": "Door"} if el["elementId"]["guid"] in known
+        else {"error": {"code": -2130313112, "message": "Failed to get the details"}}
+        for el in params["elements"]]}
+    core = FakeCore(official=official, tapir=tapir)
     return ArchicadConnection(19723, core=core), core
 
 
@@ -226,10 +233,12 @@ def test_group_failures_by_code_and_message_largest_first():
 
 # ---------- elements Archicad would refuse to write ----------
 
-def _conn_with_filters(cells, editable, mine=None, teamwork=False):
+def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="FloorPlan"):
     """Like _conn_with_cells, with FilterElements answering per filter."""
     conn, core = _conn_with_cells(cells)
-    passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ())}
+    core.tapir_responses["GetCurrentWindowType"] = {"currentWindowType": window}
+    passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ()),
+               "IsVisibleByLayer": {guid for guid, _ in cells}}
 
     def filter_elements(params):
         [name] = params["filters"]
@@ -275,6 +284,28 @@ def test_plan_calls_a_reserved_but_locked_teamwork_element_a_hotlink():
                                  mine={"d-1", "d-2"}, teamwork=True)
     _, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert "hotlinked module" in skipped[0]["reason"]
+
+
+def test_plan_from_a_layout_window_names_the_window_first():
+    # Live 28.09.2026: Archicad changes only elements in the active window's
+    # database, so from a Layout every floor-plan element reads as not
+    # editable, and "not reserved" alone sent the caller to reserve elements
+    # that were already reserved.
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable=set(), mine=set(),
+                                 teamwork=True, window="Layout")
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert len(skipped) == 2
+    reason = skipped[0]["reason"]
+    assert reason.startswith("not editable from the active Layout window")
+    assert "switch to the floor plan" in reason
+
+
+def test_plan_names_a_guid_that_does_not_exist():
+    changes = [*_TWO_CHANGES, {"guid": "gone", "property": "D/P", "value": "003"}]
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"})
+    _, skipped = plan_property_writes(conn, changes)
+    assert [s["guid"] for s in skipped] == ["gone"]
+    assert "does not exist" in skipped[0]["reason"]
 
 
 def test_plan_without_tapir_leaves_editability_to_archicad():

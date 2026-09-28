@@ -18,8 +18,25 @@ def core(monkeypatch):
     tapir = dict(api_replays.TAPIR)
     tapir["GetSelectedElements"] = selection  # the source once Tapir is present
     tapir["CreateSlabs"] = {"elements": [{"elementId": {"guid": "new-slab-1"}}]}
-    tapir["MoveElements"] = {}
-    tapir["DeleteElements"] = {}
+    tapir["MoveElements"] = lambda p: {"executionResults": [
+        {"success": True} for _ in p["elementsWithMoveVectors"]]}
+    # delete_elements reads its elements back, so deleting has to stick.
+    deleted = set()
+
+    def delete(p):
+        deleted.update(e["elementId"]["guid"] for e in p["elements"])
+        return {"success": True}
+
+    def details(p):
+        return {"detailsOfElements": [
+            {"error": {"code": -2130313112, "message": "not found"}}
+            if e["elementId"]["guid"] in deleted
+            else api_replays.get_details_of_elements({"elements": [e]})
+            ["detailsOfElements"][0]
+            for e in p["elements"]]}
+
+    tapir["DeleteElements"] = delete
+    tapir["GetDetailsOfElements"] = details
     tapir["ChangeSelectionOfElements"] = {}
     core = FakeCore(official=official, tapir=tapir)
     monkeypatch.setattr(server_mod, "get_connection",
@@ -91,7 +108,7 @@ async def test_move_with_confirm(core):
     payload = await call("move_elements",
                          {"guids": ["w-1"], "vector": {"x": 1.0, "y": 0.0, "z": 0.0},
                           "confirm": True})
-    assert payload == {"moved": 1}
+    assert payload == {"requested": 1, "moved": 1}
     command, params = [c for c in core.calls if c[0] == "MoveElements"][0]
     assert params["elementsWithMoveVectors"][0]["moveVector"] == {"x": 1.0, "y": 0.0, "z": 0.0}
 
@@ -103,7 +120,19 @@ async def test_delete_refuses_without_confirm(core):
 
 async def test_delete_with_confirm(core):
     payload = await call("delete_elements", {"guids": ["w-1"], "confirm": True})
-    assert payload == {"deleted": 1}
+    assert payload == {"requested": 1, "deleted": 1}
+
+
+async def test_delete_from_a_layout_reports_nothing_deleted(core):
+    # End to end through the MCP layer, the live 28.09.2026 case: Archicad
+    # answers success, but from a Layout the floor-plan element is not editable.
+    core.tapir_responses["FilterElements"] = lambda p: {"elements": []}
+    core.tapir_responses["GetCurrentWindowType"] = {"currentWindowType": "Layout"}
+    payload = await call("delete_elements", {"guids": ["w-1"], "confirm": True})
+    assert payload["deleted"] == 0
+    assert payload["active_window"] == "Layout"
+    assert payload["not_deleted"][0]["guids"] == ["w-1"]
+    assert not any(c == "DeleteElements" for c, _ in core.calls)
 
 
 async def test_selection_get_reads_through_tapir(core):
