@@ -14,26 +14,70 @@ import json
 
 import pytest
 from fastmcp import Client
+from multiconn_archicad.errors import TapirCommandError
 
 import archicad_mcp.server as server_mod
+from archicad_mcp import extract
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.server import build_server
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
 
-# The fixture plan: three model elements plus one 2D marker that only Tapir sees.
+# The fixture plan: three model elements, one 2D marker that only Tapir sees,
+# and a native MEP duct route.
 TYPES = {"w-1": "Wall", "w-2": "Wall", "z-1": "Zone", "ie-1": "InteriorElevation"}
 MODEL_ONLY = ["w-1", "w-2", "z-1"]
-WHOLE_PLAN = MODEL_ONLY + ["ie-1"]
 
 # A native MEP duct route. Live on AC 29/5101 with Tapir 1.5.10 (2026-09-28):
 # official API.GetSelectedElements left it out and API.GetTypesOfElements
-# answered 7203 "Element not supported"; Tapir GetSelectedElements returned it.
+# answered 7203 "Element not supported"; Tapir GetSelectedElements returned it,
+# and Tapir GetDetailsOfElements typed it "Unknown".
 MEP_ROUTE = "route-1"
+WHOLE_PLAN = MODEL_ONLY + ["ie-1", MEP_ROUTE]
 
 
 def _elements(guids):
     return {"elements": [{"elementId": {"guid": g}} for g in guids]}
+
+
+def official_types(p):
+    """Live shape (AC 29/5101, 2026-09-28): one item per requested element, in
+    request order. Only model elements are typed; everything else on the plan
+    answers 7203 (35902 of 63127 elements on a live project, 2D and MEP alike),
+    and a GUID that is not on the plan answers 7204."""
+    items = []
+    for el in p["elements"]:
+        g = el["elementId"]["guid"]
+        if g in MODEL_ONLY:
+            items.append({"typeOfElement": {"elementId": el["elementId"],
+                                            "elementType": TYPES[g]}})
+        elif g in WHOLE_PLAN:
+            items.append({"error": {"code": 7203, "message": "Element not supported"}})
+        else:
+            items.append({"error": {"code": 7204, "message": "Element not found"}})
+    return {"typesOfElements": items}
+
+
+def tapir_details(p):
+    """Live shape of GetDetailsOfElements with fields=["type"]: Tapir types the
+    2D elements, calls a native MEP element "Unknown", and answers a per-item
+    error for a GUID that is not on the plan."""
+    assert p.get("fields") == ["type"]
+    items = []
+    for el in p["elements"]:
+        g = el["elementId"]["guid"]
+        if g in WHOLE_PLAN:
+            items.append({"type": TYPES.get(g, "Unknown")})
+        else:
+            items.append({"error": {"code": -2130313115,
+                                    "message": "Failed to get the details of element"}})
+    return {"detailsOfElements": items}
+
+
+def elements_by_type(p):
+    if p["elementType"] == "Unknown":  # live: Tapir refuses to filter by it
+        raise TapirCommandError(message="Invalid elementType 'Unknown'.", code=-2130313112)
+    return _elements([g for g, t in TYPES.items() if t == p["elementType"]])
 
 
 def make_core(tapir_on=True, selected=()):
@@ -41,19 +85,14 @@ def make_core(tapir_on=True, selected=()):
     official["API.GetAllElements"] = _elements(MODEL_ONLY)
     official["API.GetSelectedElements"] = _elements(
         [g for g in selected if g in MODEL_ONLY])
-    official["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
-        {"typeOfElement": {"elementId": el["elementId"],
-                           "elementType": TYPES[el["elementId"]["guid"]]}}
-        if el["elementId"]["guid"] in TYPES
-        else {"error": {"code": 7203, "message": "Element not supported"}}
-        for el in p["elements"]]}
+    official["API.GetTypesOfElements"] = official_types
     if not tapir_on:
         official["API.IsAddOnCommandAvailable"] = {"available": False}
     tapir = dict(api_replays.TAPIR)
     tapir["GetAllElements"] = _elements(WHOLE_PLAN)
     tapir["GetSelectedElements"] = _elements(selected)
-    tapir["GetElementsByType"] = lambda p: _elements(
-        [g for g, t in TYPES.items() if t == p["elementType"]])
+    tapir["GetElementsByType"] = elements_by_type
+    tapir["GetDetailsOfElements"] = tapir_details
     return FakeCore(official=official, tapir=tapir if tapir_on else {})
 
 
@@ -94,11 +133,33 @@ async def test_query_by_type_does_not_sweep_types_of_the_whole_plan(core):
 async def test_query_unfiltered_covers_the_whole_plan(core):
     payload = await call("find_elements", {"groups": [{"element_types": ["Zone"],
                                                         "element_types_operator": "is_not"}]})
-    assert payload["count"] == 3
-    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
     assert payload["count"] == 4
-    assert payload["by_type"]["InteriorElevation"] == 1
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
+    assert payload["count"] == 5
     assert payload["coverage"] == "whole-plan"
+
+
+async def test_query_types_what_the_official_api_cannot(core):
+    """Live, the official type read rejects the 2D marker and the MEP route
+    (7203); without Tapir's answer both landed in a by_type bucket keyed ''."""
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
+    assert payload["by_type"] == {"Wall": 2, "Zone": 1, "InteriorElevation": 1,
+                                  "Unknown": 1}
+
+
+async def test_query_selection_types_a_selected_mep_route(monkeypatch):
+    _install(monkeypatch, make_core(selected=(MEP_ROUTE,)))
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}],
+                                           "selection_only": True})
+    assert payload["guids"] == [MEP_ROUTE]
+    assert payload["by_type"] == {"Unknown": 1}
+
+
+async def test_query_by_unknown_type_filters_in_the_server(core):
+    """'Unknown' is in the schema's type list, but Tapir GetElementsByType
+    refuses it, so it is matched here against the types read back."""
+    payload = await call("find_elements", {"groups": [{"element_types": ["Unknown"]}]})
+    assert payload["guids"] == [MEP_ROUTE]
 
 
 async def test_query_selection_sees_a_selected_marker(monkeypatch):
@@ -199,8 +260,9 @@ async def test_set_selection_replaces_a_selected_mep_route(monkeypatch):
 
 async def test_model_summary_counts_the_whole_plan(core):
     payload = await call("get_model_summary")
-    assert payload["element_count"] == 4
-    assert payload["by_type"]["InteriorElevation"] == 1
+    assert payload["element_count"] == 5
+    assert payload["by_type"] == {"Wall": 2, "Zone": 1, "InteriorElevation": 1,
+                                  "Unknown": 1}
     assert payload["coverage"] == "whole-plan"
 
 
@@ -211,3 +273,49 @@ async def test_model_summary_flags_partial_coverage_without_tapir(monkeypatch):
     assert payload["element_count"] == 3
     assert payload["coverage"] == "model-elements-only"
     assert "Tapir" in payload["coverage_note"]
+
+
+# ---------- element types: what the official API cannot name ----------
+
+def _conn(core):
+    return ArchicadConnection(19723, core=core)
+
+
+def test_types_come_from_tapir_where_the_official_api_refuses():
+    core = make_core()
+    types = extract._fetch_types(_conn(core), ["w-1", "ie-1", MEP_ROUTE, "gone-1"])
+    assert types == {"w-1": "Wall", "ie-1": "InteriorElevation", MEP_ROUTE: "Unknown"}
+    asked = [el["elementId"]["guid"] for c, p in core.calls
+             if c == "GetDetailsOfElements" for el in p["elements"]]
+    assert asked == ["ie-1", MEP_ROUTE]  # only what the official read refused
+
+
+def test_types_without_tapir_still_keep_elements_that_exist():
+    """7203 means 'exists, no official type'; only 7204 means 'not found'."""
+    types = extract._fetch_types(_conn(make_core(tapir_on=False)),
+                                 ["w-1", "ie-1", MEP_ROUTE, "gone-1"])
+    assert types == {"w-1": "Wall", "ie-1": "Unknown", MEP_ROUTE: "Unknown"}
+
+
+def test_types_when_tapir_cannot_answer_the_type_read():
+    """If Tapir refuses the type read (a Tapir older than 1.5.7 has no
+    `fields`), the elements still exist, so they stay in, labelled Unknown."""
+    core = make_core()
+    def refuse(p):
+        raise TapirCommandError(message="Invalid parameters", code=-2130313112)
+    core.tapir_responses["GetDetailsOfElements"] = refuse
+    types = extract._fetch_types(_conn(core), ["w-1", "ie-1", MEP_ROUTE])
+    assert types == {"w-1": "Wall", "ie-1": "Unknown", MEP_ROUTE: "Unknown"}
+
+
+def test_reserve_does_not_call_an_mep_route_not_found():
+    """The write-path consequence: reserve_elements derived not_found from the
+    official type read, so a route (or any 2D element) was never attempted."""
+    from archicad_mcp.core.teamwork import reserve_elements
+    core = make_core()
+    core.tapir_responses["GetProjectInfo"] = {
+        **api_replays.TAPIR["GetProjectInfo"], "isTeamwork": True}
+    core.tapir_responses["FilterElements"] = {"elements": []}  # nothing reserved yet
+    result = reserve_elements(_conn(core), ["w-1", "ie-1", MEP_ROUTE, "gone-1"])
+    assert result["not_found"] == ["gone-1"]
+    assert result["would_attempt"] == ["w-1", "ie-1", MEP_ROUTE]

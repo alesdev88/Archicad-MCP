@@ -68,7 +68,9 @@ class GroupSpec(BaseModel):
 
     element_types: list[ElementTypeName] | None = Field(default=None, description=(
         "Archicad element type names to restrict this group to. Omit for every "
-        "type; 'all' says so explicitly."))
+        "type; 'all' says so explicitly. 'Unknown' is an element that exists "
+        "but has no type in either API, such as a native MEP route, segment or "
+        "node; it is matched over the whole plan, so it is slower."))
     element_types_operator: Literal["is", "is_not"] = Field(default="is", description=(
         "'is' keeps the listed types, 'is_not' keeps every other type."))
     logical_operator: Literal["and", "or"] = Field(default="and", description=(

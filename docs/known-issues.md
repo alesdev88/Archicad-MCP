@@ -93,13 +93,44 @@ the same `coverage` field for it, with a `coverage_note` on the fallback. Before
 the fix, `clear_selection` left such an element selected and `set_selection`
 appended to it instead of replacing it.
 
-**Still open:** element types are read with the official
-`API.GetTypesOfElements`, so an MEP element that reaches a tool through Tapir has
-no type. `get_element_data` and `find_elements` report its type as `""`, and
-`reserve_elements` / `release_elements` derive `not_found` from the same read,
-so they would list it there and never attempt it (read from the code, not yet
-reproduced live). Tapir's `ElementType` enum has no MEP types either, so
-`find_elements` cannot select them by type.
+**Element types had the same gap, far wider than MEP.** Types were read with
+the official `API.GetTypesOfElements` alone. It answers one item per requested
+element, in request order, and names model elements only. Measured live on AC
+29/5101 with Tapir 1.5.10 (28.09.2026), on the whole plan of a live project:
+
+| Answer | Elements |
+|---|---|
+| typed | 27225 |
+| 7203 "Element not supported" | 35902 |
+
+The 7203 elements exist: every label, line, polyline, dimension and marker,
+curtain wall panels and frames, stair and railing parts, beam and column
+segments, and native MEP elements (a duct route and all 7 of its segments and
+nodes). A GUID that is not in the project answers 7204 "Element not found"
+instead. The extractor treated both errors alike, so:
+
+- `get_model_summary` and `find_elements` put those 35902 elements in a `by_type`
+  bucket keyed `""`, and `get_element_data` reported their type as `""`.
+- `reserve_elements` / `release_elements` derive `not_found` from this read, so
+  they called every one of them not found and never attempted it.
+
+Now 7204 alone means not found. The 7203 elements are typed by Tapir
+`GetDetailsOfElements` with `fields: ["type"]` (Tapir 1.5.7+), asked only about
+those elements, which added 3.2 s on the 63k-element plan (typing the whole plan
+through Tapir took 8.3 s). Tapir named all but 475 of them. The rest, native MEP
+elements among them, are labelled `"Unknown"`, the same word Tapir uses; so is
+every 7203 element when Tapir is missing or refuses the call. Tapir's
+`GetElementsByType` refuses `"Unknown"` ("Invalid elementType"), so
+`find_elements(element_types=["Unknown"])` matches it against the types read
+back over the whole plan (475 elements, 6.3 s live). Verified live after the fix:
+no `""` bucket in the summary, and the route counted as known while a made-up
+GUID stayed not found.
+
+A Tapir older than 1.5.7 has no `fields`; how it answers was not tried live. If
+it refuses the call, those elements stay `"Unknown"` (unit-tested only). Also checked live and rejected as type or existence sources:
+Tapir `GetMEPElements` returned an empty list with the route in the plan,
+`FilterElements` refuses a call without filters, and `GetMEPRoutingElements`
+answers for routes only.
 
 ## Classifications were read from the wrong key until 0.4.0
 
@@ -302,9 +333,11 @@ classification-scoped custom property:
 
 Not validated: `publish`.
 
-Not yet re-verified live: the Tapir-backed enumeration, the `coverage` field and
-the `projectLocation` scrub above. They are covered by unit tests against
-recorded API shapes, not by a live run.
+The Tapir-backed enumeration was re-verified live on AC 29/5101 with Tapir
+1.5.10 (28.09.2026): Tapir `GetAllElements` listed 63127 elements against 16469
+from the official command, and the whole plan was typed through the path above.
+Not yet re-verified live: the `projectLocation` scrub. It is covered by unit
+tests against recorded API shapes, not by a live run.
 
 ## Running the live canary
 
