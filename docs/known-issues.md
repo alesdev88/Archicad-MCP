@@ -80,9 +80,26 @@ Asking for a single type is now one Tapir request instead of enumerating the
 plan and reading back every element's type, so a typed query no longer costs
 16k+ property reads.
 
-**Still marker-blind:** `get_selection` reads the selection with the official
-`API.GetSelectedElements`, which returns `[]` when a marker (a CutPlane, say) is
-selected. `find_elements(selection_only=true)` does not have this problem.
+**The selection has the same gap.** The official `API.GetSelectedElements`
+leaves out every selected element whose type the official API does not support:
+markers (a CutPlane, say) and, verified live on AC 29/5101 with Tapir 1.5.10
+(28.09.2026), a native MEP duct route, for which `API.GetTypesOfElements`
+answers 7203 "Element not supported". `get_selection` returned `{"guids": []}`
+with the route selected. `get_selection`, `set_selection`, `clear_selection` and
+`find_elements(selection_only=true)` now read the selection through Tapir
+`GetSelectedElements` whenever the running add-on has that command, and fall
+back to the official one otherwise. `get_selection` and `find_elements` report
+the same `coverage` field for it, with a `coverage_note` on the fallback. Before
+the fix, `clear_selection` left such an element selected and `set_selection`
+appended to it instead of replacing it.
+
+**Still open:** element types are read with the official
+`API.GetTypesOfElements`, so an MEP element that reaches a tool through Tapir has
+no type. `get_element_data` and `find_elements` report its type as `""`, and
+`reserve_elements` / `release_elements` derive `not_found` from the same read,
+so they would list it there and never attempt it (read from the code, not yet
+reproduced live). Tapir's `ElementType` enum has no MEP types either, so
+`find_elements` cannot select them by type.
 
 ## Classifications were read from the wrong key until 0.4.0
 
