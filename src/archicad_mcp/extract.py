@@ -4,7 +4,7 @@ import os
 import re
 from typing import Iterable
 
-from multiconn_archicad.errors import APIErrorBase
+from multiconn_archicad.errors import APIErrorBase, TapirCommandError
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
@@ -46,6 +46,19 @@ MAX_PROPERTY_FETCH_ELEMENTS = _int_env("ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS", 500
 # GetAllElements reported), and a single request that wide is the same shape of
 # call that has crashed the API bridge on property reads.
 TYPE_FETCH_CHUNK = 2000
+
+# The type of an element that exists but that neither the official API nor
+# Tapir can name. Tapir's own word for it: GetDetailsOfElements types a native
+# MEP route "Unknown".
+UNTYPED = "Unknown"
+
+# Per-element error codes of the official API.GetTypesOfElements (live, AC
+# 29/5101, 2026-09-28). 7203 "Element not supported" means the element exists
+# and the official API has no type for it; 7204 "Element not found" means it
+# does not exist. Live, 7203 answered for 35902 of 63127 plan elements: every
+# label, line, polyline, dimension and marker, curtain wall, stair and railing
+# parts, beam and column segments, and native MEP elements.
+ELEMENT_NOT_SUPPORTED = 7203
 
 # What an enumeration actually covered. Only Tapir sees the whole plan; the
 # official API.GetAllElements returns model elements only, so every 2D /
@@ -155,11 +168,13 @@ def get_element_ids_of_type(conn: ArchicadConnection, element_type: str) -> list
     Tapir filters server-side, so this costs one request instead of enumerating
     every element and reading its type back (16k+ reads to answer "how many
     walls"). Without Tapir there is no such command, so the client-side filter
-    remains -- over model elements only.
+    remains -- over model elements only. Tapir also refuses to filter by
+    UNTYPED (live: "Invalid elementType 'Unknown'"), so that one is matched
+    against the types read back, over the whole plan.
     """
-    if conn.tapir_available():
+    if conn.tapir_available() and element_type != UNTYPED:
         return _guids_of(conn.tapir("GetElementsByType", {"elementType": element_type}))
-    guids = _guids_of(conn.official("API.GetAllElements"))
+    guids = get_all_element_ids(conn)
     types = _fetch_types(conn, guids) if guids else {}
     return [g for g in guids if types.get(g) == element_type]
 
@@ -178,16 +193,49 @@ def element_payload(guids: list[str]) -> list[dict]:
 
 
 def _fetch_types(conn, guids: list[str]) -> dict[str, str]:
-    # Live-verified shape: {"typesOfElements": [{"typeOfElement": {...}}]}
-    # Chunked: see TYPE_FETCH_CHUNK.
-    out = {}
+    """guid -> element type for every GUID that exists; a missing GUID is left out.
+
+    The official read answers one item per requested element, in request order:
+    {"typeOfElement": {...}} or {"error": {"code", "message"}}. It names model
+    elements only (see ELEMENT_NOT_SUPPORTED); the rest exist and are typed by
+    Tapir instead. Asking Tapir only for those costs 3.2 s on a 63k-element
+    plan, against 8.3 s for typing the whole plan through Tapir. Chunked: see
+    TYPE_FETCH_CHUNK.
+    """
+    out: dict[str, str] = {}
+    unsupported: list[str] = []
     for start in range(0, len(guids), TYPE_FETCH_CHUNK):
         chunk = guids[start:start + TYPE_FETCH_CHUNK]
         response = conn.official("API.GetTypesOfElements",
                                  {"elements": element_payload(chunk)})
-        for item in response.get("typesOfElements", []):
-            t = item.get("typeOfElement", {})
-            out[t.get("elementId", {}).get("guid", "")] = t.get("elementType", "")
+        for guid, item in zip(chunk, response.get("typesOfElements", [])):
+            if "typeOfElement" in item:
+                out[guid] = item["typeOfElement"].get("elementType") or UNTYPED
+            elif item.get("error", {}).get("code") == ELEMENT_NOT_SUPPORTED:
+                unsupported.append(guid)
+    out.update(_fetch_tapir_types(conn, unsupported))
+    return out
+
+
+def _fetch_tapir_types(conn, guids: list[str]) -> dict[str, str]:
+    """Tapir's type for elements the official API cannot type, UNTYPED where
+    Tapir has none (a native MEP element, or no usable Tapir)."""
+    out = {g: UNTYPED for g in guids}
+    if not guids or not conn.tapir_command_available("GetDetailsOfElements"):
+        return out
+    for start in range(0, len(guids), TYPE_FETCH_CHUNK):
+        chunk = guids[start:start + TYPE_FETCH_CHUNK]
+        try:
+            # `fields` (Tapir 1.5.7+) skips everything but the type; without it
+            # every element's 2D drawing is regenerated. If a Tapir older than
+            # that refuses the call, the elements keep UNTYPED.
+            response = conn.tapir("GetDetailsOfElements",
+                                  {"elements": element_payload(chunk), "fields": ["type"]})
+        except TapirCommandError:
+            continue
+        for guid, item in zip(chunk, response.get("detailsOfElements", [])):
+            if isinstance(item, dict) and item.get("type"):
+                out[guid] = item["type"]
     return out
 
 

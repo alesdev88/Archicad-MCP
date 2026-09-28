@@ -90,7 +90,7 @@ combine with **OR**. Inside a group:
 
 | Field | Default | Meaning |
 |---|---|---|
-| `element_types` | every type | Archicad type names: `Wall`, `Slab`, `Zone`, `CutPlane`, ... `"all"` explicitly means every type. |
+| `element_types` | every type | Archicad type names: `Wall`, `Slab`, `Zone`, `CutPlane`, ... `"all"` explicitly means every type. `"Unknown"` is an element neither API can type (native MEP routes, segments, nodes); it is matched over the whole plan, so it is slower. |
 | `element_types_operator` | `is` | `is_not` keeps elements whose type is none of the listed ones. |
 | `logical_operator` | `and` | How the group's comparisons combine. |
 | `comparisons` | `[]` | List of `{property, operator, value}`. |
