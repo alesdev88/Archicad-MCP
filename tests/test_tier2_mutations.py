@@ -12,9 +12,11 @@ from tests.fixtures import api_replays
 
 @pytest.fixture
 def core(monkeypatch):
+    selection = {"elements": [{"elementId": {"guid": "w-1"}}]}
     official = dict(api_replays.OFFICIAL)
-    official["API.GetSelectedElements"] = {"elements": [{"elementId": {"guid": "w-1"}}]}
+    official["API.GetSelectedElements"] = selection
     tapir = dict(api_replays.TAPIR)
+    tapir["GetSelectedElements"] = selection  # the source once Tapir is present
     tapir["CreateSlabs"] = {"elements": [{"elementId": {"guid": "new-slab-1"}}]}
     tapir["MoveElements"] = lambda p: {"executionResults": [
         {"success": True} for _ in p["elementsWithMoveVectors"]]}
@@ -133,9 +135,10 @@ async def test_delete_from_a_layout_reports_nothing_deleted(core):
     assert not any(c == "DeleteElements" for c, _ in core.calls)
 
 
-async def test_selection_get_uses_official_api(core):
+async def test_selection_get_reads_through_tapir(core):
     payload = await call("get_selection")
-    assert payload == {"guids": ["w-1"]}
+    assert payload == {"guids": ["w-1"], "coverage": "whole-plan"}
+    assert not any(c == "API.GetSelectedElements" for c, _ in core.calls)
 
 
 async def test_selection_set_replaces_current(core):

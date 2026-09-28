@@ -49,6 +49,7 @@ from archicad_mcp.extract import (
     get_element_ids_of_type,
     get_selected_element_ids,
     resolve_property_ids,
+    selection_coverage_of,
 )
 
 
@@ -199,7 +200,7 @@ def find_elements(conn: ArchicadConnection, groups: list[dict],
               "by_type": dict(Counter(types.get(g, "") for g in guids_out)),
               "candidates": len(candidates),
               "property_reads": read_count,
-              **coverage_of(conn)}
+              **(selection_coverage_of(conn) if selection_only else coverage_of(conn))}
     if skipped:
         result["skipped_not_available"] = skipped
     if notes:

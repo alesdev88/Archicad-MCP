@@ -68,6 +68,29 @@ def coverage_of(conn: ArchicadConnection) -> dict:
     return {"coverage": COVERAGE_PARTIAL, "coverage_note": COVERAGE_PARTIAL_NOTE}
 
 
+# The official API.GetSelectedElements drops every selected element whose type
+# the official JSON API does not support. Live on AC 29/5101 (2026-09-28): a
+# selected native MEP duct route read back as [] while Tapir returned it, and
+# API.GetTypesOfElements answered 7203 "Element not supported" for its GUID.
+SELECTION_PARTIAL_NOTE = (
+    "Read through the official API, which leaves out selected elements of types "
+    "it does not support: markers, labels, dimensions and other 2D elements, and "
+    "native MEP routes, segments and nodes. An empty list is not proof that "
+    "nothing is selected. Install or update the Tapir add-on to see every "
+    "selected element.")
+
+
+def _tapir_reads_selection(conn: ArchicadConnection) -> bool:
+    return conn.tapir_command_available("GetSelectedElements")
+
+
+def selection_coverage_of(conn: ArchicadConnection) -> dict:
+    """The coverage marker for a result built on get_selected_element_ids()."""
+    if _tapir_reads_selection(conn):
+        return {"coverage": COVERAGE_FULL}
+    return {"coverage": COVERAGE_PARTIAL, "coverage_note": SELECTION_PARTIAL_NOTE}
+
+
 class PropertyFetchTooWideError(ArchicadUnavailableError):
     """Raised before a property fetch that could crash Archicad's API bridge."""
 
@@ -143,8 +166,9 @@ def get_element_ids_of_type(conn: ArchicadConnection, element_type: str) -> list
 
 def get_selected_element_ids(conn: ArchicadConnection) -> list[str]:
     """The current selection. Official GetSelectedElements returns [] for a
-    selected marker (a CutPlane, say); Tapir's returns it."""
-    if conn.tapir_available():
+    selected marker (a CutPlane, say) or a native MEP route; Tapir's returns
+    both. Callers pair the result with selection_coverage_of()."""
+    if _tapir_reads_selection(conn):
         return _guids_of(conn.tapir("GetSelectedElements"))
     return _guids_of(conn.official("API.GetSelectedElements"))
 

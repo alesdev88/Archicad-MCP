@@ -431,7 +431,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _mutate.delete_elements(_conn(port), guids, confirm)
 
     @mcp.tool(description="Return the GUIDs of the elements currently selected in "
-                          "Archicad.",
+                          "Archicad, and 'coverage': 'whole-plan' when read "
+                          "through the Tapir add-on, 'model-elements-only' "
+                          "without it (then selected markers, 2D elements and "
+                          "native MEP routes are left out, and an empty list is "
+                          "not proof that nothing is selected).",
               **_tool_meta("Read current selection", read_only=True, destructive=False))
     @_guarded
     def get_selection(port: int | None = None) -> dict:
