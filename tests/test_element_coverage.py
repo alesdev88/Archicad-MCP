@@ -26,6 +26,11 @@ TYPES = {"w-1": "Wall", "w-2": "Wall", "z-1": "Zone", "ie-1": "InteriorElevation
 MODEL_ONLY = ["w-1", "w-2", "z-1"]
 WHOLE_PLAN = MODEL_ONLY + ["ie-1"]
 
+# A native MEP duct route. Live on AC 29/5101 with Tapir 1.5.10 (2026-09-28):
+# official API.GetSelectedElements left it out and API.GetTypesOfElements
+# answered 7203 "Element not supported"; Tapir GetSelectedElements returned it.
+MEP_ROUTE = "route-1"
+
 
 def _elements(guids):
     return {"elements": [{"elementId": {"guid": g}} for g in guids]}
@@ -39,6 +44,8 @@ def make_core(tapir_on=True, selected=()):
     official["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
         {"typeOfElement": {"elementId": el["elementId"],
                            "elementType": TYPES[el["elementId"]["guid"]]}}
+        if el["elementId"]["guid"] in TYPES
+        else {"error": {"code": 7203, "message": "Element not supported"}}
         for el in p["elements"]]}
     if not tapir_on:
         official["API.IsAddOnCommandAvailable"] = {"available": False}
@@ -101,6 +108,19 @@ async def test_query_selection_sees_a_selected_marker(monkeypatch):
     assert payload["guids"] == ["ie-1"]
 
 
+async def test_query_selection_coverage_follows_the_selection_source(monkeypatch):
+    """Tapir present but too old for GetSelectedElements: the selection came
+    from the official command, so 'whole-plan' would overstate it."""
+    core = make_core(selected=("w-1", MEP_ROUTE))
+    core.official_responses["API.IsAddOnCommandAvailable"] = lambda p: {
+        "available": p["addOnCommandId"]["commandName"] != "GetSelectedElements"}
+    _install(monkeypatch, core)
+    payload = await call("find_elements", {"groups": [{"element_types": ["all"]}],
+                                           "selection_only": True})
+    assert payload["guids"] == ["w-1"]
+    assert payload["coverage"] == "model-elements-only"
+
+
 async def test_query_without_tapir_says_coverage_is_partial(monkeypatch):
     _install(monkeypatch, make_core(tapir_on=False))
     payload = await call("find_elements", {"groups": [{"element_types": ["all"]}]})
@@ -114,6 +134,65 @@ async def test_query_by_type_without_tapir_still_filters(monkeypatch):
     payload = await call("find_elements", {"groups": [{"element_types": ["Wall"]}]})
     assert set(payload["guids"]) == {"w-1", "w-2"}
     assert payload["coverage"] == "model-elements-only"
+
+
+# ---------- get_selection / set_selection / clear_selection ----------
+
+async def test_get_selection_sees_a_selected_mep_route(monkeypatch):
+    """The regression: a selected duct route read back as {"guids": []}."""
+    core = _install(monkeypatch, make_core(selected=(MEP_ROUTE,)))
+    payload = await call("get_selection")
+    assert payload["guids"] == [MEP_ROUTE]
+    assert payload["coverage"] == "whole-plan"
+    assert not any(c == "API.GetSelectedElements" for c, _ in core.calls)
+
+
+async def test_get_selection_without_tapir_says_coverage_is_partial(monkeypatch):
+    """An empty or short selection must not read as the whole selection."""
+    _install(monkeypatch, make_core(tapir_on=False, selected=("w-1", MEP_ROUTE)))
+    payload = await call("get_selection")
+    assert payload["guids"] == ["w-1"]
+    assert payload["coverage"] == "model-elements-only"
+    assert "MEP" in payload["coverage_note"]
+    assert "Tapir" in payload["coverage_note"]
+
+
+async def test_get_selection_falls_back_when_tapir_lacks_the_command(monkeypatch):
+    core = make_core(selected=("w-1", MEP_ROUTE))
+    core.official_responses["API.IsAddOnCommandAvailable"] = lambda p: {
+        "available": p["addOnCommandId"]["commandName"] != "GetSelectedElements"}
+    _install(monkeypatch, core)
+    payload = await call("get_selection")
+    assert payload["guids"] == ["w-1"]
+    assert payload["coverage"] == "model-elements-only"
+    assert not any(c == "GetSelectedElements" for c, _ in core.calls)
+
+
+def _selection_change(core):
+    changes = [p for c, p in core.calls if c == "ChangeSelectionOfElements"]
+    assert len(changes) == 1
+    return changes[0]
+
+
+async def test_clear_selection_deselects_a_selected_mep_route(monkeypatch):
+    core = make_core(selected=("w-1", MEP_ROUTE))
+    core.tapir_responses["ChangeSelectionOfElements"] = {}
+    _install(monkeypatch, core)
+    payload = await call("clear_selection")
+    assert payload["cleared"] == 2
+    removed = _selection_change(core)["removeElementsFromSelection"]
+    assert {"elementId": {"guid": MEP_ROUTE}} in removed
+
+
+async def test_set_selection_replaces_a_selected_mep_route(monkeypatch):
+    """'Replace' must not quietly become 'append' for an unsupported type."""
+    core = make_core(selected=(MEP_ROUTE,))
+    core.tapir_responses["ChangeSelectionOfElements"] = {}
+    _install(monkeypatch, core)
+    await call("set_selection", {"guids": ["w-2"]})
+    change = _selection_change(core)
+    assert change["removeElementsFromSelection"] == [{"elementId": {"guid": MEP_ROUTE}}]
+    assert change["addElementsToSelection"] == [{"elementId": {"guid": "w-2"}}]
 
 
 # ---------- get_model_summary ----------
