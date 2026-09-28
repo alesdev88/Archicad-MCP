@@ -132,6 +132,44 @@ them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
 modules of a local copy of a large project. Edit them in the module's source
 file.
 
+## Archicad changes only the active window's database
+
+Archicad acts on elements in the database of the active window and passes over
+the rest without an error. Verified live on 28.09.2026 (AC 29/5101, Tapir
+1.5.10, a Teamwork project): with a Layout window active, Tapir `DeleteElements`
+on 12 reserved floor-plan labels answered success and deleted none of them, and
+`delete_elements` reported `{"deleted": 12}`. Tapir `FilterElements` with
+`IsEditable` had said 0 of 12 beforehand. With the floor plan active, the same
+call deleted all 12.
+
+Since then:
+
+- `delete_elements` and `move_elements` run the same `IsEditable` check as
+  `set_element_data` and send only the elements that pass. The rest come back
+  under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
+  (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
+  plan names the window first, because from a Layout even a reserved element
+  reads as not editable and "not reserved" alone is the wrong lead.
+- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`, which
+  per Tapir's source reads the current database, the one `DeleteElements`
+  acted on), never the requested count. `DeleteElements` answers one success
+  for the whole batch, so its answer alone proves nothing.
+- `moved` counts Tapir's per-element `executionResults`, which `MoveElements`
+  does report. Positions are not read back: there is no single position read
+  that covers every element type, and the pre-check removes the case that
+  failed silently.
+- `set_element_data` already counted per-element results and still does; its
+  values are not read back either, because that is the property read that has
+  crashed Archicad (see above). `apply_changeset` does read back.
+- `deploy_gdl_object` checks the deletion of its preview probe and says so in
+  `cleanup_failed` when the element is still there.
+
+A GUID that does not exist also fails `IsEditable`, so a refused element whose
+type cannot be read is reported as not found rather than as locked.
+
+The fixed flow is covered offline by a fake with a floor plan and a layout
+database; it has not yet been run live.
+
 ## Writing enum properties is not supported
 
 `singleEnum` and `multiEnum` properties need an `EnumValueId`, not a plain value.
