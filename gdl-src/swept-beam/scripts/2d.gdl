@@ -129,24 +129,62 @@ IF showAddGrips AND nNode > 1 THEN
 ENDIF
 
 ! end cut grips: turn the plan cut around the end node. Angle editing from the
-! square cut (to the left of the outward direction), counter-clockwise, like
-! the parameter; the parameter is edited directly, the Parameter Script never
-! sets it, so Archicad keeps the drag.
+! square cut, counter-clockwise, like the parameter; the parameter is edited
+! directly, the Parameter Script never sets it, so Archicad keeps the drag.
+! The grip sits on the corner where the cut meets the beam's edge on the left
+! looking out of the end: that edge is gD from the axis, and along a cut turned
+! by the angle the corner is gD / cos (angle) away.
 IF showCutGrips AND nNode > 1 THEN
-    gR = 0.3
-    IF profileMode = "Rectangle" THEN gR = MAX (0.3, rectW)
+    ! lateral extent of the section in TUBE's U (to the right looking along
+    ! the path), after the default mirror the 3D script applies
+    uLo = -rectW / 2 - profileOffsetU
+    uHi = rectW / 2 - profileOffsetU
+    IF profileMode = "Profile attribute" THEN
+        rqB = REQUEST ("Profile_default_boundingbox", beamProfile, gbXmin, gbYmin, gbXmax, gbYmax)
+        IF rqB > 0 THEN
+            uLo = gbXmin - profileOffsetU
+            uHi = gbXmax - profileOffsetU
+        ENDIF
+    ENDIF
+    IF NOT (flipProfile) THEN
+        uTmp = uLo
+        uLo = -uHi
+        uHi = -uTmp
+    ENDIF
+    ! start: left looking out of the start is right looking along the path (+U)
+    gD = uHi
+    IF ABS (gD) < 0.01 THEN gD = uLo
+    gC = COS (cutStartPlan)
+    IF ABS (gC) < 0.17 THEN
+        IF gC >= 0 THEN
+            gC = 0.17
+        ELSE
+            gC = -0.17
+        ENDIF
+    ENDIF
     gox = -startTX
     goy = -startTY
     gqx = -goy * COS (cutStartPlan) - gox * SIN (cutStartPlan)
     gqy = -goy * SIN (cutStartPlan) + gox * COS (cutStartPlan)
     HOTSPOT2 nodeX[1], nodeY[1], 390100, cutStartPlan, 6
-    HOTSPOT2 nodeX[1] - goy * gR, nodeY[1] + gox * gR, 390101, cutStartPlan, 4 + 128
-    HOTSPOT2 nodeX[1] + gqx * gR, nodeY[1] + gqy * gR, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    HOTSPOT2 nodeX[1] - goy * gD, nodeY[1] + gox * gD, 390101, cutStartPlan, 4 + 128
+    HOTSPOT2 nodeX[1] + gqx * gD / gC, nodeY[1] + gqy * gD / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    ! end: left looking out of the end is left looking along the path (-U)
+    gD = -uLo
+    IF ABS (gD) < 0.01 THEN gD = -uHi
+    gC = COS (cutEndPlan)
+    IF ABS (gC) < 0.17 THEN
+        IF gC >= 0 THEN
+            gC = 0.17
+        ELSE
+            gC = -0.17
+        ENDIF
+    ENDIF
     gox = endTX
     goy = endTY
     gqx = -goy * COS (cutEndPlan) - gox * SIN (cutEndPlan)
     gqy = -goy * SIN (cutEndPlan) + gox * COS (cutEndPlan)
     HOTSPOT2 nodeX[nNode], nodeY[nNode], 390110, cutEndPlan, 6
-    HOTSPOT2 nodeX[nNode] - goy * gR, nodeY[nNode] + gox * gR, 390111, cutEndPlan, 4 + 128
-    HOTSPOT2 nodeX[nNode] + gqx * gR, nodeY[nNode] + gqy * gR, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    HOTSPOT2 nodeX[nNode] - goy * gD, nodeY[nNode] + gox * gD, 390111, cutEndPlan, 4 + 128
+    HOTSPOT2 nodeX[nNode] + gqx * gD / gC, nodeY[nNode] + gqy * gD / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
 ENDIF
