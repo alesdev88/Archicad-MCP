@@ -11,6 +11,8 @@ DIM pathX[], pathY[], pathZ[], pathRoll[], tList[]
 ! per segment: plan unit tangent and rise at its start (s) and end (e);
 ! per node: its index in the sampled path
 DIM sTx[], sTy[], sTz[], eTx[], eTy[], eTz[], nodePath[]
+! per segment, for drawing the axis as true lines and arcs in plan
+DIM segIsArc[], segAng[], segCx[], segCy[], segR[], segA0[]
 ! Extra samples this far from each segment end keep the segment's own plumb
 ! frame between them. TUBE places a joint's averaged frame at a node, and
 ! without them that twist would warp a whole straight segment (gate A).
@@ -90,6 +92,16 @@ FOR iSeg = 1 TO nNode - 1
     eTx[iSeg] = t2x
     eTy[iSeg] = t2y
     eTz[iSeg] = riseSeg
+    segIsArc[iSeg] = isArc
+    segAng[iSeg] = angSeg
+    IF isArc THEN
+        segCx[iSeg] = cenX
+        segCy[iSeg] = cenY
+        segR[iSeg] = radSeg
+        a0Seg = ACS (MAX (-1, MIN (1, vX / radSeg)))
+        IF vY < 0 THEN a0Seg = 360 - a0Seg
+        segA0[iSeg] = a0Seg
+    ENDIF
 
     stubT = 0
     IF segLen > 4 * STUB_LEN THEN stubT = STUB_LEN / segLen

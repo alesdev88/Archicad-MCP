@@ -13,12 +13,22 @@ ELSE
     PROJECT2{3} 3, 270, planMethod, 1 + 2 + 4 + 8
 ENDIF
 
-IF showAxis AND nPath > 1 THEN
+! the axis node to node as true lines and arcs, so a dashed line type runs on
+! (drawn through every sample, each short piece restarted the pattern)
+IF showAxis AND nNode > 1 THEN
     PEN axisPen
     LINE_TYPE axisLineType
-    FOR iP = 1 TO nPath - 1
-        LINE2 pathX[iP], pathY[iP], pathX[iP + 1], pathY[iP + 1]
-    NEXT iP
+    FOR iS = 1 TO nNode - 1
+        IF segIsArc[iS] THEN
+            IF segAng[iS] > 0 THEN
+                ARC2 segCx[iS], segCy[iS], segR[iS], segA0[iS], segA0[iS] + segAng[iS]
+            ELSE
+                ARC2 segCx[iS], segCy[iS], segR[iS], segA0[iS] + segAng[iS], segA0[iS]
+            ENDIF
+        ELSE
+            LINE2 nodeX[iS], nodeY[iS], nodeX[iS + 1], nodeY[iS + 1]
+        ENDIF
+    NEXT iS
 ENDIF
 
 IF showNodeHeights THEN
