@@ -410,3 +410,23 @@ In `MCP-Test` (port checked by `project_name` before any write), on Archicad 29 
 - Connections between two Swept Beams (intersections, mitres between parts).
 - Quantities for schedules (length, volume) from a Properties Script. Cheap to add
   later.
+
+## Parked ideas (after Gate D)
+
+Ideas that came up while testing. They wait until version 1 works end to end
+and the user has used it; then he picks which to build.
+
+- Draw a Swept Beam point by point, like a Railing: a Tapir fork command wraps
+  Archicad's polyline input (`ACAPI_UserInput_GetPoly`,
+  `APIPolyGetMethod_Polyline`, standard pet palette for arcs; the DevKit's
+  `Do_CreateRailing` does the same) and returns points and arcs; a
+  `draw_swept_beam` MCP tool feeds them to `create_swept_beam`. Needs fork
+  builds for Archicad 27 and 29. (29.09.2026)
+- A free-drag end grip, so continuing the beam is one drag per point instead
+  of extend then move. Archicad dropped the earlier free-drag insert grip, so
+  this needs a spike first. (29.09.2026)
+- Plan cut fill where the beam crosses the plan cut plane (`PROJECT2{4}` with
+  `GLOB_CUTPLANES_INFO`), deferred in Task 5.
+- A Forward Migration script before any release that changes a helper
+  parameter's default: placed instances and tool defaults keep old values, and
+  the value and marker grips read a mismatch as a drag (Gate C).

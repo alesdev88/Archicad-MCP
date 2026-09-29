@@ -93,7 +93,7 @@ not codes whose x/y hold a vector, length or angle.
 5. Profile index 9999: no crash; Archicad resolved it to an existing profile
    (steel section drawn), so the rectangle fallback only covers a failing request.
 
-## Gate C (in progress)
+## Gate C
 
 8. Array repair: `nodeY` cut to one item through the API came back padded to
    the length of `nodeX`.
