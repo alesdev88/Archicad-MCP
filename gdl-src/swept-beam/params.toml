@@ -23,6 +23,13 @@ description = "Height (unused)"
 hidden = true
 
 [[param]]
+name = "AC_show2DHotspotsIn3D"
+type = "boolean"
+default = false
+description = "Show 2D hotspots in 3D"
+hidden = true
+
+[[param]]
 name = "nodeX"
 type = "length"
 default = [0.0, 3.0]

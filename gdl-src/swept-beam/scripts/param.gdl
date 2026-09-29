@@ -18,6 +18,9 @@ VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
 VALUES "gs_ui_current_page" 1, 2, 3
 VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes"
+! the plan grips drawn at the base level in 3D would lie on the ground under a
+! rising beam; the 3D script has its own node grips
+PARAMETERS AC_show2DHotspotsIn3D = 0
 HIDEPARAMETER "B", "ZZYZX", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
