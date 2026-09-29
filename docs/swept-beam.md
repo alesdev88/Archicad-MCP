@@ -34,6 +34,16 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
   single nodes in 3D.
 - Exact values and roll: the node arrays in the parameter list.
 
+## End cuts
+
+Each end can be cut at an angle, on the Ends page of the dialog:
+
+- In plan: turns the cut counter-clockwise from square, up to 80 degrees.
+  The grip beside each end turns it too.
+- Tilt: 0 keeps the face square to the beam; positive leans the top of the
+  face out past the end. A tilt equal to the beam's slope at that end gives a
+  vertical face; the page shows that value for both ends.
+
 ## Profile
 
 On the Profile page choose "Profile attribute" and pick any profile. Its
@@ -45,6 +55,9 @@ missing in a project, the beam falls back to the rectangle.
 `create_swept_beam` turns a Morph line, Polyline, Line or Arc, or 3D points
 from a DWG or Rhino, into a Swept Beam. Always run it as a dry run first: it
 reports how many nodes it made and how far they are from the source.
+`cut_start_plan`, `cut_start_tilt`, `cut_end_plan` and `cut_end_tilt` set the
+end cuts in degrees; rewriting a beam with `update_guid` keeps its profile and
+end cuts unless the call sets them.
 
 Points are read as a line running straight from one point to the next. A
 curve becomes an arc only where its points are close enough together that the

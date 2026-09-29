@@ -194,3 +194,28 @@ so the Claude extension did not need a restart.
 4. MCP-Test_27 (Archicad 27), the fixture as `points`, 30 m north: 59 nodes,
    0.0 mm, placed as `0BC771D9` on story 0; stored nodes within 0.001 mm;
    render clean.
+
+## Gate E: end cuts
+
+Run on 29.09.2026 in Archicad 27 (`MCP-Test_27`) through this branch's MCP
+server over stdio (the registered tool, `points` sent as JSON text).
+
+1. A 4 m beam rising 1.5 m, start cut +30 degrees in plan, end -30, tilts
+   -20.556 and +20.556 (the slope, for vertical faces): the cuts read back as
+   given. The plan preview shows the start cut about 31 degrees off square,
+   counter-clockwise; the side and 3D previews show a vertical face at the high
+   end.
+2. The first attempt came out 48 m long, not 4 m. Cause: Tapir's
+   SetGDLParametersOfElements (1.5.0 to 1.5.9) sets the object's xRatio to A in
+   metres after every write, but xRatio is the placed size over the library
+   part's A; with A at 3 m each write tripled the size, even a write that did
+   not name A, and the two-node Parameter Script rule moved node 2 to the new A.
+   Beams with more nodes or arcs ignore A, so gate D never showed it. Fix: A, B
+   and aDone default to 1 m, so the ratio equals the size (the default beam is
+   still 3 m through nodeX). Repeated writes on a fresh beam then keep A, the
+   ratio and node 2 exactly. Changing the default re-bases placed instances:
+   two-node straight test beams in MCP-Test_27 shrank to a third at the reload
+   and were restored by a write; MCP-Test had none.
+3. An update through `update_guid` without cuts kept all four cuts.
+4. Existing beams read 0 for all four cuts after the reload and keep TUBE's
+   square ends.

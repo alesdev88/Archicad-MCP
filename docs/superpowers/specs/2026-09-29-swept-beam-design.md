@@ -19,10 +19,13 @@ or 3D points from a DWG or Rhino) into a Swept Beam.
 
 Success means:
 
-- A colleague without the MCP can place a Swept Beam in two clicks, add and curve
+- A colleague without the MCP can place a Swept Beam in three clicks (Rotated
+  Diagonal, gate C), add and curve
   nodes, set a slope, drag nodes in 3D, and pick any Profile Manager profile in the
   settings dialog.
-- The 40.7 m morph line in `MCP-Test` becomes one continuous, smooth beam with a
+- The 40.7 m morph line in `MCP-Test` becomes one continuous beam (amended
+  29.09.2026: it follows the drawn edges, so a line drawn as straight edges stays
+  faceted; a Polyline with arcs converts exactly) with a
   square section, within 2 mm of the line.
 - The same `.gsm` works in Archicad 27, 28, 29 and 30.
 
@@ -388,6 +391,19 @@ In `MCP-Test` (port checked by `project_name` before any write), on Archicad 29 
    - The plan shows the outline and the axis.
    - The same `.gsm` opens, places, edits and cuts in Archicad 27.
 
+## End cuts (added 29.09.2026)
+
+Each end has a plan angle and a tilt (`cutStartPlan`, `cutStartTilt`,
+`cutEndPlan`, `cutEndTilt`, degrees, default 0). The plan angle turns the cut
+counter-clockwise from square in plan (up to 80 degrees); the tilt leans the top
+of the face out past the end, 0 being square to the beam, so a tilt equal to the
+slope there gives a vertical face. Both 0 keeps TUBE's square end, so existing
+beams do not change. A cut end is carried past its node and trimmed on the cut
+plane with the kinks' finite box. A plan angle grip beside each end turns the
+cut; the dialog's Ends page holds all four and shows the vertical-face tilts.
+`create_swept_beam` takes them as `cut_start_plan`, `cut_start_tilt`,
+`cut_end_plan`, `cut_end_tilt`, keeping a beam's cuts on update unless given.
+
 ## Rollout
 
 1. Spike, findings note.
@@ -427,6 +443,11 @@ and the user has used it; then he picks which to build.
   this needs a spike first. (29.09.2026)
 - Plan cut fill where the beam crosses the plan cut plane (`PROJECT2{4}` with
   `GLOB_CUTPLANES_INFO`), deferred in Task 5.
+- A smooth mode for curves drawn as straight edges: tangent arcs through the
+  vertices, reporting how far they stray from the edges (final review, the
+  MCP-Test morph line converts to 59 straight pieces). (29.09.2026)
+- A Tapir fix for SetGDLParametersOfElements writing A and B in metres into the
+  placed size ratios; the Swept Beam avoids it with 1 m defaults (gate E).
 - A Forward Migration script before any release that changes a helper
   parameter's default: placed instances and tool defaults keep old values, and
   the value and marker grips read a mismatch as a drag (Gate C).
