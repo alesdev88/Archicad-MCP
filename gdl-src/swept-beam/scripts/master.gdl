@@ -1,14 +1,13 @@
 ! Swept Beam -- Master Script
-! Samples the node path into pathX/pathY/pathZ for the 2D and 3D
-! scripts. Height changes linearly with plan length along each segment, so
-! an arc with a rise is a helix (spec 1.4). Roll is one angle for the whole
-! beam, applied to the section in the 3D script (TUBE cannot twist a section).
+! Samples the node path into pathX/pathY/pathZ/pathRoll for the 2D and 3D
+! scripts. Height and roll change linearly with plan length along each
+! segment, so an arc with a rise is a helix (spec 1.4).
 
 EPS = 0.0001
-nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (segArc))
+nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (nodeRoll), VARDIM1 (segArc))
 tolSafe = MAX (0.0001, pathTolerance)
 
-DIM pathX[], pathY[], pathZ[]
+DIM pathX[], pathY[], pathZ[], pathRoll[]
 nPath = 0
 startTX = 1
 startTY = 0
@@ -21,9 +20,11 @@ FOR iSeg = 1 TO nNode - 1
     x1 = nodeX[iSeg]
     y1 = nodeY[iSeg]
     z1 = nodeZ[iSeg]
+    r1 = nodeRoll[iSeg]
     x2 = nodeX[iSeg + 1]
     y2 = nodeY[iSeg + 1]
     z2 = nodeZ[iSeg + 1]
+    r2 = nodeRoll[iSeg + 1]
     dxs = x2 - x1
     dys = y2 - y1
     chord = SQR (dxs * dxs + dys * dys)
@@ -46,6 +47,7 @@ FOR iSeg = 1 TO nNode - 1
         vY = y1 - cenY
         segLen = radSeg * ABS (angSeg) * PI / 180
     ENDIF
+    nStep = MAX (nStep, CEIL (ABS (r2 - r1) / 5))
     nStep = MIN (nStep, 720)
 
     ! unit plan tangents at the segment ends, and the rise per plan metre
@@ -87,6 +89,7 @@ FOR iSeg = 1 TO nNode - 1
             py = y1 + dys * tt
         ENDIF
         pz = z1 + (z2 - z1) * tt
+        pr = r1 + (r2 - r1) * tt
         addIt = 1
         IF nPath > 0 THEN
             dd = SQR ((px - pathX[nPath])^2 + (py - pathY[nPath])^2 + (pz - pathZ[nPath])^2)
@@ -97,6 +100,7 @@ FOR iSeg = 1 TO nNode - 1
             pathX[nPath] = px
             pathY[nPath] = py
             pathZ[nPath] = pz
+            pathRoll[nPath] = pr
         ENDIF
     NEXT kStep
 NEXT iSeg

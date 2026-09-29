@@ -13,11 +13,17 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
    Script runs during an API write but not after the last parameter: the helper
    arrays were parked with segment 2 still straight. Decision: the MCP tool
    writes the helper arrays itself, last (already in the plan).
-   Roll: `TUBE`'s per-point angle tilts the joint planes, not the section; with a
-   0 to 30 degree roll the sweep turned into scalloped wedges. With roll 0 the
-   sweep is smooth, with a clean mitre at node 2. Decision: one `sectionRoll` for
-   the whole beam, applied by rotating the section (spec updated); per-node roll
-   is out of scope. Re-tested in 27 with `sectionRoll = 30`: smooth, rolled.
+   Units: `SetGDLParametersOfElements` passes numbers through unchanged, and
+   Archicad takes a single Angle parameter in degrees but Angle ARRAY items in
+   radians (both read back in radians). The first helix was sent in degrees, so
+   `segArc[2]` became 5156.62 degrees: the script treated it as straight and the
+   roll of "30" was a 1719 degree twist, which looked like scalloped wedges.
+   Resent in radians (arc pi/2, roll pi/6): a clean quarter helix rising 1.0 m, a
+   45 degree mitre at node 2, a smooth twist to 30 degrees, and the Parameter
+   Script parks the helpers exactly as offline (`segSag[2] = 0.6213`, insert grip
+   at (3.549, 0.951)). A roll-per-beam change made on the wrong reading was
+   reverted; per-node roll stays as specified. Decision: the MCP tool sends
+   `segArc` and `nodeRoll` in radians.
    `A` is not the part's default (3) after an API placement but the Object tool's
    current default size (0.7 in 29, 0.6 in 27), and the Parameter Script does not
    run on placement. On a two-node beam the next edit would snap node 2 to that

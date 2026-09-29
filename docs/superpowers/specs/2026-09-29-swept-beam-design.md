@@ -68,7 +68,7 @@ requests, none of which are used.
 | Where the path comes from | Stored in the object as node arrays. Edited with grips. The MCP tool can fill it from a curve. |
 | Segment shape | Straight or a plan arc; the height changes linearly along the plan length. An arc with a rise is a helix. |
 | Arcs in tilted planes (the loop in the test line) | Not exact. Approximated with more nodes, within the path tolerance. |
-| Section orientation | Plumb (from `TUBE`), plus one optional roll angle for the whole beam (`sectionRoll`). Gate A showed that `TUBE`'s per-point angle tilts the joint planes, not the section, so a roll that varies along the beam would need a hand-built mesh; it is out of scope. |
+| Section orientation | Plumb (from `TUBE`), plus an optional roll per node, blended linearly along the path. |
 | Profile source | Any project Profile attribute, read live. Plus a built-in rectangle, which is also the fallback. No steel catalogue in GDL: make those in Profile Manager. |
 | Setting heights | "Apply slope" rewrites every node height from node 1 along the plan length. Afterwards the user drags nodes in 3D. The slope is an action, not a constraint. |
 | Placement | Two clicks for start and end if an Archicad placement method allows it (spike), otherwise one click plus a default 3 m beam that is dragged out. |
@@ -93,6 +93,7 @@ the same way.
 |---|---|---|---|
 | `nodeX[]`, `nodeY[]` | length array | `[0, 3]`, `[0, 0]` | Node positions in the object's local plan coordinates. Node 1 starts at the origin but may be dragged away. |
 | `nodeZ[]` | length array | `[0, 0]` | Node height above the object's own elevation. |
+| `nodeRoll[]` | angle array | `[0, 0]` | Section roll at the node, 0 = plumb. |
 | `segArc[]` | angle array | `[0, 0]` | Signed central angle of the segment's plan arc, 0 = straight. Positive means the path turns left (counter-clockwise) along the segment, so the arc bulges to the right of its chord. This is the same sense as a positive DXF bulge and Tapir `arcAngle` (the sign trap found on the Stanežiče rails). |
 | `slopePercent` | real | 0 | Used by "Apply slope". |
 | `pathTolerance` | length | 0.002 | Maximum distance between a sampled chord and the true arc. |
@@ -114,7 +115,6 @@ the same way.
 | `rectBMat` | building material | project default | Building material of the rectangle. |
 | `profileOffsetU`, `profileOffsetW` | length | 0, 0 | Shift of the section against the path. By default the profile's own origin sits on the path, like a native profiled beam. |
 | `flipProfile` | boolean | 0 | Mirror the section left to right, like a native beam's `isFlipped`. |
-| `sectionRoll` | angle | 0 | Roll of the section about the path, for the whole beam, 0 = plumb. |
 | `overrideSurface`, `surfaceOverride` | boolean, surface | 0, none | One surface for the whole beam. |
 
 **Floor plan**
@@ -151,8 +151,8 @@ hidden (flag 128); the user sees one grip per action.
   the Parameter Script inserts a node at the drop point.
 - **Delete a node.** Drag it within 1 cm of a neighbour and the two merge. Nodes can
   also be removed in the parameter list's array editor.
-- **Numbers.** Exact coordinates, heights and arc angles are typed in the
-  parameter list's array editor. The roll is one field on the Profile page.
+- **Numbers.** Exact coordinates, heights, roll and arc angles are typed in the
+  parameter list's array editor. There is no roll grip in version 1.
 
 ### 1.3 Parameter Script
 
@@ -187,13 +187,14 @@ The Parameter Script runs after every edit. It does not make Profile requests.
 
 **Sampling** (Master Script, used by both the 2D and 3D scripts):
 
-- A straight segment is two points.
+- A straight segment is two points, unless its roll changes by more than 5 degrees,
+  then it is split so the twist stays smooth.
 - An arc with central angle `t` and chord `c` has radius `R = c / (2 SIN (|t| / 2))`.
   It is split into `k = MAX (1, CEIL (|t| / (2 * ACS (1 - pathTolerance / R))))`
   equal steps.
-- Height changes linearly with the plan length along each segment.
+- Height and roll change linearly with the plan length along each segment.
 - Points closer than 1 mm to the previous point are skipped.
-- The result is `pathX[]`, `pathY[]`, `pathZ[]`.
+- The result is `pathX[]`, `pathY[]`, `pathZ[]`, `pathRoll[]`.
 
 On the test line (smallest radius 2.4 m, 2 mm tolerance) that is about one point
 every 4.7 degrees, roughly 150 path points for 40.7 m.
@@ -205,10 +206,7 @@ every 4.7 degrees, roughly 150 path points for 40.7 m.
   contour's node order is reversed to keep its winding.
 - **Status codes** use the reference's formula. Contour ends (`-1`) stay `-1`, which
   is exactly `TUBE{2}`'s hole syntax.
-- **Roll.** The section coordinates are rotated by `sectionRoll` before the sweep.
-  Points whose additional status is an arc angle (4000 range) are not moved or
-  rotated, because their x/y hold an angle, not a position.
-- **Path.** The sampled points with a `TUBE` angle of 0, plus one
+- **Path.** The sampled points, each with its roll as the `TUBE` angle, plus one
   phantom point before the first and after the last. The phantom points lie along
   the true end tangent (the arc's tangent and the segment's slope, not the last
   chord), so the end faces are square to the curve.
@@ -333,7 +331,9 @@ create_swept_beam(source_guid=None, points=None, start_height=None,
 **Placing.** `CreateObjects` places "Swept Beam" at node 1, on the source's story,
 with the object's elevation at node 1's height, so `nodeZ[1] = 0`. Then one
 `SetGDLParametersOfElements` call writes all arrays and the profile parameters
-(Tapir 1.5.7 and later resize arrays to fit). If the Parameter Script does not run
+(Tapir 1.5.7 and later resize arrays to fit). Angle arrays (`segArc`,
+`nodeRoll`) go through the API in radians, while a single angle parameter goes in
+degrees; both read back in radians (found at gate A). If the Parameter Script does not run
 after an API write (spike), the tool writes the helper arrays itself with the same
 parking rule. The source element is left untouched.
 
@@ -406,7 +406,6 @@ In `MCP-Test` (port checked by `project_name` before any write), on Archicad 29 
 - Splines as a source.
 - A live link that rebuilds the beam when a guide element changes.
 - A steel section catalogue inside the GDL (use Profile Manager).
-- A roll that varies along the beam (needs a hand-built mesh instead of `TUBE`).
 - Roll grips.
 - Connections between two Swept Beams (intersections, mitres between parts).
 - Quantities for schedules (length, volume) from a Properties Script. Cheap to add

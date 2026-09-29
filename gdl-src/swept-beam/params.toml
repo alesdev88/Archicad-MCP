@@ -41,6 +41,12 @@ default = [0.0, 0.0]
 description = "Node height"
 
 [[param]]
+name = "nodeRoll"
+type = "angle"
+default = [0.0, 0.0]
+description = "Node roll"
+
+[[param]]
 name = "segArc"
 type = "angle"
 default = [0.0, 0.0]
@@ -126,12 +132,6 @@ name = "flipProfile"
 type = "boolean"
 default = false
 description = "Flip section"
-
-[[param]]
-name = "sectionRoll"
-type = "angle"
-default = 0.0
-description = "Section roll (whole beam)"
 
 [[param]]
 name = "overrideSurface"
