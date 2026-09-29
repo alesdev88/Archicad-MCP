@@ -65,21 +65,28 @@ FOR jS = 1 TO nNode - 1
     IF gChord > EPS THEN
         gux = gdx / gChord
         guy = gdy / gChord
-        ! curve grip: segSag, sideways at the chord midpoint
-        IF showCurveGrips AND jS <= VARDIM1 (segSag) THEN
+        ! Helper grips sit at home + (value - marker); see the Parameter Script.
+        ! curve grip: sideways at the chord midpoint, home = the arc's midpoint
+        IF showCurveGrips AND jS <= VARDIM1 (segSag) AND jS <= VARDIM1 (sagDone) THEN
             gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
             gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
+            gHome = 0
+            IF ABS (segArc[jS]) > 0.01 AND ABS (segArc[jS]) < 359.9 THEN gHome = gChord / 2 * TAN (segArc[jS] / 4)
+            gbx = gmx + guy * (gHome - sagDone[jS])
+            gby = gmy - gux * (gHome - sagDone[jS])
             hId = 200000 + jS * 10
-            HOTSPOT2 gmx, gmy, hId, segSag[jS], 1 + 128
-            HOTSPOT2 gmx - guy, gmy + gux, hId + 1, segSag[jS], 3
-            HOTSPOT2 gmx + guy * segSag[jS], gmy - gux * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
+            HOTSPOT2 gbx, gby, hId, segSag[jS], 1 + 128
+            HOTSPOT2 gbx - guy, gby + gux, hId + 1, segSag[jS], 3
+            HOTSPOT2 gbx + guy * segSag[jS], gby - gux * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
         ENDIF
-        ! insert grip: insL, slides along the chord from node jS
-        IF showAddGrips AND jS <= VARDIM1 (insL) THEN
+        ! insert grip: slides along the chord, home = one third along
+        IF showAddGrips AND jS <= VARDIM1 (insL) AND jS <= VARDIM1 (insDone) THEN
+            gbx = nodeX[jS] + gux * (gChord / 3 - insDone[jS])
+            gby = nodeY[jS] + guy * (gChord / 3 - insDone[jS])
             hId = 300000 + jS * 10
-            HOTSPOT2 nodeX[jS], nodeY[jS], hId, insL[jS], 1 + 128
-            HOTSPOT2 nodeX[jS] - gux, nodeY[jS] - guy, hId + 1, insL[jS], 3
-            HOTSPOT2 nodeX[jS] + gux * insL[jS], nodeY[jS] + guy * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
+            HOTSPOT2 gbx, gby, hId, insL[jS], 1 + 128
+            HOTSPOT2 gbx - gux, gby - guy, hId + 1, insL[jS], 3
+            HOTSPOT2 gbx + gux * insL[jS], gby + guy * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
         ENDIF
     ENDIF
 NEXT jS
@@ -88,12 +95,16 @@ NEXT jS
 IF showAddGrips AND nNode > 1 THEN
     geX = eTx[nNode - 1]
     geY = eTy[nNode - 1]
-    HOTSPOT2 nodeX[nNode], nodeY[nNode], 390000, extEnd, 1 + 128
-    HOTSPOT2 nodeX[nNode] - geX, nodeY[nNode] - geY, 390001, extEnd, 3
-    HOTSPOT2 nodeX[nNode] + geX * extEnd, nodeY[nNode] + geY * extEnd, 390002, extEnd, 2, extEnd, "Add node at the end: slide out, release"
+    gbx = nodeX[nNode] + geX * (EXT_PARK - extEndDone)
+    gby = nodeY[nNode] + geY * (EXT_PARK - extEndDone)
+    HOTSPOT2 gbx, gby, 390000, extEnd, 1 + 128
+    HOTSPOT2 gbx - geX, gby - geY, 390001, extEnd, 3
+    HOTSPOT2 gbx + geX * extEnd, gby + geY * extEnd, 390002, extEnd, 2, extEnd, "Add node at the end: slide out, release"
     gsX = sTx[1]
     gsY = sTy[1]
-    HOTSPOT2 nodeX[1], nodeY[1], 390010, extStart, 1 + 128
-    HOTSPOT2 nodeX[1] + gsX, nodeY[1] + gsY, 390011, extStart, 3
-    HOTSPOT2 nodeX[1] - gsX * extStart, nodeY[1] - gsY * extStart, 390012, extStart, 2, extStart, "Add node at the start: slide out, release"
+    gbx = nodeX[1] - gsX * (EXT_PARK - extStartDone)
+    gby = nodeY[1] - gsY * (EXT_PARK - extStartDone)
+    HOTSPOT2 gbx, gby, 390010, extStart, 1 + 128
+    HOTSPOT2 gbx + gsX, gby + gsY, 390011, extStart, 3
+    HOTSPOT2 gbx - gsX * extStart, gby - gsY * extStart, 390012, extStart, 2, extStart, "Add node at the start: slide out, release"
 ENDIF

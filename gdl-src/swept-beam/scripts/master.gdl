@@ -4,6 +4,8 @@
 ! segment, so an arc with a rise is a helix (spec 1.4).
 
 EPS = 0.0001
+! where the add-node grips rest past the ends (shared by the 2D and Parameter scripts)
+EXT_PARK = 0.25
 nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (nodeRoll), VARDIM1 (segArc))
 tolSafe = MAX (0.0001, pathTolerance)
 

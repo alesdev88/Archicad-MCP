@@ -74,51 +74,51 @@ description = "Grips"
 name = "segSag"
 type = "length"
 default = [0.0, 0.0]
-description = "Arc grip (helper)"
+description = "Curve grip (helper)"
 hidden = true
 
+[[param]]
+name = "sagDone"
+type = "length"
+default = [0.0, 0.0]
+description = "Curve grip applied (helper)"
+hidden = true
 [[param]]
 name = "insL"
 type = "length"
-default = [1.0, 0.0]
-description = "Insert grip, distance along the segment (helper)"
+default = [0.0, 0.0]
+description = "Insert grip (helper)"
 hidden = true
-
 [[param]]
 name = "extStart"
 type = "length"
-default = 0.5
+default = 0.0
 description = "Add-node grip at the start (helper)"
 hidden = true
-
 [[param]]
 name = "extEnd"
 type = "length"
-default = 0.5
+default = 0.0
 description = "Add-node grip at the end (helper)"
 hidden = true
-
 [[param]]
 name = "insDone"
 type = "length"
-default = -1.0
-description = "Insert grip value already applied (helper)"
+default = [0.0, 0.0]
+description = "Insert grip applied (helper)"
 hidden = true
-
 [[param]]
 name = "extStartDone"
 type = "length"
-default = -1.0
-description = "Start grip value already applied (helper)"
+default = 0.0
+description = "Start grip applied (helper)"
 hidden = true
-
 [[param]]
 name = "extEndDone"
 type = "length"
-default = -1.0
-description = "End grip value already applied (helper)"
+default = 0.0
+description = "End grip applied (helper)"
 hidden = true
-
 [[param]]
 name = "profileMode"
 type = "string"

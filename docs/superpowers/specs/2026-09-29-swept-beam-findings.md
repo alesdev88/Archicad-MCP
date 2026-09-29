@@ -121,3 +121,15 @@ not codes whose x/y hold a vector, length or angle.
   the end direction, continuing the slope (the user's "continue like the wall
   tool" request); a Grips setting (All / Nodes / Curves / Add nodes) filters
   the grips. `A` now drives node 2 only when `A` itself is edited.
+- The insert and end grips then worked, but each edit fired more than once
+  (the end grip appended twice, so the piece came out twice as long; the insert
+  grip left a cluster of nodes): Archicad runs the Parameter Script several
+  times per edit and GLOB_MODPAR_NAME can stay stale, even during a later API
+  write (an API reset re-fired the user's last grip). Final design, for the
+  curve, insert and both add-node grips alike: every helper has a hidden marker
+  (sagDone, insDone, extStartDone, extEndDone); the 2D script draws the grip at
+  home + (value - marker); the Parameter Script applies value - marker once and
+  sets marker = value, never touching the dragged value. No GLOB_MODPAR_NAME,
+  no segment lengths involved. Add-node grips rest 0.25 m past the ends (user
+  asked for closer). The test beams were recreated so old helper values could
+  not fire.
