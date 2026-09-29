@@ -157,7 +157,7 @@ not codes whose x/y hold a vector, length or angle.
   Only a changed helper default under a live test file causes it; a released
   part that changes helper defaults needs a Forward Migration script.
 
-## Gate D (in progress)
+## Gate D
 
 Run on 29.09.2026 through `swept_beam.create_swept_beam` on a live connection
 (the same code the MCP tool calls; the wrapper is covered by the unit tests),
@@ -180,6 +180,17 @@ so the Claude extension did not need a restart.
 2. Same element, `update_guid` with `{"attribute": "RHS100X100X5"}`: GUID kept,
    59 nodes, profileMode "Profile attribute", profile index 47. The previews
    are too small to show the 100 mm hole (checked at gate B).
+   The user confirmed in 3D: the beam follows the morph line, and the RHS
+   profile is drawn correctly.
+3. Polylines drawn by the user in MCP-Test (arc sign check, Review Focus 1):
+   `D3AB61FC` (a -176.43 degree arc, then a +142.53 degree arc) became
+   `D4D4F692`, 3 nodes, 2 arcs; `C56E5827` (+119.56 degrees) became `3BE739CF`,
+   2 nodes, 1 arc. The stored segArc values equal the polyline arcs with the
+   same sign; nodes and arc midpoints match the polylines within 0.0 mm, and
+   the plan previews bend the way the polylines do. An Arc element `C0393551`
+   (radius 2.143 m, 30.833 to 128.805 degrees) became `FA8215BE`, 2 nodes,
+   segArc +97.972 degrees: same centre and radius within 0.0 mm, same start,
+   end and midpoint angles.
 4. MCP-Test_27 (Archicad 27), the fixture as `points`, 30 m north: 59 nodes,
    0.0 mm, placed as `0BC771D9` on story 0; stored nodes within 0.001 mm;
    render clean.
