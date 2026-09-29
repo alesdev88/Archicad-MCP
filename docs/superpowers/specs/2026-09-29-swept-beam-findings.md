@@ -9,10 +9,12 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
 
 1. Build into the workspace: clean validation with the 27 and 29 converters.
 2. Place and render (29): a straight 3 m beam, 0.2 x 0.2, building material 1.
-3. Helix through the API: arrays read back exactly as written. The Parameter
-   Script runs during an API write but not after the last parameter: the helper
-   arrays were parked with segment 2 still straight. Decision: the MCP tool
-   writes the helper arrays itself, last (already in the plan).
+3. Helix through the API: arrays read back exactly as written. The helpers first
+   looked parked as if segment 2 were straight, which read as "the Parameter
+   Script does not run after the last parameter". That was the units problem
+   below: after resending in radians the helpers were right. The Parameter
+   Script runs after each parameter an API write sets (`GLOB_MODPAR_NAME` is
+   empty then). The MCP tool still writes the helper arrays itself, last.
    Units: `SetGDLParametersOfElements` passes numbers through unchanged, and
    Archicad takes a single Angle parameter in degrees but Angle ARRAY items in
    radians (both read back in radians). The first helix was sent in degrees, so
