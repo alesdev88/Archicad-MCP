@@ -40,39 +40,60 @@ IF showNodeHeights THEN
     NEXT iN
 ENDIF
 
-! ---- node grips: combined nodeX / nodeY drag (reference, Example 2) ----
-FOR iN = 1 TO nNode
-    hId = 100000 + iN * 10
-    HOTSPOT2 nodeX[iN], 0, hId, nodeY[iN], 1 + 128
-    HOTSPOT2 nodeX[iN], -1, hId + 1, nodeY[iN], 3
-    HOTSPOT2 nodeX[iN], nodeY[iN], hId + 2, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
-    HOTSPOT2 0, nodeY[iN], hId + 3, nodeX[iN], 1 + 128
-    HOTSPOT2 -1, nodeY[iN], hId + 4, nodeX[iN], 3
-    HOTSPOT2 nodeX[iN], nodeY[iN], hId + 5, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
-NEXT iN
+! ---- grips, filtered by the Grips setting ----
+showNodeGrips = (gripMode = "All" OR gripMode = "Nodes")
+showCurveGrips = (gripMode = "All" OR gripMode = "Curves")
+showAddGrips = (gripMode = "All" OR gripMode = "Add nodes")
 
-! ---- arc grips (segSag, sideways at the chord midpoint) and insert grips ----
+! node grips: combined nodeX / nodeY drag (reference, Example 2)
+IF showNodeGrips THEN
+    FOR iN = 1 TO nNode
+        hId = 100000 + iN * 10
+        HOTSPOT2 nodeX[iN], 0, hId, nodeY[iN], 1 + 128
+        HOTSPOT2 nodeX[iN], -1, hId + 1, nodeY[iN], 3
+        HOTSPOT2 nodeX[iN], nodeY[iN], hId + 2, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
+        HOTSPOT2 0, nodeY[iN], hId + 3, nodeX[iN], 1 + 128
+        HOTSPOT2 -1, nodeY[iN], hId + 4, nodeX[iN], 3
+        HOTSPOT2 nodeX[iN], nodeY[iN], hId + 5, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
+    NEXT iN
+ENDIF
+
 FOR jS = 1 TO nNode - 1
     gdx = nodeX[jS + 1] - nodeX[jS]
     gdy = nodeY[jS + 1] - nodeY[jS]
     gChord = SQR (gdx * gdx + gdy * gdy)
-    IF gChord > EPS AND jS <= VARDIM1 (segSag) THEN
-        gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
-        gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
-        rnx = gdy / gChord
-        rny = -gdx / gChord
-        hId = 200000 + jS * 10
-        HOTSPOT2 gmx, gmy, hId, segSag[jS], 1 + 128
-        HOTSPOT2 gmx - rnx, gmy - rny, hId + 1, segSag[jS], 3
-        HOTSPOT2 gmx + rnx * segSag[jS], gmy + rny * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
-    ENDIF
-    IF jS <= VARDIM1 (insX) AND jS <= VARDIM1 (insY) THEN
-        hId = 300000 + jS * 10
-        HOTSPOT2 insX[jS], 0, hId, insY[jS], 1 + 128
-        HOTSPOT2 insX[jS], -1, hId + 1, insY[jS], 3
-        HOTSPOT2 insX[jS], insY[jS], hId + 2, insY[jS], 2, insY[jS], "Insert node after " + STR (jS, 1, 0) + ": y"
-        HOTSPOT2 0, insY[jS], hId + 3, insX[jS], 1 + 128
-        HOTSPOT2 -1, insY[jS], hId + 4, insX[jS], 3
-        HOTSPOT2 insX[jS], insY[jS], hId + 5, insX[jS], 2, insX[jS], "Insert node after " + STR (jS, 1, 0) + ": x"
+    IF gChord > EPS THEN
+        gux = gdx / gChord
+        guy = gdy / gChord
+        ! curve grip: segSag, sideways at the chord midpoint
+        IF showCurveGrips AND jS <= VARDIM1 (segSag) THEN
+            gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
+            gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
+            hId = 200000 + jS * 10
+            HOTSPOT2 gmx, gmy, hId, segSag[jS], 1 + 128
+            HOTSPOT2 gmx - guy, gmy + gux, hId + 1, segSag[jS], 3
+            HOTSPOT2 gmx + guy * segSag[jS], gmy - gux * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
+        ENDIF
+        ! insert grip: insL, slides along the chord from node jS
+        IF showAddGrips AND jS <= VARDIM1 (insL) THEN
+            hId = 300000 + jS * 10
+            HOTSPOT2 nodeX[jS], nodeY[jS], hId, insL[jS], 1 + 128
+            HOTSPOT2 nodeX[jS] - gux, nodeY[jS] - guy, hId + 1, insL[jS], 3
+            HOTSPOT2 nodeX[jS] + gux * insL[jS], nodeY[jS] + guy * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
+        ENDIF
     ENDIF
 NEXT jS
+
+! add-node grips past the ends, along the end directions
+IF showAddGrips AND nNode > 1 THEN
+    geX = eTx[nNode - 1]
+    geY = eTy[nNode - 1]
+    HOTSPOT2 nodeX[nNode], nodeY[nNode], 390000, extEnd, 1 + 128
+    HOTSPOT2 nodeX[nNode] - geX, nodeY[nNode] - geY, 390001, extEnd, 3
+    HOTSPOT2 nodeX[nNode] + geX * extEnd, nodeY[nNode] + geY * extEnd, 390002, extEnd, 2, extEnd, "Add node at the end: slide out, release"
+    gsX = sTx[1]
+    gsY = sTy[1]
+    HOTSPOT2 nodeX[1], nodeY[1], 390010, extStart, 1 + 128
+    HOTSPOT2 nodeX[1] + gsX, nodeY[1] + gsY, 390011, extStart, 3
+    HOTSPOT2 nodeX[1] - gsX * extStart, nodeY[1] - gsY * extStart, 390012, extStart, 2, extStart, "Add node at the start: slide out, release"
+ENDIF

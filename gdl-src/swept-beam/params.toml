@@ -65,6 +65,12 @@ default = 0.002
 description = "Curve tolerance"
 
 [[param]]
+name = "gripMode"
+type = "string"
+default = "All"
+description = "Grips"
+
+[[param]]
 name = "segSag"
 type = "length"
 default = [0.0, 0.0]
@@ -72,17 +78,24 @@ description = "Arc grip (helper)"
 hidden = true
 
 [[param]]
-name = "insX"
+name = "insL"
 type = "length"
-default = [1.0, 3.0]
-description = "Insert grip X (helper)"
+default = [1.0, 0.0]
+description = "Insert grip, distance along the segment (helper)"
 hidden = true
 
 [[param]]
-name = "insY"
+name = "extStart"
 type = "length"
-default = [0.0, 0.0]
-description = "Insert grip Y (helper)"
+default = 0.5
+description = "Add-node grip at the start (helper)"
+hidden = true
+
+[[param]]
+name = "extEnd"
+type = "length"
+default = 0.5
+description = "Add-node grip at the end (helper)"
 hidden = true
 
 [[param]]

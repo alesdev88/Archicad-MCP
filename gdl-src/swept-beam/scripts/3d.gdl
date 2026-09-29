@@ -150,6 +150,7 @@ FOR iRun = 1 TO nRun
 NEXT iRun
 
 ! ---- 3D node grips: combined nodeX / nodeY / nodeZ drag ----
+IF gripMode = "All" OR gripMode = "Nodes" THEN
 FOR iN = 1 TO nNode
     hId = 400000 + iN * 10
     HOTSPOT 0, nodeY[iN], nodeZ[iN], hId, nodeX[iN], 1 + 128
@@ -162,6 +163,7 @@ FOR iN = 1 TO nNode
     HOTSPOT nodeX[iN], nodeY[iN], -1, hId + 7, nodeZ[iN], 3
     HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 8, nodeZ[iN], 2, nodeZ[iN], "Node " + STR (iN, 1, 0) + " height"
 NEXT iN
+ENDIF
 END
 
 "cutAt":

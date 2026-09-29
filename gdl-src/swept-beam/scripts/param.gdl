@@ -8,13 +8,15 @@ VALUES "rectW" RANGE (0, ]
 VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
 VALUES "gs_ui_current_page" 1, 2, 3
-HIDEPARAMETER "B", "ZZYZX", "segSag", "insX", "insY", "gs_ui_current_page", "sb_version"
+VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes"
+HIDEPARAMETER "B", "ZZYZX", "segSag", "insL", "extStart", "extEnd", "gs_ui_current_page", "sb_version"
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
 IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
 
 EPS = 0.0001
+EXT_PARK = 0.5
 
 ! ---- 1. copy and repair: every array gets the length of nodeX ----
 DIM nx[], ny[], nz[], nr[], na[]
@@ -60,9 +62,11 @@ IF n = 2 AND ABS (na[1]) < 0.01 THEN
     ddx = nx[2] - nx[1]
     ddy = ny[2] - ny[1]
     lenPlan = SQR (ddx * ddx + ddy * ddy)
-    IF GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME = "nodeZ" THEN
-        newA = lenPlan
-    ELSE
+    ! A drives node 2 only when A itself is edited; otherwise A follows the
+    ! nodes (an API placement brings the Object tool's A, which must not win)
+    newA = lenPlan
+    IF GLOB_MODPAR_NAME = "A" THEN
+        newA = A
         IF ABS (A - lenPlan) > 0.0005 AND A > EPS THEN
             ux = 1
             uy = 0
@@ -101,32 +105,35 @@ IF GLOB_MODPAR_NAME = "segSag" THEN
     NEXT j
 ENDIF
 
-! insert grip: the item that left its parked point becomes a new node there
-IF GLOB_MODPAR_NAME = "insX" OR GLOB_MODPAR_NAME = "insY" THEN
+! insert grip: slid along segment j (a one-way grip, like the curve grip), it
+! inserts a node at that point of the segment, on the arc if the segment is one
+IF GLOB_MODPAR_NAME = "insL" THEN
     jIns = 0
     FOR j = 1 TO n - 1
-        IF jIns = 0 AND j <= VARDIM1 (insX) AND j <= VARDIM1 (insY) THEN
+        IF jIns = 0 AND j <= VARDIM1 (insL) THEN
             jSeg = j
             GOSUB "seg"
-            GOSUB "park"
-            IF ABS (insX[j] - pkx) + ABS (insY[j] - pky) > 0.001 THEN jIns = j
+            IF sChord > EPS AND ABS (insL[j] - sChord / 3) > 0.001 THEN jIns = j
         ENDIF
     NEXT j
     IF jIns > 0 THEN
-        newX = insX[jIns]
-        newY = insY[jIns]
-        newZ = nz[jIns] + (nz[jIns + 1] - nz[jIns]) / 3
-        newR = nr[jIns] + (nr[jIns + 1] - nr[jIns]) / 3
         jSeg = jIns
         GOSUB "seg"
-        a1 = 0
-        a2 = 0
+        tIns = MAX (0.02, MIN (0.98, insL[jIns] / sChord))
         IF sIsArc THEN
-            c1 = SQR ((newX - nx[jIns])^2 + (newY - ny[jIns])^2)
-            c2 = SQR ((nx[jIns + 1] - newX)^2 + (ny[jIns + 1] - newY)^2)
-            IF c1 <= 2 * sRad THEN a1 = SGN (na[jIns]) * 2 * ASN (c1 / (2 * sRad))
-            IF c2 <= 2 * sRad THEN a2 = SGN (na[jIns]) * 2 * ASN (c2 / (2 * sRad))
+            pth = na[jIns] * tIns
+            pvx = nx[jIns] - sCx
+            pvy = ny[jIns] - sCy
+            newX = sCx + pvx * COS (pth) - pvy * SIN (pth)
+            newY = sCy + pvx * SIN (pth) + pvy * COS (pth)
+        ELSE
+            newX = nx[jIns] + (nx[jIns + 1] - nx[jIns]) * tIns
+            newY = ny[jIns] + (ny[jIns + 1] - ny[jIns]) * tIns
         ENDIF
+        newZ = nz[jIns] + (nz[jIns + 1] - nz[jIns]) * tIns
+        newR = nr[jIns] + (nr[jIns + 1] - nr[jIns]) * tIns
+        a1 = na[jIns] * tIns
+        a2 = na[jIns] * (1 - tIns)
         FOR k = n TO jIns + 1 STEP -1
             nx[k + 1] = nx[k]
             ny[k + 1] = ny[k]
@@ -143,6 +150,40 @@ IF GLOB_MODPAR_NAME = "insX" OR GLOB_MODPAR_NAME = "insY" THEN
         n = n + 1
         na[n] = 0
     ENDIF
+ENDIF
+
+! add-node grips past the ends: slid out along the end direction, they append
+! (or prepend) a node that far away, continuing the slope, like continuing a wall
+IF GLOB_MODPAR_NAME = "extEnd" AND ABS (extEnd - EXT_PARK) > 0.001 AND extEnd > 0.01 THEN
+    jSeg = n - 1
+    GOSUB "seg"
+    GOSUB "tans"
+    nx[n + 1] = nx[n] + tanEx * extEnd
+    ny[n + 1] = ny[n] + tanEy * extEnd
+    nz[n + 1] = nz[n] + tRise * extEnd
+    nr[n + 1] = nr[n]
+    na[n] = 0
+    n = n + 1
+    na[n] = 0
+ENDIF
+IF GLOB_MODPAR_NAME = "extStart" AND ABS (extStart - EXT_PARK) > 0.001 AND extStart > 0.01 THEN
+    jSeg = 1
+    GOSUB "seg"
+    GOSUB "tans"
+    FOR k = n TO 1 STEP -1
+        nx[k + 1] = nx[k]
+        ny[k + 1] = ny[k]
+        nz[k + 1] = nz[k]
+        nr[k + 1] = nr[k]
+        na[k + 1] = na[k]
+    NEXT k
+    nx[1] = nx[2] - tanSx * extStart
+    ny[1] = ny[2] - tanSy * extStart
+    nz[1] = nz[2] - tRise * extStart
+    nr[1] = nr[2]
+    na[1] = 0
+    n = n + 1
+    na[n] = 0
 ENDIF
 
 ! merge: a node dragged within 1 cm (plan) of a neighbour disappears
@@ -174,23 +215,20 @@ IF (GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME
 ENDIF
 
 ! ---- 3. park the grip helpers ----
-DIM sag[], ix[], iy[]
+DIM sag[], il[]
 FOR j = 1 TO n
     sag[j] = 0
-    ix[j] = nx[j]
-    iy[j] = ny[j]
+    il[j] = 0
     IF j < n THEN
         jSeg = j
         GOSUB "seg"
         IF sIsArc THEN sag[j] = sChord / 2 * TAN (na[j] / 4)
-        GOSUB "park"
-        ix[j] = pkx
-        iy[j] = pky
+        il[j] = sChord / 3
     ENDIF
 NEXT j
 
 ! ---- 4. write back, with arrays of exactly n items ----
-DIM ox[], oy[], oz[], orl[], oa[], os[], oix[], oiy[]
+DIM ox[], oy[], oz[], orl[], oa[], os[], oil[]
 FOR i = 1 TO n
     ox[i] = nx[i]
     oy[i] = ny[i]
@@ -198,10 +236,9 @@ FOR i = 1 TO n
     orl[i] = nr[i]
     oa[i] = na[i]
     os[i] = sag[i]
-    oix[i] = ix[i]
-    oiy[i] = iy[i]
+    oil[i] = il[i]
 NEXT i
-PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insX = oix, insY = oiy, A = newA
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insL = oil, extStart = EXT_PARK, extEnd = EXT_PARK, A = newA
 END
 
 ! ---- subroutines ----
@@ -225,16 +262,25 @@ END
     ENDIF
 RETURN
 
-"park":
-    ! the insert grip's parked position: one third along segment jSeg
+"tans":
+    ! unit plan tangents at the start (tanSx, tanSy) and end (tanEx, tanEy) of segment
+    ! jSeg after "seg", and its rise per plan metre (tRise)
     IF sIsArc THEN
-        pth = na[jSeg] / 3
-        pvx = nx[jSeg] - sCx
-        pvy = ny[jSeg] - sCy
-        pkx = sCx + pvx * COS (pth) - pvy * SIN (pth)
-        pky = sCy + pvx * SIN (pth) + pvy * COS (pth)
+        tsg = SGN (na[jSeg])
+        tanSx = -(ny[jSeg] - sCy) / sRad * tsg
+        tanSy = (nx[jSeg] - sCx) / sRad * tsg
+        tanEx = -(ny[jSeg + 1] - sCy) / sRad * tsg
+        tanEy = (nx[jSeg + 1] - sCx) / sRad * tsg
     ELSE
-        pkx = nx[jSeg] + (nx[jSeg + 1] - nx[jSeg]) / 3
-        pky = ny[jSeg] + (ny[jSeg + 1] - ny[jSeg]) / 3
+        tanSx = 1
+        tanSy = 0
+        IF sChord > EPS THEN
+            tanSx = sdx / sChord
+            tanSy = sdy / sChord
+        ENDIF
+        tanEx = tanSx
+        tanEy = tanSy
     ENDIF
+    tRise = 0
+    IF sLen > EPS THEN tRise = (nz[jSeg + 1] - nz[jSeg]) / sLen
 RETURN

@@ -108,3 +108,16 @@ not codes whose x/y hold a vector, length or angle.
   insert at one third). Hotspots cannot be coloured in GDL; each moving grip
   now carries a tracker label ("Node 3 x", "Curve segment 4: bulge",
   "Insert node after 2: x").
+- User results: node drag in plan and 3D, curve grip, merge and dragging a node
+  in z all work. The insert grip (a combined insX/insY drag) never committed:
+  a logging build showed no Parameter Script run at all with insX/insY changed
+  (Archicad dropped the edit before the script), with the helpers hidden or
+  visible alike. API writes do set GLOB_MODPAR_NAME (to the written name); the
+  empty runs are redraws. Redesign on the pattern that works (one-way length
+  grip on a hidden helper, like the curve grip): the insert grip slides along
+  the segment from its start node (`insL`) and inserts a node at that point of
+  the segment, on the arc when it is one; add-node grips past each end
+  (`extStart`, `extEnd`) append or prepend a node at the dropped distance along
+  the end direction, continuing the slope (the user's "continue like the wall
+  tool" request); a Grips setting (All / Nodes / Curves / Add nodes) filters
+  the grips. `A` now drives node 2 only when `A` itself is edited.

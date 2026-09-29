@@ -13,10 +13,12 @@ UI_INFIELD "slopePercent", 278, 48, 146, 19
 UI_BUTTON UI_FUNCTION, "Apply slope", 278, 74, 146, 22, 1
 UI_OUTFIELD "Curve tolerance", 18, 110, 245, 18
 UI_INFIELD "pathTolerance", 278, 108, 146, 19
-UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0), 18, 140, 406, 18
+UI_OUTFIELD "Grips", 18, 134, 245, 18
+UI_INFIELD "gripMode", 278, 132, 146, 19
+UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0), 18, 160, 406, 18
 UI_STYLE 1, 2
-UI_OUTFIELD "Apply slope sets every node height from node 1 along the plan length.", 18, 166, 406, 20
-UI_OUTFIELD "Exact node values and roll: parameter list, array editor.", 18, 188, 406, 20
+UI_OUTFIELD "Apply slope sets every node height from node 1 along the plan length.", 18, 184, 406, 20
+UI_OUTFIELD "Exact node values and roll: parameter list, array editor.", 18, 206, 406, 20
 UI_STYLE 0, 0
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
