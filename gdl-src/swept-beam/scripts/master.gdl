@@ -8,6 +8,9 @@ nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (nodeRol
 tolSafe = MAX (0.0001, pathTolerance)
 
 DIM pathX[], pathY[], pathZ[], pathRoll[], tList[]
+! per segment: plan unit tangent and rise at its start (s) and end (e);
+! per node: its index in the sampled path
+DIM sTx[], sTy[], sTz[], eTx[], eTy[], eTz[], nodePath[]
 ! Extra samples this far from each segment end keep the segment's own plumb
 ! frame between them. TUBE places a joint's averaged frame at a node, and
 ! without them that twist would warp a whole straight segment (gate A).
@@ -81,6 +84,12 @@ FOR iSeg = 1 TO nNode - 1
     endTX = t2x
     endTY = t2y
     endTZ = riseSeg
+    sTx[iSeg] = t1x
+    sTy[iSeg] = t1y
+    sTz[iSeg] = riseSeg
+    eTx[iSeg] = t2x
+    eTy[iSeg] = t2y
+    eTz[iSeg] = riseSeg
 
     stubT = 0
     IF segLen > 4 * STUB_LEN THEN stubT = STUB_LEN / segLen
@@ -122,5 +131,55 @@ FOR iSeg = 1 TO nNode - 1
             pathZ[nPath] = pz
             pathRoll[nPath] = pr
         ENDIF
+        IF iT = 1 THEN nodePath[iSeg] = nPath
     NEXT iT
+    nodePath[iSeg + 1] = nPath
 NEXT iSeg
+
+! ---- kinks: nodes where the path changes direction by more than 1 degree ----
+! The 3D script splits the sweep there and trims both sides with the mitre
+! plane, whose normal (kinkNx, kinkNy, kinkNz) bisects the two directions.
+DIM nodeKink[], kinkNx[], kinkNy[], kinkNz[], kinkTurn[]
+FOR iN = 1 TO nNode
+    nodeKink[iN] = 0
+    kinkNx[iN] = 0
+    kinkNy[iN] = 0
+    kinkNz[iN] = 1
+    kinkTurn[iN] = 0
+NEXT iN
+FOR iN = 2 TO nNode - 1
+    kax = eTx[iN - 1]
+    kay = eTy[iN - 1]
+    kaz = eTz[iN - 1]
+    kbx = sTx[iN]
+    kby = sTy[iN]
+    kbz = sTz[iN]
+    kla = SQR (kax * kax + kay * kay + kaz * kaz)
+    klb = SQR (kbx * kbx + kby * kby + kbz * kbz)
+    IF kla > EPS AND klb > EPS THEN
+        kax = kax / kla
+        kay = kay / kla
+        kaz = kaz / kla
+        kbx = kbx / klb
+        kby = kby / klb
+        kbz = kbz / klb
+        kCos = kax * kbx + kay * kby + kaz * kbz
+        IF kCos < COS (1) THEN
+            nodeKink[iN] = 1
+            kinkTurn[iN] = ACS (MAX (-1, MIN (1, kCos)))
+            ksx = kax + kbx
+            ksy = kay + kby
+            ksz = kaz + kbz
+            kls = SQR (ksx * ksx + ksy * ksy + ksz * ksz)
+            IF kls > EPS THEN
+                kinkNx[iN] = ksx / kls
+                kinkNy[iN] = ksy / kls
+                kinkNz[iN] = ksz / kls
+            ELSE
+                kinkNx[iN] = kax
+                kinkNy[iN] = kay
+                kinkNz[iN] = kaz
+            ENDIF
+        ENDIF
+    ENDIF
+NEXT iN

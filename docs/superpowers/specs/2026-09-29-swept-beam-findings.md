@@ -42,3 +42,10 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
    segment end keep the segment's own plumb frame between them; the compromise
    at a real kink now fits in the last 2 cm before the mitre. Plan re-rendered:
    parallel to the corner.
+   The user's close-up of the corner then showed the 2 cm piece as a crumpled
+   joint. Fix: the Master Script marks kinks (direction change over 1 degree, with
+   the mitre plane bisecting the two directions); the 3D script sweeps each run
+   between kinks on its own, carries it past the kink along its own direction
+   and trims it with CUTPLANE on the mitre plane. Plan: parallel lines into one
+   straight mitre line. 3D: a flat mitre with a small step where the two slopes
+   differ, as two real cut members would show.

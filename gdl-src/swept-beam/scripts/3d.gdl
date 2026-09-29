@@ -1,18 +1,17 @@
 ! Swept Beam -- 3D Script
-! One TUBE{2} per section component along the sampled path (spec 1.4).
-! TUBE keeps the section plumb (W up, U to the right looking along the path).
+! The path is swept with TUBE{2}, which keeps the section plumb (W up, U to the
+! right looking along the path) and rolls it by each point's angle (spec 1.4).
+! At a kink TUBE would average the two directions and twist both sides, so the
+! path is split into runs at kinks: each run is swept on its own, carried past
+! the kink along its own direction and trimmed by the kink's mitre plane. Both
+! sides stay true plumb prisms and meet on one flat mitre.
 
 MODEL SOLID
 IF nPath < 2 THEN END
 
 sgnFlip = 1
 IF flipProfile THEN sgnFlip = -1
-nTube = nPath + 2
 tubeMask = 1 + 2 + 16 + 32
-
-! Flip mirrors the section, not the path: under MULX -1 the path is fed with
-! x negated, so it lands where it belongs and only U flips.
-IF flipProfile THEN MULX -1
 
 ! ---- rectangle section (also the fallback) ----
 rw = MAX (0.001, rectW)
@@ -20,22 +19,125 @@ rh = MAX (0.001, rectH)
 rSurf = 0
 nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
 IF overrideSurface THEN rSurf = surfaceOverride
-BUILDING_MATERIAL rectBMat
-PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-GOSUB "putPath"
-TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
+secExtent = SQR ((rw / 2 + ABS (profileOffsetU))^2 + (rh / 2 + ABS (profileOffsetW))^2)
 
-IF flipProfile THEN DEL 1
+! ---- runs between kinks ----
+DIM runA[], runB[]
+nRun = 0
+runFrom = 1
+FOR iN = 2 TO nNode
+    IF iN = nNode OR nodeKink[iN] THEN
+        nRun = nRun + 1
+        runA[nRun] = runFrom
+        runB[nRun] = iN
+        runFrom = iN
+    ENDIF
+NEXT iN
+
+FOR iRun = 1 TO nRun
+    nA = runA[iRun]
+    nB = runB[iRun]
+    nCut = 0
+    IF nA > 1 THEN
+        cutNode = nA
+        cutSgn = -1
+        GOSUB "cutAt"
+        nCut = nCut + 1
+    ENDIF
+    IF nB < nNode THEN
+        cutNode = nB
+        cutSgn = 1
+        GOSUB "cutAt"
+        nCut = nCut + 1
+    ENDIF
+    ! Flip mirrors the section, not the path: under MULX -1 the path is fed with
+    ! x negated, so it lands where it belongs and only U flips. The cut planes
+    ! above are already in place and are not affected by this transformation.
+    IF flipProfile THEN MULX -1
+    BUILDING_MATERIAL rectBMat
+    PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+    PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+    PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+    PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+    GOSUB "putRun"
+    TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
+    IF flipProfile THEN DEL 1
+    FOR iC = 1 TO nCut
+        CUTEND
+    NEXT iC
+NEXT iRun
 END
 
-"putPath":
-    ! phantom start point along the true start tangent, the samples, phantom end
-    PUT (pathX[1] - startTX) * sgnFlip, pathY[1] - startTY, pathZ[1] - startTZ, pathRoll[1] * sgnFlip
-    FOR iP = 1 TO nPath
+"cutAt":
+    ! the mitre plane at node cutNode; removes what lies ahead of the run
+    ! (cutSgn 1) or behind it (cutSgn -1)
+    czx = kinkNx[cutNode] * cutSgn
+    czy = kinkNy[cutNode] * cutSgn
+    czz = kinkNz[cutNode] * cutSgn
+    IF ABS (czz) < 0.9 THEN
+        cxx = -czy
+        cxy = czx
+        cxz = 0
+    ELSE
+        cxx = 0
+        cxy = -czz
+        cxz = czy
+    ENDIF
+    clx = SQR (cxx * cxx + cxy * cxy + cxz * cxz)
+    cxx = cxx / clx
+    cxy = cxy / clx
+    cxz = cxz / clx
+    cyx = czy * cxz - czz * cxy
+    cyy = czz * cxx - czx * cxz
+    cyz = czx * cxy - czy * cxx
+    cp = nodePath[cutNode]
+    XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
+    CUTPLANE
+    DEL 1
+RETURN
+
+"putRun":
+    ! TUBE path of run nA..nB: phantom, [overshoot], samples, [overshoot], phantom.
+    ! At a kink the run continues past the node along its own direction far
+    ! enough to fill the mitre; the cut plane trims the rest.
+    pA = nodePath[nA]
+    pB = nodePath[nB]
+    IF nA = 1 THEN
+        sx = startTX
+        sy = startTY
+        sz = startTZ
+    ELSE
+        sx = sTx[nA]
+        sy = sTy[nA]
+        sz = sTz[nA]
+    ENDIF
+    IF nB = nNode THEN
+        ex = endTX
+        ey = endTY
+        ez = endTZ
+    ELSE
+        ex = eTx[nB - 1]
+        ey = eTy[nB - 1]
+        ez = eTz[nB - 1]
+    ENDIF
+    ovA = 0
+    IF nA > 1 THEN ovA = secExtent * (2 + MIN (20, TAN (kinkTurn[nA] / 2)))
+    ovB = 0
+    IF nB < nNode THEN ovB = secExtent * (2 + MIN (20, TAN (kinkTurn[nB] / 2)))
+    nTube = pB - pA + 3
+    IF nA > 1 THEN nTube = nTube + 1
+    IF nB < nNode THEN nTube = nTube + 1
+    qx = pathX[pA] - sx * ovA
+    qy = pathY[pA] - sy * ovA
+    qz = pathZ[pA] - sz * ovA
+    PUT (qx - sx) * sgnFlip, qy - sy, qz - sz, pathRoll[pA] * sgnFlip
+    IF nA > 1 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pA] * sgnFlip
+    FOR iP = pA TO pB
         PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], pathRoll[iP] * sgnFlip
     NEXT iP
-    PUT (pathX[nPath] + endTX) * sgnFlip, pathY[nPath] + endTY, pathZ[nPath] + endTZ, pathRoll[nPath] * sgnFlip
+    qx = pathX[pB] + ex * ovB
+    qy = pathY[pB] + ey * ovB
+    qz = pathZ[pB] + ez * ovB
+    IF nB < nNode THEN PUT qx * sgnFlip, qy, qz, pathRoll[pB] * sgnFlip
+    PUT (qx + ex) * sgnFlip, qy + ey, qz + ez, pathRoll[pB] * sgnFlip
 RETURN
