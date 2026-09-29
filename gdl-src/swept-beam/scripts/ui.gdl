@@ -16,7 +16,7 @@ UI_INFIELD "pathTolerance", 278, 108, 146, 19
 UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0), 18, 140, 406, 18
 UI_STYLE 1, 2
 UI_OUTFIELD "Apply slope sets every node height from node 1 along the plan length.", 18, 166, 406, 20
-UI_OUTFIELD "Exact node values and roll: parameter list, array editor.", 18, 188, 406, 20
+UI_OUTFIELD "Exact node values: parameter list, array editor.", 18, 188, 406, 20
 UI_STYLE 0, 0
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
@@ -40,8 +40,9 @@ UI_INFIELD "rectBMat", 278, 138, 146, 19
 UI_OUTFIELD "Offset sideways / up", 18, 164, 245, 18
 UI_INFIELD "profileOffsetU", 278, 162, 70, 19
 UI_INFIELD "profileOffsetW", 354, 162, 70, 19
-UI_OUTFIELD "Flip section", 18, 188, 245, 18
-UI_INFIELD "flipProfile", 278, 186, 146, 19
+UI_OUTFIELD "Flip section / roll", 18, 188, 245, 18
+UI_INFIELD "flipProfile", 278, 186, 20, 19
+UI_INFIELD "sectionRoll", 304, 186, 120, 19
 UI_OUTFIELD "Override surfaces", 18, 212, 245, 18
 UI_INFIELD "overrideSurface", 278, 210, 20, 19
 IF overrideSurface THEN UI_INFIELD "surfaceOverride", 304, 210, 120, 19

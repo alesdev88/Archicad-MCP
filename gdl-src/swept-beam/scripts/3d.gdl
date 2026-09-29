@@ -1,6 +1,8 @@
 ! Swept Beam -- 3D Script
 ! One TUBE{2} per section component along the sampled path (spec 1.4).
 ! TUBE keeps the section plumb (W up, U to the right looking along the path).
+! Its per-point angle tilts the joint planes, not the section (gate A), so the
+! roll is applied by rotating the section itself, once for the whole beam.
 
 MODEL SOLID
 IF nPath < 2 THEN END
@@ -9,6 +11,8 @@ sgnFlip = 1
 IF flipProfile THEN sgnFlip = -1
 nTube = nPath + 2
 tubeMask = 1 + 2 + 16 + 32
+rollC = COS (sectionRoll * sgnFlip)
+rollS = SIN (sectionRoll * sgnFlip)
 
 ! Flip mirrors the section, not the path: under MULX -1 the path is fed with
 ! x negated, so it lands where it belongs and only U flips.
@@ -21,10 +25,15 @@ rSurf = 0
 nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
 IF overrideSurface THEN rSurf = surfaceOverride
 BUILDING_MATERIAL rectBMat
-PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+FOR iR = 1 TO 4
+    su = rw / 2
+    IF iR <= 2 THEN su = -rw / 2
+    sw = rh / 2
+    IF iR = 2 OR iR = 3 THEN sw = -rh / 2
+    su = su - profileOffsetU
+    sw = sw - profileOffsetW
+    PUT su * rollC - sw * rollS, su * rollS + sw * rollC, 0, rSurf
+NEXT iR
 GOSUB "putPath"
 TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
 
@@ -33,9 +42,9 @@ END
 
 "putPath":
     ! phantom start point along the true start tangent, the samples, phantom end
-    PUT (pathX[1] - startTX) * sgnFlip, pathY[1] - startTY, pathZ[1] - startTZ, pathRoll[1] * sgnFlip
+    PUT (pathX[1] - startTX) * sgnFlip, pathY[1] - startTY, pathZ[1] - startTZ, 0
     FOR iP = 1 TO nPath
-        PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], pathRoll[iP] * sgnFlip
+        PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], 0
     NEXT iP
-    PUT (pathX[nPath] + endTX) * sgnFlip, pathY[nPath] + endTY, pathZ[nPath] + endTZ, pathRoll[nPath] * sgnFlip
+    PUT (pathX[nPath] + endTX) * sgnFlip, pathY[nPath] + endTY, pathZ[nPath] + endTZ, 0
 RETURN

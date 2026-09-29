@@ -17,7 +17,7 @@ IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
 EPS = 0.0001
 
 ! ---- 1. copy and repair: every array gets the length of nodeX ----
-DIM nx[], ny[], nz[], nr[], na[]
+DIM nx[], ny[], nz[], na[]
 n = VARDIM1 (nodeX)
 IF n < 1 THEN
     n = 2
@@ -27,8 +27,6 @@ IF n < 1 THEN
     ny[2] = 0
     nz[1] = 0
     nz[2] = 0
-    nr[1] = 0
-    nr[2] = 0
     na[1] = 0
     na[2] = 0
 ELSE
@@ -38,8 +36,6 @@ ELSE
         IF i <= VARDIM1 (nodeY) THEN ny[i] = nodeY[i]
         nz[i] = 0
         IF i <= VARDIM1 (nodeZ) THEN nz[i] = nodeZ[i]
-        nr[i] = 0
-        IF i <= VARDIM1 (nodeRoll) THEN nr[i] = nodeRoll[i]
         na[i] = 0
         IF i <= VARDIM1 (segArc) THEN na[i] = segArc[i]
     NEXT i
@@ -49,7 +45,6 @@ IF n = 1 THEN
     nx[2] = nx[1] + 1
     ny[2] = ny[1]
     nz[2] = nz[1]
-    nr[2] = nr[1]
     na[2] = 0
 ENDIF
 na[n] = 0
@@ -105,18 +100,17 @@ FOR j = 1 TO n
 NEXT j
 
 ! ---- 4. write back, with arrays of exactly n items ----
-DIM ox[], oy[], oz[], orl[], oa[], os[], oix[], oiy[]
+DIM ox[], oy[], oz[], oa[], os[], oix[], oiy[]
 FOR i = 1 TO n
     ox[i] = nx[i]
     oy[i] = ny[i]
     oz[i] = nz[i]
-    orl[i] = nr[i]
     oa[i] = na[i]
     os[i] = sag[i]
     oix[i] = ix[i]
     oiy[i] = iy[i]
 NEXT i
-PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insX = oix, insY = oiy, A = newA
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, segArc = oa, segSag = os, insX = oix, insY = oiy, A = newA
 END
 
 ! ---- subroutines ----
