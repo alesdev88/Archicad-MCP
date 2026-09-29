@@ -1,4 +1,4 @@
-! Swept Beam -- Master Script
+! Swept Beam, Master Script
 ! Samples the node path into pathX/pathY/pathZ/pathRoll for the 2D and 3D
 ! scripts. Height and roll change linearly with plan length along each
 ! segment, so an arc with a rise is a helix (spec 1.4).

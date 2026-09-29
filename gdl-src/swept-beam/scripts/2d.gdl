@@ -1,4 +1,4 @@
-! Swept Beam -- 2D Script
+! Swept Beam, 2D Script
 ! Plan symbol: a projection of the 3D model (spec 1.5). parts = 1+2+4+8 keeps
 ! the 3D grips out of the plan. planMethod: 2 hidden lines, 3 shading (cut
 ! polygons exist only with 3); +32 draws with the current pen.

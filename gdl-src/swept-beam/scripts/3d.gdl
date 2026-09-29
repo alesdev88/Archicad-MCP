@@ -1,4 +1,4 @@
-! Swept Beam -- 3D Script
+! Swept Beam, 3D Script
 ! The path is swept with TUBE{2}, which keeps the section plumb (W up, U to the
 ! right looking along the path) and rolls it by each point's angle (spec 1.4).
 ! At a kink TUBE would average the two directions and twist both sides, so the

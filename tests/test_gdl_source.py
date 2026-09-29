@@ -226,3 +226,46 @@ def test_build_source_archicad_argument_wins(tmp_path, monkeypatch):
     monkeypatch.setattr(toolchain, "installed_converter_versions", lambda: [])
     source.build_source(root, tmp_path / "out", archicad=29, validate_with=())
     assert seen["v"] == 29
+
+
+def test_a_failed_build_keeps_the_previous_part(tmp_path, monkeypatch):
+    # --out is usually the linked library folder: deleting the old part first
+    # would leave every placed instance missing after the next reload
+    root = _write_source(tmp_path / "src")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "Probe Part.gsm").write_bytes(b"previous build")
+
+    def failing_compile(hsf_dir, gsm_path, version=None):
+        Path(gsm_path).write_bytes(b"half written")
+        raise toolchain.ToolchainError("hsf2libpart failed")
+
+    monkeypatch.setattr(toolchain, "compile_hsf", failing_compile)
+    with pytest.raises(toolchain.ToolchainError):
+        source.build_source(root, out, validate_with=())
+    assert (out / "Probe Part.gsm").read_bytes() == b"previous build"
+
+
+def test_a_good_build_replaces_the_previous_part(tmp_path, monkeypatch):
+    root = _write_source(tmp_path / "src")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "Probe Part.gsm").write_bytes(b"previous build")
+
+    def fake_compile(hsf_dir, gsm_path, version=None):
+        Path(gsm_path).write_bytes(b"new build")
+        return Path(gsm_path)
+
+    monkeypatch.setattr(toolchain, "compile_hsf", fake_compile)
+    result = source.build_source(root, out, validate_with=())
+    assert result.gsm == out / "Probe Part.gsm"
+    assert result.gsm.read_bytes() == b"new build"
+    assert sorted(p.name for p in out.iterdir()) == ["Probe Part.gsm"]
+
+
+def test_gdl_sources_use_no_dash_stand_ins():
+    root = Path(__file__).resolve().parent.parent / "gdl-src"
+    bad = [f"{p.relative_to(root)}:{n}" for p in sorted(root.rglob("*")) if p.is_file()
+           for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+           if "—" in line or "–" in line or " -- " in line]
+    assert bad == []

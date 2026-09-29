@@ -1,4 +1,4 @@
-! Swept Beam -- User Interface Script (three pages, spec 1.6)
+! Swept Beam, User Interface Script: three pages (spec 1.6)
 
 UI_DIALOG "Swept Beam"
 UI_CURRENT_PAGE gs_ui_current_page

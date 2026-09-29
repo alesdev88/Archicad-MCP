@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -301,11 +302,17 @@ def build_source(root: str | Path, out_dir: str | Path, archicad: int | None = N
     if hsf_dir.exists():
         shutil.rmtree(hsf_dir)
     gsm_path = out_dir / f"{src.name}.gsm"
-    gsm_path.unlink(missing_ok=True)
     write_hsf(src, hsf_dir)
+    # Compile beside, then replace: out_dir is usually a linked library folder,
+    # and a build that fails after deleting the old part would leave every
+    # placed instance missing at the next library reload.
+    staging = Path(tempfile.mkdtemp(prefix="gdl-build-"))
     try:
-        gsm = toolchain.compile_hsf(hsf_dir, gsm_path, version=target)
+        built = toolchain.compile_hsf(hsf_dir, staging / gsm_path.name, version=target)
+        shutil.move(str(built), str(gsm_path))
+        gsm = gsm_path
     finally:
+        shutil.rmtree(staging, ignore_errors=True)
         if not keep_hsf:
             shutil.rmtree(hsf_dir, ignore_errors=True)
     installed = set(toolchain.installed_converter_versions())

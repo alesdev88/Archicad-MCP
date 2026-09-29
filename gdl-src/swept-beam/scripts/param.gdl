@@ -1,4 +1,4 @@
-! Swept Beam -- Parameter Script
+! Swept Beam, Parameter Script
 ! Runs after every edit. No Profile requests here (not allowed in this script).
 ! 1 copy and repair the arrays, 2 react to the edit, 3 write back.
 !
