@@ -38,22 +38,49 @@ def _archicad_roots() -> list[Path]:
     return [Path("/Applications/Graphisoft")]
 
 
-def find_lp_xmlconverter() -> Path:
-    """Locate LP_XMLConverter: env override first, then the newest Archicad."""
-    env = os.environ.get("LP_XMLCONVERTER")
-    if env:
-        p = Path(env)
-        if p.is_file():
-            return p
-        raise ToolchainError(f"LP_XMLCONVERTER points to a missing file: {env}")
+def _installed_converters() -> list[tuple[int, Path]]:
+    """(Archicad version, converter binary) for every install found."""
     pattern, tail = _LP_LAYOUT.get(sys.platform, _LP_LAYOUT["darwin"])
-    candidates = []
+    found = []
     for root in _archicad_roots():
         for entry in root.glob(pattern):
             exe = entry / tail
             if exe.is_file():
                 m = re.search(r"Archicad (\d+)", entry.name)
-                candidates.append((int(m.group(1)) if m else 0, exe))
+                found.append((int(m.group(1)) if m else 0, exe))
+    return found
+
+
+def installed_converter_versions() -> list[int]:
+    return sorted({v for v, _ in _installed_converters() if v})
+
+
+def find_lp_xmlconverter(version: int | None = None) -> Path:
+    """Locate LP_XMLConverter.
+
+    With `version`, that Archicad release's converter. A library part keeps
+    the format of the converter that compiled it and opens only in that
+    release or a later one, so a part the team uses in Archicad 27 must be
+    compiled by the 27 converter. The LP_XMLCONVERTER override is ignored
+    then, because its release is unknown. Without `version`: the override
+    first, then the newest installed release.
+    """
+    if version is None:
+        env = os.environ.get("LP_XMLCONVERTER")
+        if env:
+            p = Path(env)
+            if p.is_file():
+                return p
+            raise ToolchainError(f"LP_XMLCONVERTER points to a missing file: {env}")
+    candidates = _installed_converters()
+    if version is not None:
+        for v, exe in candidates:
+            if v == version:
+                return exe
+        installed = ", ".join(str(v) for v in installed_converter_versions()) or "none"
+        raise ToolchainError(
+            f"The Archicad {version} LP_XMLConverter was not found. Installed "
+            f"releases with a converter: {installed}.")
     if not candidates:
         looked = ", ".join(str(r) for r in _archicad_roots())
         raise ToolchainError(
@@ -63,9 +90,10 @@ def find_lp_xmlconverter() -> Path:
     return max(candidates)[1]
 
 
-def compile_hsf(hsf_dir: str | Path, gsm_path: str | Path) -> Path:
+def compile_hsf(hsf_dir: str | Path, gsm_path: str | Path,
+                version: int | None = None) -> Path:
     """hsf2libpart: compile an HSF folder into a .gsm library part."""
-    lp = find_lp_xmlconverter()
+    lp = find_lp_xmlconverter(version)
     result = subprocess.run(
         [str(lp), "hsf2libpart", str(hsf_dir), str(gsm_path)],
         capture_output=True, text=True, timeout=300)
@@ -76,7 +104,8 @@ def compile_hsf(hsf_dir: str | Path, gsm_path: str | Path) -> Path:
 
 
 def validate_gsm(gsm_path: str | Path,
-                 extra_libs: list[str | Path] | None = None) -> list[str]:
+                 extra_libs: list[str | Path] | None = None,
+                 version: int | None = None) -> list[str]:
     """Round-trip the .gsm to XML and interpret its scripts.
 
     Returns warning/error lines. "Missing ancestor" lines are expected
@@ -85,7 +114,7 @@ def validate_gsm(gsm_path: str | Path,
     3D geometry; Archicad can still drop defective bodies silently. The only
     reliable geometry gate is rendering a preview of the placed element.
     """
-    lp = find_lp_xmlconverter()
+    lp = find_lp_xmlconverter(version)
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "src"
         src.mkdir()

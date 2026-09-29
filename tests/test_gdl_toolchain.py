@@ -1,5 +1,8 @@
 """Toolchain discovery across platforms: env override first, then install roots."""
 
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from archicad_mcp.gdl import toolchain
@@ -73,3 +76,58 @@ def test_blender_windows_double_digit_version(tmp_path, monkeypatch):
     v10 = _touch(tmp_path / "Blender Foundation" / "Blender 10.0" / "blender.exe")
     monkeypatch.setattr(toolchain, "_blender_roots", lambda: [tmp_path])
     assert toolchain.find_blender() == v10
+
+
+def _mac_install(root, *versions):
+    rel = "Contents/MacOS/LP_XMLConverter.app/Contents/MacOS/LP_XMLConverter"
+    return {v: _touch(root / f"Archicad {v}" / f"Archicad {v}.app" / rel) for v in versions}
+
+
+def test_version_picks_that_release(tmp_path, monkeypatch):
+    monkeypatch.delenv("LP_XMLCONVERTER", raising=False)
+    monkeypatch.setattr(toolchain.sys, "platform", "darwin")
+    exes = _mac_install(tmp_path / "Graphisoft", 27, 29)
+    monkeypatch.setattr(toolchain, "_archicad_roots", lambda: [tmp_path / "Graphisoft"])
+    assert toolchain.find_lp_xmlconverter(27) == exes[27]
+    assert toolchain.find_lp_xmlconverter() == exes[29]
+
+
+def test_version_ignores_env_override(tmp_path, monkeypatch):
+    monkeypatch.setattr(toolchain.sys, "platform", "darwin")
+    exes = _mac_install(tmp_path / "Graphisoft", 27)
+    monkeypatch.setattr(toolchain, "_archicad_roots", lambda: [tmp_path / "Graphisoft"])
+    monkeypatch.setenv("LP_XMLCONVERTER", str(_touch(tmp_path / "other" / "LP_XMLConverter")))
+    assert toolchain.find_lp_xmlconverter(27) == exes[27]
+
+
+def test_missing_version_names_installed_ones(tmp_path, monkeypatch):
+    monkeypatch.delenv("LP_XMLCONVERTER", raising=False)
+    monkeypatch.setattr(toolchain.sys, "platform", "darwin")
+    _mac_install(tmp_path / "Graphisoft", 27, 29)
+    monkeypatch.setattr(toolchain, "_archicad_roots", lambda: [tmp_path / "Graphisoft"])
+    with pytest.raises(toolchain.ToolchainError, match="Archicad 26.*27, 29"):
+        toolchain.find_lp_xmlconverter(26)
+
+
+def test_installed_versions_sorted(tmp_path, monkeypatch):
+    monkeypatch.setattr(toolchain.sys, "platform", "darwin")
+    _mac_install(tmp_path / "Graphisoft", 29, 27)
+    monkeypatch.setattr(toolchain, "_archicad_roots", lambda: [tmp_path / "Graphisoft"])
+    assert toolchain.installed_converter_versions() == [27, 29]
+
+
+def test_compile_hsf_uses_requested_version(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_find(version=None):
+        seen["version"] = version
+        return tmp_path / "LP"
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"gsm")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(toolchain, "find_lp_xmlconverter", fake_find)
+    monkeypatch.setattr(toolchain.subprocess, "run", fake_run)
+    toolchain.compile_hsf(tmp_path / "hsf", tmp_path / "out.gsm", version=27)
+    assert seen["version"] == 27
