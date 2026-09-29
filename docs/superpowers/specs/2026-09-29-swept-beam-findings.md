@@ -219,3 +219,16 @@ server over stdio (the registered tool, `points` sent as JSON text).
 3. An update through `update_guid` without cuts kept all four cuts.
 4. Existing beams read 0 for all four cuts after the reload and keep TUBE's
    square ends.
+5. The user dragged the new corner grip on `AA91D166` and the beam jumped:
+   shorter, an extra node, both ends 1.75 m longer. Not the grip: that beam was
+   placed before gate C closed from the stale tool defaults, and its stored
+   values were still that placement's raw ones (two nodes, 12.9 m, pending
+   insert and add-node helpers). Archicad drew the stored state; Tapir's
+   GetGDLParametersOfElements opens the parameter list for editing, which runs
+   the Parameter Script, and returns the result without storing it, so every
+   API read showed a processed five-node beam that was never saved. The drag
+   was the first real edit: the script ran, applied the pending helpers and the
+   length re-based by the 1 m default, and stored it. The cut itself came out
+   as dragged (-45.5 degrees). Lesson: an API read of a GDL object is the
+   script's answer, not the stored state; compare with the plan when they
+   might differ.
