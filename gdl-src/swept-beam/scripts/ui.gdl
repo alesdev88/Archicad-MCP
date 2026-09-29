@@ -71,6 +71,11 @@ IF showNodeHeights THEN
     UI_INFIELD "textPen", 278, 156, 70, 19
     UI_INFIELD "textSizeMm", 354, 156, 70, 19
 ENDIF
+UI_OUTFIELD "Plan fill", 18, 186, 245, 18
+UI_INFIELD "planFill", 278, 184, 146, 19
+UI_OUTFIELD "Plan fill pen / background", 18, 210, 245, 18
+UI_INFIELD "fillFgPen", 278, 208, 70, 19
+UI_INFIELD "fillBgPen", 354, 208, 70, 19
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 

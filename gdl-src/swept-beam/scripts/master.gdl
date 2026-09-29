@@ -157,7 +157,7 @@ NEXT iSeg
 ! slope there (ecPlumb) gives a vertical face. Both 0 keeps TUBE's own square
 ! end (ecOn 0), so beams without cuts draw as before. ecTan is the tangent of
 ! the angle between the cut and square, for the overshoot the 3D script adds.
-DIM ecOn[], ecNx[], ecNy[], ecNz[], ecTan[], ecPlumb[]
+DIM ecOn[], ecNx[], ecNy[], ecNz[], ecTan[], ecPlumb[], ecPlan[]
 FOR iE = 1 TO 2
     IF iE = 1 THEN
         ePx = -startTX
@@ -180,6 +180,7 @@ FOR iE = 1 TO 2
         ePlan = ePlan + 360
     ENDWHILE
     ePlan = MAX (-80, MIN (80, ePlan))
+    ecPlan[iE] = ePlan
     eTilt = MAX (-85, MIN (85, eTilt))
     ePhi = ATN (eRise)
     ecPlumb[iE] = ePhi

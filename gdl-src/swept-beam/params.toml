@@ -1,5 +1,5 @@
 # Swept Beam parameters, in parameter-list order. See the spec, section 1.1.
-# Types: length angle real integer boolean string surface pen linetype bmat profile.
+# Types: length angle real integer boolean string surface pen linetype bmat profile fill.
 # A list default makes an array parameter. All node arrays share one length.
 
 [[param]]
@@ -227,6 +227,27 @@ name = "outlinePen"
 type = "pen"
 default = 1
 description = "Outline pen"
+
+[[param]]
+name = "planFill"
+type = "fill"
+# 0 is the empty fill: the footprint fill only makes the plan symbol clickable
+# everywhere, as in the office closet object, until a hatch is picked
+default = 0
+description = "Plan fill"
+
+[[param]]
+name = "fillFgPen"
+type = "pen"
+default = 1
+description = "Plan fill pen"
+
+[[param]]
+name = "fillBgPen"
+type = "pen"
+# 0 is a transparent background
+default = 0
+description = "Plan fill background pen"
 
 [[param]]
 name = "showAxis"

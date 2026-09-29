@@ -24,10 +24,10 @@ PARAM_TAGS = {
     "length": "Length", "angle": "Angle", "real": "RealNum",
     "integer": "Integer", "boolean": "Boolean", "string": "String",
     "surface": "Material", "pen": "PenColor", "linetype": "LineType",
-    "bmat": "BuildingMaterial", "profile": "Profile",
+    "bmat": "BuildingMaterial", "profile": "Profile", "fill": "FillPattern",
 }
 NUMERIC_TYPES = {"length", "angle", "real"}
-INDEX_TYPES = {"integer", "surface", "pen", "linetype", "bmat", "profile"}
+INDEX_TYPES = {"integer", "surface", "pen", "linetype", "bmat", "profile", "fill"}
 
 # (source script, HSF script file, libpartdata.xml section), in section order
 SCRIPTS = (

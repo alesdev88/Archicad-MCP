@@ -46,6 +46,13 @@ Each end can be cut at an angle, on the Ends page of the dialog:
 - In 3D, each end has two grips: one on the corner turns the plan cut, one on
   the top edge of the cut face tips it.
 
+## Floor plan
+
+The whole plan symbol is clickable, not only its lines: a footprint fill
+covers the band the beam takes in plan. It is empty with a transparent
+background by default, so nothing shows; pick a hatch and pens on the Floor
+plan page to show the beam filled.
+
 ## Profile
 
 On the Profile page choose "Profile attribute" and pick any profile. Its

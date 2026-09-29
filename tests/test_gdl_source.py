@@ -58,6 +58,10 @@ PARAMS = textwrap.dedent("""\
     type = "boolean"
     default = false
     [[param]]
+    name = "planFill"
+    type = "fill"
+    default = 0
+    [[param]]
     name = "pathTolerance"
     type = "length"
     default = 0.00001
@@ -106,6 +110,7 @@ def test_paramlist_scalar_array_and_flags(tmp_path):
     assert '<BuildingMaterial Name="rectBMat">' in xml
     assert '<Value><![CDATA["Rectangle"]]></Value>' in xml
     assert '<Boolean Name="flipProfile">' in xml
+    assert '<FillPattern Name="planFill">' in xml
     assert "<Value>0.00001</Value>" in xml
 
 
