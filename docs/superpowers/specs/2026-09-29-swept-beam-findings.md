@@ -232,3 +232,22 @@ server over stdio (the registered tool, `points` sent as JSON text).
    as dragged (-45.5 degrees). Lesson: an API read of a GDL object is the
    script's answer, not the stored state; compare with the plan when they
    might differ.
+
+## Gate F: clickable plan symbol
+
+Run on 29.09.2026 in Archicad 27 (`MCP-Test_27`) and 29 (`MCP-Test`), clicked
+by the user inside the beams, away from their lines.
+
+1. A footprint fill (the band the beam covers, mitred at kinks, closed on the
+   end cuts) drawn with `SET FILL 0` did not make the beam clickable, although
+   it drew nothing. The rendered band matched the outline on the 59-node curved
+   beam and on a beam with plus and minus 30 degree end cuts (checked with a
+   brick hatch).
+2. Three beams across another beam, with a brick hatch, the template's
+   "Background" fill and a project empty fill attribute, all background pen 0:
+   all three picked the beam by a click inside, and the beam underneath stayed
+   visible through all of them (pen 0 is a transparent background).
+3. Default fixed: with no fill picked the part defines and uses its own empty
+   fill (`DEFINE EMPTY_FILL`), independent of the project's attribute indices.
+   The user confirmed the beams on the default and the one beneath them all
+   select by a click inside.
