@@ -99,6 +99,27 @@ description = "Add-node grip at the end (helper)"
 hidden = true
 
 [[param]]
+name = "insDone"
+type = "length"
+default = -1.0
+description = "Insert grip value already applied (helper)"
+hidden = true
+
+[[param]]
+name = "extStartDone"
+type = "length"
+default = -1.0
+description = "Start grip value already applied (helper)"
+hidden = true
+
+[[param]]
+name = "extEndDone"
+type = "length"
+default = -1.0
+description = "End grip value already applied (helper)"
+hidden = true
+
+[[param]]
 name = "profileMode"
 type = "string"
 default = "Rectangle"

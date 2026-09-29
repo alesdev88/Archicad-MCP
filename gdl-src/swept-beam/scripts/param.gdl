@@ -9,7 +9,7 @@ VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
 VALUES "gs_ui_current_page" 1, 2, 3
 VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes"
-HIDEPARAMETER "B", "ZZYZX", "segSag", "insL", "extStart", "extEnd", "gs_ui_current_page", "sb_version"
+HIDEPARAMETER "B", "ZZYZX", "segSag", "insL", "extStart", "extEnd", "insDone", "extStartDone", "extEndDone", "gs_ui_current_page", "sb_version"
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
@@ -17,6 +17,26 @@ IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
 
 EPS = 0.0001
 EXT_PARK = 0.5
+jIns = 0
+! One-shot grips. Archicad runs this script several times after one edit and
+! GLOB_MODPAR_NAME keeps the last edited name all that time, so a helper grip is
+! applied only when it holds a value not applied yet (the *Done markers), and
+! its dragged value is kept while it is still the last edit: setting it back in
+! the drag run makes Archicad drop the whole edit (gate C).
+insDoneOut = -1
+extStartOut = EXT_PARK
+extStartDoneOut = -1
+extEndOut = EXT_PARK
+extEndDoneOut = -1
+IF GLOB_MODPAR_NAME = "insL" THEN insDoneOut = insDone
+IF GLOB_MODPAR_NAME = "extStart" THEN
+    extStartOut = extStart
+    extStartDoneOut = extStartDone
+ENDIF
+IF GLOB_MODPAR_NAME = "extEnd" THEN
+    extEndOut = extEnd
+    extEndDoneOut = extEndDone
+ENDIF
 
 ! ---- 1. copy and repair: every array gets the length of nodeX ----
 DIM nx[], ny[], nz[], nr[], na[]
@@ -113,12 +133,13 @@ IF GLOB_MODPAR_NAME = "insL" THEN
         IF jIns = 0 AND j <= VARDIM1 (insL) THEN
             jSeg = j
             GOSUB "seg"
-            IF sChord > EPS AND ABS (insL[j] - sChord / 3) > 0.001 THEN jIns = j
+            IF sChord > EPS AND ABS (insL[j] - sChord / 3) > 0.001 AND ABS (insL[j] - insDone) > 0.000001 THEN jIns = j
         ENDIF
     NEXT j
     IF jIns > 0 THEN
         jSeg = jIns
         GOSUB "seg"
+        insDoneOut = insL[jIns]
         tIns = MAX (0.02, MIN (0.98, insL[jIns] / sChord))
         IF sIsArc THEN
             pth = na[jIns] * tIns
@@ -154,7 +175,8 @@ ENDIF
 
 ! add-node grips past the ends: slid out along the end direction, they append
 ! (or prepend) a node that far away, continuing the slope, like continuing a wall
-IF GLOB_MODPAR_NAME = "extEnd" AND ABS (extEnd - EXT_PARK) > 0.001 AND extEnd > 0.01 THEN
+IF GLOB_MODPAR_NAME = "extEnd" AND ABS (extEnd - EXT_PARK) > 0.001 AND extEnd > 0.01 AND ABS (extEnd - extEndDone) > 0.000001 THEN
+    extEndDoneOut = extEnd
     jSeg = n - 1
     GOSUB "seg"
     GOSUB "tans"
@@ -166,7 +188,8 @@ IF GLOB_MODPAR_NAME = "extEnd" AND ABS (extEnd - EXT_PARK) > 0.001 AND extEnd > 
     n = n + 1
     na[n] = 0
 ENDIF
-IF GLOB_MODPAR_NAME = "extStart" AND ABS (extStart - EXT_PARK) > 0.001 AND extStart > 0.01 THEN
+IF GLOB_MODPAR_NAME = "extStart" AND ABS (extStart - EXT_PARK) > 0.001 AND extStart > 0.01 AND ABS (extStart - extStartDone) > 0.000001 THEN
+    extStartDoneOut = extStart
     jSeg = 1
     GOSUB "seg"
     GOSUB "tans"
@@ -226,6 +249,14 @@ FOR j = 1 TO n
         il[j] = sChord / 3
     ENDIF
 NEXT j
+! keep the dragged insert grip where it was dropped while it is the last edit
+IF GLOB_MODPAR_NAME = "insL" AND insDoneOut >= 0 THEN
+    FOR j = 1 TO n
+        IF j <= VARDIM1 (insL) THEN
+            IF ABS (insL[j] - insDoneOut) < 0.000001 THEN il[j] = insL[j]
+        ENDIF
+    NEXT j
+ENDIF
 
 ! ---- 4. write back, with arrays of exactly n items ----
 DIM ox[], oy[], oz[], orl[], oa[], os[], oil[]
@@ -238,7 +269,7 @@ FOR i = 1 TO n
     os[i] = sag[i]
     oil[i] = il[i]
 NEXT i
-PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insL = oil, extStart = EXT_PARK, extEnd = EXT_PARK, A = newA
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insL = oil, extStart = extStartOut, extEnd = extEndOut, insDone = insDoneOut, extStartDone = extStartDoneOut, extEndDone = extEndDoneOut, A = newA
 END
 
 ! ---- subroutines ----
