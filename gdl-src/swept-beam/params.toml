@@ -231,8 +231,9 @@ description = "Outline pen"
 [[param]]
 name = "planFill"
 type = "fill"
-# 0 is the empty fill: the footprint fill only makes the plan symbol clickable
-# everywhere, as in the office closet object, until a hatch is picked
+# 0 draws the part's own empty fill: the footprint fill then only makes the
+# plan symbol clickable everywhere, as in the office closet object, until a
+# hatch is picked
 default = 0
 description = "Plan fill"
 

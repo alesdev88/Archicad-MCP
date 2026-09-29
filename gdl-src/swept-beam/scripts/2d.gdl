@@ -43,7 +43,15 @@ IF nPath > 1 THEN
     iP = 1
     GOSUB "fpPoint"
     PUT fpx, fpy, -1
-    SET FILL planFill
+    IF planFill > 0 THEN
+        SET FILL planFill
+    ELSE
+        ! No fill picked: the part's own empty fill. SET FILL 0 draws the same
+        ! nothing, but Archicad does not pick an object by it; a defined empty
+        ! fill it does, like a project's empty fill attribute (gate E)
+        DEFINE EMPTY_FILL "Swept Beam empty fill"
+        SET FILL "Swept Beam empty fill"
+    ENDIF
     POLY2_B{5} 2 * nPath + 1, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
 ENDIF
 
