@@ -9,9 +9,37 @@
 MODEL SOLID
 IF nPath < 2 THEN END
 
-sgnFlip = 1
-IF flipProfile THEN sgnFlip = -1
+! A native beam shows a profile mirrored against TUBE's U/W frame (gate B,
+! UPE100 side by side), so the section is mirrored by default and "Flip
+! section" un-mirrors it: unticked matches a native beam.
+sgnFlip = -1
+IF flipProfile THEN sgnFlip = 1
 tubeMask = 1 + 2 + 16 + 32
+
+! ---- section from a Profile Manager profile, read live (closet pattern) ----
+useProfile = 0
+nComp = 0
+DIM compTypes[], geo[], compStart[], compEnd[], eSurf[]
+IF profileMode = "Profile attribute" THEN
+    rq1 = REQUEST ("Profile_components", beamProfile, nComp, compTypes)
+    rq2 = REQUEST ("Profile_default_geometry", beamProfile, geo)
+    rq3 = REQUEST ("Profile_default_boundingbox", beamProfile, pbXmin, pbYmin, pbXmax, pbYmax)
+    IF rq1 > 0 AND rq2 > 0 AND rq3 > 0 AND nComp > 0 THEN
+        rawCount = VARDIM1 (geo)
+        okSplit = 1
+        nextIdx = nComp + 1
+        FOR iC = 1 TO nComp
+            nNodesC = INT (geo[iC])
+            compStart[iC] = nextIdx
+            compEnd[iC] = nextIdx + nNodesC * 5 - 1
+            IF nNodesC < 3 THEN okSplit = 0
+            IF compEnd[iC] > rawCount THEN okSplit = 0
+            nextIdx = compEnd[iC] + 1
+        NEXT iC
+        IF nextIdx - 1 <> rawCount THEN okSplit = 0
+        useProfile = okSplit
+    ENDIF
+ENDIF
 
 ! ---- rectangle section (also the fallback) ----
 rw = MAX (0.001, rectW)
@@ -19,7 +47,13 @@ rh = MAX (0.001, rectH)
 rSurf = 0
 nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
 IF overrideSurface THEN rSurf = surfaceOverride
-secExtent = SQR ((rw / 2 + ABS (profileOffsetU))^2 + (rh / 2 + ABS (profileOffsetW))^2)
+
+! how far the section reaches from the path, for carrying runs past a kink
+IF useProfile THEN
+    secExtent = SQR (MAX (ABS (pbXmin - profileOffsetU), ABS (pbXmax - profileOffsetU))^2 + MAX (ABS (pbYmin - profileOffsetW), ABS (pbYmax - profileOffsetW))^2)
+ELSE
+    secExtent = SQR ((rw / 2 + ABS (profileOffsetU))^2 + (rh / 2 + ABS (profileOffsetW))^2)
+ENDIF
 
 ! ---- runs between kinks ----
 DIM runA[], runB[]
@@ -53,15 +87,62 @@ FOR iRun = 1 TO nRun
     ! Flip mirrors the section, not the path: under MULX -1 the path is fed with
     ! x negated, so it lands where it belongs and only U flips. The cut planes
     ! above are already in place and are not affected by this transformation.
-    IF flipProfile THEN MULX -1
-    BUILDING_MATERIAL rectBMat
-    PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-    PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-    PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-    PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-    GOSUB "putRun"
-    TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
-    IF flipProfile THEN DEL 1
+    IF sgnFlip < 0 THEN MULX -1
+    IF useProfile THEN
+        FOR iC = 1 TO nComp
+            cBMat = 0
+            rq = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_bmat", cBMat)
+            cSurf = 0
+            rq = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_surface", cSurf)
+            nES = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_comp_surfaces", eSurf)
+            IF overrideSurface THEN cSurf = surfaceOverride
+            BUILDING_MATERIAL cBMat
+            ! a single outline drops its closing duplicate; with holes TUBE{2} needs the -1 nodes
+            nEnds = 0
+            FOR kG = compStart[iC] TO compEnd[iC] STEP 5
+                IF geo[kG + 4] = -1 THEN nEnds = nEnds + 1
+            NEXT kG
+            nSec = 0
+            iNodeC = 0
+            FOR kG = compStart[iC] TO compEnd[iC] STEP 5
+                iNodeC = iNodeC + 1
+                stG = geo[kG + 4]
+                skipIt = 0
+                IF stG = -1 AND nEnds = 1 AND kG = compEnd[iC] - 4 THEN skipIt = 1
+                IF skipIt = 0 THEN
+                    tubeSt = stG
+                    IF stG >= 0 AND geo[kG + 3] = 0 THEN tubeSt = stG + 1
+                    edgeMat = cSurf
+                    IF overrideSurface = 0 AND iNodeC <= nES THEN edgeMat = eSurf[iNodeC]
+                    ! offsets move positions only: plain nodes, start point (600),
+                    ! centre (900), arc endpoints (1000+, 3000+). Other codes hold a
+                    ! vector, a length or an angle in x/y and stay as they are.
+                    su = geo[kG]
+                    sw = geo[kG + 1]
+                    isPos = 0
+                    IF stG < 100 OR stG = 600 OR stG = 900 THEN isPos = 1
+                    IF (stG >= 1000 AND stG < 2000) OR (stG >= 3000 AND stG < 4000) THEN isPos = 1
+                    IF isPos THEN
+                        su = su - profileOffsetU
+                        sw = sw - profileOffsetW
+                    ENDIF
+                    PUT su, sw, tubeSt, edgeMat
+                    nSec = nSec + 1
+                ENDIF
+            NEXT kG
+            GOSUB "putRun"
+            TUBE{2} cSurf, cSurf, cSurf, nSec, nTube, tubeMask, GET (NSP)
+        NEXT iC
+    ELSE
+        BUILDING_MATERIAL rectBMat
+        PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+        PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+        GOSUB "putRun"
+        TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
+    ENDIF
+    IF sgnFlip < 0 THEN DEL 1
     FOR iC = 1 TO nCut
         CUTEND
     NEXT iC

@@ -74,3 +74,21 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
    cut height from GLOB_CUTPLANES_INFO (Archicad 20+).
 
 Gate A result: pass, with the fixes above (units, end samples, plumb mitres).
+
+## Gate B
+
+Run on 29.09.2026 in Archicad 27 (`MCP-Test_27`), on the tangent test beam,
+with the office template's profiles. The profile branch sits inside the kink
+run loop; offsets move only position points (plain, 600, 900, 1000+, 3000+),
+not codes whose x/y hold a vector, length or angle.
+
+1. IPE300 (solid I): clean I-section along the curve, web plumb.
+2. RHS100x100x5 (one skin, outer and hole outlines): the hole shows (user's 3D).
+3. CHS48.3X5.0 (round, hollow): smooth sides, no facet lines (user: smooth).
+4. Orientation: a native Beam with UPE100 drawn left to right opens to the
+   opposite side from the Swept Beam (the two channels faced each other). The
+   section is now mirrored by default and "Flip section" un-mirrors it, so an
+   unticked Swept Beam matches a native beam. Re-rendered: both show the open
+   side from the same angle.
+5. Profile index 9999: no crash; Archicad resolved it to an existing profile
+   (steel section drawn), so the rectangle fallback only covers a failing request.
