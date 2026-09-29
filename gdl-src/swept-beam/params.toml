@@ -5,13 +5,17 @@
 [[param]]
 name = "A"
 type = "length"
-default = 3.0
+# 1 m, so that Tapir's SetGDLParametersOfElements, which writes A in metres
+# into the placed size ratio (the size over this default), cannot scale the
+# beam; the default beam is still 3 m long through nodeX (gate E)
+default = 1.0
 description = "Length (two-node straight beams)"
 
 [[param]]
 name = "B"
 type = "length"
-default = 0.2
+# 1 m for the same reason as A
+default = 1.0
 description = "B (unused)"
 hidden = true
 
@@ -32,7 +36,7 @@ hidden = true
 [[param]]
 name = "aDone"
 type = "length"
-default = 3.0
+default = 1.0
 description = "Length already applied (helper)"
 hidden = true
 

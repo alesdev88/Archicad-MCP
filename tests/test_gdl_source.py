@@ -269,3 +269,13 @@ def test_gdl_sources_use_no_dash_stand_ins():
            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if "—" in line or "–" in line or " -- " in line]
     assert bad == []
+
+
+def test_swept_beam_size_defaults_are_one_metre():
+    # Tapir's SetGDLParametersOfElements (1.5.0 to 1.5.9) writes A and B in
+    # metres into the placed size ratios, which Archicad reads as multiples of
+    # these defaults: any default other than 1 m rescales the beam on every
+    # parameter write (gate E, a 4 m beam came out 48 m long)
+    src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
+    defaults = {p.name: p.default for p in src.params}
+    assert defaults["A"] == defaults["B"] == defaults["aDone"] == 1.0
