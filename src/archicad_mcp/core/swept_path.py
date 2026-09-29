@@ -168,10 +168,16 @@ def _fit_arc(pts: list[Point], tol: float) -> tuple[float, float] | None:
     steps = [q - p for p, q in zip(progress, progress[1:])]
     if (ccw and any(s < -1e-9 for s in steps)) or (not ccw and any(s > 1e-9 for s in steps)):
         return None
+    # The source runs straight between its points (morph edges, polyline
+    # vertices), so the arc bulges past each chord by r (1 - cos (step / 2)).
+    # Three points always lie on a circle; this keeps corners straight.
+    bulge = max(r * (1 - math.cos(abs(s) / 2)) for s in steps)
+    if bulge > tol:
+        return None
     dz = _rise_deviation(pts, [r * abs(t) for t in progress])
     if max(dz) > tol:
         return None
-    return math.degrees(progress[-1]), max(math.hypot(o, z) for o, z in zip(radial, dz))
+    return math.degrees(progress[-1]), max(bulge, max(math.hypot(o, z) for o, z in zip(radial, dz)))
 
 
 def fit_points(points, tol: float) -> SweptPath:

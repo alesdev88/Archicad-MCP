@@ -33,7 +33,8 @@ def test_helix_fits_one_arc_left():
     assert len(path.nodes) == 2
     assert path.arcs[0] == pytest.approx(90.0, abs=1e-6) and path.arcs[1] == 0.0
     assert path.nodes[-1] == pytest.approx((0.0, 5.0, 1.0))
-    assert path.max_deviation < 1e-6
+    # the arc bulges 0.76 mm past each 2 degree chord of the sampled helix
+    assert path.max_deviation == pytest.approx(5 * (1 - math.cos(math.radians(1))), abs=1e-6)
 
 
 def test_helix_fits_one_arc_right():
@@ -50,6 +51,15 @@ def test_straight_rise_is_one_segment():
 def test_bent_rise_splits():
     pts = [(k * 0.5, 0.0, min(k, 20 - k) * 0.1) for k in range(21)]
     assert len(sp.fit_points(pts, 0.002).nodes) >= 3
+
+
+def test_corner_points_stay_straight():
+    # any three points lie on a circle; an arc through corners would miss the
+    # straight edges between them by metres while every point fits
+    path = sp.fit_points([(0, 0, 0), (3, 0, 0), (3, 4, 0)], 0.002)
+    assert len(path.nodes) == 3 and path.arcs == [0.0, 0.0, 0.0]
+    rectangle = sp.fit_points([(0, 0, 0), (3, 0, 0), (3, 4, 0), (0, 4, 0)], 0.002)
+    assert len(rectangle.nodes) == 4 and rectangle.arc_count == 0
 
 
 def test_duplicates_are_dropped():
