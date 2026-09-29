@@ -79,14 +79,32 @@ FOR jS = 1 TO nNode - 1
             HOTSPOT2 gbx - guy, gby + gux, hId + 1, segSag[jS], 3
             HOTSPOT2 gbx + guy * segSag[jS], gby - gux * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
         ENDIF
-        ! insert grip: slides along the chord, home = one third along
+        ! insert grip: home one third along the segment, on the arc if it is
+        ! one, sliding along the segment's direction there
         IF showAddGrips AND jS <= VARDIM1 (insL) AND jS <= VARDIM1 (insDone) THEN
-            gbx = nodeX[jS] + gux * (gChord / 3 - insDone[jS])
-            gby = nodeY[jS] + guy * (gChord / 3 - insDone[jS])
+            gqx = nodeX[jS] + gux * gChord / 3
+            gqy = nodeY[jS] + guy * gChord / 3
+            gtx = gux
+            gty = guy
+            IF segIsArc[jS] THEN
+                gpx = nodeX[jS] - segCx[jS]
+                gpy = nodeY[jS] - segCy[jS]
+                gTh = segArc[jS] / 3
+                gqx = segCx[jS] + gpx * COS (gTh) - gpy * SIN (gTh)
+                gqy = segCy[jS] + gpx * SIN (gTh) + gpy * COS (gTh)
+                gtx = -(gqy - segCy[jS]) / segR[jS]
+                gty = (gqx - segCx[jS]) / segR[jS]
+                IF segArc[jS] < 0 THEN
+                    gtx = -gtx
+                    gty = -gty
+                ENDIF
+            ENDIF
+            gbx = gqx - gtx * insDone[jS]
+            gby = gqy - gty * insDone[jS]
             hId = 300000 + jS * 10
             HOTSPOT2 gbx, gby, hId, insL[jS], 1 + 128
-            HOTSPOT2 gbx - gux, gby - guy, hId + 1, insL[jS], 3
-            HOTSPOT2 gbx + gux * insL[jS], gby + guy * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
+            HOTSPOT2 gbx - gtx, gby - gty, hId + 1, insL[jS], 3
+            HOTSPOT2 gbx + gtx * insL[jS], gby + gty * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
         ENDIF
     ENDIF
 NEXT jS

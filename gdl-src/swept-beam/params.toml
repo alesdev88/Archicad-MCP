@@ -30,6 +30,13 @@ description = "Show 2D hotspots in 3D"
 hidden = true
 
 [[param]]
+name = "aDone"
+type = "length"
+default = 3.0
+description = "Length already applied (helper)"
+hidden = true
+
+[[param]]
 name = "nodeX"
 type = "length"
 default = [0.0, 3.0]

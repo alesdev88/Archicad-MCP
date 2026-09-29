@@ -21,7 +21,7 @@ VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes"
 ! the plan grips drawn at the base level in 3D would lie on the ground under a
 ! rising beam; the 3D script has its own node grips
 PARAMETERS AC_show2DHotspotsIn3D = 0
-HIDEPARAMETER "B", "ZZYZX", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
+HIDEPARAMETER "B", "ZZYZX", "aDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
@@ -81,26 +81,27 @@ eSd = extStartDone
 eEd = extEndDone
 
 ! ---- 2. reactions ----
+! Length A, a value and marker pair like the helper grips. On a two-node
+! straight beam, a changed A (placement click, dialog, API) moves node 2 to that
+! length once, along the beam's direction; otherwise A follows the nodes.
 newA = A
+aDoneOut = A
 IF n = 2 AND ABS (na[1]) < 0.01 THEN
     ddx = nx[2] - nx[1]
     ddy = ny[2] - ny[1]
     lenPlan = SQR (ddx * ddx + ddy * ddy)
-    ! A drives node 2 only when A itself is edited; otherwise A follows the
-    ! nodes (an API placement brings the Object tool's A, which must not win)
-    newA = lenPlan
-    IF GLOB_MODPAR_NAME = "A" THEN
-        newA = A
-        IF ABS (A - lenPlan) > 0.0005 AND A > EPS THEN
-            ux = 1
-            uy = 0
-            IF lenPlan > EPS THEN
-                ux = ddx / lenPlan
-                uy = ddy / lenPlan
-            ENDIF
-            nx[2] = nx[1] + ux * A
-            ny[2] = ny[1] + uy * A
+    IF ABS (A - aDone) > 0.0005 AND A > EPS THEN
+        ux = 1
+        uy = 0
+        IF lenPlan > EPS THEN
+            ux = ddx / lenPlan
+            uy = ddy / lenPlan
         ENDIF
+        nx[2] = nx[1] + ux * A
+        ny[2] = ny[1] + uy * A
+    ELSE
+        newA = lenPlan
+        aDoneOut = lenPlan
     ENDIF
 ENDIF
 
@@ -131,7 +132,9 @@ FOR j = 1 TO n - 1
 NEXT j
 
 ! insert grip: slid along segment j from its home one third along, it inserts
-! a node at that point of the segment, on the arc if the segment is one
+! a node at that point of the segment, on the arc if the segment is one. On an
+! arc the grip slides along the tangent at its home, so a slide d is the arc
+! angle ASN (d / radius) from there.
 jIns = 0
 FOR j = 1 TO n - 1
     IF jIns = 0 AND ABS (il[j] - idn[j]) > GRIP_EPS THEN jIns = j
@@ -143,6 +146,7 @@ IF jIns > 0 THEN
     idn[jIns] = il[jIns]
     tIns = -1
     IF sChord > EPS THEN tIns = (sChord / 3 + insOff) / sChord
+    IF sIsArc AND sRad > EPS AND ABS (na[jIns]) > 0.01 THEN tIns = 1 / 3 + ASN (MAX (-1, MIN (1, insOff / sRad))) / ABS (na[jIns])
     IF tIns > 0.02 AND tIns < 0.98 THEN
         IF sIsArc THEN
             pth = na[jIns] * tIns
@@ -286,7 +290,7 @@ FOR i = 1 TO n
     oil[i] = il[i]
     oidn[i] = idn[i]
 NEXT i
-PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
 END
 
 ! ---- subroutines ----
