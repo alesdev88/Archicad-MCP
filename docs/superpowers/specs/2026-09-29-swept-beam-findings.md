@@ -49,3 +49,9 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
    and trims it with CUTPLANE on the mitre plane. Plan: parallel lines into one
    straight mitre line. 3D: a flat mitre with a small step where the two slopes
    differ, as two real cut members would show.
+   A 3D-bisector mitre plane leans when the path rises, so the two sides' cut
+   edges drifted apart in plan (user's close-up). The mitre plane is now vertical
+   and bisects the two directions in plan (a plumb mitre cut); a slope-only kink
+   gets a plumb cut square to the plan direction. Plan at pixel level: one mitre
+   line, both sides end on it. Section DP4 in the middle of the straight part: a
+   clean rectangle (user).

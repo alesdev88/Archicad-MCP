@@ -138,7 +138,11 @@ NEXT iSeg
 
 ! ---- kinks: nodes where the path changes direction by more than 1 degree ----
 ! The 3D script splits the sweep there and trims both sides with the mitre
-! plane, whose normal (kinkNx, kinkNy, kinkNz) bisects the two directions.
+! plane (normal kinkNx, kinkNy, kinkNz). The plane is vertical and bisects the
+! two directions in plan, a plumb mitre cut: it projects to one line in plan,
+! so both sides meet on the same mitre line there. A 3D bisector plane would
+! lean when the path rises, and the two sides' cut edges would drift apart in
+! plan (gate A). Only a turn to or from a vertical direction falls back to it.
 DIM nodeKink[], kinkNx[], kinkNy[], kinkNz[], kinkTurn[]
 FOR iN = 1 TO nNode
     nodeKink[iN] = 0
@@ -167,18 +171,26 @@ FOR iN = 2 TO nNode - 1
         IF kCos < COS (1) THEN
             nodeKink[iN] = 1
             kinkTurn[iN] = ACS (MAX (-1, MIN (1, kCos)))
-            ksx = kax + kbx
-            ksy = kay + kby
-            ksz = kaz + kbz
-            kls = SQR (ksx * ksx + ksy * ksy + ksz * ksz)
-            IF kls > EPS THEN
+            ksx = eTx[iN - 1] + sTx[iN]
+            ksy = eTy[iN - 1] + sTy[iN]
+            kls = SQR (ksx * ksx + ksy * ksy)
+            IF kls > 0.01 THEN
                 kinkNx[iN] = ksx / kls
                 kinkNy[iN] = ksy / kls
-                kinkNz[iN] = ksz / kls
+                kinkNz[iN] = 0
             ELSE
+                ksx = kax + kbx
+                ksy = kay + kby
+                ksz = kaz + kbz
+                kls = SQR (ksx * ksx + ksy * ksy + ksz * ksz)
                 kinkNx[iN] = kax
                 kinkNy[iN] = kay
                 kinkNz[iN] = kaz
+                IF kls > EPS THEN
+                    kinkNx[iN] = ksx / kls
+                    kinkNy[iN] = ksy / kls
+                    kinkNz[iN] = ksz / kls
+                ENDIF
             ENDIF
         ENDIF
     ENDIF
