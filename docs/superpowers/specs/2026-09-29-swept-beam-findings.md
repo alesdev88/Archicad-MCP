@@ -133,3 +133,10 @@ not codes whose x/y hold a vector, length or angle.
   no segment lengths involved. Add-node grips rest 0.25 m past the ends (user
   asked for closer). The test beams were recreated so old helper values could
   not fire.
+- Insert grips on arcs (commit 72a2b5c): the user first saw them still on the
+  chord, one third along. The build had reached the linked GDL workspace
+  folder, but Archicad 27 kept the old part until a ReloadLibraries (the
+  placed beam had no `aDone` parameter, which that build added). After the
+  reload, on a 5-node beam with 4 arcs, every curve grip sits on the arc
+  midpoint and every insert grip one third along its arc. Every build into
+  the workspace needs a ReloadLibraries on each open port before a live check.
