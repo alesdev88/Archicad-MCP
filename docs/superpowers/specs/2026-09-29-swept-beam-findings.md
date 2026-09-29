@@ -156,3 +156,30 @@ not codes whose x/y hold a vector, length or angle.
   1.75 m past). Re-picking the part in the Object Settings reset the defaults.
   Only a changed helper default under a live test file causes it; a released
   part that changes helper defaults needs a Forward Migration script.
+
+## Gate D (in progress)
+
+Run on 29.09.2026 through `swept_beam.create_swept_beam` on a live connection
+(the same code the MCP tool calls; the wrapper is covered by the unit tests),
+so the Claude extension did not need a restart.
+
+1. MCP-Test (Archicad 29), the test morph line `0EF502A3`: dry run 59 nodes,
+   58 straight, 0.0 mm, steepest piece 55.4 degrees, no warnings. The line
+   is a smooth 3D curve whose height rises and falls like a sine, sampled
+   every 0.3 to 1.0 m with turns up to 18 degrees per vertex; with a linear
+   rise per piece nothing longer than one edge fits within 2 mm, so the beam
+   follows the drawn edges exactly. Placed as `4AA4B92F`; the stored nodes match
+   the morph vertices within 0.001 mm (morph vertex z is relative to the
+   origin, as assumed). First render: loose pieces beside the tight loop,
+   where the pieces fall at about 55 degrees. Cause: a kink's cut box was sized
+   without the run's slope while the overshoot it trims grows and rises with
+   it (up to 0.94 m + 0.14 m of section against a 0.87 m box). Fix: the box
+   holds the whole overshoot, `cutD = MAX (old size, overshoot * SQR (1 +
+   slope^2) + 2 * secExtent)`, so flat kinks are unchanged. Re-rendered in plan
+   and 3D: no loose pieces, the beam follows the line through the loop.
+2. Same element, `update_guid` with `{"attribute": "RHS100X100X5"}`: GUID kept,
+   59 nodes, profileMode "Profile attribute", profile index 47. The previews
+   are too small to show the 100 mm hole (checked at gate B).
+4. MCP-Test_27 (Archicad 27), the fixture as `points`, 30 m north: 59 nodes,
+   0.0 mm, placed as `0BC771D9` on story 0; stored nodes within 0.001 mm;
+   render clean.
