@@ -34,6 +34,17 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
   single nodes in 3D.
 - Exact values and roll: the node arrays in the parameter list.
 
+## Reference line
+
+The nodes are the beam's reference line: you draw and drag along them, and
+"Show reference axis" draws them. On the Path page, "Reference line at" puts
+the beam's left face, centre or right face on that line (looking from the
+first node to the last), and "Offset from the reference line" moves the beam
+away from it; with Centre, a positive offset moves it to the right. To run a
+beam 40 cm clear of an edge, draw along the edge, pick the face towards it and
+set the offset to 0.40. Flip turns the section over without moving the beam.
+The Profile page's origin shift moves the section within itself.
+
 ## End cuts
 
 Each end can be cut at an angle, on the Ends page of the dialog:
@@ -65,8 +76,10 @@ missing in a project, the beam falls back to the rectangle.
 from a DWG or Rhino, into a Swept Beam. Always run it as a dry run first: it
 reports how many nodes it made and how far they are from the source.
 `cut_start_plan`, `cut_start_tilt`, `cut_end_plan` and `cut_end_tilt` set the
-end cuts in degrees; rewriting a beam with `update_guid` keeps its profile and
-end cuts unless the call sets them.
+end cuts in degrees, and `ref_line` ("left face", "centre", "right face") with
+`ref_offset` places the beam off the curve; rewriting a beam with
+`update_guid` keeps its profile, end cuts and reference line unless the call
+sets them.
 
 Points are read as a line running straight from one point to the next. A
 curve becomes an arc only where its points are close enough together that the

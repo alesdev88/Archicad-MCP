@@ -5,9 +5,10 @@
 
 planMethod = 2 + 32
 
-! the section's extent beside the axis in TUBE's U (to the right looking along
-! the path), after the default mirror the 3D script applies; used by the
-! footprint fill and the end cut grips
+! the section's extent beside the axis, positive to the right looking along
+! the path (with Flip the section's sides swap), with the reference line
+! shift, as the 3D script works it out; used by the footprint fill and the
+! end cut grips
 uLo = -rectW / 2 - profileOffsetU
 uHi = rectW / 2 - profileOffsetU
 IF profileMode = "Profile attribute" THEN
@@ -17,11 +18,16 @@ IF profileMode = "Profile attribute" THEN
         uHi = gbXmax - profileOffsetU
     ENDIF
 ENDIF
-IF NOT (flipProfile) THEN
+IF flipProfile THEN
     uTmp = uLo
     uLo = -uHi
     uHi = -uTmp
 ENDIF
+refU = refOffset
+IF refLine = "Left face" THEN refU = refOffset - uLo
+IF refLine = "Right face" THEN refU = -refOffset - uHi
+uLo = uLo + refU
+uHi = uHi + refU
 
 ! ---- footprint fill: the band the beam covers in plan, closed on the end
 ! cuts. A fill makes the whole symbol clickable, not only its lines (as in the

@@ -287,3 +287,43 @@ async def test_the_tool_passes_end_cuts(monkeypatch):
                                {"points": pts, "cut_start_plan": 20, "cut_end_tilt": 5})
     params = _params(payload)
     assert (params["cutStartPlan"], params["cutEndTilt"]) == (20.0, 5.0)
+
+
+def test_new_beams_sit_centred_on_their_reference_line_unless_placed():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    params = _params(sb.create_swept_beam(conn, points=pts))
+    assert (params["refLine"], params["refOffset"]) == ("Centre", 0.0)
+    params = _params(sb.create_swept_beam(conn, points=pts, ref_line="Left face", ref_offset=0.4))
+    assert (params["refLine"], params["refOffset"]) == ("Left face", 0.4)
+    params = _params(sb.create_swept_beam(conn, points=pts, ref_line="right face"))
+    assert params["refLine"] == "Right face"
+
+
+def test_update_keeps_the_reference_line_unless_the_call_sets_it():
+    beam = {"type": "Object", "floorIndex": 0, "details": {
+        "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+    tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
+    conn = _conn(tapir)
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    assert not {"refLine", "refOffset"} & set(_written(conn))
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", ref_offset=0.25, dry_run=False)
+    written = _written(conn)
+    assert written["refOffset"] == 0.25 and "refLine" not in written
+
+
+def test_an_unknown_reference_line_is_refused():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    error = sb.create_swept_beam(conn, points=pts, ref_line="outside")["error"]
+    assert "ref_line" in error and "left face" in error
+
+
+async def test_the_tool_passes_the_reference_line(monkeypatch):
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB},
+                               {"points": pts, "ref_line": "left face", "ref_offset": 0.4})
+    params = _params(payload)
+    assert (params["refLine"], params["refOffset"]) == ("Left face", 0.4)

@@ -412,6 +412,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "counter-clockwise from square in plan (-80 to 80); cut_start_tilt and "
         "cut_end_tilt lean the top of the face out past the end (-85 to 85, 0 is "
         "square to the beam, the beam's slope there gives a vertical face). "
+        "ref_line ('left face', 'centre', 'right face', looking from the first "
+        "point to the last) puts that face of the beam on the path; ref_offset "
+        "(metres) moves the beam that far away from it (with centre, to the right). "
         "DRY-RUN BY DEFAULT: reports nodes, arcs, the maximum deviation from the "
         "source and warnings. Pass dry_run=false to place or update."),
         **_tool_meta("Create Swept Beam", read_only=False, destructive=True))
@@ -428,6 +431,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           cut_start_tilt: float | None = None,
                           cut_end_plan: float | None = None,
                           cut_end_tilt: float | None = None,
+                          ref_line: str | None = None, ref_offset: float | None = None,
                           port: int | None = None) -> dict:
         return _swept.create_swept_beam(_conn(port), source_guid, points, start_height,
                                         slope_percent, profile, offset_u, offset_w, flip,
@@ -435,7 +439,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                                         cut_start_plan=cut_start_plan,
                                         cut_start_tilt=cut_start_tilt,
                                         cut_end_plan=cut_end_plan,
-                                        cut_end_tilt=cut_end_tilt)
+                                        cut_end_tilt=cut_end_tilt,
+                                        ref_line=ref_line, ref_offset=ref_offset)
 
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
                           "confirm=true.",

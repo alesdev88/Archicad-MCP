@@ -22,6 +22,9 @@ LIBRARY_PART = "Swept Beam"
 NEAR_VERTICAL_DEG = 85.0
 # End cut limits, matching the part: a plan cut within 80 degrees of square
 # and a tilt within 85 degrees keep the cut face crossing the beam.
+# Where the beam sits on its reference line (the nodes), wall style.
+REF_LINES = {"left face": "Left face", "centre": "Centre", "center": "Centre",
+             "right face": "Right face"}
 CUT_LIMITS = {"cut_start_plan": ("cutStartPlan", 80.0), "cut_start_tilt": ("cutStartTilt", 85.0),
               "cut_end_plan": ("cutEndPlan", 80.0), "cut_end_tilt": ("cutEndTilt", 85.0)}
 NOT_LOADED = (f"'{LIBRARY_PART}' is not loaded in this project. Build it with "
@@ -42,16 +45,22 @@ def create_swept_beam(conn: ArchicadConnection, source_guid: str | None = None,
                       update_guid: str | None = None, dry_run: bool = True,
                       cut_start_plan: float | None = None, cut_start_tilt: float | None = None,
                       cut_end_plan: float | None = None,
-                      cut_end_tilt: float | None = None) -> dict:
+                      cut_end_tilt: float | None = None, ref_line: str | None = None,
+                      ref_offset: float | None = None) -> dict:
     """Section and end cut values left as None take the defaults on a new beam
     (a 0.2 x 0.2 rectangle, no offsets, no flip, square ends) and keep the
     beam's own values on an update.
 
     End cuts are degrees: the plan angle turns the cut counter-clockwise from
     square in plan; the tilt leans the top of the face out past the end, 0
-    being square to the beam."""
+    being square to the beam.
+
+    ref_line puts the beam's left face, centre or right face (looking from the
+    first node to the last) on the reference line, the nodes; ref_offset moves
+    the beam that far away from it (with centre, to the right)."""
     cuts = {"cut_start_plan": cut_start_plan, "cut_start_tilt": cut_start_tilt,
-            "cut_end_plan": cut_end_plan, "cut_end_tilt": cut_end_tilt}
+            "cut_end_plan": cut_end_plan, "cut_end_tilt": cut_end_tilt,
+            "ref_line": ref_line, "ref_offset": ref_offset}
     try:
         points = _from_json_text(points, "points", list)
         profile = _from_json_text(profile, "profile", dict)
@@ -86,7 +95,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         raise SweptBeamError("Give exactly one of source_guid or points.")
     if path_tolerance <= 0:
         raise SweptBeamError("path_tolerance must be a positive length in metres.")
-    cut_params = _cut_params(cuts, keep_unset=update_guid is not None)
+    cut_params = (_cut_params(cuts, keep_unset=update_guid is not None)
+                  + _ref_params(cuts, keep_unset=update_guid is not None))
     warnings: list[str] = []
     if source_guid is not None:
         path, floor_index, flat = _path_from_element(conn, source_guid, path_tolerance)
@@ -297,6 +307,26 @@ def _cut_params(cuts: dict, keep_unset: bool) -> list[dict]:
             raise SweptBeamError(f"{arg} must be between -{limit:g} and {limit:g} degrees, "
                                  f"got {value:g}.")
         out.append({"name": name, "value": value})
+    return out
+
+
+def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
+    """Reference line placement. On an update, a value left as None is kept."""
+    out = []
+    line = values.get("ref_line")
+    if line is None and not keep_unset:
+        line = "centre"
+    if line is not None:
+        gdl = REF_LINES.get(str(line).strip().casefold())
+        if gdl is None:
+            raise SweptBeamError(f"ref_line must be one of 'left face', 'centre', 'right face', "
+                                 f"got {line!r}.")
+        out.append({"name": "refLine", "value": gdl})
+    offset = values.get("ref_offset")
+    if offset is None and not keep_unset:
+        offset = 0.0
+    if offset is not None:
+        out.append({"name": "refOffset", "value": float(offset)})
     return out
 
 

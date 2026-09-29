@@ -89,6 +89,18 @@ default = "All"
 description = "Grips"
 
 [[param]]
+name = "refLine"
+type = "string"
+default = "Centre"
+description = "Reference line at"
+
+[[param]]
+name = "refOffset"
+type = "length"
+default = 0.0
+description = "Offset from the reference line"
+
+[[param]]
 name = "segSag"
 type = "length"
 default = [0.0, 0.0]
@@ -195,13 +207,13 @@ description = "Rectangle building material"
 name = "profileOffsetU"
 type = "length"
 default = 0.0
-description = "Section offset sideways"
+description = "Section origin shift sideways"
 
 [[param]]
 name = "profileOffsetW"
 type = "length"
 default = 0.0
-description = "Section offset up"
+description = "Section origin shift up"
 
 [[param]]
 name = "flipProfile"

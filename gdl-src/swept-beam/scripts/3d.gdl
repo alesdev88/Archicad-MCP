@@ -1,6 +1,7 @@
 ! Swept Beam, 3D Script
 ! The path is swept with TUBE{2}, which keeps the section plumb (W up, U to the
-! right looking along the path) and rolls it by each point's angle (spec 1.4).
+! left looking along the path, found with the reference line at gate G) and
+! rolls it by each point's angle (spec 1.4).
 ! At a kink TUBE would average the two directions and twist both sides, so the
 ! path is split into runs at kinks: each run is swept on its own, carried past
 ! the kink along its own direction and trimmed by a box on the kink's plumb
@@ -50,12 +51,37 @@ rSurf = 0
 nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
 IF overrideSurface THEN rSurf = surfaceOverride
 
-! how far the section reaches from the path, for carrying runs past a kink
+! ---- the section around the path, in path terms: sideways to the right
+! looking along the path, and W up. TUBE's own U points left; the default
+! mirror turns the section's x into "to the right", and Flip (no mirror)
+! turns it back, so with Flip the extents swap sides. The reference line (the nodes) takes the
+! beam's left face, centre or right face, and refOffset moves the beam away
+! from it; the shift refU is applied after the mirror, so Flip never moves the
+! beam, only turns the section over ----
 IF useProfile THEN
-    secExtent = SQR (MAX (ABS (pbXmin - profileOffsetU), ABS (pbXmax - profileOffsetU))^2 + MAX (ABS (pbYmin - profileOffsetW), ABS (pbYmax - profileOffsetW))^2)
+    uLo = pbXmin - profileOffsetU
+    uHi = pbXmax - profileOffsetU
+    wLo = pbYmin - profileOffsetW
+    wTop = pbYmax - profileOffsetW
 ELSE
-    secExtent = SQR ((rw / 2 + ABS (profileOffsetU))^2 + (rh / 2 + ABS (profileOffsetW))^2)
+    uLo = -rw / 2 - profileOffsetU
+    uHi = rw / 2 - profileOffsetU
+    wLo = -rh / 2 - profileOffsetW
+    wTop = rh / 2 - profileOffsetW
 ENDIF
+IF flipProfile THEN
+    uTmp = uLo
+    uLo = -uHi
+    uHi = -uTmp
+ENDIF
+refU = refOffset
+IF refLine = "Left face" THEN refU = refOffset - uLo
+IF refLine = "Right face" THEN refU = -refOffset - uHi
+uLo = uLo + refU
+uHi = uHi + refU
+
+! how far the section reaches from the path, for carrying runs past a kink
+secExtent = SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2)
 
 ! ---- runs between kinks ----
 DIM runA[], runB[]
@@ -135,7 +161,7 @@ FOR iRun = 1 TO nRun
                     IF stG < 100 OR stG = 600 OR stG = 900 THEN isPos = 1
                     IF (stG >= 1000 AND stG < 2000) OR (stG >= 3000 AND stG < 4000) THEN isPos = 1
                     IF isPos THEN
-                        su = su - profileOffsetU
+                        su = su - profileOffsetU - refU * sgnFlip
                         sw = sw - profileOffsetW
                     ENDIF
                     PUT su, sw, tubeSt, edgeMat
@@ -147,10 +173,12 @@ FOR iRun = 1 TO nRun
         NEXT iC
     ELSE
         BUILDING_MATERIAL rectBMat
-        PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
-        PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-        PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
-        PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+        ! - refU * sgnFlip: the reference shift lands "to the right" whether
+        ! or not the section is mirrored (Flip)
+        PUT -rw / 2 - profileOffsetU - refU * sgnFlip,  rh / 2 - profileOffsetW, 0, rSurf
+        PUT -rw / 2 - profileOffsetU - refU * sgnFlip, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU - refU * sgnFlip, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU - refU * sgnFlip,  rh / 2 - profileOffsetW, 0, rSurf
         GOSUB "putRun"
         TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
     ENDIF
@@ -181,22 +209,7 @@ ENDIF
 ! through the node; the tilt on the top edge of the cut face, tipping it about
 ! the cut line (positive leans the top out, like the parameter) ----
 IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
-    ! the section's extent beside the axis (U, after the default mirror) and
-    ! above it (W), as the 2D script works it out
-    IF useProfile THEN
-        uLo = pbXmin - profileOffsetU
-        uHi = pbXmax - profileOffsetU
-        wTop = pbYmax - profileOffsetW
-    ELSE
-        uLo = -rw / 2 - profileOffsetU
-        uHi = rw / 2 - profileOffsetU
-        wTop = rh / 2 - profileOffsetW
-    ENDIF
-    IF NOT (flipProfile) THEN
-        uTmp = uLo
-        uLo = -uHi
-        uHi = -uTmp
-    ENDIF
+    ! uLo, uHi and wTop: the section's extent, worked out at the top
     IF ABS (wTop) < 0.01 THEN wTop = 0.1
 
     iE = 1

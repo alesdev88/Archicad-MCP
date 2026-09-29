@@ -251,3 +251,18 @@ by the user inside the beams, away from their lines.
    fill (`DEFINE EMPTY_FILL`), independent of the project's attribute indices.
    The user confirmed the beams on the default and the one beneath them all
    select by a click inside.
+
+## Gate G: reference line
+
+Run on 29.09.2026 in Archicad 27 (`MCP-Test_27`) through this branch's MCP
+server over stdio. An L-shaped beam (4 m east, then 3 m north) with
+`ref_line="left face"`, `ref_offset=0.4` and the axis shown:
+
+1. First render: 40 cm clear of the axis, but on the left. TUBE's own U points
+   left looking along the path (the 3D script's header said right); the default
+   mirror maps the section's x straight onto "to the right", and Flip (no
+   mirror) swaps it. The 2D extents (footprint fill, end cut grips) had the
+   same inverted assumption, harmless for centred symmetric sections, wrong for
+   any sideways offset. Fixed in both scripts.
+2. After the fix: south of the first leg (to the right), 40 cm clear; with Flip
+   ticked the beam stays put, and a hatch fills the beam, not the path.

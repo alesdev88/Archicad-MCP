@@ -15,10 +15,13 @@ UI_OUTFIELD "Curve tolerance", 18, 110, 245, 18
 UI_INFIELD "pathTolerance", 278, 108, 146, 19
 UI_OUTFIELD "Grips", 18, 134, 245, 18
 UI_INFIELD "gripMode", 278, 132, 146, 19
-UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0), 18, 160, 406, 18
+UI_OUTFIELD "Reference line at", 18, 158, 245, 18
+UI_INFIELD "refLine", 278, 156, 146, 19
+UI_OUTFIELD "Offset from the reference line", 18, 182, 245, 18
+UI_INFIELD "refOffset", 278, 180, 146, 19
 UI_STYLE 1, 2
-UI_OUTFIELD "Apply slope sets every node height from node 1 along the plan length.", 18, 184, 406, 20
-UI_OUTFIELD "Exact node values and roll: parameter list, array editor.", 18, 206, 406, 20
+UI_OUTFIELD "Faces as seen from the first node. Offset moves the beam away (Centre: right).", 18, 204, 406, 16
+UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0) + ". Exact values and roll: parameter list.", 18, 222, 330, 16
 UI_STYLE 0, 0
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
@@ -39,7 +42,7 @@ UI_OUTFIELD "Rectangle height", 18, 116, 245, 18
 UI_INFIELD "rectH", 278, 114, 146, 19
 UI_OUTFIELD "Rectangle building material", 18, 140, 245, 18
 UI_INFIELD "rectBMat", 278, 138, 146, 19
-UI_OUTFIELD "Offset sideways / up", 18, 164, 245, 18
+UI_OUTFIELD "Section origin shift: side / up", 18, 164, 245, 18
 UI_INFIELD "profileOffsetU", 278, 162, 70, 19
 UI_INFIELD "profileOffsetW", 354, 162, 70, 19
 UI_OUTFIELD "Flip section", 18, 188, 245, 18
