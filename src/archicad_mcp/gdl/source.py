@@ -11,10 +11,12 @@ Material, PenColor, LineType and hidden flags all survive unchanged.
 from __future__ import annotations
 
 import re
+import shutil
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from archicad_mcp.gdl import toolchain
 from archicad_mcp.gdl.generate import ANCESTRY_GUIDS
 
 PARAM_TAGS = {
@@ -269,3 +271,49 @@ def write_hsf(src: LibpartSource, hsf_dir: str | Path) -> Path:
 """, encoding="utf-8")
     (hsf_dir / "paramlist.xml").write_text(paramlist_xml(src.params), encoding="utf-8")
     return hsf_dir
+
+
+@dataclass
+class SourceBuild:
+    gsm: Path
+    name: str
+    guid: str
+    version: str
+    archicad: int | None
+    findings: dict[int, list[str]]
+    skipped: list[int]
+
+
+def build_source(root: str | Path, out_dir: str | Path, archicad: int | None = None,
+                 validate_with: tuple[int, ...] = (27, 29),
+                 keep_hsf: bool = False) -> SourceBuild:
+    """Compile a source folder to <out_dir>/<name>.gsm and check its scripts.
+
+    The converter is `archicad`, else libpart.toml's target_archicad, else the
+    newest install. Validation runs once per listed release whose converter is
+    installed; the others are reported as skipped, not failed.
+    """
+    src = load_source(root)
+    target = archicad if archicad is not None else src.target_archicad
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    hsf_dir = out_dir / src.name
+    if hsf_dir.exists():
+        shutil.rmtree(hsf_dir)
+    gsm_path = out_dir / f"{src.name}.gsm"
+    gsm_path.unlink(missing_ok=True)
+    write_hsf(src, hsf_dir)
+    try:
+        gsm = toolchain.compile_hsf(hsf_dir, gsm_path, version=target)
+    finally:
+        if not keep_hsf:
+            shutil.rmtree(hsf_dir, ignore_errors=True)
+    installed = set(toolchain.installed_converter_versions())
+    findings: dict[int, list[str]] = {}
+    skipped: list[int] = []
+    for v in validate_with:
+        if v in installed:
+            findings[v] = [ln.strip() for ln in toolchain.validate_gsm(gsm, version=v)]
+        else:
+            skipped.append(v)
+    return SourceBuild(gsm, src.name, src.guid, src.version, target, findings, skipped)

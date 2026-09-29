@@ -3,6 +3,7 @@
 import subprocess
 import textwrap
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
@@ -190,3 +191,38 @@ def test_round_trip_through_archicad_27_converter(tmp_path):
         return out
 
     assert params(back / "paramlist.xml") == params(hsf / "paramlist.xml")
+
+
+def test_build_source_uses_target_and_validates_installed(tmp_path, monkeypatch):
+    root = _write_source(tmp_path / "src")
+    seen = {}
+
+    def fake_compile(hsf_dir, gsm_path, version=None):
+        seen["version"] = version
+        seen["hsf_had_paramlist"] = (Path(hsf_dir) / "paramlist.xml").is_file()
+        Path(gsm_path).write_bytes(b"gsm")
+        return Path(gsm_path)
+
+    monkeypatch.setattr(toolchain, "compile_hsf", fake_compile)
+    monkeypatch.setattr(toolchain, "installed_converter_versions", lambda: [29])
+    monkeypatch.setattr(toolchain, "validate_gsm", lambda gsm, extra_libs=None, version=None: [])
+    result = source.build_source(root, tmp_path / "out")
+    assert seen == {"version": 27, "hsf_had_paramlist": True}
+    assert result.gsm == tmp_path / "out" / "Probe Part.gsm"
+    assert result.findings == {29: []} and result.skipped == [27]
+    assert not (tmp_path / "out" / "Probe Part").exists()  # HSF removed
+
+
+def test_build_source_archicad_argument_wins(tmp_path, monkeypatch):
+    root = _write_source(tmp_path / "src")
+    seen = {}
+
+    def fake_compile(hsf_dir, gsm_path, version=None):
+        seen["v"] = version
+        Path(gsm_path).write_bytes(b"")
+        return Path(gsm_path)
+
+    monkeypatch.setattr(toolchain, "compile_hsf", fake_compile)
+    monkeypatch.setattr(toolchain, "installed_converter_versions", lambda: [])
+    source.build_source(root, tmp_path / "out", archicad=29, validate_with=())
+    assert seen["v"] == 29
