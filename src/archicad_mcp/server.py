@@ -406,17 +406,21 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "source) and slope_percent; morph lines and points keep their own heights. "
         "profile is {\"attribute\": \"<Profile name>\"} or {\"rectangle\": {\"width\", "
         "\"height\", \"building_material\"}} (default 0.2 x 0.2 rectangle). "
-        "update_guid rewrites the path of an existing Swept Beam, keeping its GUID. "
+        "update_guid rewrites the path of an existing Swept Beam, keeping its GUID; "
+        "its profile, offsets and flip stay unless given, and node roll resets to 0. "
         "DRY-RUN BY DEFAULT: reports nodes, arcs, the maximum deviation from the "
         "source and warnings. Pass dry_run=false to place or update."),
         **_tool_meta("Create Swept Beam", read_only=False, destructive=True))
     @_guarded
-    def create_swept_beam(source_guid: str | None = None, points: list[dict] | None = None,
+    def create_swept_beam(source_guid: str | None = None,
+                          points: list[dict] | str | None = None,
                           start_height: float | None = None,
-                          slope_percent: float | None = None, profile: dict | None = None,
-                          offset_u: float = 0.0, offset_w: float = 0.0, flip: bool = False,
-                          path_tolerance: float = 0.002, update_guid: str | None = None,
-                          dry_run: bool = True, port: int | None = None) -> dict:
+                          slope_percent: float | None = None,
+                          profile: dict | str | None = None,
+                          offset_u: float | None = None, offset_w: float | None = None,
+                          flip: bool | None = None, path_tolerance: float = 0.002,
+                          update_guid: str | None = None, dry_run: bool = True,
+                          port: int | None = None) -> dict:
         return _swept.create_swept_beam(_conn(port), source_guid, points, start_height,
                                         slope_percent, profile, offset_u, offset_w, flip,
                                         path_tolerance, update_guid, dry_run)

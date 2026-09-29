@@ -164,3 +164,83 @@ def test_multi_node_paths_write_a_equal_to_adone():
     params = _params(sb.create_swept_beam(conn, points=pts))
     assert len(params["nodeX"]) == 3
     assert params["A"] == params["aDone"] == pytest.approx(7.0)
+
+
+SECTION_NAMES = ("profileMode", "beamProfile", "rectW", "rectH", "rectBMat",
+                 "profileOffsetU", "profileOffsetW", "flipProfile")
+
+
+def _written(conn):
+    call = [p for cmd, p in conn._core.calls if cmd == "SetGDLParametersOfElements"][-1]
+    return {p["name"]: p["value"] for p in call["elementsWithGDLParameters"][0]["gdlParameters"]}
+
+
+def test_update_keeps_the_section_unless_the_call_sets_it():
+    beam = {"type": "Object", "floorIndex": 0, "details": {
+        "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+    tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
+    conn = _conn(tapir)
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    assert not set(SECTION_NAMES) & set(_written(conn))
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", offset_u=0.05, dry_run=False)
+    written = _written(conn)
+    assert written["profileOffsetU"] == 0.05
+    assert not {"profileMode", "profileOffsetW", "flipProfile"} & set(written)
+
+
+def test_new_beams_get_the_default_section():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    params = _params(sb.create_swept_beam(conn, points=pts))
+    assert (params["profileMode"], params["rectW"], params["rectH"]) == ("Rectangle", 0.2, 0.2)
+    assert (params["profileOffsetU"], params["profileOffsetW"], params["flipProfile"]) == (0.0, 0.0, False)
+
+
+def test_polyline_repeated_vertex_is_dropped_and_keeps_its_arc():
+    entry = {"type": "PolyLine", "floorIndex": 0, "details": {
+        "coordinates": [{"x": 0, "y": 0}, {"x": 2, "y": 0}, {"x": 2, "y": 0}, {"x": 4, "y": 2}],
+        "arcs": [{"begIndex": 2, "endIndex": 3, "arcAngle": math.pi / 2}], "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details(entry), "GetAvailableLibraryParts": LIB})
+    result = sb.create_swept_beam(conn, source_guid="p-2")
+    assert result["nodes"] == 3 and result["warnings"] == []
+    assert _params(result)["segArc"] == pytest.approx([0.0, math.pi / 2, 0.0])
+
+
+def test_zero_length_sources_are_refused():
+    line = {"type": "Line", "floorIndex": 0, "details": {
+        "begCoordinate": {"x": 1, "y": 1}, "endCoordinate": {"x": 1, "y": 1}, "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details(line), "GetAvailableLibraryParts": LIB})
+    assert "two distinct points" in sb.create_swept_beam(conn, source_guid="l-1")["error"]
+    poly = {"type": "PolyLine", "floorIndex": 0, "details": {
+        "coordinates": [{"x": 1, "y": 1}, {"x": 1, "y": 1}], "arcs": [], "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details(poly), "GetAvailableLibraryParts": LIB})
+    assert "two distinct points" in sb.create_swept_beam(conn, source_guid="p-3")["error"]
+
+
+async def _call_tool(monkeypatch, tapir, args):
+    import archicad_mcp.server as server_mod
+    from fastmcp import Client
+
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}}, tapir=tapir)
+    monkeypatch.setattr(server_mod, "get_connection",
+                        lambda port: ArchicadConnection(19724, core=core))
+    async with Client(server_mod.build_server(mode="full")) as client:
+        result = await client.call_tool("create_swept_beam", args)
+        return json.loads(result.content[0].text)
+
+
+async def test_the_tool_takes_points_and_profile_sent_as_json_text(monkeypatch):
+    # Claude Code collapses nullable list and object fields and sends them as text
+    attrs = {"attributes": [{"index": 12, "name": "SB Hollow"}]}
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB, "GetAttributesByType": attrs},
+                               {"points": json.dumps(pts), "profile": json.dumps({"attribute": "SB Hollow"})})
+    assert payload["nodes"] == 2
+    assert _params(payload)["beamProfile"] == 12
+
+
+async def test_the_tool_explains_text_that_is_not_json(monkeypatch):
+    payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB}, {"points": "0,0 3,0"})
+    assert "points" in payload["error"] and "JSON" in payload["error"]

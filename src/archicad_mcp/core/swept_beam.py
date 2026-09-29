@@ -12,6 +12,7 @@ the story from an absolute z, so this module works in absolute z throughout.
 
 from __future__ import annotations
 
+import json
 import math
 
 from archicad_mcp.connection import ArchicadConnection
@@ -29,16 +30,40 @@ class SweptBeamError(ValueError):
 
 
 def create_swept_beam(conn: ArchicadConnection, source_guid: str | None = None,
-                      points: list[dict] | None = None, start_height: float | None = None,
-                      slope_percent: float | None = None, profile: dict | None = None,
-                      offset_u: float = 0.0, offset_w: float = 0.0, flip: bool = False,
-                      path_tolerance: float = 0.002, update_guid: str | None = None,
-                      dry_run: bool = True) -> dict:
+                      points: list[dict] | str | None = None,
+                      start_height: float | None = None,
+                      slope_percent: float | None = None, profile: dict | str | None = None,
+                      offset_u: float | None = None, offset_w: float | None = None,
+                      flip: bool | None = None, path_tolerance: float = 0.002,
+                      update_guid: str | None = None, dry_run: bool = True) -> dict:
+    """Section values left as None take the defaults on a new beam (a 0.2 x 0.2
+    rectangle, no offsets, no flip) and keep the beam's own values on an update."""
     try:
+        points = _from_json_text(points, "points", list)
+        profile = _from_json_text(profile, "profile", dict)
         return _create(conn, source_guid, points, start_height, slope_percent, profile,
                        offset_u, offset_w, flip, path_tolerance, update_guid, dry_run)
     except (sp.PathError, SweptBeamError) as exc:
         return {"error": str(exc)}
+
+
+def _from_json_text(value, name: str, kind: type):
+    """Parse a list or object that arrived as JSON text.
+
+    Claude Code collapses a nullable list or object field to an untyped schema
+    and sends the value as text; refusing it would make the tool unusable there.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise SweptBeamError(f"{name} arrived as text that is not valid JSON ({exc.msg}). "
+                             f"Pass a {kind.__name__}, or JSON text of one.") from exc
+    if not isinstance(parsed, kind):
+        raise SweptBeamError(f"{name} must be a JSON {kind.__name__}, "
+                             f"got {type(parsed).__name__}.")
+    return parsed
 
 
 def _create(conn, source_guid, points, start_height, slope_percent, profile,
@@ -62,7 +87,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     if steepest > NEAR_VERTICAL_DEG:
         warnings.append(f"A piece rises at {steepest:.1f} degrees. Near vertical, the "
                         "plumb section orientation is undefined.")
-    profile_params = _profile_params(conn, profile, offset_u, offset_w, flip)
+    profile_params = _profile_params(conn, profile, offset_u, offset_w, flip,
+                                     keep_unset=update_guid is not None)
     loaded = _library_part_loaded(conn)
     if not loaded:
         warnings.append(NOT_LOADED)
@@ -113,7 +139,7 @@ def _path_from_element(conn, guid: str, tol: float):
     if kind == "Line":
         z = float(d.get("zCoordinate", 0.0))
         b, e = d["begCoordinate"], d["endCoordinate"]
-        return sp.SweptPath([(b["x"], b["y"], z), (e["x"], e["y"], z)], [0.0, 0.0]), floor, True
+        return _distinct_path([(b["x"], b["y"], z), (e["x"], e["y"], z)], [0.0, 0.0]), floor, True
     if kind == "Arc":
         return _arc_path(d), floor, True
     raise SweptBeamError(
@@ -151,7 +177,22 @@ def _polyline_path(d: dict) -> sp.SweptPath:
     for a in d.get("arcs") or []:
         if a["endIndex"] == a["begIndex"] + 1:
             arcs[a["begIndex"]] = math.degrees(a["arcAngle"])
-    return sp.SweptPath(pts, arcs)
+    return _distinct_path(pts, arcs)
+
+
+def _distinct_path(pts: list[sp.Point], arcs: list[float]) -> sp.SweptPath:
+    """Drop repeated vertices, as the fit does for points (DWG polylines often
+    repeat one). A zero-length piece has no direction and would make a false
+    kink. The piece after a dropped vertex keeps its arc."""
+    nodes, out_arcs, pending = [pts[0]], [], arcs[0]
+    for p, arc in zip(pts[1:], arcs[1:]):
+        if math.dist(p, nodes[-1]) >= sp.DUPLICATE_EPS:
+            out_arcs.append(pending)
+            nodes.append(p)
+        pending = arc
+    if len(nodes) < 2:
+        raise sp.PathError("The source has fewer than two distinct points.")
+    return sp.SweptPath(nodes, out_arcs + [0.0])
 
 
 def _arc_path(d: dict) -> sp.SweptPath:
@@ -191,11 +232,22 @@ def _attribute_index(conn, kind: str, name: str) -> int:
     raise SweptBeamError(f"No {kind} attribute named '{name}'.{hint}")
 
 
-def _profile_params(conn, profile, offset_u, offset_w, flip) -> list[dict]:
-    common = [{"name": "profileOffsetU", "value": float(offset_u)},
-              {"name": "profileOffsetW", "value": float(offset_w)},
-              {"name": "flipProfile", "value": bool(flip)}]
-    profile = profile or {"rectangle": {"width": 0.2, "height": 0.2}}
+def _profile_params(conn, profile, offset_u, offset_w, flip, keep_unset=False) -> list[dict]:
+    """Section parameters. With keep_unset (rewriting a placed beam), a value the
+    call leaves as None is not written, so the beam keeps its own."""
+    common = []
+    for name, value, default, conv in (("profileOffsetU", offset_u, 0.0, float),
+                                       ("profileOffsetW", offset_w, 0.0, float),
+                                       ("flipProfile", flip, False, bool)):
+        if value is None:
+            if keep_unset:
+                continue
+            value = default
+        common.append({"name": name, "value": conv(value)})
+    if not profile:
+        if keep_unset:
+            return common
+        profile = {"rectangle": {"width": 0.2, "height": 0.2}}
     if "attribute" in profile:
         index = _attribute_index(conn, "Profile", str(profile["attribute"]))
         return [{"name": "profileMode", "value": "Profile attribute"},
