@@ -31,3 +31,14 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
 5. Absolute z: `CreateObjects` at z 5.0 on story 1 (level 4.0) reads back
    `origin.z = 5.0`, `floorIndex = 1`: z is absolute. Probe deleted.
 7. Archicad 27 opens, places and renders the 27-format part.
+
+6. Plan and section (27). Plan: outline, axis (solid: line type index 1 is solid
+   in the office template) and node heights all draw. With roll 0 the plan is two
+   parallel lines; the user's "rotating" plan was the 30 degree test roll.
+   Section: the building material's cut fill shows. A cut in the middle of the
+   straight part was bent: TUBE places the joint's averaged frame at node 2
+   (direction and slope both change there), so the whole 3 m straight piece was
+   a warped, triangulated ruled surface. Fix: two extra samples 2 cm from each
+   segment end keep the segment's own plumb frame between them; the compromise
+   at a real kink now fits in the last 2 cm before the mitre. Plan re-rendered:
+   parallel to the corner.

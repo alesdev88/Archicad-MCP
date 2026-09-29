@@ -7,7 +7,11 @@ EPS = 0.0001
 nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (nodeRoll), VARDIM1 (segArc))
 tolSafe = MAX (0.0001, pathTolerance)
 
-DIM pathX[], pathY[], pathZ[], pathRoll[]
+DIM pathX[], pathY[], pathZ[], pathRoll[], tList[]
+! Extra samples this far from each segment end keep the segment's own plumb
+! frame between them. TUBE places a joint's averaged frame at a node, and
+! without them that twist would warp a whole straight segment (gate A).
+STUB_LEN = 0.02
 nPath = 0
 startTX = 1
 startTY = 0
@@ -78,8 +82,24 @@ FOR iSeg = 1 TO nNode - 1
     endTY = t2y
     endTZ = riseSeg
 
+    stubT = 0
+    IF segLen > 4 * STUB_LEN THEN stubT = STUB_LEN / segLen
+    nT = 0
     FOR kStep = 0 TO nStep
-        tt = kStep / nStep
+        IF kStep = nStep AND stubT > 0 AND 1 - stubT > (nStep - 1) / nStep THEN
+            nT = nT + 1
+            tList[nT] = 1 - stubT
+        ENDIF
+        nT = nT + 1
+        tList[nT] = kStep / nStep
+        IF kStep = 0 AND stubT > 0 AND stubT < 1 / nStep THEN
+            nT = nT + 1
+            tList[nT] = stubT
+        ENDIF
+    NEXT kStep
+
+    FOR iT = 1 TO nT
+        tt = tList[iT]
         IF isArc THEN
             th = angSeg * tt
             px = cenX + vX * COS (th) - vY * SIN (th)
@@ -102,5 +122,5 @@ FOR iSeg = 1 TO nNode - 1
             pathZ[nPath] = pz
             pathRoll[nPath] = pr
         ENDIF
-    NEXT kStep
+    NEXT iT
 NEXT iSeg
