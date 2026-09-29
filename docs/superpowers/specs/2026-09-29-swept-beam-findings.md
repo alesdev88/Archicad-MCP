@@ -140,3 +140,19 @@ not codes whose x/y hold a vector, length or angle.
   reload, on a 5-node beam with 4 arcs, every curve grip sits on the arc
   midpoint and every insert grip one third along its arc. Every build into
   the workspace needs a ReloadLibraries on each open port before a live check.
+- Placement (item 7): Rotated Diagonal takes three clicks (start, a point
+  on the direction, the opposite corner); the length is the third click's
+  projection on the direction. With it, a new beam comes out as a two-node
+  straight beam of the clicked length (AC27: A = aDone = nodeX[2] = 4.498 m),
+  so Archicad does run the Parameter Script with the placement's A and the
+  aDone rule needs no Master Script override. Two clicks is Rotated (angle
+  only; A stays at the default).
+- Stale tool defaults: before that, every placement came out as the same
+  5-node beam (nodes -1.75, 0, 2, 3, 4.75, A = 3). The Object tool's default
+  settings still held helper values from builds bc05c88 and e5e4e7c
+  (insL = [1, 0], extStart = extEnd = 0.5, markers -1); reloading a library
+  part keeps same-named parameter values, and the value and marker logic read
+  them as pending drags on placement (insert at 2 m, ends at 0.25 + 0.5 + 1 =
+  1.75 m past). Re-picking the part in the Object Settings reset the defaults.
+  Only a changed helper default under a live test file causes it; a released
+  part that changes helper defaults needs a Forward Migration script.
