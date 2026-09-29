@@ -1,0 +1,106 @@
+! Swept Beam -- Master Script
+! Samples the node path into pathX/pathY/pathZ/pathRoll for the 2D and 3D
+! scripts. Height and roll change linearly with plan length along each
+! segment, so an arc with a rise is a helix (spec 1.4).
+
+EPS = 0.0001
+nNode = MIN (VARDIM1 (nodeX), VARDIM1 (nodeY), VARDIM1 (nodeZ), VARDIM1 (nodeRoll), VARDIM1 (segArc))
+tolSafe = MAX (0.0001, pathTolerance)
+
+DIM pathX[], pathY[], pathZ[], pathRoll[]
+nPath = 0
+startTX = 1
+startTY = 0
+startTZ = 0
+endTX = 1
+endTY = 0
+endTZ = 0
+
+FOR iSeg = 1 TO nNode - 1
+    x1 = nodeX[iSeg]
+    y1 = nodeY[iSeg]
+    z1 = nodeZ[iSeg]
+    r1 = nodeRoll[iSeg]
+    x2 = nodeX[iSeg + 1]
+    y2 = nodeY[iSeg + 1]
+    z2 = nodeZ[iSeg + 1]
+    r2 = nodeRoll[iSeg + 1]
+    dxs = x2 - x1
+    dys = y2 - y1
+    chord = SQR (dxs * dxs + dys * dys)
+    angSeg = segArc[iSeg]
+    isArc = 0
+    IF ABS (angSeg) > 0.01 AND ABS (angSeg) < 359.9 AND chord > EPS THEN isArc = 1
+
+    nStep = 1
+    segLen = chord
+    IF isArc THEN
+        radSeg = chord / (2 * SIN (ABS (angSeg) / 2))
+        stepMax = 10
+        IF tolSafe < radSeg THEN stepMax = 2 * ACS (1 - tolSafe / radSeg)
+        nStep = MAX (1, CEIL (ABS (angSeg) / MAX (0.5, stepMax)))
+        ! centre: from the chord midpoint along the left normal, signed by the arc
+        dCen = chord / 2 * COS (angSeg / 2) / SIN (angSeg / 2)
+        cenX = (x1 + x2) / 2 - dys / chord * dCen
+        cenY = (y1 + y2) / 2 + dxs / chord * dCen
+        vX = x1 - cenX
+        vY = y1 - cenY
+        segLen = radSeg * ABS (angSeg) * PI / 180
+    ENDIF
+    nStep = MAX (nStep, CEIL (ABS (r2 - r1) / 5))
+    nStep = MIN (nStep, 720)
+
+    ! unit plan tangents at the segment ends, and the rise per plan metre
+    IF isArc THEN
+        sgnArc = SGN (angSeg)
+        t1x = -vY / radSeg * sgnArc
+        t1y = vX / radSeg * sgnArc
+        t2x = -(y2 - cenY) / radSeg * sgnArc
+        t2y = (x2 - cenX) / radSeg * sgnArc
+    ELSE
+        t1x = 1
+        t1y = 0
+        IF chord > EPS THEN
+            t1x = dxs / chord
+            t1y = dys / chord
+        ENDIF
+        t2x = t1x
+        t2y = t1y
+    ENDIF
+    riseSeg = 0
+    IF segLen > EPS THEN riseSeg = (z2 - z1) / segLen
+    IF iSeg = 1 THEN
+        startTX = t1x
+        startTY = t1y
+        startTZ = riseSeg
+    ENDIF
+    endTX = t2x
+    endTY = t2y
+    endTZ = riseSeg
+
+    FOR kStep = 0 TO nStep
+        tt = kStep / nStep
+        IF isArc THEN
+            th = angSeg * tt
+            px = cenX + vX * COS (th) - vY * SIN (th)
+            py = cenY + vX * SIN (th) + vY * COS (th)
+        ELSE
+            px = x1 + dxs * tt
+            py = y1 + dys * tt
+        ENDIF
+        pz = z1 + (z2 - z1) * tt
+        pr = r1 + (r2 - r1) * tt
+        addIt = 1
+        IF nPath > 0 THEN
+            dd = SQR ((px - pathX[nPath])^2 + (py - pathY[nPath])^2 + (pz - pathZ[nPath])^2)
+            IF dd < 0.001 THEN addIt = 0
+        ENDIF
+        IF addIt THEN
+            nPath = nPath + 1
+            pathX[nPath] = px
+            pathY[nPath] = py
+            pathZ[nPath] = pz
+            pathRoll[nPath] = pr
+        ENDIF
+    NEXT kStep
+NEXT iSeg

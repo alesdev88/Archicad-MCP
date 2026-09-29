@@ -1,0 +1,36 @@
+! Swept Beam -- 2D Script
+! Plan symbol: a projection of the 3D model (spec 1.5). parts = 1+2+4+8 keeps
+! the 3D grips out of the plan. planMethod: 2 hidden lines, 3 shading (cut
+! polygons exist only with 3); +32 draws with the current pen.
+
+planMethod = 2 + 32
+
+IF nPath < 2 THEN
+    LINE2 -0.1, 0, 0.1, 0
+    LINE2 0, -0.1, 0, 0.1
+ELSE
+    PEN outlinePen
+    PROJECT2{3} 3, 270, planMethod, 1 + 2 + 4 + 8
+ENDIF
+
+IF showAxis AND nPath > 1 THEN
+    PEN axisPen
+    LINE_TYPE axisLineType
+    FOR iP = 1 TO nPath - 1
+        LINE2 pathX[iP], pathY[iP], pathX[iP + 1], pathY[iP + 1]
+    NEXT iP
+ENDIF
+
+IF showNodeHeights THEN
+    DEFINE STYLE "sbHeights" "Arial", MAX (0.5, textSizeMm), 1, 0
+    SET STYLE "sbHeights"
+    PEN textPen
+    FOR iN = 1 TO nNode
+        TEXT2 nodeX[iN], nodeY[iN], STR ("%.3m", GLOB_ELEVATION + nodeZ[iN])
+    NEXT iN
+ENDIF
+
+! (Task 7 replaces these fixed hotspots with the editing grips.)
+FOR iN = 1 TO nNode
+    HOTSPOT2 nodeX[iN], nodeY[iN]
+NEXT iN

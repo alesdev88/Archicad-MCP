@@ -1,0 +1,155 @@
+! Swept Beam -- Parameter Script
+! Runs after every edit. No Profile requests here (not allowed in this script).
+! 1 repair the arrays, 2 react to the edit, 3 park the grip helpers, 4 write back.
+
+VALUES "profileMode" "Rectangle", "Profile attribute"
+VALUES "pathTolerance" RANGE [0.0005, 0.05]
+VALUES "rectW" RANGE (0, ]
+VALUES "rectH" RANGE (0, ]
+VALUES "textSizeMm" RANGE (0, ]
+VALUES "gs_ui_current_page" 1, 2, 3
+HIDEPARAMETER "B", "ZZYZX", "segSag", "insX", "insY", "gs_ui_current_page", "sb_version"
+IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
+IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
+IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
+IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
+
+EPS = 0.0001
+
+! ---- 1. copy and repair: every array gets the length of nodeX ----
+DIM nx[], ny[], nz[], nr[], na[]
+n = VARDIM1 (nodeX)
+IF n < 1 THEN
+    n = 2
+    nx[1] = 0
+    nx[2] = 3
+    ny[1] = 0
+    ny[2] = 0
+    nz[1] = 0
+    nz[2] = 0
+    nr[1] = 0
+    nr[2] = 0
+    na[1] = 0
+    na[2] = 0
+ELSE
+    FOR i = 1 TO n
+        nx[i] = nodeX[i]
+        ny[i] = 0
+        IF i <= VARDIM1 (nodeY) THEN ny[i] = nodeY[i]
+        nz[i] = 0
+        IF i <= VARDIM1 (nodeZ) THEN nz[i] = nodeZ[i]
+        nr[i] = 0
+        IF i <= VARDIM1 (nodeRoll) THEN nr[i] = nodeRoll[i]
+        na[i] = 0
+        IF i <= VARDIM1 (segArc) THEN na[i] = segArc[i]
+    NEXT i
+ENDIF
+IF n = 1 THEN
+    n = 2
+    nx[2] = nx[1] + 1
+    ny[2] = ny[1]
+    nz[2] = nz[1]
+    nr[2] = nr[1]
+    na[2] = 0
+ENDIF
+na[n] = 0
+
+! ---- 2. reactions ----
+newA = A
+IF n = 2 AND ABS (na[1]) < 0.01 THEN
+    ddx = nx[2] - nx[1]
+    ddy = ny[2] - ny[1]
+    lenPlan = SQR (ddx * ddx + ddy * ddy)
+    IF GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME = "nodeZ" THEN
+        newA = lenPlan
+    ELSE
+        IF ABS (A - lenPlan) > 0.0005 AND A > EPS THEN
+            ux = 1
+            uy = 0
+            IF lenPlan > EPS THEN
+                ux = ddx / lenPlan
+                uy = ddy / lenPlan
+            ENDIF
+            nx[2] = nx[1] + ux * A
+            ny[2] = ny[1] + uy * A
+        ENDIF
+    ENDIF
+ENDIF
+
+IF GLOB_UI_BUTTON_ID = 1 THEN
+    sAcc = 0
+    FOR i = 2 TO n
+        jSeg = i - 1
+        GOSUB "seg"
+        sAcc = sAcc + sLen
+        nz[i] = nz[1] + slopePercent / 100 * sAcc
+    NEXT i
+ENDIF
+
+! (Task 7 adds the arc grip, insert and merge reactions here.)
+
+! ---- 3. park the grip helpers ----
+DIM sag[], ix[], iy[]
+FOR j = 1 TO n
+    sag[j] = 0
+    ix[j] = nx[j]
+    iy[j] = ny[j]
+    IF j < n THEN
+        jSeg = j
+        GOSUB "seg"
+        IF sIsArc THEN sag[j] = sChord / 2 * TAN (na[j] / 4)
+        GOSUB "park"
+        ix[j] = pkx
+        iy[j] = pky
+    ENDIF
+NEXT j
+
+! ---- 4. write back, with arrays of exactly n items ----
+DIM ox[], oy[], oz[], orl[], oa[], os[], oix[], oiy[]
+FOR i = 1 TO n
+    ox[i] = nx[i]
+    oy[i] = ny[i]
+    oz[i] = nz[i]
+    orl[i] = nr[i]
+    oa[i] = na[i]
+    os[i] = sag[i]
+    oix[i] = ix[i]
+    oiy[i] = iy[i]
+NEXT i
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = os, insX = oix, insY = oiy, A = newA
+END
+
+! ---- subroutines ----
+"seg":
+    ! plan geometry of segment jSeg (node jSeg to jSeg + 1)
+    sdx = nx[jSeg + 1] - nx[jSeg]
+    sdy = ny[jSeg + 1] - ny[jSeg]
+    sChord = SQR (sdx * sdx + sdy * sdy)
+    sIsArc = 0
+    sRad = 0
+    sCx = 0
+    sCy = 0
+    sLen = sChord
+    IF ABS (na[jSeg]) > 0.01 AND ABS (na[jSeg]) < 359.9 AND sChord > EPS THEN
+        sIsArc = 1
+        sRad = sChord / (2 * SIN (ABS (na[jSeg]) / 2))
+        sD = sChord / 2 * COS (na[jSeg] / 2) / SIN (na[jSeg] / 2)
+        sCx = (nx[jSeg] + nx[jSeg + 1]) / 2 - sdy / sChord * sD
+        sCy = (ny[jSeg] + ny[jSeg + 1]) / 2 + sdx / sChord * sD
+        sLen = sRad * ABS (na[jSeg]) * PI / 180
+    ENDIF
+RETURN
+
+"park":
+    ! the insert grip's parked position: one third along segment jSeg
+    IF sIsArc THEN
+        pth = na[jSeg] / 3
+        pvx = nx[jSeg] - sCx
+        pvy = ny[jSeg] - sCy
+        pkx = sCx + pvx * COS (pth) - pvy * SIN (pth)
+        pky = sCy + pvx * SIN (pth) + pvy * COS (pth)
+    ELSE
+        pkx = nx[jSeg] + (nx[jSeg + 1] - nx[jSeg]) / 3
+        pky = ny[jSeg] + (ny[jSeg + 1] - ny[jSeg]) / 3
+    ENDIF
+RETURN

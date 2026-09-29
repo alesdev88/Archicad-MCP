@@ -1,0 +1,6 @@
+name = "Swept Beam"
+guid = "8C2E4F71-3B9D-4A5E-B6C8-1D7F0A2E9B34"
+version = "0.1.0"
+keywords = "beam, curved beam, sloped beam, helix, profile, sweep"
+target_archicad = 27
+version_param = "sb_version"

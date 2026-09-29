@@ -1,0 +1,72 @@
+! Swept Beam -- User Interface Script (three pages, spec 1.6)
+
+UI_DIALOG "Swept Beam"
+UI_CURRENT_PAGE gs_ui_current_page
+
+UI_PAGE 1, -1, "Path"
+UI_STYLE 2, 1
+UI_OUTFIELD "Path", 12, 10, 420, 22
+UI_STYLE 0, 0
+UI_SEPARATOR 12, 34, 432, 34
+UI_OUTFIELD "Slope (%)", 18, 50, 245, 18
+UI_INFIELD "slopePercent", 278, 48, 146, 19
+UI_BUTTON UI_FUNCTION, "Apply slope", 278, 74, 146, 22, 1
+UI_OUTFIELD "Curve tolerance", 18, 110, 245, 18
+UI_INFIELD "pathTolerance", 278, 108, 146, 19
+UI_OUTFIELD "Nodes: " + STR (VARDIM1 (nodeX), 1, 0), 18, 140, 406, 18
+UI_STYLE 1, 2
+UI_OUTFIELD "Apply slope sets every node height from node 1 along the plan length.", 18, 166, 406, 20
+UI_OUTFIELD "Exact node values and roll: parameter list, array editor.", 18, 188, 406, 20
+UI_STYLE 0, 0
+UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
+
+UI_PAGE 2, -1, "Profile"
+UI_STYLE 2, 1
+UI_OUTFIELD "Profile", 12, 10, 420, 22
+UI_STYLE 0, 0
+UI_SEPARATOR 12, 34, 432, 34
+UI_OUTFIELD "Section source", 18, 44, 245, 18
+UI_INFIELD "profileMode", 278, 42, 146, 19
+IF profileMode = "Profile attribute" THEN
+    UI_OUTFIELD "Profile", 18, 68, 245, 18
+    UI_INFIELD "beamProfile", 278, 66, 146, 19
+ENDIF
+UI_OUTFIELD "Rectangle width (also the fallback)", 18, 92, 245, 18
+UI_INFIELD "rectW", 278, 90, 146, 19
+UI_OUTFIELD "Rectangle height", 18, 116, 245, 18
+UI_INFIELD "rectH", 278, 114, 146, 19
+UI_OUTFIELD "Rectangle building material", 18, 140, 245, 18
+UI_INFIELD "rectBMat", 278, 138, 146, 19
+UI_OUTFIELD "Offset sideways / up", 18, 164, 245, 18
+UI_INFIELD "profileOffsetU", 278, 162, 70, 19
+UI_INFIELD "profileOffsetW", 354, 162, 70, 19
+UI_OUTFIELD "Flip section", 18, 188, 245, 18
+UI_INFIELD "flipProfile", 278, 186, 146, 19
+UI_OUTFIELD "Override surfaces", 18, 212, 245, 18
+UI_INFIELD "overrideSurface", 278, 210, 20, 19
+IF overrideSurface THEN UI_INFIELD "surfaceOverride", 304, 210, 120, 19
+UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
+UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
+
+UI_PAGE 3, -1, "Floor plan"
+UI_STYLE 2, 1
+UI_OUTFIELD "Floor plan", 12, 10, 420, 22
+UI_STYLE 0, 0
+UI_SEPARATOR 12, 34, 432, 34
+UI_OUTFIELD "Outline pen", 18, 50, 245, 18
+UI_INFIELD "outlinePen", 278, 48, 146, 19
+UI_OUTFIELD "Show reference axis", 18, 78, 245, 18
+UI_INFIELD "showAxis", 278, 76, 146, 19
+IF showAxis THEN
+    UI_OUTFIELD "Axis pen / line type", 18, 102, 245, 18
+    UI_INFIELD "axisPen", 278, 100, 70, 19
+    UI_INFIELD "axisLineType", 354, 100, 70, 19
+ENDIF
+UI_OUTFIELD "Show node heights", 18, 134, 245, 18
+UI_INFIELD "showNodeHeights", 278, 132, 146, 19
+IF showNodeHeights THEN
+    UI_OUTFIELD "Text pen / size (mm)", 18, 158, 245, 18
+    UI_INFIELD "textPen", 278, 156, 70, 19
+    UI_INFIELD "textSizeMm", 354, 156, 70, 19
+ENDIF
+UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20

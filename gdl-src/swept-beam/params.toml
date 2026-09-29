@@ -1,0 +1,207 @@
+# Swept Beam parameters, in parameter-list order. See the spec, section 1.1.
+# Types: length angle real integer boolean string surface pen linetype bmat profile.
+# A list default makes an array parameter. All node arrays share one length.
+
+[[param]]
+name = "A"
+type = "length"
+default = 3.0
+description = "Length (two-node straight beams)"
+
+[[param]]
+name = "B"
+type = "length"
+default = 0.2
+description = "B (unused)"
+hidden = true
+
+[[param]]
+name = "ZZYZX"
+type = "length"
+default = 0.2
+description = "Height (unused)"
+hidden = true
+
+[[param]]
+name = "nodeX"
+type = "length"
+default = [0.0, 3.0]
+description = "Node X"
+
+[[param]]
+name = "nodeY"
+type = "length"
+default = [0.0, 0.0]
+description = "Node Y"
+
+[[param]]
+name = "nodeZ"
+type = "length"
+default = [0.0, 0.0]
+description = "Node height"
+
+[[param]]
+name = "nodeRoll"
+type = "angle"
+default = [0.0, 0.0]
+description = "Node roll"
+
+[[param]]
+name = "segArc"
+type = "angle"
+default = [0.0, 0.0]
+description = "Arc angle to the next node"
+
+[[param]]
+name = "slopePercent"
+type = "real"
+default = 0.0
+description = "Slope for Apply slope (%)"
+
+[[param]]
+name = "pathTolerance"
+type = "length"
+default = 0.002
+description = "Curve tolerance"
+
+[[param]]
+name = "segSag"
+type = "length"
+default = [0.0, 0.0]
+description = "Arc grip (helper)"
+hidden = true
+
+[[param]]
+name = "insX"
+type = "length"
+default = [1.0, 3.0]
+description = "Insert grip X (helper)"
+hidden = true
+
+[[param]]
+name = "insY"
+type = "length"
+default = [0.0, 0.0]
+description = "Insert grip Y (helper)"
+hidden = true
+
+[[param]]
+name = "profileMode"
+type = "string"
+default = "Rectangle"
+description = "Section source"
+
+[[param]]
+name = "beamProfile"
+type = "profile"
+default = 1
+description = "Profile"
+
+[[param]]
+name = "rectW"
+type = "length"
+default = 0.2
+description = "Rectangle width"
+
+[[param]]
+name = "rectH"
+type = "length"
+default = 0.2
+description = "Rectangle height"
+
+[[param]]
+name = "rectBMat"
+type = "bmat"
+default = 1
+description = "Rectangle building material"
+
+[[param]]
+name = "profileOffsetU"
+type = "length"
+default = 0.0
+description = "Section offset sideways"
+
+[[param]]
+name = "profileOffsetW"
+type = "length"
+default = 0.0
+description = "Section offset up"
+
+[[param]]
+name = "flipProfile"
+type = "boolean"
+default = false
+description = "Flip section"
+
+[[param]]
+name = "overrideSurface"
+type = "boolean"
+default = false
+description = "Override surfaces"
+
+[[param]]
+name = "surfaceOverride"
+type = "surface"
+default = 1
+description = "Override surface"
+child = true
+
+[[param]]
+name = "outlinePen"
+type = "pen"
+default = 1
+description = "Outline pen"
+
+[[param]]
+name = "showAxis"
+type = "boolean"
+default = false
+description = "Show reference axis"
+
+[[param]]
+name = "axisPen"
+type = "pen"
+default = 1
+description = "Axis pen"
+child = true
+
+[[param]]
+name = "axisLineType"
+type = "linetype"
+default = 1
+description = "Axis line type"
+child = true
+
+[[param]]
+name = "showNodeHeights"
+type = "boolean"
+default = false
+description = "Show node heights"
+
+[[param]]
+name = "textPen"
+type = "pen"
+default = 1
+description = "Text pen"
+child = true
+
+[[param]]
+name = "textSizeMm"
+type = "real"
+default = 2.0
+description = "Text size (mm)"
+child = true
+
+[[param]]
+name = "gs_ui_current_page"
+type = "integer"
+default = 1
+description = "Dialog page"
+hidden = true
+
+[[param]]
+name = "sb_version"
+type = "string"
+default = ""
+description = "Swept Beam build"
+hidden = true

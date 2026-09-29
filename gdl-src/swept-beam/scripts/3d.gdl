@@ -1,0 +1,41 @@
+! Swept Beam -- 3D Script
+! One TUBE{2} per section component along the sampled path (spec 1.4).
+! TUBE keeps the section plumb (W up, U to the right looking along the path).
+
+MODEL SOLID
+IF nPath < 2 THEN END
+
+sgnFlip = 1
+IF flipProfile THEN sgnFlip = -1
+nTube = nPath + 2
+tubeMask = 1 + 2 + 16 + 32
+
+! Flip mirrors the section, not the path: under MULX -1 the path is fed with
+! x negated, so it lands where it belongs and only U flips.
+IF flipProfile THEN MULX -1
+
+! ---- rectangle section (also the fallback) ----
+rw = MAX (0.001, rectW)
+rh = MAX (0.001, rectH)
+rSurf = 0
+nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
+IF overrideSurface THEN rSurf = surfaceOverride
+BUILDING_MATERIAL rectBMat
+PUT -rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+PUT -rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+PUT  rw / 2 - profileOffsetU, -rh / 2 - profileOffsetW, 0, rSurf
+PUT  rw / 2 - profileOffsetU,  rh / 2 - profileOffsetW, 0, rSurf
+GOSUB "putPath"
+TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
+
+IF flipProfile THEN DEL 1
+END
+
+"putPath":
+    ! phantom start point along the true start tangent, the samples, phantom end
+    PUT (pathX[1] - startTX) * sgnFlip, pathY[1] - startTY, pathZ[1] - startTZ, pathRoll[1] * sgnFlip
+    FOR iP = 1 TO nPath
+        PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], pathRoll[iP] * sgnFlip
+    NEXT iP
+    PUT (pathX[nPath] + endTX) * sgnFlip, pathY[nPath] + endTY, pathZ[nPath] + endTZ, pathRoll[nPath] * sgnFlip
+RETURN
