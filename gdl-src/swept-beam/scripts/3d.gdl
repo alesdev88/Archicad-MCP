@@ -192,8 +192,13 @@ END
     ! A finite box on the mitre plane, not an infinite plane: a run that curves
     ! round would otherwise cross the plane again far away and lose that part
     ! (gate C, a helix lost its first half). The box holds the part carried past
-    ! the kink and nothing further.
-    cutD = secExtent * (6 + MIN (20, TAN (kinkTurn[cutNode] / 2)))
+    ! the kink and nothing further. It must hold the whole overshoot "putRun"
+    ! adds, which grows with the run's slope and rises with it: sized without
+    ! the slope, steep overshoots poked out and stayed as loose pieces (gate D).
+    cutSlope = sTz[cutNode]
+    IF cutSgn > 0 THEN cutSlope = eTz[cutNode - 1]
+    cutOv = secExtent * (3 + MIN (20, TAN (kinkTurn[cutNode] / 2)) + ABS (cutSlope))
+    cutD = MAX (secExtent * (6 + MIN (20, TAN (kinkTurn[cutNode] / 2))), cutOv * SQR (1 + cutSlope * cutSlope) + 2 * secExtent)
     XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
     CUTFORM 4, 1, 1 + 2 + 128, 0, 0, 1, cutD, -cutD, -cutD, 1, cutD, -cutD, 1, cutD, cutD, 1, -cutD, cutD, 1
     DEL 1
