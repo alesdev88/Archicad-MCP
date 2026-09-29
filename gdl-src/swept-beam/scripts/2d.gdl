@@ -40,7 +40,39 @@ IF showNodeHeights THEN
     NEXT iN
 ENDIF
 
-! (Task 7 replaces these fixed hotspots with the editing grips.)
+! ---- node grips: combined nodeX / nodeY drag (reference, Example 2) ----
 FOR iN = 1 TO nNode
-    HOTSPOT2 nodeX[iN], nodeY[iN]
+    hId = 100000 + iN * 10
+    HOTSPOT2 nodeX[iN], 0, hId, nodeY[iN], 1 + 128
+    HOTSPOT2 nodeX[iN], -1, hId + 1, nodeY[iN], 3
+    HOTSPOT2 nodeX[iN], nodeY[iN], hId + 2, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
+    HOTSPOT2 0, nodeY[iN], hId + 3, nodeX[iN], 1 + 128
+    HOTSPOT2 -1, nodeY[iN], hId + 4, nodeX[iN], 3
+    HOTSPOT2 nodeX[iN], nodeY[iN], hId + 5, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
 NEXT iN
+
+! ---- arc grips (segSag, sideways at the chord midpoint) and insert grips ----
+FOR jS = 1 TO nNode - 1
+    gdx = nodeX[jS + 1] - nodeX[jS]
+    gdy = nodeY[jS + 1] - nodeY[jS]
+    gChord = SQR (gdx * gdx + gdy * gdy)
+    IF gChord > EPS AND jS <= VARDIM1 (segSag) THEN
+        gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
+        gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
+        rnx = gdy / gChord
+        rny = -gdx / gChord
+        hId = 200000 + jS * 10
+        HOTSPOT2 gmx, gmy, hId, segSag[jS], 1 + 128
+        HOTSPOT2 gmx - rnx, gmy - rny, hId + 1, segSag[jS], 3
+        HOTSPOT2 gmx + rnx * segSag[jS], gmy + rny * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
+    ENDIF
+    IF jS <= VARDIM1 (insX) AND jS <= VARDIM1 (insY) THEN
+        hId = 300000 + jS * 10
+        HOTSPOT2 insX[jS], 0, hId, insY[jS], 1 + 128
+        HOTSPOT2 insX[jS], -1, hId + 1, insY[jS], 3
+        HOTSPOT2 insX[jS], insY[jS], hId + 2, insY[jS], 2, insY[jS], "Insert node after " + STR (jS, 1, 0) + ": y"
+        HOTSPOT2 0, insY[jS], hId + 3, insX[jS], 1 + 128
+        HOTSPOT2 -1, insY[jS], hId + 4, insX[jS], 3
+        HOTSPOT2 insX[jS], insY[jS], hId + 5, insX[jS], 2, insX[jS], "Insert node after " + STR (jS, 1, 0) + ": x"
+    ENDIF
+NEXT jS

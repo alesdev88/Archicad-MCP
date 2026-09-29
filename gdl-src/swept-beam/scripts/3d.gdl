@@ -3,7 +3,8 @@
 ! right looking along the path) and rolls it by each point's angle (spec 1.4).
 ! At a kink TUBE would average the two directions and twist both sides, so the
 ! path is split into runs at kinks: each run is swept on its own, carried past
-! the kink along its own direction and trimmed by the kink's plumb mitre plane. Both
+! the kink along its own direction and trimmed by a box on the kink's plumb
+! mitre plane. Both
 ! sides stay true plumb prisms and meet on one flat mitre.
 
 MODEL SOLID
@@ -147,6 +148,20 @@ FOR iRun = 1 TO nRun
         CUTEND
     NEXT iC
 NEXT iRun
+
+! ---- 3D node grips: combined nodeX / nodeY / nodeZ drag ----
+FOR iN = 1 TO nNode
+    hId = 400000 + iN * 10
+    HOTSPOT 0, nodeY[iN], nodeZ[iN], hId, nodeX[iN], 1 + 128
+    HOTSPOT -1, nodeY[iN], nodeZ[iN], hId + 1, nodeX[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 2, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
+    HOTSPOT nodeX[iN], 0, nodeZ[iN], hId + 3, nodeY[iN], 1 + 128
+    HOTSPOT nodeX[iN], -1, nodeZ[iN], hId + 4, nodeY[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 5, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
+    HOTSPOT nodeX[iN], nodeY[iN], 0, hId + 6, nodeZ[iN], 1 + 128
+    HOTSPOT nodeX[iN], nodeY[iN], -1, hId + 7, nodeZ[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 8, nodeZ[iN], 2, nodeZ[iN], "Node " + STR (iN, 1, 0) + " height"
+NEXT iN
 END
 
 "cutAt":
@@ -172,8 +187,13 @@ END
     cyy = czz * cxx - czx * cxz
     cyz = czx * cxy - czy * cxx
     cp = nodePath[cutNode]
+    ! A finite box on the mitre plane, not an infinite plane: a run that curves
+    ! round would otherwise cross the plane again far away and lose that part
+    ! (gate C, a helix lost its first half). The box holds the part carried past
+    ! the kink and nothing further.
+    cutD = secExtent * (6 + MIN (20, TAN (kinkTurn[cutNode] / 2)))
     XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
-    CUTPLANE
+    CUTFORM 4, 1, 1 + 2 + 128, 0, 0, 1, cutD, -cutD, -cutD, 1, cutD, -cutD, 1, cutD, cutD, 1, -cutD, cutD, 1
     DEL 1
 RETURN
 

@@ -86,7 +86,92 @@ IF GLOB_UI_BUTTON_ID = 1 THEN
     NEXT i
 ENDIF
 
-! (Task 7 adds the arc grip, insert and merge reactions here.)
+! arc grip: a moved segSag item becomes that segment's arc angle
+IF GLOB_MODPAR_NAME = "segSag" THEN
+    FOR j = 1 TO n - 1
+        IF j <= VARDIM1 (segSag) THEN
+            jSeg = j
+            GOSUB "seg"
+            IF sChord > EPS THEN
+                sOld = 0
+                IF sIsArc THEN sOld = sChord / 2 * TAN (na[j] / 4)
+                IF ABS (segSag[j] - sOld) > 0.0005 THEN na[j] = 4 * ATN (2 * segSag[j] / sChord)
+            ENDIF
+        ENDIF
+    NEXT j
+ENDIF
+
+! insert grip: the item that left its parked point becomes a new node there
+IF GLOB_MODPAR_NAME = "insX" OR GLOB_MODPAR_NAME = "insY" THEN
+    jIns = 0
+    FOR j = 1 TO n - 1
+        IF jIns = 0 AND j <= VARDIM1 (insX) AND j <= VARDIM1 (insY) THEN
+            jSeg = j
+            GOSUB "seg"
+            GOSUB "park"
+            IF ABS (insX[j] - pkx) + ABS (insY[j] - pky) > 0.001 THEN jIns = j
+        ENDIF
+    NEXT j
+    IF jIns > 0 THEN
+        newX = insX[jIns]
+        newY = insY[jIns]
+        newZ = nz[jIns] + (nz[jIns + 1] - nz[jIns]) / 3
+        newR = nr[jIns] + (nr[jIns + 1] - nr[jIns]) / 3
+        jSeg = jIns
+        GOSUB "seg"
+        a1 = 0
+        a2 = 0
+        IF sIsArc THEN
+            c1 = SQR ((newX - nx[jIns])^2 + (newY - ny[jIns])^2)
+            c2 = SQR ((nx[jIns + 1] - newX)^2 + (ny[jIns + 1] - newY)^2)
+            IF c1 <= 2 * sRad THEN a1 = SGN (na[jIns]) * 2 * ASN (c1 / (2 * sRad))
+            IF c2 <= 2 * sRad THEN a2 = SGN (na[jIns]) * 2 * ASN (c2 / (2 * sRad))
+        ENDIF
+        FOR k = n TO jIns + 1 STEP -1
+            nx[k + 1] = nx[k]
+            ny[k + 1] = ny[k]
+            nz[k + 1] = nz[k]
+            nr[k + 1] = nr[k]
+            na[k + 1] = na[k]
+        NEXT k
+        nx[jIns + 1] = newX
+        ny[jIns + 1] = newY
+        nz[jIns + 1] = newZ
+        nr[jIns + 1] = newR
+        na[jIns] = a1
+        na[jIns + 1] = a2
+        n = n + 1
+        na[n] = 0
+    ENDIF
+ENDIF
+
+! merge: a node dragged within 1 cm (plan) of a neighbour disappears
+IF (GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME = "nodeZ") AND n > 2 THEN
+    j = 1
+    WHILE j < n AND n > 2 DO
+        dPlan = SQR ((nx[j + 1] - nx[j])^2 + (ny[j + 1] - ny[j])^2)
+        IF dPlan < 0.01 THEN
+            jDel = j + 1
+            IF jDel = n THEN jDel = j
+            IF jDel > 1 AND jDel < n THEN
+                lenA = SQR ((nx[jDel] - nx[jDel - 1])^2 + (ny[jDel] - ny[jDel - 1])^2)
+                lenB = SQR ((nx[jDel + 1] - nx[jDel])^2 + (ny[jDel + 1] - ny[jDel])^2)
+                IF lenB > lenA THEN na[jDel - 1] = na[jDel]
+            ENDIF
+            FOR k = jDel TO n - 1
+                nx[k] = nx[k + 1]
+                ny[k] = ny[k + 1]
+                nz[k] = nz[k + 1]
+                nr[k] = nr[k + 1]
+                na[k] = na[k + 1]
+            NEXT k
+            n = n - 1
+            na[n] = 0
+        ELSE
+            j = j + 1
+        ENDIF
+    ENDWHILE
+ENDIF
 
 ! ---- 3. park the grip helpers ----
 DIM sag[], ix[], iy[]

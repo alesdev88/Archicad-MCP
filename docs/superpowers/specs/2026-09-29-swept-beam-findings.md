@@ -92,3 +92,19 @@ not codes whose x/y hold a vector, length or angle.
    side from the same angle.
 5. Profile index 9999: no crash; Archicad resolved it to an existing profile
    (steel section drawn), so the rectangle fallback only covers a failing request.
+
+## Gate C (in progress)
+
+8. Array repair: `nodeY` cut to one item through the API came back padded to
+   the length of `nodeX`.
+- Helix of 60 nodes (radius 4 m, 6 degree arcs): the user dragged arc grips into
+  an S-shaped "snake" near the end; the first half of the helix then vanished.
+  Cause: CUTPLANE is an infinite plane; the long run from node 1 to the first
+  snake kink was trimmed at that kink, and the same plane crossed the circle
+  again on the far side. Fix: the cut is a finite CUTFORM box on the mitre
+  plane, sized from the section and the kink angle. Re-rendered: whole helix
+  and clean snake mitres.
+- Grips: all visible grips are movable (node, curve at the segment midpoint,
+  insert at one third). Hotspots cannot be coloured in GDL; each moving grip
+  now carries a tracker label ("Node 3 x", "Curve segment 4: bulge",
+  "Insert node after 2: x").
