@@ -175,7 +175,105 @@ FOR iN = 1 TO nNode
     HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 8, nodeZ[iN], 2, nodeZ[iN], "Node " + STR (iN, 1, 0) + " height"
 NEXT iN
 ENDIF
+
+! ---- 3D end cut grips: the plan angle, as in plan, on the corner where the
+! cut meets the beam's edge at the node's height, turning about the vertical
+! through the node; the tilt on the top edge of the cut face, tipping it about
+! the cut line (positive leans the top out, like the parameter) ----
+IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
+    ! the section's extent beside the axis (U, after the default mirror) and
+    ! above it (W), as the 2D script works it out
+    IF useProfile THEN
+        uLo = pbXmin - profileOffsetU
+        uHi = pbXmax - profileOffsetU
+        wTop = pbYmax - profileOffsetW
+    ELSE
+        uLo = -rw / 2 - profileOffsetU
+        uHi = rw / 2 - profileOffsetU
+        wTop = rh / 2 - profileOffsetW
+    ENDIF
+    IF NOT (flipProfile) THEN
+        uTmp = uLo
+        uLo = -uHi
+        uHi = -uTmp
+    ENDIF
+    IF ABS (wTop) < 0.01 THEN wTop = 0.1
+
+    iE = 1
+    hx = nodeX[1]
+    hy = nodeY[1]
+    hz = nodeZ[1]
+    hox = -startTX
+    hoy = -startTY
+    hPlan = cutStartPlan
+    hTilt = cutStartTilt
+    gD = uHi
+    IF ABS (gD) < 0.01 THEN gD = uLo
+    GOSUB "cutGripFrame"
+    HOTSPOT hx, hy, hz, 490000, cutStartPlan, 6
+    HOTSPOT hx, hy, hz + 1, 490001, cutStartPlan, 7
+    HOTSPOT hbx, hby, hz, 490002, cutStartPlan, 4 + 128
+    HOTSPOT hmx, hmy, hz, 490003, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    HOTSPOT hx, hy, hz, 490010, cutStartTilt, 6
+    HOTSPOT hx + hLx, hy + hLy, hz, 490011, cutStartTilt, 7
+    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490012, cutStartTilt, 4 + 128
+    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+
+    iE = 2
+    hx = nodeX[nNode]
+    hy = nodeY[nNode]
+    hz = nodeZ[nNode]
+    hox = endTX
+    hoy = endTY
+    hPlan = cutEndPlan
+    hTilt = cutEndTilt
+    gD = -uLo
+    IF ABS (gD) < 0.01 THEN gD = -uHi
+    GOSUB "cutGripFrame"
+    HOTSPOT hx, hy, hz, 490020, cutEndPlan, 6
+    HOTSPOT hx, hy, hz + 1, 490021, cutEndPlan, 7
+    HOTSPOT hbx, hby, hz, 490022, cutEndPlan, 4 + 128
+    HOTSPOT hmx, hmy, hz, 490023, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    HOTSPOT hx, hy, hz, 490030, cutEndTilt, 6
+    HOTSPOT hx + hLx, hy + hLy, hz, 490031, cutEndTilt, 7
+    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490032, cutEndTilt, 4 + 128
+    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+ENDIF
 END
+
+"cutGripFrame":
+    ! in: node hx, hy, hz; outward plan direction hox, hoy; the raw angles
+    ! hPlan, hTilt; the corner's distance gD beside the axis; iE for the slope.
+    ! out: base hbx, hby and moving hmx, hmy of the plan grip; the cut line hLx,
+    ! hLy (the tilt's axis); the face's up direction square (u0) and tilted (ut)
+    hC = COS (hPlan)
+    IF ABS (hC) < 0.17 THEN
+        IF hC >= 0 THEN
+            hC = 0.17
+        ELSE
+            hC = -0.17
+        ENDIF
+    ENDIF
+    hlx = -hoy
+    hly = hox
+    hLx = hlx * COS (hPlan) - hly * SIN (hPlan)
+    hLy = hlx * SIN (hPlan) + hly * COS (hPlan)
+    hbx = hx + gD * hlx
+    hby = hy + gD * hly
+    hmx = hx + gD / hC * hLx
+    hmy = hy + gD / hC * hLy
+    ! plumb face normal n0; the face leans by the slope minus the tilt
+    n0x = hox * COS (hPlan) - hoy * SIN (hPlan)
+    n0y = hox * SIN (hPlan) + hoy * COS (hPlan)
+    hPhi = ecPlumb[iE]
+    u0x = -n0x * SIN (hPhi)
+    u0y = -n0y * SIN (hPhi)
+    u0z = COS (hPhi)
+    hG = hPhi - hTilt
+    utx = -n0x * SIN (hG)
+    uty = -n0y * SIN (hG)
+    utz = COS (hG)
+RETURN
 
 "cutAt":
     ! the mitre plane at node cutNode; removes what lies ahead of the run

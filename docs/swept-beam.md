@@ -43,6 +43,8 @@ Each end can be cut at an angle, on the Ends page of the dialog:
 - Tilt: 0 keeps the face square to the beam; positive leans the top of the
   face out past the end. A tilt equal to the beam's slope at that end gives a
   vertical face; the page shows that value for both ends.
+- In 3D, each end has two grips: one on the corner turns the plan cut, one on
+  the top edge of the cut face tips it.
 
 ## Profile
 
