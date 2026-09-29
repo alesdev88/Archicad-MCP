@@ -168,7 +168,8 @@ child = true
 [[param]]
 name = "axisLineType"
 type = "linetype"
-default = 1
+# 6 is "Dot & Dashed" in the office template, MCP-Test and CVP (2026-09-29)
+default = 6
 description = "Axis line type"
 child = true
 
