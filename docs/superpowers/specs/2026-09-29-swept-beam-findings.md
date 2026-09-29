@@ -55,3 +55,20 @@ with Tapir `AddLibraries` (undo: remove it in Library Manager).
    gets a plumb cut square to the plan direction. Plan at pixel level: one mitre
    line, both sides end on it. Section DP4 in the middle of the straight part: a
    clean rectangle (user).
+   Kinks: two sloped members meeting at a plan angle cannot meet flush on any
+   mitre (their sloped top faces cross along the average direction, the stair
+   handrail "wreath" problem). With the plumb cut the plan is clean and the
+   section shows a small X-step at the joint. A tangent curve (arc starting in
+   the direction the straight part ends) has no joint: section at the joint and
+   mid-straight both clean (user). Guide rule: sloped beams that turn should
+   curve tangentially.
+4. Apply slope (27, user pressed the button): nodeZ became [0, 0.3, 0.6332]
+   exactly; the arc kept its helper values. The dialog button and whole-array
+   PARAMETERS both work.
+6. Plan cut: with the hidden-line projection the beam stays an outline where it
+   crosses the floor plan cut height (user). Decision: keep it, it matches the
+   office's other objects (`project2 3, 270, 2`), which is what the user asked
+   for. A real plan cut with fill is possible later with PROJECT2{4} and the
+   cut height from GLOB_CUTPLANES_INFO (Archicad 20+).
+
+Gate A result: pass, with the fixes above (units, end samples, plumb mitres).
