@@ -150,6 +150,50 @@ FOR iSeg = 1 TO nNode - 1
     nodePath[iSeg + 1] = nPath
 NEXT iSeg
 
+! ---- end cuts: the cut plane at node 1 (index 1) and the last node (2) ----
+! ecN* is the plane's normal pointing out of the beam. The plan angle turns
+! the cut counter-clockwise from square in plan; the tilt leans the top of the
+! face out past the end, 0 being square to the beam, so a tilt equal to the
+! slope there (ecPlumb) gives a vertical face. Both 0 keeps TUBE's own square
+! end (ecOn 0), so beams without cuts draw as before. ecTan is the tangent of
+! the angle between the cut and square, for the overshoot the 3D script adds.
+DIM ecOn[], ecNx[], ecNy[], ecNz[], ecTan[], ecPlumb[]
+FOR iE = 1 TO 2
+    IF iE = 1 THEN
+        ePx = -startTX
+        ePy = -startTY
+        eRise = -startTZ
+        ePlan = cutStartPlan
+        eTilt = cutStartTilt
+    ELSE
+        ePx = endTX
+        ePy = endTY
+        eRise = endTZ
+        ePlan = cutEndPlan
+        eTilt = cutEndTilt
+    ENDIF
+    ! a plan grip drag can arrive as 350 for -10
+    WHILE ePlan > 180 DO
+        ePlan = ePlan - 360
+    ENDWHILE
+    WHILE ePlan <= -180 DO
+        ePlan = ePlan + 360
+    ENDWHILE
+    ePlan = MAX (-80, MIN (80, ePlan))
+    eTilt = MAX (-85, MIN (85, eTilt))
+    ePhi = ATN (eRise)
+    ecPlumb[iE] = ePhi
+    ecOn[iE] = 0
+    IF nNode > 1 AND (ABS (ePlan) > 0.01 OR ABS (eTilt) > 0.01) THEN ecOn[iE] = 1
+    eLean = MAX (-89, MIN (89, ePhi - eTilt))
+    ecNx[iE] = (ePx * COS (ePlan) - ePy * SIN (ePlan)) * COS (eLean)
+    ecNy[iE] = (ePx * SIN (ePlan) + ePy * COS (ePlan)) * COS (eLean)
+    ecNz[iE] = SIN (eLean)
+    eCos = (ecNx[iE] * ePx + ecNy[iE] * ePy + ecNz[iE] * eRise) / SQR (1 + eRise * eRise)
+    ecTan[iE] = 20
+    IF eCos > 0.05 THEN ecTan[iE] = MIN (20, TAN (ACS (MIN (1, eCos))))
+NEXT iE
+
 ! ---- kinks: nodes where the path changes direction by more than 1 degree ----
 ! The 3D script splits the sweep there and trims both sides with the mitre
 ! plane (normal kinkNx, kinkNy, kinkNz). The plane is vertical and bisects the

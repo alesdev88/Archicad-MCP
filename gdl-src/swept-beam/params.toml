@@ -134,6 +134,30 @@ default = 0.0
 description = "End grip applied (helper)"
 hidden = true
 [[param]]
+name = "cutStartPlan"
+type = "angle"
+default = 0.0
+description = "Start cut in plan"
+
+[[param]]
+name = "cutStartTilt"
+type = "angle"
+default = 0.0
+description = "Start cut tilt"
+
+[[param]]
+name = "cutEndPlan"
+type = "angle"
+default = 0.0
+description = "End cut in plan"
+
+[[param]]
+name = "cutEndTilt"
+type = "angle"
+default = 0.0
+description = "End cut tilt"
+
+[[param]]
 name = "profileMode"
 type = "string"
 default = "Rectangle"

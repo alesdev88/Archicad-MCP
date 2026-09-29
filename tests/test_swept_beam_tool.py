@@ -244,3 +244,46 @@ async def test_the_tool_takes_points_and_profile_sent_as_json_text(monkeypatch):
 async def test_the_tool_explains_text_that_is_not_json(monkeypatch):
     payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB}, {"points": "0,0 3,0"})
     assert "points" in payload["error"] and "JSON" in payload["error"]
+
+
+CUT_NAMES = ("cutStartPlan", "cutStartTilt", "cutEndPlan", "cutEndTilt")
+
+
+def test_new_beams_get_square_ends_unless_cuts_are_given():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    params = _params(sb.create_swept_beam(conn, points=pts))
+    assert [params[n] for n in CUT_NAMES] == [0.0, 0.0, 0.0, 0.0]
+    # single angle parameters go through the API in degrees (gate A)
+    params = _params(sb.create_swept_beam(conn, points=pts, cut_start_plan=30, cut_end_tilt=-12.5))
+    assert [params[n] for n in CUT_NAMES] == [30.0, 0.0, 0.0, -12.5]
+
+
+def test_update_keeps_the_end_cuts_unless_the_call_sets_them():
+    beam = {"type": "Object", "floorIndex": 0, "details": {
+        "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+    tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
+    conn = _conn(tapir)
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    assert not set(CUT_NAMES) & set(_written(conn))
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", cut_end_plan=-45, dry_run=False)
+    written = _written(conn)
+    assert written["cutEndPlan"] == -45.0
+    assert not {"cutStartPlan", "cutStartTilt", "cutEndTilt"} & set(written)
+
+
+def test_end_cuts_out_of_range_are_refused():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    assert "cut_start_plan" in sb.create_swept_beam(conn, points=pts, cut_start_plan=81)["error"]
+    assert "cut_end_tilt" in sb.create_swept_beam(conn, points=pts, cut_end_tilt=-86)["error"]
+
+
+async def test_the_tool_passes_end_cuts(monkeypatch):
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB},
+                               {"points": pts, "cut_start_plan": 20, "cut_end_tilt": 5})
+    params = _params(payload)
+    assert (params["cutStartPlan"], params["cutEndTilt"]) == (20.0, 5.0)

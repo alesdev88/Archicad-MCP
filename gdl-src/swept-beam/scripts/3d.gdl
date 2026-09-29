@@ -5,7 +5,8 @@
 ! path is split into runs at kinks: each run is swept on its own, carried past
 ! the kink along its own direction and trimmed by a box on the kink's plumb
 ! mitre plane. Both
-! sides stay true plumb prisms and meet on one flat mitre.
+! sides stay true plumb prisms and meet on one flat mitre. An end with a
+! custom cut is carried past its node the same way and trimmed on the cut.
 
 MODEL SOLID
 IF nPath < 2 THEN END
@@ -79,10 +80,20 @@ FOR iRun = 1 TO nRun
         GOSUB "cutAt"
         nCut = nCut + 1
     ENDIF
+    IF nA = 1 AND ecOn[1] THEN
+        cutEndIdx = 1
+        GOSUB "cutEnd"
+        nCut = nCut + 1
+    ENDIF
     IF nB < nNode THEN
         cutNode = nB
         cutSgn = 1
         GOSUB "cutAt"
+        nCut = nCut + 1
+    ENDIF
+    IF nB = nNode AND ecOn[2] THEN
+        cutEndIdx = 2
+        GOSUB "cutEnd"
         nCut = nCut + 1
     ENDIF
     ! Flip mirrors the section, not the path: under MULX -1 the path is fed with
@@ -172,6 +183,32 @@ END
     czx = kinkNx[cutNode] * cutSgn
     czy = kinkNy[cutNode] * cutSgn
     czz = kinkNz[cutNode] * cutSgn
+    cp = nodePath[cutNode]
+    cutSlope = sTz[cutNode]
+    IF cutSgn > 0 THEN cutSlope = eTz[cutNode - 1]
+    cutTan = TAN (kinkTurn[cutNode] / 2)
+    GOSUB "cutBox"
+RETURN
+
+"cutEnd":
+    ! the custom cut at node 1 (cutEndIdx 1) or the last node (2); removes
+    ! what lies past the end
+    czx = ecNx[cutEndIdx]
+    czy = ecNy[cutEndIdx]
+    czz = ecNz[cutEndIdx]
+    cp = 1
+    cutSlope = sTz[1]
+    IF cutEndIdx = 2 THEN
+        cp = nPath
+        cutSlope = eTz[nNode - 1]
+    ENDIF
+    cutTan = ecTan[cutEndIdx]
+    GOSUB "cutBox"
+RETURN
+
+"cutBox":
+    ! a box on the plane through path point cp with normal (czx, czy, czz),
+    ! removing the side the normal points to
     IF ABS (czz) < 0.9 THEN
         cxx = -czy
         cxy = czx
@@ -188,17 +225,14 @@ END
     cyx = czy * cxz - czz * cxy
     cyy = czz * cxx - czx * cxz
     cyz = czx * cxy - czy * cxx
-    cp = nodePath[cutNode]
-    ! A finite box on the mitre plane, not an infinite plane: a run that curves
+    ! A finite box on the cut plane, not an infinite plane: a run that curves
     ! round would otherwise cross the plane again far away and lose that part
     ! (gate C, a helix lost its first half). The box holds the part carried past
     ! the kink and nothing further. It must hold the whole overshoot "putRun"
     ! adds, which grows with the run's slope and rises with it: sized without
     ! the slope, steep overshoots poked out and stayed as loose pieces (gate D).
-    cutSlope = sTz[cutNode]
-    IF cutSgn > 0 THEN cutSlope = eTz[cutNode - 1]
-    cutOv = secExtent * (3 + MIN (20, TAN (kinkTurn[cutNode] / 2)) + ABS (cutSlope))
-    cutD = MAX (secExtent * (6 + MIN (20, TAN (kinkTurn[cutNode] / 2))), cutOv * SQR (1 + cutSlope * cutSlope) + 2 * secExtent)
+    cutOv = secExtent * (3 + MIN (20, cutTan) + ABS (cutSlope))
+    cutD = MAX (secExtent * (6 + MIN (20, cutTan)), cutOv * SQR (1 + cutSlope * cutSlope) + 2 * secExtent)
     XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
     CUTFORM 4, 1, 1 + 2 + 128, 0, 0, 1, cutD, -cutD, -cutD, 1, cutD, -cutD, 1, cutD, cutD, 1, -cutD, cutD, 1
     DEL 1
@@ -229,24 +263,27 @@ RETURN
         ez = eTz[nB - 1]
     ENDIF
     ovA = 0
-    ! far enough past a kink to fill the mitre, also where a plumb cut meets a slope
+    ! far enough past a kink or an end cut to fill it, also where a plumb cut
+    ! meets a slope
     IF nA > 1 THEN ovA = secExtent * (3 + MIN (20, TAN (kinkTurn[nA] / 2)) + ABS (sz))
+    IF nA = 1 AND ecOn[1] THEN ovA = secExtent * (3 + ecTan[1] + ABS (sz))
     ovB = 0
     IF nB < nNode THEN ovB = secExtent * (3 + MIN (20, TAN (kinkTurn[nB] / 2)) + ABS (ez))
+    IF nB = nNode AND ecOn[2] THEN ovB = secExtent * (3 + ecTan[2] + ABS (ez))
     nTube = pB - pA + 3
-    IF nA > 1 THEN nTube = nTube + 1
-    IF nB < nNode THEN nTube = nTube + 1
+    IF ovA > 0 THEN nTube = nTube + 1
+    IF ovB > 0 THEN nTube = nTube + 1
     qx = pathX[pA] - sx * ovA
     qy = pathY[pA] - sy * ovA
     qz = pathZ[pA] - sz * ovA
     PUT (qx - sx) * sgnFlip, qy - sy, qz - sz, pathRoll[pA] * sgnFlip
-    IF nA > 1 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pA] * sgnFlip
+    IF ovA > 0 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pA] * sgnFlip
     FOR iP = pA TO pB
         PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], pathRoll[iP] * sgnFlip
     NEXT iP
     qx = pathX[pB] + ex * ovB
     qy = pathY[pB] + ey * ovB
     qz = pathZ[pB] + ez * ovB
-    IF nB < nNode THEN PUT qx * sgnFlip, qy, qz, pathRoll[pB] * sgnFlip
+    IF ovB > 0 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pB] * sgnFlip
     PUT (qx + ex) * sgnFlip, qy + ey, qz + ez, pathRoll[pB] * sgnFlip
 RETURN

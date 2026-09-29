@@ -1,4 +1,4 @@
-! Swept Beam, User Interface Script: three pages (spec 1.6)
+! Swept Beam, User Interface Script: four pages (spec 1.6, end cuts on page 4)
 
 UI_DIALOG "Swept Beam"
 UI_CURRENT_PAGE gs_ui_current_page
@@ -71,4 +71,24 @@ IF showNodeHeights THEN
     UI_INFIELD "textPen", 278, 156, 70, 19
     UI_INFIELD "textSizeMm", 354, 156, 70, 19
 ENDIF
+UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
+UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
+
+UI_PAGE 4, -1, "Ends"
+UI_STYLE 2, 1
+UI_OUTFIELD "Ends", 12, 10, 420, 22
+UI_STYLE 0, 0
+UI_SEPARATOR 12, 34, 432, 34
+UI_OUTFIELD "Start cut: in plan / tilt", 18, 50, 245, 18
+UI_INFIELD "cutStartPlan", 278, 48, 70, 19
+UI_INFIELD "cutStartTilt", 354, 48, 70, 19
+UI_OUTFIELD "End cut: in plan / tilt", 18, 78, 245, 18
+UI_INFIELD "cutEndPlan", 278, 76, 70, 19
+UI_INFIELD "cutEndTilt", 354, 76, 70, 19
+UI_OUTFIELD "Tilt for a vertical face: start " + STR (ecPlumb[1], 2, 1) + ", end " + STR (ecPlumb[2], 2, 1), 18, 106, 406, 18
+UI_STYLE 1, 2
+UI_OUTFIELD "In plan: turns the cut counter-clockwise from square, up to 80 degrees.", 18, 134, 406, 20
+UI_OUTFIELD "Tilt: 0 is square to the beam; positive leans the top of the face out.", 18, 156, 406, 20
+UI_OUTFIELD "The plan cut can also be turned with the grip beside each end.", 18, 178, 406, 20
+UI_STYLE 0, 0
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
