@@ -104,6 +104,9 @@ example in `archicad_mcp/gdl/config.py`. Per object: a stable `guid`,
 `textures` (shared), `variants` (each maps roles to a texture file or a flat
 `[r, g, b]` color), `frame_variants`, `groups` (material-name substring to
 label, texture role or `@frame`, fallback color), and `decimate` targets.
+A top-level `author` is the Author shown in every built part's details; an
+object's own `author` overrides it (default `archicad-gdl`). Hand-written
+parts (`archicad-gdl build-source`) take `author` from their `libpart.toml`.
 
 ## GDL specifics baked into the generator
 

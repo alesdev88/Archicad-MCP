@@ -19,7 +19,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from archicad_mcp.gdl import toolchain
-from archicad_mcp.gdl.generate import ANCESTRY_GUIDS
+from archicad_mcp.gdl.generate import ANCESTRY_GUIDS, DEFAULT_AUTHOR
 
 PARAM_TAGS = {
     "length": "Length", "angle": "Angle", "real": "RealNum",
@@ -29,8 +29,6 @@ PARAM_TAGS = {
 }
 NUMERIC_TYPES = {"length", "angle", "real"}
 INDEX_TYPES = {"integer", "surface", "pen", "linetype", "bmat", "profile", "fill"}
-# the Author in the part's details when libpart.toml names none
-DEFAULT_AUTHOR = "archicad-gdl"
 
 # (source script, HSF script file, libpartdata.xml section), in section order
 SCRIPTS = (

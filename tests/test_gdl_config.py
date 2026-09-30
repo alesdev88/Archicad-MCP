@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from archicad_mcp.gdl.config import (
+    find_object,
     load_config,
     parse_objects,
     save_object_config,
@@ -59,3 +60,17 @@ def test_save_replaces_an_existing_entry(tmp_path):
     save_object_config(path, "Chair", SPEC)
     save_object_config(path, "Chair", {**SPEC, "decimate": {}})
     assert json.loads(path.read_text())["objects"]["Chair"]["decimate"] == {}
+
+
+def test_author_from_the_object_else_the_workspace(tmp_path):
+    raw = {"author": "Aleš Dolenec",
+           "objects": {"Chair": {}, "Table": {"author": "Someone Else"}}}
+    objects = parse_objects(raw, tmp_path)
+    assert objects["Chair"].author == "Aleš Dolenec"
+    assert objects["Table"].author == "Someone Else"
+    assert parse_objects({"objects": {"Chair": {}}}, tmp_path)["Chair"].author is None
+
+
+def test_an_unconfigured_object_takes_the_workspace_author():
+    assert find_object({}, "Lamp", author="Aleš Dolenec").author == "Aleš Dolenec"
+    assert find_object({}, "Lamp").author is None

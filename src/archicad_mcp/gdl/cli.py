@@ -17,6 +17,7 @@ inspect: print a mesh summary (groups, face counts, bounding box).
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -28,8 +29,9 @@ from archicad_mcp.gdl import source as source_mod
 
 
 def _cmd_build(args) -> int:
-    objects = cfg_mod.load_config(args.config) if args.config else {}
-    cfg = cfg_mod.find_object(objects, args.name)
+    raw = json.loads(Path(args.config).read_text()) if args.config else {}
+    objects = cfg_mod.parse_objects(raw, Path(args.config).parent) if args.config else {}
+    cfg = cfg_mod.find_object(objects, args.name, cfg_mod.default_author(raw))
     mesh = mesh_mod.load(args.source)
     for note in mesh.notes:
         print(f"  ({note})")
