@@ -93,13 +93,44 @@ the same `coverage` field for it, with a `coverage_note` on the fallback. Before
 the fix, `clear_selection` left such an element selected and `set_selection`
 appended to it instead of replacing it.
 
-**Still open:** element types are read with the official
-`API.GetTypesOfElements`, so an MEP element that reaches a tool through Tapir has
-no type. `get_element_data` and `find_elements` report its type as `""`, and
-`reserve_elements` / `release_elements` derive `not_found` from the same read,
-so they would list it there and never attempt it (read from the code, not yet
-reproduced live). Tapir's `ElementType` enum has no MEP types either, so
-`find_elements` cannot select them by type.
+**Element types had the same gap, far wider than MEP.** Types were read with
+the official `API.GetTypesOfElements` alone. It answers one item per requested
+element, in request order, and names model elements only. Measured live on AC
+29/5101 with Tapir 1.5.10 (28.09.2026), on the whole plan of a live project:
+
+| Answer | Elements |
+|---|---|
+| typed | 27225 |
+| 7203 "Element not supported" | 35902 |
+
+The 7203 elements exist: every label, line, polyline, dimension and marker,
+curtain wall panels and frames, stair and railing parts, beam and column
+segments, and native MEP elements (a duct route and all 7 of its segments and
+nodes). A GUID that is not in the project answers 7204 "Element not found"
+instead. The extractor treated both errors alike, so:
+
+- `get_model_summary` and `find_elements` put those 35902 elements in a `by_type`
+  bucket keyed `""`, and `get_element_data` reported their type as `""`.
+- `reserve_elements` / `release_elements` derive `not_found` from this read, so
+  they called every one of them not found and never attempted it.
+
+Now 7204 alone means not found. The 7203 elements are typed by Tapir
+`GetDetailsOfElements` with `fields: ["type"]` (Tapir 1.5.7+), asked only about
+those elements, which added 3.2 s on the 63k-element plan (typing the whole plan
+through Tapir took 8.3 s). Tapir named all but 475 of them. The rest, native MEP
+elements among them, are labelled `"Unknown"`, the same word Tapir uses; so is
+every 7203 element when Tapir is missing or refuses the call. Tapir's
+`GetElementsByType` refuses `"Unknown"` ("Invalid elementType"), so
+`find_elements(element_types=["Unknown"])` matches it against the types read
+back over the whole plan (475 elements, 6.3 s live). Verified live after the fix:
+no `""` bucket in the summary, and the route counted as known while a made-up
+GUID stayed not found.
+
+A Tapir older than 1.5.7 has no `fields`; how it answers was not tried live. If
+it refuses the call, those elements stay `"Unknown"` (unit-tested only). Also checked live and rejected as type or existence sources:
+Tapir `GetMEPElements` returned an empty list with the route in the plan,
+`FilterElements` refuses a call without filters, and `GetMEPRoutingElements`
+answers for routes only.
 
 ## Classifications were read from the wrong key until 0.4.0
 
@@ -148,6 +179,60 @@ elements before writing (Tapir `FilterElements` with `IsEditable`) and list
 them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
 modules of a local copy of a large project. Edit them in the module's source
 file.
+
+## Archicad changes only the active window's database
+
+Archicad acts on elements in the database of the active window and passes over
+the rest without an error. Verified live on 28.09.2026 (AC 29/5101, Tapir
+1.5.10, a Teamwork project): with a Layout window active, Tapir `DeleteElements`
+on 12 reserved floor-plan labels answered success and deleted none of them, and
+`delete_elements` reported `{"deleted": 12}`. Tapir `FilterElements` with
+`IsEditable` had said 0 of 12 beforehand. With the floor plan active, the same
+call deleted all 12.
+
+Since then:
+
+- `delete_elements` and `move_elements` run the same `IsEditable` check as
+  `set_element_data` and send only the elements that pass. The rest come back
+  under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
+  (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
+  plan names the window first, because from a Layout even a reserved element
+  reads as not editable and "not reserved" alone is the wrong lead.
+- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`, which
+  per Tapir's source reads the current database, the one `DeleteElements`
+  acted on), never the requested count. `DeleteElements` answers one success
+  for the whole batch, so its answer alone proves nothing.
+- `moved` counts Tapir's per-element `executionResults`, which `MoveElements`
+  does report. Positions are not read back: there is no single position read
+  that covers every element type, and the pre-check removes the case that
+  failed silently.
+- `set_element_data` already counted per-element results and still does; its
+  values are not read back either, because that is the property read that has
+  crashed Archicad (see above). `apply_changeset` does read back.
+- `deploy_gdl_object` checks the deletion of its preview probe and says so in
+  `cleanup_failed` when the element is still there.
+
+`IsEditable` does not say why, so the reason for a refused element is built
+from further reads, in this order:
+
+| Reason | Read |
+|---|---|
+| not found | Tapir `GetDetailsOfElements` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| hidden layer | `FilterElements` with `IsVisibleByLayer` |
+| not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
+| locked | whatever is left: a hotlinked module, a locked layer, or another lock |
+
+The official `GetTypesOfElements` cannot answer "does it exist": live on
+28.09.2026 it answered 7203 "Element not supported" for every label, existing
+ones included.
+
+**Run live (28.09.2026, read-only, floor plan active)** on the 12 GUIDs of the
+report. By then 10 had been deleted from the floor plan and 2 kept and released
+from the workspace. The 10 came back "not found" and the 2 "not reserved in
+Teamwork", which is their actual state. `GetDetailsOfElements` with
+`fields: ["type"]` answered `{"type": "Label"}` for a kept one and an error
+entry for a deleted one. Not yet run live: the same check from a Layout, and a
+delete that goes through.
 
 ## Writing enum properties is not supported
 
@@ -302,9 +387,11 @@ classification-scoped custom property:
 
 Not validated: `publish`.
 
-Not yet re-verified live: the Tapir-backed enumeration, the `coverage` field and
-the `projectLocation` scrub above. They are covered by unit tests against
-recorded API shapes, not by a live run.
+The Tapir-backed enumeration was re-verified live on AC 29/5101 with Tapir
+1.5.10 (28.09.2026): Tapir `GetAllElements` listed 63127 elements against 16469
+from the official command, and the whole plan was typed through the path above.
+Not yet re-verified live: the `projectLocation` scrub. It is covered by unit
+tests against recorded API shapes, not by a live run.
 
 ## Running the live canary
 

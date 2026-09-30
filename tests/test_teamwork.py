@@ -56,7 +56,9 @@ def make(mine=(), teamwork=True):
     official = dict(api_replays.OFFICIAL)
     official["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
         {"typeOfElement": {"elementId": e["elementId"], "elementType": TYPES[e["elementId"]["guid"]]}}
-        for e in p["elements"] if e["elementId"]["guid"] in TYPES]}
+        if e["elementId"]["guid"] in TYPES
+        else {"error": {"code": 7204, "message": "Element not found"}}
+        for e in p["elements"]]}
     tapir = dict(api_replays.TAPIR)
     tapir["GetProjectInfo"] = {**api_replays.TAPIR["GetProjectInfo"], "isTeamwork": teamwork}
     tapir["GetAllElements"] = {"elements": [{"elementId": {"guid": g}} for g in TYPES]}

@@ -7,7 +7,9 @@ elements that did not exist, elements already in the caller's workspace, or
 elements Archicad reserved on the side (a door's wall, a wall's doors). Those
 three are derived here:
 
-* not found: GUIDs the official GetTypesOfElements does not know.
+* not found: GUIDs the official GetTypesOfElements answers 7204 "Element not
+  found" for. Its 7203 "Element not supported" (every 2D element and native
+  MEP element, live) means the element exists, so those are attempted too.
 * already mine: Tapir FilterElements with InMyWorkspace, before the attempt.
 * indirectly reserved: the elements newly in my workspace after the attempt
   that were not asked for. Computed by diffing InMyWorkspace over the whole

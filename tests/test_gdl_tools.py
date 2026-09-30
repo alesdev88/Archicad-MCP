@@ -437,20 +437,44 @@ def test_build_handles_assets_json_as_directory(ws, monkeypatch):
 
 
 class FakeConn:
+    """Places ABC-123 and, unless `delete_works` is off, deletes it again.
+
+    delete_elements checks editability before deleting and reads the element
+    back afterwards, so the fake answers FilterElements (everything editable)
+    and GetDetailsOfElements (an error entry once deleted).
+    """
     port = 19723
 
-    def __init__(self):
+    def __init__(self, delete_works=True):
         self.calls = []
+        self.delete_works = delete_works
+        self.placed = set()
+
+    def tapir_command_available(self, command):
+        return True
 
     def tapir(self, command, params=None):
         self.calls.append((command, params))
         if command == "GetElementPreviewImage":
             return {"previewImage": base64.b64encode(PNG).decode()}
         if command == "CreateObjects":
+            self.placed.add("ABC-123")
             return {"elements": [{"elementId": {"guid": "ABC-123"}}]}
         if command == "AddFilesToEmbeddedLibrary":
             files = (params or {}).get("files", [])
             return {"executionResults": [{"success": True} for _ in files]}
+        if command == "FilterElements":
+            return {"elements": params["elements"]}
+        if command == "DeleteElements":
+            if self.delete_works:
+                for e in params["elements"]:
+                    self.placed.discard(e["elementId"]["guid"])
+            return {"success": True}
+        if command == "GetDetailsOfElements":
+            return {"detailsOfElements": [
+                {"type": "Object"} if e["elementId"]["guid"] in self.placed
+                else {"error": {"code": -2130313112, "message": "not found"}}
+                for e in params["elements"]]}
         return {}
 
 
@@ -474,9 +498,23 @@ def test_deploy_reloads_places_renders_and_deletes(ws):
     payload, png = gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
                                             keep=False, embed=False)
     assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
-                               "GetElementPreviewImage", "DeleteElements"]
+                               "GetElementPreviewImage", "FilterElements",
+                               "DeleteElements", "GetDetailsOfElements"]
     assert png == PNG
     assert payload["kept"] is False
+    assert "cleanup_failed" not in payload
+    assert conn.placed == set()
+
+
+def test_deploy_says_so_when_the_probe_is_still_there(ws):
+    # Archicad can answer success for a delete that removed nothing (live
+    # 28.09.2026, from a Layout window), so the probe is read back.
+    conn = FakeConn(delete_works=False)
+    payload, png = gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                            keep=False, embed=False)
+    assert png == PNG
+    assert "still in the project" in payload["cleanup_failed"]
+    assert "ABC-123" in payload["cleanup_failed"]
     assert payload["element_guid"] == "ABC-123"
 
 
@@ -625,6 +663,7 @@ def test_deploy_preserves_render_exception_type_on_successful_cleanup(ws):
         delete_called = []
         def mock_delete(conn, guids, confirm=False):
             delete_called.append((guids, confirm))
+            return {"requested": len(guids), "deleted": len(guids)}
 
         original_delete = _mutate.delete_elements
         try:
@@ -644,6 +683,17 @@ def test_deploy_preserves_render_exception_type_on_successful_cleanup(ws):
 
     finally:
         sys.modules['archicad_mcp.gdl.deploy'].preview_image_bytes = original_preview
+
+
+def test_deploy_render_failure_names_a_probe_the_delete_left_behind(ws, monkeypatch):
+    def raise_on_preview(*args, **kwargs):
+        raise RenderFailure("Render failed")
+
+    monkeypatch.setattr(deploy_mod, "preview_image_bytes", raise_on_preview)
+    conn = FakeConn(delete_works=False)
+    with pytest.raises(RuntimeError, match="ABC-123.*still in the project"):
+        gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                 keep=False, embed=False)
 
 
 def test_deploy_does_not_delete_when_keep_true_and_render_fails(ws):

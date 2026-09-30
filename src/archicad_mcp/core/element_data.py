@@ -3,13 +3,12 @@ from __future__ import annotations
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.core.teamwork import FILTER_CHUNK, _in_my_workspace, _is_teamwork
+from archicad_mcp.core import editability
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     PROPERTY_FETCH_CHUNK,
     _fetch_classifications,
     _fetch_types,
-    element_payload,
     fetch_property_cells,
     fetch_property_values,
     resolve_property_ids,
@@ -48,43 +47,6 @@ def group_failures(failed: list[dict]) -> list[dict]:
         if len(group["sample"]) < FAILURE_SAMPLE:
             group["sample"].append({"guid": f["guid"], "property": f["property"]})
     return sorted(groups.values(), key=lambda g: -g["count"])
-
-
-_HOTLINKED = ("not editable: it is inside a hotlinked module or otherwise "
-              "locked, so Archicad would refuse the write")
-_UNRESERVED = ("not reserved in Teamwork; reserve it (reserve_elements) and "
-               "plan again")
-
-
-def _editable(conn: ArchicadConnection, guids: list[str]) -> set[str]:
-    editable: set[str] = set()
-    for start in range(0, len(guids), FILTER_CHUNK):
-        chunk = guids[start:start + FILTER_CHUNK]
-        response = conn.tapir("FilterElements", {"elements": element_payload(chunk),
-                                                 "filters": ["IsEditable"]})
-        editable.update(e["elementId"]["guid"] for e in response.get("elements", []))
-    return editable
-
-
-def _write_refusals(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
-    """guid -> why Archicad would refuse to write it, for elements it would.
-
-    Archicad refuses writes to elements in hotlinked modules with 6001
-    "TeamWork permission denied", in plain files too, and only per element
-    after the batch is sent. Tapir's IsEditable filter answers it up front. On
-    a Teamwork project an element that is not editable is either not reserved,
-    which the caller can fix, or reserved and still locked, which is the
-    hotlink case (reserve_elements reports those as already mine). Without
-    Tapir the check is skipped and Archicad's own refusal is still reported.
-    """
-    if not guids or not conn.tapir_command_available("FilterElements"):
-        return {}
-    editable = _editable(conn, guids)
-    locked = [g for g in guids if g not in editable]
-    if not locked:
-        return {}
-    mine = _in_my_workspace(conn, locked) if _is_teamwork(conn) else set(locked)
-    return {g: _HOTLINKED if g in mine else _UNRESERVED for g in locked}
 
 
 # Property value types that take a plain number. The measure types are numbers
@@ -144,7 +106,9 @@ def plan_property_writes(conn: ArchicadConnection,
     # payload must echo back (a bare {"value": ...} is rejected by the API).
     cells = fetch_property_cells(conn, guids, prop_names)
     ids = resolve_property_ids(conn, prop_names)
-    refusals = _write_refusals(conn, guids)
+    # Archicad would refuse these one by one after the batch is sent;
+    # core.editability finds them first (hotlinks, reservations, active window).
+    refusals, _ = editability.refusals(conn, guids)
     planned: list[dict] = []
     skipped: list[dict] = []
     for c in changes:

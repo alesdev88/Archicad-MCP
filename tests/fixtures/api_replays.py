@@ -14,10 +14,14 @@ ELEMENT_TYPES = {"w-1": "Wall", "w-2": "Wall", "z-1": "Zone"}
 
 # Live-verified key: the API returns "typesOfElements" (not "types").
 def get_types(parameters):
-    """Answers for the requested elements only, so chunked calls stay honest."""
+    """Answers for the requested elements only, so chunked calls stay honest.
+    Live shape: one item per requested element, in request order; a GUID that
+    is not in the model answers 7204 "Element not found"."""
     return {"typesOfElements": [
         {"typeOfElement": {"elementId": el["elementId"],
                            "elementType": ELEMENT_TYPES[el["elementId"]["guid"]]}}
+        if el["elementId"]["guid"] in ELEMENT_TYPES
+        else {"error": {"code": 7204, "message": "Element not found"}}
         for el in parameters["elements"]]}
 
 GET_ALL_PROPERTY_NAMES = {"properties": [
@@ -154,6 +158,8 @@ TAPIR = {
                        "projectLocation": "/Users/tester/Test House.pln",
                        "projectPath": "/Users/tester/Test House.pln"},
     "GetAddOnVersion": {"version": "1.8.2"},
+    # Archicad changes only elements of the active window's database.
+    "GetCurrentWindowType": {"currentWindowType": "FloorPlan"},
     # Tapir sees the whole plan; the official API.GetAllElements sees model
     # elements only. This fixture model has no 2D elements, so both agree --
     # tests/test_element_coverage.py builds a plan where they differ.
