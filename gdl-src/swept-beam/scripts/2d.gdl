@@ -91,8 +91,22 @@ IF showNodeHeights THEN
     DEFINE STYLE "sbHeights" "Arial", MAX (0.5, textSizeMm), 1, 0
     SET STYLE "sbHeights"
     PEN textPen
+    ! horizontal on screen, so always readable: undo the placement (the symbol
+    ! is mirrored first, then turned by SYMB_ROTANGLE) and turn with an
+    ! oriented view
+    viewRot = 0
+    rq = REQUEST ("view_rotangle", "", viewRot)
     FOR iN = 1 TO nNode
-        TEXT2 nodeX[iN], nodeY[iN], STR ("%.3m", GLOB_ELEVATION + nodeZ[iN])
+        ADD2 nodeX[iN], nodeY[iN]
+        IF SYMB_MIRRORED THEN
+            ROT2 SYMB_ROTANGLE - viewRot
+            MUL2 -1, 1
+        ELSE
+            ROT2 viewRot - SYMB_ROTANGLE
+        ENDIF
+        TEXT2 0, 0, STR ("%.3m", GLOB_ELEVATION + nodeZ[iN])
+        DEL 2
+        IF SYMB_MIRRORED THEN DEL 1
     NEXT iN
 ENDIF
 
