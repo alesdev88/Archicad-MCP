@@ -96,6 +96,22 @@ def test_load_reads_metadata_params_and_scripts(tmp_path):
     assert set(src.scripts) == {"master.gdl", "2d.gdl", "3d.gdl", "param.gdl", "ui.gdl"}
 
 
+def test_author_comes_from_libpart_toml(tmp_path):
+    src = source.load_source(_write_source(tmp_path, libpart=LIBPART + 'author = "Aleš & Co"\n'))
+    hsf = source.write_hsf(src, tmp_path / "hsf")
+    docs = ET.fromstring((hsf / "libpartdocs.xml").read_text(encoding="utf-8"))
+    assert docs.findtext("Copyright/Author") == "Aleš & Co"
+
+
+def test_author_defaults_to_the_builder(tmp_path):
+    assert source.load_source(_write_source(tmp_path)).author == "archicad-gdl"
+
+
+def test_swept_beam_author():
+    src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
+    assert src.author == "Aleš Dolenec"
+
+
 def test_version_param_takes_libpart_version(tmp_path):
     src = source.load_source(_write_source(tmp_path))
     assert next(p for p in src.params if p.name == "sb_version").default == "0.0.1"
@@ -171,7 +187,8 @@ def test_param_script_goes_to_vl(tmp_path):
 @pytest.mark.skipif(27 not in toolchain.installed_converter_versions(),
                     reason="needs the Archicad 27 LP_XMLConverter")
 def test_round_trip_through_archicad_27_converter(tmp_path):
-    src = source.load_source(_write_source(tmp_path / "src"))
+    src = source.load_source(_write_source(tmp_path / "src",
+                                           libpart=LIBPART + 'author = "Aleš Dolenec"\n'))
     hsf = source.write_hsf(src, tmp_path / "hsf")
     gsm = toolchain.compile_hsf(hsf, tmp_path / "part.gsm", version=27)
     back = tmp_path / "back"
@@ -197,6 +214,8 @@ def test_round_trip_through_archicad_27_converter(tmp_path):
         return out
 
     assert params(back / "paramlist.xml") == params(hsf / "paramlist.xml")
+    docs = ET.fromstring((back / "libpartdocs.xml").read_text(encoding="utf-8-sig"))
+    assert docs.findtext("Copyright/Author") == "Aleš Dolenec"
 
 
 def test_build_source_uses_target_and_validates_installed(tmp_path, monkeypatch):
