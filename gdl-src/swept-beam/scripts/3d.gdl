@@ -209,8 +209,14 @@ ENDIF
 ! through the node; the tilt on the top edge of the cut face, tipping it about
 ! the cut line (positive leans the top out, like the parameter) ----
 IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
-    ! uLo, uHi and wTop: the section's extent, worked out at the top
-    IF ABS (wTop) < 0.01 THEN wTop = 0.1
+    ! uLo, uHi, wLo and wTop: the section's extent, worked out at the top.
+    ! The tilt grip sits on the face edge farthest from the axis: the top, or
+    ! the bottom for a section hanging below the axis (a steel profile with its
+    ! origin on the top flange; with the top at the axis the grip had fallen
+    ! back to 10 cm above the beam)
+    wEdge = wTop
+    IF ABS (wLo) > ABS (wTop) THEN wEdge = wLo
+    IF ABS (wEdge) < 0.01 THEN wEdge = 0.1
 
     iE = 1
     hx = nodeX[1]
@@ -229,8 +235,8 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     HOTSPOT hmx, hmy, hz, 490003, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
     HOTSPOT hx, hy, hz, 490010, cutStartTilt, 6
     HOTSPOT hx + hLx, hy + hLy, hz, 490011, cutStartTilt, 7
-    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490012, cutStartTilt, 4 + 128
-    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+    HOTSPOT hx + wEdge * u0x, hy + wEdge * u0y, hz + wEdge * u0z, 490012, cutStartTilt, 4 + 128
+    HOTSPOT hx + wEdge * utx, hy + wEdge * uty, hz + wEdge * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
 
     iE = 2
     hx = nodeX[nNode]
@@ -249,8 +255,8 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     HOTSPOT hmx, hmy, hz, 490023, cutEndPlan, 5, cutEndPlan, "End cut in plan"
     HOTSPOT hx, hy, hz, 490030, cutEndTilt, 6
     HOTSPOT hx + hLx, hy + hLy, hz, 490031, cutEndTilt, 7
-    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490032, cutEndTilt, 4 + 128
-    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+    HOTSPOT hx + wEdge * u0x, hy + wEdge * u0y, hz + wEdge * u0z, 490032, cutEndTilt, 4 + 128
+    HOTSPOT hx + wEdge * utx, hy + wEdge * uty, hz + wEdge * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
 ENDIF
 END
 
