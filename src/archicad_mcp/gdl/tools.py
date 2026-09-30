@@ -113,14 +113,14 @@ def _config_for(ws: Workspace, name: str, config: dict | None):
         # only the workspace's default author is taken from assets.json here;
         # an unreadable file must not stop a build that brings its own config
         try:
-            author = cfg_mod.default_author(json.loads(assets.read_text()))
+            author = cfg_mod.default_author(json.loads(assets.read_text(encoding="utf-8")))
         except (OSError, ValueError, AttributeError):
             author = None
         objects = cfg_mod.parse_objects({"author": author, "objects": {name: config}},
                                         ws.root, resolve=ws.resolve)
         return objects[name], config
     if assets.is_file():
-        raw = json.loads(assets.read_text())
+        raw = json.loads(assets.read_text(encoding="utf-8"))
         objects = cfg_mod.parse_objects(raw, assets.parent, resolve=ws.resolve)
     else:
         raw, objects = {}, {}
@@ -162,7 +162,7 @@ def _build_object(ws: Workspace, source: str, name: str,
     if save_config and raw_spec is not None:
         try:
             cfg_mod.save_object_config(ws.assets_path(), name, raw_spec)
-        except (json.JSONDecodeError, OSError) as exc:
+        except (ValueError, OSError) as exc:  # bad JSON or not UTF-8
             return {
                 "gsm": gsm.name,
                 "bytes": gsm.stat().st_size,

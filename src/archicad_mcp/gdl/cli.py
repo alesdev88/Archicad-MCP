@@ -29,7 +29,7 @@ from archicad_mcp.gdl import source as source_mod
 
 
 def _cmd_build(args) -> int:
-    raw = json.loads(Path(args.config).read_text()) if args.config else {}
+    raw = json.loads(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
     objects = cfg_mod.parse_objects(raw, Path(args.config).parent) if args.config else {}
     cfg = cfg_mod.find_object(objects, args.name, cfg_mod.default_author(raw))
     mesh = mesh_mod.load(args.source)

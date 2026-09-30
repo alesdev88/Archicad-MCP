@@ -100,6 +100,9 @@ def _read_toml(path: Path) -> dict:
         raise SourceError(f"Missing {path.name} in {path.parent}.")
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise SourceError(f"{path.name} is not UTF-8 text (byte {exc.start}); "
+                          "save it as UTF-8.") from exc
     except tomllib.TOMLDecodeError as exc:
         raise SourceError(f"{path.name} is not valid TOML: {exc}") from exc
 

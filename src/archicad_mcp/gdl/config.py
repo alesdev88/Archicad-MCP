@@ -147,7 +147,7 @@ def parse_objects(raw: dict, base: Path,
 
 def load_config(path: str | Path) -> dict[str, ObjectConfig]:
     path = Path(path)
-    return parse_objects(json.loads(path.read_text()), path.parent)
+    return parse_objects(json.loads(path.read_text(encoding="utf-8")), path.parent)
 
 
 def save_object_config(path: str | Path, name: str, spec: dict) -> None:
@@ -157,9 +157,9 @@ def save_object_config(path: str | Path, name: str, spec: dict) -> None:
     corrupt the JSON, and the file is small enough that rewriting it is free.
     """
     path = Path(path)
-    raw = json.loads(path.read_text()) if path.is_file() else {}
+    raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     raw.setdefault("objects", {})[name] = spec
-    path.write_text(json.dumps(raw, indent=2) + "\n")
+    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
 
 
 def find_object(objects: dict[str, ObjectConfig], name: str,

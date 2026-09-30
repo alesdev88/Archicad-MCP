@@ -271,6 +271,18 @@ def test_build_takes_the_workspace_author(ws, monkeypatch, config):
     assert seen["author"] == "Aleš Dolenec"
 
 
+@pytest.mark.parametrize("config", [None, {"groups": {}}])
+def test_build_reads_a_hand_typed_utf8_author(ws, monkeypatch, config):
+    # JSON is UTF-8; read in the Windows default (cp1252) the name came out
+    # as "AleÅ¡"
+    seen = _capture_author(monkeypatch)
+    (ws.root / "assets.json").write_bytes(json.dumps(
+        {"author": "Aleš Dolenec", "objects": {}}, ensure_ascii=False).encode("utf-8"))
+    gdl_tools._build_object(ws, "cube.obj", "Cube", config=config,
+                            decimate=True, validate=True, save_config=False)
+    assert seen["author"] == "Aleš Dolenec"
+
+
 def test_build_object_author_beats_the_workspace(ws, monkeypatch):
     seen = _capture_author(monkeypatch)
     (ws.root / "assets.json").write_text(json.dumps(

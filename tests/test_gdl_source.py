@@ -80,10 +80,12 @@ def _write_source(root, libpart=LIBPART, params=PARAMS, scripts=None):
         "3d.gdl": "block 1, 1, 1\n", "param.gdl": "PARAMETERS A = A\n",
         "ui.gdl": 'UI_DIALOG "t"\n'}
     (root / "scripts").mkdir(parents=True)
-    (root / "libpart.toml").write_text(libpart)
-    (root / "params.toml").write_text(params)
+    # UTF-8 as a user's editor would save them, not the platform default
+    # (cp1252 on Windows turned the author's "š" into an invalid byte)
+    (root / "libpart.toml").write_text(libpart, encoding="utf-8")
+    (root / "params.toml").write_text(params, encoding="utf-8")
     for name, text in scripts.items():
-        (root / "scripts" / name).write_text(text)
+        (root / "scripts" / name).write_text(text, encoding="utf-8")
     return root
 
 
@@ -101,6 +103,15 @@ def test_author_comes_from_libpart_toml(tmp_path):
     hsf = source.write_hsf(src, tmp_path / "hsf")
     docs = ET.fromstring((hsf / "libpartdocs.xml").read_text(encoding="utf-8"))
     assert docs.findtext("Copyright/Author") == "Aleš & Co"
+
+
+def test_toml_that_is_not_utf8_is_a_source_error(tmp_path):
+    # TOML is UTF-8; a Windows editor saving cp1252 must get a clear message,
+    # not a raw UnicodeDecodeError
+    root = _write_source(tmp_path)
+    (root / "libpart.toml").write_bytes((LIBPART + 'author = "Aleš"\n').encode("cp1252"))
+    with pytest.raises(source.SourceError, match="UTF-8"):
+        source.load_source(root)
 
 
 def test_author_defaults_to_the_builder(tmp_path):
