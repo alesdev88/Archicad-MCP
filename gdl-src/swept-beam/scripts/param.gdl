@@ -88,6 +88,34 @@ eSd = extStartDone
 eEd = extEndDone
 
 ! ---- 2. reactions ----
+! A new beam. Placing one sets A from the clicks, so A no longer matches its
+! marker, while the tool's settings may still carry the path, heights and cuts
+! of an edited beam, which the next placement then repeated. Unless the length
+! was just typed in the dialog, a changed A starts the beam over: a straight
+! two-node path along the clicks at height 0 (the slope below applies along
+! it) with square ends. Copies and create_swept_beam updates leave A and its
+! marker equal, so they keep their path.
+freshBeam = 0
+IF ABS (A - aDone) > 0.0005 AND A > EPS AND GLOB_MODPAR_NAME <> "A" THEN
+    freshBeam = 1
+    n = 2
+    FOR i = 1 TO 2
+        ny[i] = 0
+        nz[i] = 0
+        nr[i] = 0
+        na[i] = 0
+        sg[i] = 0
+        sgd[i] = 0
+        il[i] = 0
+        idn[i] = 0
+    NEXT i
+    nx[1] = 0
+    nx[2] = A
+    ! the add-node grips keep value and marker equal, so no node is added
+    eSd = extStart
+    eEd = extEnd
+ENDIF
+
 ! Length A, a value and marker pair like the helper grips. On a two-node
 ! straight beam, a changed A (placement click, dialog, API) moves node 2 to that
 ! length once, along the beam's direction; otherwise A follows the nodes.
@@ -318,6 +346,7 @@ FOR i = 1 TO n
     oidn[i] = idn[i]
 NEXT i
 PARAMETERS slopeDone = slopeDoneOut
+IF freshBeam THEN PARAMETERS cutStartPlan = 0, cutStartTilt = 0, cutEndPlan = 0, cutEndTilt = 0
 PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
 END
 

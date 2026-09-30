@@ -20,7 +20,10 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
 
 - Place it with the Object tool using the Rotated Diagonal geometry method,
   three clicks: the start, a point in the beam's direction, then a point
-  beside the end. The beam runs from the start to the end.
+  beside the end. The beam runs from the start to the end. Every new beam
+  starts straight with square ends, whatever path or cuts the tool's
+  settings picked up from an edited beam; profile, reference line, slope,
+  pens and grip switches carry over as set.
 - Move a node: drag its grip in plan, or in 3D to lift it.
 - Curve an edge: drag the grip at the middle of a segment sideways.
 - Insert a node: slide the grip at one third of a segment along it and
