@@ -244,6 +244,56 @@ def _fake_toolchain(monkeypatch):
     monkeypatch.setattr(gdl_tools.toolchain, "validate_gsm", lambda *a, **k: [])
 
 
+def _capture_author(monkeypatch):
+    """Like _fake_toolchain, but keeps the Author the HSF was compiled with."""
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+    seen = {}
+
+    def compile_hsf(hsf_dir, gsm_path):
+        docs = ET.fromstring((Path(hsf_dir) / "libpartdocs.xml").read_text(encoding="utf-8"))
+        seen["author"] = docs.findtext("Copyright/Author")
+        Path(gsm_path).write_bytes(b"stub gsm")
+        return Path(gsm_path)
+
+    monkeypatch.setattr(gdl_tools.toolchain, "compile_hsf", compile_hsf)
+    monkeypatch.setattr(gdl_tools.toolchain, "validate_gsm", lambda *a, **k: [])
+    return seen
+
+
+@pytest.mark.parametrize("config", [None, {"groups": {}}])
+def test_build_takes_the_workspace_author(ws, monkeypatch, config):
+    seen = _capture_author(monkeypatch)
+    (ws.root / "assets.json").write_text(json.dumps(
+        {"author": "Aleš Dolenec", "objects": {"Chair": {"groups": {}}}}))
+    gdl_tools._build_object(ws, "cube.obj", "Cube", config=config,
+                            decimate=True, validate=True, save_config=False)
+    assert seen["author"] == "Aleš Dolenec"
+
+
+@pytest.mark.parametrize("config", [None, {"groups": {}}])
+def test_build_reads_a_hand_typed_utf8_author(ws, monkeypatch, config):
+    # JSON is UTF-8; read in the Windows default (cp1252) the name came out
+    # as "AleÅ¡"
+    seen = _capture_author(monkeypatch)
+    (ws.root / "assets.json").write_bytes(json.dumps(
+        {"author": "Aleš Dolenec", "objects": {}}, ensure_ascii=False).encode("utf-8"))
+    gdl_tools._build_object(ws, "cube.obj", "Cube", config=config,
+                            decimate=True, validate=True, save_config=False)
+    assert seen["author"] == "Aleš Dolenec"
+
+
+def test_build_object_author_beats_the_workspace(ws, monkeypatch):
+    seen = _capture_author(monkeypatch)
+    (ws.root / "assets.json").write_text(json.dumps(
+        {"author": "Aleš Dolenec", "objects": {}}))
+    gdl_tools._build_object(ws, "cube.obj", "Cube", config={"author": "Someone Else"},
+                            decimate=True, validate=True, save_config=True)
+    assert seen["author"] == "Someone Else"
+    saved = json.loads((ws.root / "assets.json").read_text())
+    assert saved["author"] == "Aleš Dolenec"
+
+
 def test_build_writes_a_gsm_into_the_workspace(ws, monkeypatch):
     _fake_toolchain(monkeypatch)
     out = gdl_tools._build_object(ws, "cube.obj", "Cube", config=None,

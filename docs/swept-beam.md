@@ -20,7 +20,10 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
 
 - Place it with the Object tool using the Rotated Diagonal geometry method,
   three clicks: the start, a point in the beam's direction, then a point
-  beside the end. The beam runs from the start to the end.
+  beside the end. The beam runs from the start to the end. Every new beam
+  starts straight with square ends, whatever path or cuts the tool's
+  settings picked up from an edited beam; profile, reference line, slope,
+  pens and grip switches carry over as set.
 - Move a node: drag its grip in plan, or in 3D to lift it.
 - Curve an edge: drag the grip at the middle of a segment sideways.
 - Insert a node: slide the grip at one third of a segment along it and
@@ -28,10 +31,11 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
 - Continue the beam: slide the grip just past either end outwards; a node is
   added that far past the end, following the end's direction and slope.
 - Delete a node: drag it onto its neighbour.
-- Too many grips: the Grips setting on the Path page shows all of them, or
-  only the node, curve or add-node grips.
-- Heights: set Slope (%) on the Path page and press Apply slope; then drag
-  single nodes in 3D.
+- Too many grips: the Grips checkboxes on the Path page switch the node,
+  curve, add-node and end cut grips on or off, in any mix.
+- Heights: set Slope (%) on the Path page and close the dialog: the node
+  heights follow the slope from node 1 along the plan length. Then drag
+  single nodes in 3D; "Re-apply slope" puts them back on the slope.
 - Exact values and roll: the node arrays in the parameter list.
 
 ## Reference line

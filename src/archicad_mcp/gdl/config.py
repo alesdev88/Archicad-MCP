@@ -8,6 +8,7 @@ then by name prefix, so "Mosquito Chair v4" finds the "Mosquito Chair" entry.
 Example:
 
     {
+      "author": "Studio Name",
       "objects": {
         "Mosquito Barstool": {
           "guid": "4E501AE2-172D-4F03-B248-C9C2DE3E641E",
@@ -39,6 +40,8 @@ color. A group's "texture" is a variant role name, a shared texture key,
 In "decimate", the value is the target face count for material names
 containing the key; 0 means weld only, which is the right choice for visible
 surfaces with gentle curvature (decimation smears their shading).
+The top-level "author" is the Author in every built part's details; an
+object's own "author" overrides it, and without either it is "archicad-gdl".
 """
 
 from __future__ import annotations
@@ -74,6 +77,7 @@ class ObjectConfig:
     frame_variants: list[tuple[str, RGB]] = field(default_factory=list)
     groups: dict[str, GroupSpec] = field(default_factory=dict)
     decimate: dict[str, int] = field(default_factory=dict)
+    author: str | None = None    # the part's Author; None: the builder's default
 
     def resolve_guid(self, name: str) -> str:
         return self.guid or str(uuid.uuid5(GUID_NAMESPACE, name)).upper()
@@ -83,6 +87,12 @@ class ObjectConfig:
             if sub in material:
                 return spec
         return GroupSpec(label=f"Surface {index} ({material})")
+
+
+def default_author(raw: dict) -> str | None:
+    """The config file's top-level "author", for every object it builds."""
+    value = raw.get("author")
+    return value.strip() or None if isinstance(value, str) else None
 
 
 def _as_rgb(value) -> RGB:
@@ -130,13 +140,14 @@ def parse_objects(raw: dict, base: Path,
                                    uv_rotate=int(g.get("uv_rotate", 0)))
                     for sub, g in spec.get("groups", {}).items()},
             decimate={k: int(v) for k, v in spec.get("decimate", {}).items()},
+            author=default_author(spec) or default_author(raw),
         )
     return objects
 
 
 def load_config(path: str | Path) -> dict[str, ObjectConfig]:
     path = Path(path)
-    return parse_objects(json.loads(path.read_text()), path.parent)
+    return parse_objects(json.loads(path.read_text(encoding="utf-8")), path.parent)
 
 
 def save_object_config(path: str | Path, name: str, spec: dict) -> None:
@@ -146,15 +157,18 @@ def save_object_config(path: str | Path, name: str, spec: dict) -> None:
     corrupt the JSON, and the file is small enough that rewriting it is free.
     """
     path = Path(path)
-    raw = json.loads(path.read_text()) if path.is_file() else {}
+    raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     raw.setdefault("objects", {})[name] = spec
-    path.write_text(json.dumps(raw, indent=2) + "\n")
+    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
 
 
-def find_object(objects: dict[str, ObjectConfig], name: str) -> ObjectConfig:
+def find_object(objects: dict[str, ObjectConfig], name: str,
+                author: str | None = None) -> ObjectConfig:
+    """The object's config by name or name prefix; an unconfigured object gets
+    an empty one carrying `author`, the config file's default."""
     if name in objects:
         return objects[name]
     for key, cfg in objects.items():
         if name.startswith(key):
             return cfg
-    return ObjectConfig(name=name)
+    return ObjectConfig(name=name, author=author)

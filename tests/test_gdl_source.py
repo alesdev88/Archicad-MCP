@@ -1,5 +1,6 @@
 """Hand-written library parts: TOML plus GDL scripts to HSF."""
 
+import re
 import subprocess
 import textwrap
 import xml.etree.ElementTree as ET
@@ -79,10 +80,12 @@ def _write_source(root, libpart=LIBPART, params=PARAMS, scripts=None):
         "3d.gdl": "block 1, 1, 1\n", "param.gdl": "PARAMETERS A = A\n",
         "ui.gdl": 'UI_DIALOG "t"\n'}
     (root / "scripts").mkdir(parents=True)
-    (root / "libpart.toml").write_text(libpart)
-    (root / "params.toml").write_text(params)
+    # UTF-8 as a user's editor would save them, not the platform default
+    # (cp1252 on Windows turned the author's "š" into an invalid byte)
+    (root / "libpart.toml").write_text(libpart, encoding="utf-8")
+    (root / "params.toml").write_text(params, encoding="utf-8")
     for name, text in scripts.items():
-        (root / "scripts" / name).write_text(text)
+        (root / "scripts" / name).write_text(text, encoding="utf-8")
     return root
 
 
@@ -93,6 +96,31 @@ def test_load_reads_metadata_params_and_scripts(tmp_path):
     assert src.target_archicad == 27
     assert [p.name for p in src.params][:4] == ["A", "B", "ZZYZX", "nodeX"]
     assert set(src.scripts) == {"master.gdl", "2d.gdl", "3d.gdl", "param.gdl", "ui.gdl"}
+
+
+def test_author_comes_from_libpart_toml(tmp_path):
+    src = source.load_source(_write_source(tmp_path, libpart=LIBPART + 'author = "Aleš & Co"\n'))
+    hsf = source.write_hsf(src, tmp_path / "hsf")
+    docs = ET.fromstring((hsf / "libpartdocs.xml").read_text(encoding="utf-8"))
+    assert docs.findtext("Copyright/Author") == "Aleš & Co"
+
+
+def test_toml_that_is_not_utf8_is_a_source_error(tmp_path):
+    # TOML is UTF-8; a Windows editor saving cp1252 must get a clear message,
+    # not a raw UnicodeDecodeError
+    root = _write_source(tmp_path)
+    (root / "libpart.toml").write_bytes((LIBPART + 'author = "Aleš"\n').encode("cp1252"))
+    with pytest.raises(source.SourceError, match="UTF-8"):
+        source.load_source(root)
+
+
+def test_author_defaults_to_the_builder(tmp_path):
+    assert source.load_source(_write_source(tmp_path)).author == "archicad-gdl"
+
+
+def test_swept_beam_author():
+    src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
+    assert src.author == "Aleš Dolenec"
 
 
 def test_version_param_takes_libpart_version(tmp_path):
@@ -170,7 +198,8 @@ def test_param_script_goes_to_vl(tmp_path):
 @pytest.mark.skipif(27 not in toolchain.installed_converter_versions(),
                     reason="needs the Archicad 27 LP_XMLConverter")
 def test_round_trip_through_archicad_27_converter(tmp_path):
-    src = source.load_source(_write_source(tmp_path / "src"))
+    src = source.load_source(_write_source(tmp_path / "src",
+                                           libpart=LIBPART + 'author = "Aleš Dolenec"\n'))
     hsf = source.write_hsf(src, tmp_path / "hsf")
     gsm = toolchain.compile_hsf(hsf, tmp_path / "part.gsm", version=27)
     back = tmp_path / "back"
@@ -196,6 +225,8 @@ def test_round_trip_through_archicad_27_converter(tmp_path):
         return out
 
     assert params(back / "paramlist.xml") == params(hsf / "paramlist.xml")
+    docs = ET.fromstring((back / "libpartdocs.xml").read_text(encoding="utf-8-sig"))
+    assert docs.findtext("Copyright/Author") == "Aleš Dolenec"
 
 
 def test_build_source_uses_target_and_validates_installed(tmp_path, monkeypatch):
@@ -274,6 +305,44 @@ def test_gdl_sources_use_no_dash_stand_ins():
            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if "—" in line or "–" in line or " -- " in line]
     assert bad == []
+
+
+def test_gdl_names_differ_by_more_than_case():
+    # GDL is not case sensitive: hLx (the cut line) and hlx (square to the
+    # beam) were one variable, so the Swept Beam's 3D end grips left the beam
+    # as soon as the cut turned. A script shares the Master Script's names.
+    root = Path(__file__).resolve().parent.parent / "gdl-src"
+
+    def names(path):
+        text = re.sub(r'"[^"\n]*"|\'[^\'\n]*\'', '""', path.read_text(encoding="utf-8"))
+        return set(re.findall(r"\b[A-Za-z_]\w*\b", re.sub(r"!.*", "", text)))
+
+    clashes = []
+    for scripts in sorted(root.glob("*/scripts")):
+        master = scripts / "master.gdl"
+        shared = names(master) if master.exists() else set()
+        for script in sorted(scripts.glob("*.gdl")):
+            spellings = {}
+            for name in names(script) | shared:
+                spellings.setdefault(name.lower(), set()).add(name)
+            clashes += [f"{script.relative_to(root)}: {sorted(s)}"
+                        for s in spellings.values() if len(s) > 1]
+    assert clashes == []
+
+
+def test_swept_beam_grip_groups_switch_on_and_off_one_by_one():
+    # any mix of grip groups, e.g. nodes and curves but no end cuts; a new
+    # beam shows them all, as the old "All" did
+    root = Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam"
+    src = source.load_source(root)
+    params = {p.name: p for p in src.params}
+    for name in ("gripNodes", "gripCurves", "gripAdd", "gripCuts"):
+        assert params[name].type == "boolean"
+        assert params[name].default is True
+    assert "gripMode" not in params
+    stale = [p.name for p in sorted((root / "scripts").glob("*.gdl"))
+             if "gripmode" in p.read_text(encoding="utf-8").lower()]
+    assert stale == []
 
 
 def test_swept_beam_size_defaults_are_one_metre():

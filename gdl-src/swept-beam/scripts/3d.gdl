@@ -189,7 +189,7 @@ FOR iRun = 1 TO nRun
 NEXT iRun
 
 ! ---- 3D node grips: combined nodeX / nodeY / nodeZ drag ----
-IF gripMode = "All" OR gripMode = "Nodes" THEN
+IF gripNodes THEN
 FOR iN = 1 TO nNode
     hId = 400000 + iN * 10
     HOTSPOT 0, nodeY[iN], nodeZ[iN], hId, nodeX[iN], 1 + 128
@@ -206,11 +206,18 @@ ENDIF
 
 ! ---- 3D end cut grips: the plan angle, as in plan, on the corner where the
 ! cut meets the beam's edge at the node's height, turning about the vertical
-! through the node; the tilt on the top edge of the cut face, tipping it about
-! the cut line (positive leans the top out, like the parameter) ----
-IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
-    ! uLo, uHi and wTop: the section's extent, worked out at the top
-    IF ABS (wTop) < 0.01 THEN wTop = 0.1
+! through the middle of the beam's end; the tilt on the top edge of the cut
+! face, tipping it about the cut line (positive leans the top out, like the
+! parameter) ----
+IF gripCuts AND nNode > 1 THEN
+    ! uLo, uHi, wLo and wTop: the section's extent, worked out at the top.
+    ! The tilt grip sits on the face edge farthest from the axis: the top, or
+    ! the bottom for a section hanging below the axis (a steel profile with its
+    ! origin on the top flange; with the top at the axis the grip had fallen
+    ! back to 10 cm above the beam)
+    wEdge = wTop
+    IF ABS (wLo) > ABS (wTop) THEN wEdge = wLo
+    IF ABS (wEdge) < 0.01 THEN wEdge = 0.1
 
     iE = 1
     hx = nodeX[1]
@@ -220,17 +227,16 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     hoy = -startTY
     hPlan = cutStartPlan
     hTilt = cutStartTilt
-    gD = uHi
-    IF ABS (gD) < 0.01 THEN gD = uLo
+    hSgn = 1
     GOSUB "cutGripFrame"
-    HOTSPOT hx, hy, hz, 490000, cutStartPlan, 6
-    HOTSPOT hx, hy, hz + 1, 490001, cutStartPlan, 7
+    HOTSPOT pcx, pcy, hz, 490000, cutStartPlan, 6
+    HOTSPOT pcx, pcy, hz + 1, 490001, cutStartPlan, 7
     HOTSPOT hbx, hby, hz, 490002, cutStartPlan, 4 + 128
     HOTSPOT hmx, hmy, hz, 490003, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
-    HOTSPOT hx, hy, hz, 490010, cutStartTilt, 6
-    HOTSPOT hx + hLx, hy + hLy, hz, 490011, cutStartTilt, 7
-    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490012, cutStartTilt, 4 + 128
-    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+    HOTSPOT pcx, pcy, hz, 490010, cutStartTilt, 6
+    HOTSPOT pcx + hLx, pcy + hLy, hz, 490011, cutStartTilt, 7
+    HOTSPOT pcx + wEdge * u0x, pcy + wEdge * u0y, hz + wEdge * u0z, 490012, cutStartTilt, 4 + 128
+    HOTSPOT pcx + wEdge * utx, pcy + wEdge * uty, hz + wEdge * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
 
     iE = 2
     hx = nodeX[nNode]
@@ -240,25 +246,25 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     hoy = endTY
     hPlan = cutEndPlan
     hTilt = cutEndTilt
-    gD = -uLo
-    IF ABS (gD) < 0.01 THEN gD = -uHi
+    hSgn = -1
     GOSUB "cutGripFrame"
-    HOTSPOT hx, hy, hz, 490020, cutEndPlan, 6
-    HOTSPOT hx, hy, hz + 1, 490021, cutEndPlan, 7
+    HOTSPOT pcx, pcy, hz, 490020, cutEndPlan, 6
+    HOTSPOT pcx, pcy, hz + 1, 490021, cutEndPlan, 7
     HOTSPOT hbx, hby, hz, 490022, cutEndPlan, 4 + 128
     HOTSPOT hmx, hmy, hz, 490023, cutEndPlan, 5, cutEndPlan, "End cut in plan"
-    HOTSPOT hx, hy, hz, 490030, cutEndTilt, 6
-    HOTSPOT hx + hLx, hy + hLy, hz, 490031, cutEndTilt, 7
-    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490032, cutEndTilt, 4 + 128
-    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+    HOTSPOT pcx, pcy, hz, 490030, cutEndTilt, 6
+    HOTSPOT pcx + hLx, pcy + hLy, hz, 490031, cutEndTilt, 7
+    HOTSPOT pcx + wEdge * u0x, pcy + wEdge * u0y, hz + wEdge * u0z, 490032, cutEndTilt, 4 + 128
+    HOTSPOT pcx + wEdge * utx, pcy + wEdge * uty, hz + wEdge * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
 ENDIF
 END
 
 "cutGripFrame":
     ! in: node hx, hy, hz; outward plan direction hox, hoy; the raw angles
-    ! hPlan, hTilt; the corner's distance gD beside the axis; iE for the slope.
-    ! out: base hbx, hby and moving hmx, hmy of the plan grip; the cut line hLx,
-    ! hLy (the tilt's axis); the face's up direction square (u0) and tilted (ut)
+    ! hPlan, hTilt; hSgn (1 at the start, -1 at the end); iE for the slope.
+    ! out: the pivot pcx, pcy; base hbx, hby and moving hmx, hmy of the plan
+    ! grip; the cut line hLx, hLy (the tilt's axis); the face's up direction
+    ! square (u0) and tilted (ut)
     hC = COS (hPlan)
     IF ABS (hC) < 0.17 THEN
         IF hC >= 0 THEN
@@ -267,14 +273,25 @@ END
             hC = -0.17
         ENDIF
     ENDIF
-    hlx = -hoy
-    hly = hox
-    hLx = hlx * COS (hPlan) - hly * SIN (hPlan)
-    hLy = hlx * SIN (hPlan) + hly * COS (hPlan)
-    hbx = hx + gD * hlx
-    hby = hy + gD * hly
-    hmx = hx + gD / hC * hLx
-    hmy = hy + gD / hC * hLy
+    ! hq: square across the beam; hL: along the turned cut. GDL is not case
+    ! sensitive, so the two need names that differ by more than case (as
+    ! hl and hL they were one variable, and the grips left the beam once
+    ! the cut turned)
+    hqx = -hoy
+    hqy = hox
+    hLx = hqx * COS (hPlan) - hqy * SIN (hPlan)
+    hLy = hqx * SIN (hPlan) + hqy * COS (hPlan)
+    ! the pivot: the middle of the beam's end, where the cut turns (as in
+    ! "cutEnd"); "to the right" along the path is +hq at the start, -hq at the end
+    pcx = hx + hSgn * (uLo + uHi) / 2 * hqx
+    pcy = hy + hSgn * (uLo + uHi) / 2 * hqy
+    ! the plan grip on the beam's corner, half the section's width from the pivot
+    hw = (uHi - uLo) / 2
+    IF hw < 0.01 THEN hw = 0.1
+    hbx = pcx + hw * hqx
+    hby = pcy + hw * hqy
+    hmx = pcx + hw / hC * hLx
+    hmy = pcy + hw / hC * hLy
     ! plumb face normal n0; the face leans by the slope minus the tilt
     n0x = hox * COS (hPlan) - hoy * SIN (hPlan)
     n0y = hox * SIN (hPlan) + hoy * COS (hPlan)
@@ -298,6 +315,9 @@ RETURN
     cutSlope = sTz[cutNode]
     IF cutSgn > 0 THEN cutSlope = eTz[cutNode - 1]
     cutTan = TAN (kinkTurn[cutNode] / 2)
+    cutPx = pathX[cp]
+    cutPy = pathY[cp]
+    cutPz = pathZ[cp]
     GOSUB "cutBox"
 RETURN
 
@@ -314,12 +334,25 @@ RETURN
         cutSlope = eTz[nNode - 1]
     ENDIF
     cutTan = ecTan[cutEndIdx]
+    ! the cut pivots on the middle of the beam's end: the node moved square to
+    ! the beam by the middle of the section, off the node when the reference
+    ! line offsets the beam (a square end is the same plane either way)
+    IF cutEndIdx = 1 THEN
+        pvx = startTY
+        pvy = -startTX
+    ELSE
+        pvx = endTY
+        pvy = -endTX
+    ENDIF
+    cutPx = pathX[cp] + (uLo + uHi) / 2 * pvx
+    cutPy = pathY[cp] + (uLo + uHi) / 2 * pvy
+    cutPz = pathZ[cp]
     GOSUB "cutBox"
 RETURN
 
 "cutBox":
-    ! a box on the plane through path point cp with normal (czx, czy, czz),
-    ! removing the side the normal points to
+    ! a box on the plane through (cutPx, cutPy, cutPz) with normal (czx, czy,
+    ! czz), removing the side the normal points to
     IF ABS (czz) < 0.9 THEN
         cxx = -czy
         cxy = czx
@@ -344,7 +377,7 @@ RETURN
     ! the slope, steep overshoots poked out and stayed as loose pieces (gate D).
     cutOv = secExtent * (3 + MIN (20, cutTan) + ABS (cutSlope))
     cutD = MAX (secExtent * (6 + MIN (20, cutTan)), cutOv * SQR (1 + cutSlope * cutSlope) + 2 * secExtent)
-    XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
+    XFORM cxx, cyx, czx, cutPx, cxy, cyy, czy, cutPy, cxz, cyz, czz, cutPz
     CUTFORM 4, 1, 1 + 2 + 128, 0, 0, 1, cutD, -cutD, -cutD, 1, cutD, -cutD, 1, cutD, cutD, 1, -cutD, cutD, 1
     DEL 1
 RETURN

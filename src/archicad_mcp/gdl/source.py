@@ -16,9 +16,10 @@ import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from archicad_mcp.gdl import toolchain
-from archicad_mcp.gdl.generate import ANCESTRY_GUIDS
+from archicad_mcp.gdl.generate import ANCESTRY_GUIDS, DEFAULT_AUTHOR
 
 PARAM_TAGS = {
     "length": "Length", "angle": "Angle", "real": "RealNum",
@@ -91,6 +92,7 @@ class LibpartSource:
     target_archicad: int | None
     params: list[Param]
     scripts: dict[str, str] = field(default_factory=dict)
+    author: str = DEFAULT_AUTHOR
 
 
 def _read_toml(path: Path) -> dict:
@@ -98,6 +100,9 @@ def _read_toml(path: Path) -> dict:
         raise SourceError(f"Missing {path.name} in {path.parent}.")
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise SourceError(f"{path.name} is not UTF-8 text (byte {exc.start}); "
+                          "save it as UTF-8.") from exc
     except tomllib.TOMLDecodeError as exc:
         raise SourceError(f"{path.name} is not valid TOML: {exc}") from exc
 
@@ -183,9 +188,11 @@ def load_source(root: str | Path) -> LibpartSource:
     if "2d.gdl" not in scripts or "3d.gdl" not in scripts:
         raise SourceError(f"scripts/2d.gdl and scripts/3d.gdl are required in {root}.")
     target = meta.get("target_archicad")
+    author = str(meta.get("author", "")).strip() or DEFAULT_AUTHOR
     return LibpartSource(root, str(meta["name"]), guid, str(meta["version"]),
                          str(meta.get("keywords", "")),
-                         int(target) if target is not None else None, params, scripts)
+                         int(target) if target is not None else None, params, scripts,
+                         author)
 
 
 def _number(value) -> str:
@@ -256,7 +263,7 @@ def write_hsf(src: LibpartSource, hsf_dir: str | Path) -> Path:
     (hsf_dir / "libpartdocs.xml").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <libpartdocs>
 \t<Copyright>
-\t\t<Author>archicad-gdl</Author>
+\t\t<Author>{escape(src.author)}</Author>
 \t\t<License>
 \t\t\t<Type>CC BY</Type>
 \t\t\t<Version>4.0</Version>

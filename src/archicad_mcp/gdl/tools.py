@@ -108,17 +108,23 @@ def _config_for(ws: Workspace, name: str, config: dict | None):
     All paths (inline or saved) are validated through ws.resolve() to enforce
     workspace containment. Absolute paths and ".." traversals are rejected.
     """
-    if config is not None:
-        objects = cfg_mod.parse_objects({"objects": {name: config}}, ws.root,
-                                        resolve=ws.resolve)
-        return objects[name], config
     assets = ws.assets_path()
+    if config is not None:
+        # only the workspace's default author is taken from assets.json here;
+        # an unreadable file must not stop a build that brings its own config
+        try:
+            author = cfg_mod.default_author(json.loads(assets.read_text(encoding="utf-8")))
+        except (OSError, ValueError, AttributeError):
+            author = None
+        objects = cfg_mod.parse_objects({"author": author, "objects": {name: config}},
+                                        ws.root, resolve=ws.resolve)
+        return objects[name], config
     if assets.is_file():
-        raw = json.loads(assets.read_text())
+        raw = json.loads(assets.read_text(encoding="utf-8"))
         objects = cfg_mod.parse_objects(raw, assets.parent, resolve=ws.resolve)
     else:
-        objects = {}
-    return cfg_mod.find_object(objects, name), None
+        raw, objects = {}, {}
+    return cfg_mod.find_object(objects, name, cfg_mod.default_author(raw)), None
 
 
 def _build_object(ws: Workspace, source: str, name: str,
@@ -156,7 +162,7 @@ def _build_object(ws: Workspace, source: str, name: str,
     if save_config and raw_spec is not None:
         try:
             cfg_mod.save_object_config(ws.assets_path(), name, raw_spec)
-        except (json.JSONDecodeError, OSError) as exc:
+        except (ValueError, OSError) as exc:  # bad JSON or not UTF-8
             return {
                 "gsm": gsm.name,
                 "bytes": gsm.stat().st_size,
@@ -339,7 +345,7 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
 
     @mcp.tool(description="Build a .gsm library part from a source mesh in the "
                           "GDL workspace. Pass 'config' to describe the object "
-                          "(groups, textures, variants, decimate targets); it is "
+                          "(groups, textures, variants, decimate targets, author); it is "
                           "saved into assets.json on success, so a later rebuild "
                           "only needs the name. Writes <name>.gsm and textures/ "
                           "into the workspace, which is the linked library "

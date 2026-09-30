@@ -97,6 +97,22 @@ def test_hsf_structure_and_manifests(built):
     assert "<Script_VL" in data
 
 
+def _author(hsf):
+    docs = ET.fromstring((hsf / "libpartdocs.xml").read_text(encoding="utf-8"))
+    return docs.findtext("Copyright/Author")
+
+
+def test_author_defaults_to_the_builder(built):
+    assert _author(built[0]) == "archicad-gdl"
+
+
+def test_author_from_the_config_is_escaped(tmp_path):
+    cfg = ObjectConfig(name="Test Object", author="Aleš & Co")
+    build_hsf(_cube_mesh(), cfg, "Test Object", tmp_path / "hsf",
+              textures_dir=tmp_path / "tex")
+    assert _author(tmp_path / "hsf") == "Aleš & Co"
+
+
 def test_finish_dropdowns_and_materials(built):
     hsf, result = built
     gdl = (hsf / "scripts/3d.gdl").read_text()
