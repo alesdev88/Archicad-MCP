@@ -87,6 +87,14 @@ jobs:
       # the bundle to be written into. dist/ is not in the repository.
       - run: uv build
 
+      # The wheel as PyPI users will get it: installed without uv.lock, so
+      # every dependency resolves to the newest release pyproject.toml allows,
+      # then started. The tests above only prove the locked set; 0.7.0 went out
+      # green and crashed on every fresh install once multiconn-archicad 0.9.0
+      # appeared. This runs before anything is published, so a failure here
+      # costs a deleted tag, not a broken release.
+      - run: uv run --no-project python scripts/check_wheel_install.py
+
       # One bundle per platform, all three cross-built on this one runner. The
       # bundles are platform-specific because the dependency tree contains
       # compiled wheels; the build is not, because uv resolves wheels for a
