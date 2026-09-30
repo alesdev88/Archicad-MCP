@@ -184,16 +184,19 @@ IF showAddGrips AND nNode > 1 THEN
     HOTSPOT2 gbx - gsX * extStart, gby - gsY * extStart, 390012, extStart, 2, extStart, "Add node at the start: slide out, release"
 ENDIF
 
-! end cut grips: turn the plan cut around the end node. Angle editing from the
-! square cut, counter-clockwise, like the parameter; the parameter is edited
-! directly, the Parameter Script never sets it, so Archicad keeps the drag.
-! The grip sits on the corner where the cut meets the beam's edge on the left
-! looking out of the end: that edge is gD from the axis, and along a cut turned
-! by the angle the corner is gD / cos (angle) away.
+! end cut grips: turn the plan cut around the middle of the beam's end (the
+! node moved square to the beam by the middle of the section, as the 3D cut
+! does). Angle editing from the square cut, counter-clockwise, like the
+! parameter; the parameter is edited directly, the Parameter Script never sets
+! it, so Archicad keeps the drag. The grip sits on the corner where the cut
+! meets the beam's edge on the left looking out of the end: that edge is gW
+! from the pivot, and along a cut turned by the angle the corner is
+! gW / cos (angle) away.
 IF showCutGrips AND nNode > 1 THEN
+    gW = (uHi - uLo) / 2
+    IF gW < 0.01 THEN gW = 0.1
+    gM = (uLo + uHi) / 2
     ! start: left looking out of the start is right looking along the path (+U)
-    gD = uHi
-    IF ABS (gD) < 0.01 THEN gD = uLo
     gC = COS (cutStartPlan)
     IF ABS (gC) < 0.17 THEN
         IF gC >= 0 THEN
@@ -206,12 +209,12 @@ IF showCutGrips AND nNode > 1 THEN
     goy = -startTY
     gqx = -goy * COS (cutStartPlan) - gox * SIN (cutStartPlan)
     gqy = -goy * SIN (cutStartPlan) + gox * COS (cutStartPlan)
-    HOTSPOT2 nodeX[1], nodeY[1], 390100, cutStartPlan, 6
-    HOTSPOT2 nodeX[1] - goy * gD, nodeY[1] + gox * gD, 390101, cutStartPlan, 4 + 128
-    HOTSPOT2 nodeX[1] + gqx * gD / gC, nodeY[1] + gqy * gD / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    gpx = nodeX[1] - goy * gM
+    gpy = nodeY[1] + gox * gM
+    HOTSPOT2 gpx, gpy, 390100, cutStartPlan, 6
+    HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390101, cutStartPlan, 4 + 128
+    HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
     ! end: left looking out of the end is left looking along the path (-U)
-    gD = -uLo
-    IF ABS (gD) < 0.01 THEN gD = -uHi
     gC = COS (cutEndPlan)
     IF ABS (gC) < 0.17 THEN
         IF gC >= 0 THEN
@@ -224,29 +227,33 @@ IF showCutGrips AND nNode > 1 THEN
     goy = endTY
     gqx = -goy * COS (cutEndPlan) - gox * SIN (cutEndPlan)
     gqy = -goy * SIN (cutEndPlan) + gox * COS (cutEndPlan)
-    HOTSPOT2 nodeX[nNode], nodeY[nNode], 390110, cutEndPlan, 6
-    HOTSPOT2 nodeX[nNode] - goy * gD, nodeY[nNode] + gox * gD, 390111, cutEndPlan, 4 + 128
-    HOTSPOT2 nodeX[nNode] + gqx * gD / gC, nodeY[nNode] + gqy * gD / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    gpx = nodeX[nNode] + goy * gM
+    gpy = nodeY[nNode] - gox * gM
+    HOTSPOT2 gpx, gpy, 390110, cutEndPlan, 6
+    HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390111, cutEndPlan, 4 + 128
+    HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
 ENDIF
 END
 
 "fpPoint":
     ! the footprint's point at path sample iP, fpU to the right of the path:
-    ! the end cut's corner at either end (as the grips place it), the mitre
-    ! offset of the two neighbouring pieces elsewhere
+    ! the end cut's corner at either end (along the cut from the middle of the
+    ! beam's end, as the grips place it), the mitre offset of the two
+    ! neighbouring pieces elsewhere
+    fM = (uLo + uHi) / 2
     IF iP = 1 THEN
         fa = ecPlan[1]
         fLx = startTY * COS (fa) + startTX * SIN (fa)
         fLy = startTY * SIN (fa) - startTX * COS (fa)
-        fpx = pathX[1] + fpU / COS (fa) * fLx
-        fpy = pathY[1] + fpU / COS (fa) * fLy
+        fpx = pathX[1] + fM * startTY + (fpU - fM) / COS (fa) * fLx
+        fpy = pathY[1] - fM * startTX + (fpU - fM) / COS (fa) * fLy
     ELSE
         IF iP = nPath THEN
             fa = ecPlan[2]
             fLx = -endTY * COS (fa) - endTX * SIN (fa)
             fLy = -endTY * SIN (fa) + endTX * COS (fa)
-            fpx = pathX[nPath] - fpU / COS (fa) * fLx
-            fpy = pathY[nPath] - fpU / COS (fa) * fLy
+            fpx = pathX[nPath] + fM * endTY - (fpU - fM) / COS (fa) * fLx
+            fpy = pathY[nPath] - fM * endTX - (fpU - fM) / COS (fa) * fLy
         ELSE
             fd1x = pathX[iP] - pathX[iP - 1]
             fd1y = pathY[iP] - pathY[iP - 1]
