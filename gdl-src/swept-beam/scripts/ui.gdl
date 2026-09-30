@@ -13,8 +13,11 @@ UI_INFIELD "slopePercent", 278, 48, 146, 19
 UI_BUTTON UI_FUNCTION, "Re-apply slope", 278, 74, 146, 22, 1
 UI_OUTFIELD "Curve tolerance", 18, 110, 245, 18
 UI_INFIELD "pathTolerance", 278, 108, 146, 19
-UI_OUTFIELD "Grips", 18, 134, 245, 18
-UI_INFIELD "gripMode", 278, 132, 146, 19
+UI_OUTFIELD "Grips", 18, 134, 66, 18
+UI_INFIELD{3} "gripNodes", 90, 132, 70, 19, 7, "", 0, 0, 0, 0, 0, 0, "", "Nodes", 0, "", "Nodes", 1
+UI_INFIELD{3} "gripCurves", 165, 132, 75, 19, 7, "", 0, 0, 0, 0, 0, 0, "", "Curves", 0, "", "Curves", 1
+UI_INFIELD{3} "gripAdd", 245, 132, 90, 19, 7, "", 0, 0, 0, 0, 0, 0, "", "Add nodes", 0, "", "Add nodes", 1
+UI_INFIELD{3} "gripCuts", 340, 132, 84, 19, 7, "", 0, 0, 0, 0, 0, 0, "", "End cuts", 0, "", "End cuts", 1
 UI_OUTFIELD "Reference line at", 18, 158, 245, 18
 UI_INFIELD "refLine", 278, 156, 146, 19
 UI_OUTFIELD "Offset from the reference line", 18, 182, 245, 18

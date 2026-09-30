@@ -92,10 +92,28 @@ default = 0.002
 description = "Curve tolerance"
 
 [[param]]
-name = "gripMode"
-type = "string"
-default = "All"
-description = "Grips"
+name = "gripNodes"
+type = "boolean"
+default = true
+description = "Node grips"
+
+[[param]]
+name = "gripCurves"
+type = "boolean"
+default = true
+description = "Curve grips"
+
+[[param]]
+name = "gripAdd"
+type = "boolean"
+default = true
+description = "Add-node grips"
+
+[[param]]
+name = "gripCuts"
+type = "boolean"
+default = true
+description = "End cut grips"
 
 [[param]]
 name = "refLine"

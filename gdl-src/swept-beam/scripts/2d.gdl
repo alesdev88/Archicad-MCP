@@ -96,14 +96,10 @@ IF showNodeHeights THEN
     NEXT iN
 ENDIF
 
-! ---- grips, filtered by the Grips setting ----
-showNodeGrips = (gripMode = "All" OR gripMode = "Nodes")
-showCurveGrips = (gripMode = "All" OR gripMode = "Curves")
-showAddGrips = (gripMode = "All" OR gripMode = "Add nodes")
-showCutGrips = (gripMode = "All" OR gripMode = "End cuts")
+! ---- grips, each group switched on or off by its Grips checkbox ----
 
 ! node grips: combined nodeX / nodeY drag (reference, Example 2)
-IF showNodeGrips THEN
+IF gripNodes THEN
     FOR iN = 1 TO nNode
         hId = 100000 + iN * 10
         HOTSPOT2 nodeX[iN], 0, hId, nodeY[iN], 1 + 128
@@ -124,7 +120,7 @@ FOR jS = 1 TO nNode - 1
         guy = gdy / gChord
         ! Helper grips sit at home + (value - marker); see the Parameter Script.
         ! curve grip: sideways at the chord midpoint, home = the arc's midpoint
-        IF showCurveGrips AND jS <= VARDIM1 (segSag) AND jS <= VARDIM1 (sagDone) THEN
+        IF gripCurves AND jS <= VARDIM1 (segSag) AND jS <= VARDIM1 (sagDone) THEN
             gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
             gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
             gHome = 0
@@ -138,7 +134,7 @@ FOR jS = 1 TO nNode - 1
         ENDIF
         ! insert grip: home one third along the segment, on the arc if it is
         ! one, sliding along the segment's direction there
-        IF showAddGrips AND jS <= VARDIM1 (insL) AND jS <= VARDIM1 (insDone) THEN
+        IF gripAdd AND jS <= VARDIM1 (insL) AND jS <= VARDIM1 (insDone) THEN
             gqx = nodeX[jS] + gux * gChord / 3
             gqy = nodeY[jS] + guy * gChord / 3
             gtx = gux
@@ -167,7 +163,7 @@ FOR jS = 1 TO nNode - 1
 NEXT jS
 
 ! add-node grips past the ends, along the end directions
-IF showAddGrips AND nNode > 1 THEN
+IF gripAdd AND nNode > 1 THEN
     geX = eTx[nNode - 1]
     geY = eTy[nNode - 1]
     gbx = nodeX[nNode] + geX * (EXT_PARK - extEndDone)
@@ -192,7 +188,7 @@ ENDIF
 ! meets the beam's edge on the left looking out of the end: that edge is gW
 ! from the pivot, and along a cut turned by the angle the corner is
 ! gW / cos (angle) away.
-IF showCutGrips AND nNode > 1 THEN
+IF gripCuts AND nNode > 1 THEN
     gW = (uHi - uLo) / 2
     IF gW < 0.01 THEN gW = 0.1
     gM = (uLo + uHi) / 2

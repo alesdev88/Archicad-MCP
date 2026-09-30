@@ -17,7 +17,6 @@ VALUES "rectW" RANGE (0, ]
 VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
 VALUES "gs_ui_current_page" 1, 2, 3, 4
-VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes", "End cuts"
 VALUES "refLine" "Left face", "Centre", "Right face"
 ! the plan cuts have no range here: a grip drag can arrive as 350 for -10,
 ! and the Master Script folds and limits them

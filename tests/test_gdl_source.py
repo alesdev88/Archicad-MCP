@@ -300,6 +300,21 @@ def test_gdl_names_differ_by_more_than_case():
     assert clashes == []
 
 
+def test_swept_beam_grip_groups_switch_on_and_off_one_by_one():
+    # any mix of grip groups, e.g. nodes and curves but no end cuts; a new
+    # beam shows them all, as the old "All" did
+    root = Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam"
+    src = source.load_source(root)
+    params = {p.name: p for p in src.params}
+    for name in ("gripNodes", "gripCurves", "gripAdd", "gripCuts"):
+        assert params[name].type == "boolean"
+        assert params[name].default is True
+    assert "gripMode" not in params
+    stale = [p.name for p in sorted((root / "scripts").glob("*.gdl"))
+             if "gripmode" in p.read_text(encoding="utf-8").lower()]
+    assert stale == []
+
+
 def test_swept_beam_size_defaults_are_one_metre():
     # Tapir's SetGDLParametersOfElements (1.5.0 to 1.5.9) writes A and B in
     # metres into the placed size ratios, which Archicad reads as multiples of

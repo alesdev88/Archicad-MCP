@@ -28,8 +28,8 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
 - Continue the beam: slide the grip just past either end outwards; a node is
   added that far past the end, following the end's direction and slope.
 - Delete a node: drag it onto its neighbour.
-- Too many grips: the Grips setting on the Path page shows all of them, or
-  only the node, curve or add-node grips.
+- Too many grips: the Grips checkboxes on the Path page switch the node,
+  curve, add-node and end cut grips on or off, in any mix.
 - Heights: set Slope (%) on the Path page and close the dialog: the node
   heights follow the slope from node 1 along the plan length. Then drag
   single nodes in 3D; "Re-apply slope" puts them back on the slope.
