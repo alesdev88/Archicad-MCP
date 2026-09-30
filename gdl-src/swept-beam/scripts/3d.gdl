@@ -226,6 +226,7 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     hoy = -startTY
     hPlan = cutStartPlan
     hTilt = cutStartTilt
+    hSgn = 1
     gD = uHi
     IF ABS (gD) < 0.01 THEN gD = uLo
     GOSUB "cutGripFrame"
@@ -233,10 +234,10 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     HOTSPOT hx, hy, hz + 1, 490001, cutStartPlan, 7
     HOTSPOT hbx, hby, hz, 490002, cutStartPlan, 4 + 128
     HOTSPOT hmx, hmy, hz, 490003, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
-    HOTSPOT hx, hy, hz, 490010, cutStartTilt, 6
-    HOTSPOT hx + hLx, hy + hLy, hz, 490011, cutStartTilt, 7
-    HOTSPOT hx + wEdge * u0x, hy + wEdge * u0y, hz + wEdge * u0z, 490012, cutStartTilt, 4 + 128
-    HOTSPOT hx + wEdge * utx, hy + wEdge * uty, hz + wEdge * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+    HOTSPOT tcx, tcy, hz, 490010, cutStartTilt, 6
+    HOTSPOT tcx + hLx, tcy + hLy, hz, 490011, cutStartTilt, 7
+    HOTSPOT tcx + wEdge * u0x, tcy + wEdge * u0y, hz + wEdge * u0z, 490012, cutStartTilt, 4 + 128
+    HOTSPOT tcx + wEdge * utx, tcy + wEdge * uty, hz + wEdge * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
 
     iE = 2
     hx = nodeX[nNode]
@@ -246,6 +247,7 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     hoy = endTY
     hPlan = cutEndPlan
     hTilt = cutEndTilt
+    hSgn = -1
     gD = -uLo
     IF ABS (gD) < 0.01 THEN gD = -uHi
     GOSUB "cutGripFrame"
@@ -253,18 +255,19 @@ IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
     HOTSPOT hx, hy, hz + 1, 490021, cutEndPlan, 7
     HOTSPOT hbx, hby, hz, 490022, cutEndPlan, 4 + 128
     HOTSPOT hmx, hmy, hz, 490023, cutEndPlan, 5, cutEndPlan, "End cut in plan"
-    HOTSPOT hx, hy, hz, 490030, cutEndTilt, 6
-    HOTSPOT hx + hLx, hy + hLy, hz, 490031, cutEndTilt, 7
-    HOTSPOT hx + wEdge * u0x, hy + wEdge * u0y, hz + wEdge * u0z, 490032, cutEndTilt, 4 + 128
-    HOTSPOT hx + wEdge * utx, hy + wEdge * uty, hz + wEdge * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+    HOTSPOT tcx, tcy, hz, 490030, cutEndTilt, 6
+    HOTSPOT tcx + hLx, tcy + hLy, hz, 490031, cutEndTilt, 7
+    HOTSPOT tcx + wEdge * u0x, tcy + wEdge * u0y, hz + wEdge * u0z, 490032, cutEndTilt, 4 + 128
+    HOTSPOT tcx + wEdge * utx, tcy + wEdge * uty, hz + wEdge * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
 ENDIF
 END
 
 "cutGripFrame":
     ! in: node hx, hy, hz; outward plan direction hox, hoy; the raw angles
-    ! hPlan, hTilt; the corner's distance gD beside the axis; iE for the slope.
-    ! out: base hbx, hby and moving hmx, hmy of the plan grip; the cut line hLx,
-    ! hLy (the tilt's axis); the face's up direction square (u0) and tilted (ut)
+    ! hPlan, hTilt; the corner's distance gD beside the axis; hSgn; iE for the
+    ! slope. out: base hbx, hby and moving hmx, hmy of the plan grip; the cut
+    ! line hLx, hLy (the tilt's axis); the tilt grip's centre tcx, tcy; the
+    ! face's up direction square (u0) and tilted (ut)
     hC = COS (hPlan)
     IF ABS (hC) < 0.17 THEN
         IF hC >= 0 THEN
@@ -281,6 +284,13 @@ END
     hby = hy + gD * hly
     hmx = hx + gD / hC * hLx
     hmy = hy + gD / hC * hLy
+    ! the tilt grip turns about the cut line through the node; its centre is
+    ! the middle of the section on that line, so the grip sits on the beam's
+    ! face even when the reference line offsets the beam from the nodes
+    ! (hSgn: the section's "to the right" runs along +hL at the start, -hL at the end)
+    hs = hSgn * (uLo + uHi) / 2 / hC
+    tcx = hx + hs * hLx
+    tcy = hy + hs * hLy
     ! plumb face normal n0; the face leans by the slope minus the tilt
     n0x = hox * COS (hPlan) - hoy * SIN (hPlan)
     n0y = hox * SIN (hPlan) + hoy * COS (hPlan)
