@@ -59,7 +59,7 @@ UI_OUTFIELD "Floor plan", 12, 10, 420, 22
 UI_STYLE 0, 0
 UI_SEPARATOR 12, 34, 432, 34
 UI_OUTFIELD "Outline pen", 18, 46, 245, 18
-UI_INFIELD "outlinePen", 278, 44, 146, 19
+UI_INFIELD "outlinePen", 278, 44, 70, 19
 UI_OUTFIELD "Show reference axis", 18, 70, 245, 18
 UI_INFIELD "showAxis", 278, 68, 146, 19
 IF showAxis THEN
