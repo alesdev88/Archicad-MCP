@@ -31,6 +31,8 @@ IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
 IF NOT (showPlanFill) THEN HIDEPARAMETER "planFill", "fillFgPen", "fillBgPen"
+! beams placed before the switch store 0 (none), which the picker shows as MISSING
+IF showPlanFill AND planFill < 1 THEN PARAMETERS planFill = 1
 IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
 
 EPS = 0.0001
