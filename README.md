@@ -536,7 +536,9 @@ uv run python scripts/check_release_version.py
 
 Releasing is a tag push. `.github/workflows/publish.yml` refuses the tag unless
 all four files and the tag itself agree, then builds both bundles, the wheel and
-the sdist, attaches them to a GitHub release, publishes the wheel and sdist to
+the sdist, installs that wheel without `uv.lock` and starts it (a fresh install
+resolves the newest dependencies the version ranges allow, which the locked
+tests never see), attaches them to a GitHub release, publishes the wheel and sdist to
 PyPI as `archicad-mcp-server`, stamps each bundle's SHA-256 into `server.json`,
 and publishes that to the MCP registry. Run the check by hand first, because a
 pushed tag has to be deleted before it can be corrected, and both PyPI and the

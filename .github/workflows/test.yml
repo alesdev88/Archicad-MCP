@@ -41,3 +41,9 @@ jobs:
       - run: uv sync
       - run: uv run pytest -v
       - run: uv build
+      # The suite above runs against uv.lock; a user's install never sees the
+      # lock and takes the newest dependencies pyproject.toml allows. Install
+      # the wheel that way and start it, on every OS, so a dependency release
+      # that breaks fresh installs fails here rather than on a user's machine
+      # (multiconn-archicad 0.9.0 did, with everything else green).
+      - run: uv run --no-project python scripts/check_wheel_install.py
