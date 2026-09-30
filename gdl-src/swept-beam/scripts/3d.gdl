@@ -273,19 +273,23 @@ END
             hC = -0.17
         ENDIF
     ENDIF
-    hlx = -hoy
-    hly = hox
-    hLx = hlx * COS (hPlan) - hly * SIN (hPlan)
-    hLy = hlx * SIN (hPlan) + hly * COS (hPlan)
+    ! hq: square across the beam; hL: along the turned cut. GDL is not case
+    ! sensitive, so the two need names that differ by more than case (as
+    ! hl and hL they were one variable, and the grips left the beam once
+    ! the cut turned)
+    hqx = -hoy
+    hqy = hox
+    hLx = hqx * COS (hPlan) - hqy * SIN (hPlan)
+    hLy = hqx * SIN (hPlan) + hqy * COS (hPlan)
     ! the pivot: the middle of the beam's end, where the cut turns (as in
-    ! "cutEnd"); "to the right" along the path is +hl at the start, -hl at the end
-    pcx = hx + hSgn * (uLo + uHi) / 2 * hlx
-    pcy = hy + hSgn * (uLo + uHi) / 2 * hly
+    ! "cutEnd"); "to the right" along the path is +hq at the start, -hq at the end
+    pcx = hx + hSgn * (uLo + uHi) / 2 * hqx
+    pcy = hy + hSgn * (uLo + uHi) / 2 * hqy
     ! the plan grip on the beam's corner, half the section's width from the pivot
     hw = (uHi - uLo) / 2
     IF hw < 0.01 THEN hw = 0.1
-    hbx = pcx + hw * hlx
-    hby = pcy + hw * hly
+    hbx = pcx + hw * hqx
+    hby = pcy + hw * hqy
     hmx = pcx + hw / hC * hLx
     hmy = pcy + hw / hC * hLy
     ! plumb face normal n0; the face leans by the slope minus the tilt

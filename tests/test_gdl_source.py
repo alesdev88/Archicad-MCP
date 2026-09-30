@@ -1,5 +1,6 @@
 """Hand-written library parts: TOML plus GDL scripts to HSF."""
 
+import re
 import subprocess
 import textwrap
 import xml.etree.ElementTree as ET
@@ -274,6 +275,29 @@ def test_gdl_sources_use_no_dash_stand_ins():
            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if "—" in line or "–" in line or " -- " in line]
     assert bad == []
+
+
+def test_gdl_names_differ_by_more_than_case():
+    # GDL is not case sensitive: hLx (the cut line) and hlx (square to the
+    # beam) were one variable, so the Swept Beam's 3D end grips left the beam
+    # as soon as the cut turned. A script shares the Master Script's names.
+    root = Path(__file__).resolve().parent.parent / "gdl-src"
+
+    def names(path):
+        text = re.sub(r'"[^"\n]*"|\'[^\'\n]*\'', '""', path.read_text(encoding="utf-8"))
+        return set(re.findall(r"\b[A-Za-z_]\w*\b", re.sub(r"!.*", "", text)))
+
+    clashes = []
+    for scripts in sorted(root.glob("*/scripts")):
+        master = scripts / "master.gdl"
+        shared = names(master) if master.exists() else set()
+        for script in sorted(scripts.glob("*.gdl")):
+            spellings = {}
+            for name in names(script) | shared:
+                spellings.setdefault(name.lower(), set()).add(name)
+            clashes += [f"{script.relative_to(root)}: {sorted(s)}"
+                        for s in spellings.values() if len(s) > 1]
+    assert clashes == []
 
 
 def test_swept_beam_size_defaults_are_one_metre():
