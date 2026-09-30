@@ -241,19 +241,27 @@ default = 1
 description = "Outline pen"
 
 [[param]]
+name = "showPlanFill"
+type = "boolean"
+# off: the footprint uses the part's own empty fill, which only makes the plan
+# symbol clickable everywhere (as in the office closet object)
+default = false
+description = "Show plan fill"
+
+[[param]]
 name = "planFill"
 type = "fill"
-# 0 draws the part's own empty fill: the footprint fill then only makes the
-# plan symbol clickable everywhere, as in the office closet object, until a
-# hatch is picked
-default = 0
+# a project fill attribute; 0 is none and shows as MISSING in the picker
+default = 1
 description = "Plan fill"
+child = true
 
 [[param]]
 name = "fillFgPen"
 type = "pen"
 default = 1
 description = "Plan fill pen"
+child = true
 
 [[param]]
 name = "fillBgPen"
@@ -261,6 +269,7 @@ type = "pen"
 # 0 is a transparent background
 default = 0
 description = "Plan fill background pen"
+child = true
 
 [[param]]
 name = "showAxis"

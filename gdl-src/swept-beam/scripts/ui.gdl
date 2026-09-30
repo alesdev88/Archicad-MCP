@@ -58,27 +58,30 @@ UI_STYLE 2, 1
 UI_OUTFIELD "Floor plan", 12, 10, 420, 22
 UI_STYLE 0, 0
 UI_SEPARATOR 12, 34, 432, 34
-UI_OUTFIELD "Outline pen", 18, 50, 245, 18
-UI_INFIELD "outlinePen", 278, 48, 146, 19
-UI_OUTFIELD "Show reference axis", 18, 78, 245, 18
-UI_INFIELD "showAxis", 278, 76, 146, 19
+UI_OUTFIELD "Outline pen", 18, 46, 245, 18
+UI_INFIELD "outlinePen", 278, 44, 146, 19
+UI_OUTFIELD "Show reference axis", 18, 70, 245, 18
+UI_INFIELD "showAxis", 278, 68, 146, 19
 IF showAxis THEN
-    UI_OUTFIELD "Axis pen / line type", 18, 102, 245, 18
-    UI_INFIELD "axisPen", 278, 100, 70, 19
-    UI_INFIELD "axisLineType", 354, 100, 70, 19
+    UI_OUTFIELD "Axis pen / line type", 18, 94, 245, 18
+    UI_INFIELD "axisPen", 278, 92, 70, 19
+    UI_INFIELD "axisLineType", 354, 92, 70, 19
 ENDIF
-UI_OUTFIELD "Show node heights", 18, 134, 245, 18
-UI_INFIELD "showNodeHeights", 278, 132, 146, 19
+UI_OUTFIELD "Show node heights", 18, 118, 245, 18
+UI_INFIELD "showNodeHeights", 278, 116, 146, 19
 IF showNodeHeights THEN
-    UI_OUTFIELD "Text pen / size (mm)", 18, 158, 245, 18
-    UI_INFIELD "textPen", 278, 156, 70, 19
-    UI_INFIELD "textSizeMm", 354, 156, 70, 19
+    UI_OUTFIELD "Text pen / size (mm)", 18, 142, 245, 18
+    UI_INFIELD "textPen", 278, 140, 70, 19
+    UI_INFIELD "textSizeMm", 354, 140, 70, 19
 ENDIF
-UI_OUTFIELD "Plan fill", 18, 186, 245, 18
-UI_INFIELD "planFill", 278, 184, 146, 19
-UI_OUTFIELD "Plan fill pen / background", 18, 210, 245, 18
-UI_INFIELD "fillFgPen", 278, 208, 70, 19
-UI_INFIELD "fillBgPen", 354, 208, 70, 19
+UI_OUTFIELD "Show plan fill", 18, 166, 245, 18
+UI_INFIELD "showPlanFill", 278, 164, 20, 19
+IF showPlanFill THEN
+    UI_INFIELD "planFill", 304, 164, 120, 19
+    UI_OUTFIELD "Fill pen / background", 18, 190, 245, 18
+    UI_INFIELD "fillFgPen", 278, 188, 70, 19
+    UI_INFIELD "fillBgPen", 354, 188, 70, 19
+ENDIF
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 

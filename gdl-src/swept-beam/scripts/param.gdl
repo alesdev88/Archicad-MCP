@@ -30,6 +30,7 @@ HIDEPARAMETER "B", "ZZYZX", "aDone", "segSag", "sagDone", "insL", "insDone", "ex
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
+IF NOT (showPlanFill) THEN HIDEPARAMETER "planFill", "fillFgPen", "fillBgPen"
 IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
 
 EPS = 0.0001
