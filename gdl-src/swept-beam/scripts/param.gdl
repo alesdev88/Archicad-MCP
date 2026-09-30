@@ -26,7 +26,7 @@ VALUES "cutEndTilt" RANGE [-85, 85]
 ! the plan grips drawn at the base level in 3D would lie on the ground under a
 ! rising beam; the 3D script has its own node grips
 PARAMETERS AC_show2DHotspotsIn3D = 0
-HIDEPARAMETER "B", "ZZYZX", "aDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
+HIDEPARAMETER "B", "ZZYZX", "aDone", "slopeDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
 IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
@@ -94,6 +94,7 @@ eEd = extEndDone
 ! length once, along the beam's direction; otherwise A follows the nodes.
 newA = A
 aDoneOut = A
+placedLength = 0
 IF n = 2 AND ABS (na[1]) < 0.01 THEN
     ddx = nx[2] - nx[1]
     ddy = ny[2] - ny[1]
@@ -107,13 +108,31 @@ IF n = 2 AND ABS (na[1]) < 0.01 THEN
         ENDIF
         nx[2] = nx[1] + ux * A
         ny[2] = ny[1] + uy * A
+        placedLength = 1
     ELSE
         newA = lenPlan
         aDoneOut = lenPlan
     ENDIF
 ENDIF
 
-IF GLOB_UI_BUTTON_ID = 1 THEN
+! Slope (%), a value and marker pair too (slopeDone, hidden): a changed slope
+! sets every node height from node 1 along the plan length, once, when the
+! dialog closes; "Re-apply slope" does the same for an unchanged slope, and a
+! placement that sets the length (A above) applies the slope along it. Heights
+! dragged afterwards stay until the slope changes again. A beam from before
+! the pair (slopeDone still at its -9999 default) takes its shown slope as
+! already applied, so updating the part leaves its heights alone.
+SLOPE_UNSET = -9999
+slopeDoneOut = slopeDone
+applySlope = 0
+IF slopeDone < SLOPE_UNSET + 1 THEN
+    slopeDoneOut = slopePercent
+ELSE
+    IF ABS (slopePercent - slopeDone) > 0.00001 THEN applySlope = 1
+ENDIF
+IF GLOB_UI_BUTTON_ID = 1 THEN applySlope = 1
+IF placedLength AND ABS (slopePercent) > 0.00001 THEN applySlope = 1
+IF applySlope THEN
     sAcc = 0
     FOR i = 2 TO n
         jSeg = i - 1
@@ -121,6 +140,7 @@ IF GLOB_UI_BUTTON_ID = 1 THEN
         sAcc = sAcc + sLen
         nz[i] = nz[1] + slopePercent / 100 * sAcc
     NEXT i
+    slopeDoneOut = slopePercent
 ENDIF
 
 ! curve grips: the dragged change of a segment's bulge becomes its new arc
@@ -298,6 +318,7 @@ FOR i = 1 TO n
     oil[i] = il[i]
     oidn[i] = idn[i]
 NEXT i
+PARAMETERS slopeDone = slopeDoneOut
 PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
 END
 

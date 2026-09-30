@@ -10,7 +10,7 @@ UI_STYLE 0, 0
 UI_SEPARATOR 12, 34, 432, 34
 UI_OUTFIELD "Slope (%)", 18, 50, 245, 18
 UI_INFIELD "slopePercent", 278, 48, 146, 19
-UI_BUTTON UI_FUNCTION, "Apply slope", 278, 74, 146, 22, 1
+UI_BUTTON UI_FUNCTION, "Re-apply slope", 278, 74, 146, 22, 1
 UI_OUTFIELD "Curve tolerance", 18, 110, 245, 18
 UI_INFIELD "pathTolerance", 278, 108, 146, 19
 UI_OUTFIELD "Grips", 18, 134, 245, 18

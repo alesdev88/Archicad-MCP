@@ -74,7 +74,16 @@ description = "Arc angle to the next node"
 name = "slopePercent"
 type = "real"
 default = 0.0
-description = "Slope for Apply slope (%)"
+description = "Slope (%)"
+
+[[param]]
+name = "slopeDone"
+type = "real"
+# the slope already applied; -9999 marks a beam from before the pair, which
+# takes its shown slope as applied (see the Parameter Script)
+default = -9999.0
+description = "Slope applied (helper)"
+hidden = true
 
 [[param]]
 name = "pathTolerance"
