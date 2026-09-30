@@ -4,6 +4,7 @@
                  [--out DIR] [--no-decimate] [--no-validate] [--keep-hsf]
     archicad-gdl deploy GSM [--port N] [--place X Y] [--preview OUT.png]
     archicad-gdl inspect SOURCE
+    archicad-gdl build-source SOURCE [--archicad N] [--out DIR]
 
 build: mesh -> optional Blender decimation (when the object's config has
 "decimate" targets) -> HSF -> LP_XMLConverter compile -> script validation.
@@ -23,6 +24,7 @@ from pathlib import Path
 from archicad_mcp.gdl import config as cfg_mod
 from archicad_mcp.gdl import deploy as deploy_mod
 from archicad_mcp.gdl import generate, mesh as mesh_mod, toolchain
+from archicad_mcp.gdl import source as source_mod
 
 
 def _cmd_build(args) -> int:
@@ -116,6 +118,26 @@ def _cmd_inspect(args) -> int:
     return 0
 
 
+def _cmd_build_source(args) -> int:
+    result = source_mod.build_source(
+        args.source, args.out, archicad=args.archicad,
+        validate_with=() if args.no_validate else (27, 29), keep_hsf=args.keep_hsf)
+    target = f"the Archicad {result.archicad}" if result.archicad else "the newest"
+    print(f"GSM: {result.gsm} ({result.gsm.stat().st_size // 1024} KB), "
+          f"built with {target} converter")
+    print(f"{result.name} {result.version}  GUID={result.guid}")
+    for version, lines in sorted(result.findings.items()):
+        if lines:
+            print(f"validation (Archicad {version}):")
+            for line in lines:
+                print(f"  {line}")
+        else:
+            print(f"validation (Archicad {version}): scripts interpret cleanly")
+    for version in result.skipped:
+        print(f"validation (Archicad {version}): skipped, converter not installed")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="archicad-gdl", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -148,10 +170,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("source", help="input .obj or .3ds file")
     p.set_defaults(func=_cmd_inspect)
 
+    p = sub.add_parser("build-source", help="hand-written GDL source folder -> .gsm")
+    p.add_argument("source", help="folder with libpart.toml, params.toml, scripts/")
+    p.add_argument("--archicad", type=int, default=None,
+                   help="compile with this Archicad release's converter "
+                        "(default: libpart.toml target_archicad, else newest)")
+    p.add_argument("--out", default="build", help="output directory (default: build)")
+    p.add_argument("--no-validate", action="store_true")
+    p.add_argument("--keep-hsf", action="store_true",
+                   help="keep the intermediate HSF folder next to the .gsm")
+    p.set_defaults(func=_cmd_build_source)
+
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except toolchain.ToolchainError as exc:
+    except (toolchain.ToolchainError, source_mod.SourceError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

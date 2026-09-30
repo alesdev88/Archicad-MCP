@@ -1,0 +1,400 @@
+! Swept Beam, 3D Script
+! The path is swept with TUBE{2}, which keeps the section plumb (W up, U to the
+! left looking along the path, found with the reference line at gate G) and
+! rolls it by each point's angle (spec 1.4).
+! At a kink TUBE would average the two directions and twist both sides, so the
+! path is split into runs at kinks: each run is swept on its own, carried past
+! the kink along its own direction and trimmed by a box on the kink's plumb
+! mitre plane. Both
+! sides stay true plumb prisms and meet on one flat mitre. An end with a
+! custom cut is carried past its node the same way and trimmed on the cut.
+
+MODEL SOLID
+IF nPath < 2 THEN END
+
+! A native beam shows a profile mirrored against TUBE's U/W frame (gate B,
+! UPE100 side by side), so the section is mirrored by default and "Flip
+! section" un-mirrors it: unticked matches a native beam.
+sgnFlip = -1
+IF flipProfile THEN sgnFlip = 1
+tubeMask = 1 + 2 + 16 + 32
+
+! ---- section from a Profile Manager profile, read live (closet pattern) ----
+useProfile = 0
+nComp = 0
+DIM compTypes[], geo[], compStart[], compEnd[], eSurf[]
+IF profileMode = "Profile attribute" THEN
+    rq1 = REQUEST ("Profile_components", beamProfile, nComp, compTypes)
+    rq2 = REQUEST ("Profile_default_geometry", beamProfile, geo)
+    rq3 = REQUEST ("Profile_default_boundingbox", beamProfile, pbXmin, pbYmin, pbXmax, pbYmax)
+    IF rq1 > 0 AND rq2 > 0 AND rq3 > 0 AND nComp > 0 THEN
+        rawCount = VARDIM1 (geo)
+        okSplit = 1
+        nextIdx = nComp + 1
+        FOR iC = 1 TO nComp
+            nNodesC = INT (geo[iC])
+            compStart[iC] = nextIdx
+            compEnd[iC] = nextIdx + nNodesC * 5 - 1
+            IF nNodesC < 3 THEN okSplit = 0
+            IF compEnd[iC] > rawCount THEN okSplit = 0
+            nextIdx = compEnd[iC] + 1
+        NEXT iC
+        IF nextIdx - 1 <> rawCount THEN okSplit = 0
+        useProfile = okSplit
+    ENDIF
+ENDIF
+
+! ---- rectangle section (also the fallback) ----
+rw = MAX (0.001, rectW)
+rh = MAX (0.001, rectH)
+rSurf = 0
+nRq = REQUEST{2} ("Building_Material_info", rectBMat, "gs_bmat_surface", rSurf)
+IF overrideSurface THEN rSurf = surfaceOverride
+
+! ---- the section around the path, in path terms: sideways to the right
+! looking along the path, and W up. TUBE's own U points left; the default
+! mirror turns the section's x into "to the right", and Flip (no mirror)
+! turns it back, so with Flip the extents swap sides. The reference line (the nodes) takes the
+! beam's left face, centre or right face, and refOffset moves the beam away
+! from it; the shift refU is applied after the mirror, so Flip never moves the
+! beam, only turns the section over ----
+IF useProfile THEN
+    uLo = pbXmin - profileOffsetU
+    uHi = pbXmax - profileOffsetU
+    wLo = pbYmin - profileOffsetW
+    wTop = pbYmax - profileOffsetW
+ELSE
+    uLo = -rw / 2 - profileOffsetU
+    uHi = rw / 2 - profileOffsetU
+    wLo = -rh / 2 - profileOffsetW
+    wTop = rh / 2 - profileOffsetW
+ENDIF
+IF flipProfile THEN
+    uTmp = uLo
+    uLo = -uHi
+    uHi = -uTmp
+ENDIF
+refU = refOffset
+IF refLine = "Left face" THEN refU = refOffset - uLo
+IF refLine = "Right face" THEN refU = -refOffset - uHi
+uLo = uLo + refU
+uHi = uHi + refU
+
+! how far the section reaches from the path, for carrying runs past a kink
+secExtent = SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2)
+
+! ---- runs between kinks ----
+DIM runA[], runB[]
+nRun = 0
+runFrom = 1
+FOR iN = 2 TO nNode
+    IF iN = nNode OR nodeKink[iN] THEN
+        nRun = nRun + 1
+        runA[nRun] = runFrom
+        runB[nRun] = iN
+        runFrom = iN
+    ENDIF
+NEXT iN
+
+FOR iRun = 1 TO nRun
+    nA = runA[iRun]
+    nB = runB[iRun]
+    nCut = 0
+    IF nA > 1 THEN
+        cutNode = nA
+        cutSgn = -1
+        GOSUB "cutAt"
+        nCut = nCut + 1
+    ENDIF
+    IF nA = 1 AND ecOn[1] THEN
+        cutEndIdx = 1
+        GOSUB "cutEnd"
+        nCut = nCut + 1
+    ENDIF
+    IF nB < nNode THEN
+        cutNode = nB
+        cutSgn = 1
+        GOSUB "cutAt"
+        nCut = nCut + 1
+    ENDIF
+    IF nB = nNode AND ecOn[2] THEN
+        cutEndIdx = 2
+        GOSUB "cutEnd"
+        nCut = nCut + 1
+    ENDIF
+    ! Flip mirrors the section, not the path: under MULX -1 the path is fed with
+    ! x negated, so it lands where it belongs and only U flips. The cut planes
+    ! above are already in place and are not affected by this transformation.
+    IF sgnFlip < 0 THEN MULX -1
+    IF useProfile THEN
+        FOR iC = 1 TO nComp
+            cBMat = 0
+            rq = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_bmat", cBMat)
+            cSurf = 0
+            rq = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_surface", cSurf)
+            nES = REQUEST{4} ("Profile_component_info", beamProfile, iC, "gs_profile_comp_surfaces", eSurf)
+            IF overrideSurface THEN cSurf = surfaceOverride
+            BUILDING_MATERIAL cBMat
+            ! a single outline drops its closing duplicate; with holes TUBE{2} needs the -1 nodes
+            nEnds = 0
+            FOR kG = compStart[iC] TO compEnd[iC] STEP 5
+                IF geo[kG + 4] = -1 THEN nEnds = nEnds + 1
+            NEXT kG
+            nSec = 0
+            iNodeC = 0
+            FOR kG = compStart[iC] TO compEnd[iC] STEP 5
+                iNodeC = iNodeC + 1
+                stG = geo[kG + 4]
+                skipIt = 0
+                IF stG = -1 AND nEnds = 1 AND kG = compEnd[iC] - 4 THEN skipIt = 1
+                IF skipIt = 0 THEN
+                    tubeSt = stG
+                    IF stG >= 0 AND geo[kG + 3] = 0 THEN tubeSt = stG + 1
+                    edgeMat = cSurf
+                    IF overrideSurface = 0 AND iNodeC <= nES THEN edgeMat = eSurf[iNodeC]
+                    ! offsets move positions only: plain nodes, start point (600),
+                    ! centre (900), arc endpoints (1000+, 3000+). Other codes hold a
+                    ! vector, a length or an angle in x/y and stay as they are.
+                    su = geo[kG]
+                    sw = geo[kG + 1]
+                    isPos = 0
+                    IF stG < 100 OR stG = 600 OR stG = 900 THEN isPos = 1
+                    IF (stG >= 1000 AND stG < 2000) OR (stG >= 3000 AND stG < 4000) THEN isPos = 1
+                    IF isPos THEN
+                        su = su - profileOffsetU - refU * sgnFlip
+                        sw = sw - profileOffsetW
+                    ENDIF
+                    PUT su, sw, tubeSt, edgeMat
+                    nSec = nSec + 1
+                ENDIF
+            NEXT kG
+            GOSUB "putRun"
+            TUBE{2} cSurf, cSurf, cSurf, nSec, nTube, tubeMask, GET (NSP)
+        NEXT iC
+    ELSE
+        BUILDING_MATERIAL rectBMat
+        ! - refU * sgnFlip: the reference shift lands "to the right" whether
+        ! or not the section is mirrored (Flip)
+        PUT -rw / 2 - profileOffsetU - refU * sgnFlip,  rh / 2 - profileOffsetW, 0, rSurf
+        PUT -rw / 2 - profileOffsetU - refU * sgnFlip, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU - refU * sgnFlip, -rh / 2 - profileOffsetW, 0, rSurf
+        PUT  rw / 2 - profileOffsetU - refU * sgnFlip,  rh / 2 - profileOffsetW, 0, rSurf
+        GOSUB "putRun"
+        TUBE{2} rSurf, rSurf, rSurf, 4, nTube, tubeMask, GET (NSP)
+    ENDIF
+    IF sgnFlip < 0 THEN DEL 1
+    FOR iC = 1 TO nCut
+        CUTEND
+    NEXT iC
+NEXT iRun
+
+! ---- 3D node grips: combined nodeX / nodeY / nodeZ drag ----
+IF gripMode = "All" OR gripMode = "Nodes" THEN
+FOR iN = 1 TO nNode
+    hId = 400000 + iN * 10
+    HOTSPOT 0, nodeY[iN], nodeZ[iN], hId, nodeX[iN], 1 + 128
+    HOTSPOT -1, nodeY[iN], nodeZ[iN], hId + 1, nodeX[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 2, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
+    HOTSPOT nodeX[iN], 0, nodeZ[iN], hId + 3, nodeY[iN], 1 + 128
+    HOTSPOT nodeX[iN], -1, nodeZ[iN], hId + 4, nodeY[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 5, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
+    HOTSPOT nodeX[iN], nodeY[iN], 0, hId + 6, nodeZ[iN], 1 + 128
+    HOTSPOT nodeX[iN], nodeY[iN], -1, hId + 7, nodeZ[iN], 3
+    HOTSPOT nodeX[iN], nodeY[iN], nodeZ[iN], hId + 8, nodeZ[iN], 2, nodeZ[iN], "Node " + STR (iN, 1, 0) + " height"
+NEXT iN
+ENDIF
+
+! ---- 3D end cut grips: the plan angle, as in plan, on the corner where the
+! cut meets the beam's edge at the node's height, turning about the vertical
+! through the node; the tilt on the top edge of the cut face, tipping it about
+! the cut line (positive leans the top out, like the parameter) ----
+IF (gripMode = "All" OR gripMode = "End cuts") AND nNode > 1 THEN
+    ! uLo, uHi and wTop: the section's extent, worked out at the top
+    IF ABS (wTop) < 0.01 THEN wTop = 0.1
+
+    iE = 1
+    hx = nodeX[1]
+    hy = nodeY[1]
+    hz = nodeZ[1]
+    hox = -startTX
+    hoy = -startTY
+    hPlan = cutStartPlan
+    hTilt = cutStartTilt
+    gD = uHi
+    IF ABS (gD) < 0.01 THEN gD = uLo
+    GOSUB "cutGripFrame"
+    HOTSPOT hx, hy, hz, 490000, cutStartPlan, 6
+    HOTSPOT hx, hy, hz + 1, 490001, cutStartPlan, 7
+    HOTSPOT hbx, hby, hz, 490002, cutStartPlan, 4 + 128
+    HOTSPOT hmx, hmy, hz, 490003, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    HOTSPOT hx, hy, hz, 490010, cutStartTilt, 6
+    HOTSPOT hx + hLx, hy + hLy, hz, 490011, cutStartTilt, 7
+    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490012, cutStartTilt, 4 + 128
+    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+
+    iE = 2
+    hx = nodeX[nNode]
+    hy = nodeY[nNode]
+    hz = nodeZ[nNode]
+    hox = endTX
+    hoy = endTY
+    hPlan = cutEndPlan
+    hTilt = cutEndTilt
+    gD = -uLo
+    IF ABS (gD) < 0.01 THEN gD = -uHi
+    GOSUB "cutGripFrame"
+    HOTSPOT hx, hy, hz, 490020, cutEndPlan, 6
+    HOTSPOT hx, hy, hz + 1, 490021, cutEndPlan, 7
+    HOTSPOT hbx, hby, hz, 490022, cutEndPlan, 4 + 128
+    HOTSPOT hmx, hmy, hz, 490023, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    HOTSPOT hx, hy, hz, 490030, cutEndTilt, 6
+    HOTSPOT hx + hLx, hy + hLy, hz, 490031, cutEndTilt, 7
+    HOTSPOT hx + wTop * u0x, hy + wTop * u0y, hz + wTop * u0z, 490032, cutEndTilt, 4 + 128
+    HOTSPOT hx + wTop * utx, hy + wTop * uty, hz + wTop * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+ENDIF
+END
+
+"cutGripFrame":
+    ! in: node hx, hy, hz; outward plan direction hox, hoy; the raw angles
+    ! hPlan, hTilt; the corner's distance gD beside the axis; iE for the slope.
+    ! out: base hbx, hby and moving hmx, hmy of the plan grip; the cut line hLx,
+    ! hLy (the tilt's axis); the face's up direction square (u0) and tilted (ut)
+    hC = COS (hPlan)
+    IF ABS (hC) < 0.17 THEN
+        IF hC >= 0 THEN
+            hC = 0.17
+        ELSE
+            hC = -0.17
+        ENDIF
+    ENDIF
+    hlx = -hoy
+    hly = hox
+    hLx = hlx * COS (hPlan) - hly * SIN (hPlan)
+    hLy = hlx * SIN (hPlan) + hly * COS (hPlan)
+    hbx = hx + gD * hlx
+    hby = hy + gD * hly
+    hmx = hx + gD / hC * hLx
+    hmy = hy + gD / hC * hLy
+    ! plumb face normal n0; the face leans by the slope minus the tilt
+    n0x = hox * COS (hPlan) - hoy * SIN (hPlan)
+    n0y = hox * SIN (hPlan) + hoy * COS (hPlan)
+    hPhi = ecPlumb[iE]
+    u0x = -n0x * SIN (hPhi)
+    u0y = -n0y * SIN (hPhi)
+    u0z = COS (hPhi)
+    hG = hPhi - hTilt
+    utx = -n0x * SIN (hG)
+    uty = -n0y * SIN (hG)
+    utz = COS (hG)
+RETURN
+
+"cutAt":
+    ! the mitre plane at node cutNode; removes what lies ahead of the run
+    ! (cutSgn 1) or behind it (cutSgn -1)
+    czx = kinkNx[cutNode] * cutSgn
+    czy = kinkNy[cutNode] * cutSgn
+    czz = kinkNz[cutNode] * cutSgn
+    cp = nodePath[cutNode]
+    cutSlope = sTz[cutNode]
+    IF cutSgn > 0 THEN cutSlope = eTz[cutNode - 1]
+    cutTan = TAN (kinkTurn[cutNode] / 2)
+    GOSUB "cutBox"
+RETURN
+
+"cutEnd":
+    ! the custom cut at node 1 (cutEndIdx 1) or the last node (2); removes
+    ! what lies past the end
+    czx = ecNx[cutEndIdx]
+    czy = ecNy[cutEndIdx]
+    czz = ecNz[cutEndIdx]
+    cp = 1
+    cutSlope = sTz[1]
+    IF cutEndIdx = 2 THEN
+        cp = nPath
+        cutSlope = eTz[nNode - 1]
+    ENDIF
+    cutTan = ecTan[cutEndIdx]
+    GOSUB "cutBox"
+RETURN
+
+"cutBox":
+    ! a box on the plane through path point cp with normal (czx, czy, czz),
+    ! removing the side the normal points to
+    IF ABS (czz) < 0.9 THEN
+        cxx = -czy
+        cxy = czx
+        cxz = 0
+    ELSE
+        cxx = 0
+        cxy = -czz
+        cxz = czy
+    ENDIF
+    clx = SQR (cxx * cxx + cxy * cxy + cxz * cxz)
+    cxx = cxx / clx
+    cxy = cxy / clx
+    cxz = cxz / clx
+    cyx = czy * cxz - czz * cxy
+    cyy = czz * cxx - czx * cxz
+    cyz = czx * cxy - czy * cxx
+    ! A finite box on the cut plane, not an infinite plane: a run that curves
+    ! round would otherwise cross the plane again far away and lose that part
+    ! (gate C, a helix lost its first half). The box holds the part carried past
+    ! the kink and nothing further. It must hold the whole overshoot "putRun"
+    ! adds, which grows with the run's slope and rises with it: sized without
+    ! the slope, steep overshoots poked out and stayed as loose pieces (gate D).
+    cutOv = secExtent * (3 + MIN (20, cutTan) + ABS (cutSlope))
+    cutD = MAX (secExtent * (6 + MIN (20, cutTan)), cutOv * SQR (1 + cutSlope * cutSlope) + 2 * secExtent)
+    XFORM cxx, cyx, czx, pathX[cp], cxy, cyy, czy, pathY[cp], cxz, cyz, czz, pathZ[cp]
+    CUTFORM 4, 1, 1 + 2 + 128, 0, 0, 1, cutD, -cutD, -cutD, 1, cutD, -cutD, 1, cutD, cutD, 1, -cutD, cutD, 1
+    DEL 1
+RETURN
+
+"putRun":
+    ! TUBE path of run nA..nB: phantom, [overshoot], samples, [overshoot], phantom.
+    ! At a kink the run continues past the node along its own direction far
+    ! enough to fill the mitre; the cut plane trims the rest.
+    pA = nodePath[nA]
+    pB = nodePath[nB]
+    IF nA = 1 THEN
+        sx = startTX
+        sy = startTY
+        sz = startTZ
+    ELSE
+        sx = sTx[nA]
+        sy = sTy[nA]
+        sz = sTz[nA]
+    ENDIF
+    IF nB = nNode THEN
+        ex = endTX
+        ey = endTY
+        ez = endTZ
+    ELSE
+        ex = eTx[nB - 1]
+        ey = eTy[nB - 1]
+        ez = eTz[nB - 1]
+    ENDIF
+    ovA = 0
+    ! far enough past a kink or an end cut to fill it, also where a plumb cut
+    ! meets a slope
+    IF nA > 1 THEN ovA = secExtent * (3 + MIN (20, TAN (kinkTurn[nA] / 2)) + ABS (sz))
+    IF nA = 1 AND ecOn[1] THEN ovA = secExtent * (3 + ecTan[1] + ABS (sz))
+    ovB = 0
+    IF nB < nNode THEN ovB = secExtent * (3 + MIN (20, TAN (kinkTurn[nB] / 2)) + ABS (ez))
+    IF nB = nNode AND ecOn[2] THEN ovB = secExtent * (3 + ecTan[2] + ABS (ez))
+    nTube = pB - pA + 3
+    IF ovA > 0 THEN nTube = nTube + 1
+    IF ovB > 0 THEN nTube = nTube + 1
+    qx = pathX[pA] - sx * ovA
+    qy = pathY[pA] - sy * ovA
+    qz = pathZ[pA] - sz * ovA
+    PUT (qx - sx) * sgnFlip, qy - sy, qz - sz, pathRoll[pA] * sgnFlip
+    IF ovA > 0 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pA] * sgnFlip
+    FOR iP = pA TO pB
+        PUT pathX[iP] * sgnFlip, pathY[iP], pathZ[iP], pathRoll[iP] * sgnFlip
+    NEXT iP
+    qx = pathX[pB] + ex * ovB
+    qy = pathY[pB] + ey * ovB
+    qz = pathZ[pB] + ez * ovB
+    IF ovB > 0 THEN PUT qx * sgnFlip, qy, qz, pathRoll[pB] * sgnFlip
+    PUT (qx + ex) * sgnFlip, qy + ey, qz + ez, pathRoll[pB] * sgnFlip
+RETURN

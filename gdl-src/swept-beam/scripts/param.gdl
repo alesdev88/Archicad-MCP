@@ -1,0 +1,346 @@
+! Swept Beam, Parameter Script
+! Runs after every edit. No Profile requests here (not allowed in this script).
+! 1 copy and repair the arrays, 2 react to the edit, 3 write back.
+!
+! Helper grips (curve, insert, add a node at the start or the end) each have a
+! value and a hidden marker. The 2D script draws a grip at its home position
+! plus (value - marker), so it sits at home while the two are equal. A drag
+! changes the value; this script applies the change once and sets the marker to
+! the value. It never sets a dragged value back: Archicad drops a hotspot edit
+! whose parameter the script resets, and it runs this script several times per
+! edit, sometimes with a stale GLOB_MODPAR_NAME, so reacting on the name
+! re-applied grips (gate C). Comparing value and marker needs neither.
+
+VALUES "profileMode" "Rectangle", "Profile attribute"
+VALUES "pathTolerance" RANGE [0.0005, 0.05]
+VALUES "rectW" RANGE (0, ]
+VALUES "rectH" RANGE (0, ]
+VALUES "textSizeMm" RANGE (0, ]
+VALUES "gs_ui_current_page" 1, 2, 3, 4
+VALUES "gripMode" "All", "Nodes", "Curves", "Add nodes", "End cuts"
+VALUES "refLine" "Left face", "Centre", "Right face"
+! the plan cuts have no range here: a grip drag can arrive as 350 for -10,
+! and the Master Script folds and limits them
+VALUES "cutStartTilt" RANGE [-85, 85]
+VALUES "cutEndTilt" RANGE [-85, 85]
+! the plan grips drawn at the base level in 3D would lie on the ground under a
+! rising beam; the 3D script has its own node grips
+PARAMETERS AC_show2DHotspotsIn3D = 0
+HIDEPARAMETER "B", "ZZYZX", "aDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
+IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
+IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
+IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
+IF NOT (showPlanFill) THEN HIDEPARAMETER "planFill", "fillFgPen", "fillBgPen"
+! beams placed before the switch store 0 (none), which the picker shows as MISSING
+IF showPlanFill AND planFill < 1 THEN PARAMETERS planFill = 1
+IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
+
+EPS = 0.0001
+GRIP_EPS = 0.0005
+
+! ---- 1. copy and repair: every array gets the length of nodeX ----
+DIM nx[], ny[], nz[], nr[], na[], sg[], sgd[], il[], idn[]
+n = VARDIM1 (nodeX)
+IF n < 1 THEN
+    n = 2
+    nx[1] = 0
+    nx[2] = 3
+    ny[1] = 0
+    ny[2] = 0
+    nz[1] = 0
+    nz[2] = 0
+    nr[1] = 0
+    nr[2] = 0
+    na[1] = 0
+    na[2] = 0
+ELSE
+    FOR i = 1 TO n
+        nx[i] = nodeX[i]
+        ny[i] = 0
+        IF i <= VARDIM1 (nodeY) THEN ny[i] = nodeY[i]
+        nz[i] = 0
+        IF i <= VARDIM1 (nodeZ) THEN nz[i] = nodeZ[i]
+        nr[i] = 0
+        IF i <= VARDIM1 (nodeRoll) THEN nr[i] = nodeRoll[i]
+        na[i] = 0
+        IF i <= VARDIM1 (segArc) THEN na[i] = segArc[i]
+    NEXT i
+ENDIF
+IF n = 1 THEN
+    n = 2
+    nx[2] = nx[1] + 1
+    ny[2] = ny[1]
+    nz[2] = nz[1]
+    nr[2] = nr[1]
+    na[2] = 0
+ENDIF
+na[n] = 0
+FOR i = 1 TO n
+    sg[i] = 0
+    IF i <= VARDIM1 (segSag) THEN sg[i] = segSag[i]
+    sgd[i] = 0
+    IF i <= VARDIM1 (sagDone) THEN sgd[i] = sagDone[i]
+    il[i] = 0
+    IF i <= VARDIM1 (insL) THEN il[i] = insL[i]
+    idn[i] = 0
+    IF i <= VARDIM1 (insDone) THEN idn[i] = insDone[i]
+NEXT i
+eSd = extStartDone
+eEd = extEndDone
+
+! ---- 2. reactions ----
+! Length A, a value and marker pair like the helper grips. On a two-node
+! straight beam, a changed A (placement click, dialog, API) moves node 2 to that
+! length once, along the beam's direction; otherwise A follows the nodes.
+newA = A
+aDoneOut = A
+IF n = 2 AND ABS (na[1]) < 0.01 THEN
+    ddx = nx[2] - nx[1]
+    ddy = ny[2] - ny[1]
+    lenPlan = SQR (ddx * ddx + ddy * ddy)
+    IF ABS (A - aDone) > 0.0005 AND A > EPS THEN
+        ux = 1
+        uy = 0
+        IF lenPlan > EPS THEN
+            ux = ddx / lenPlan
+            uy = ddy / lenPlan
+        ENDIF
+        nx[2] = nx[1] + ux * A
+        ny[2] = ny[1] + uy * A
+    ELSE
+        newA = lenPlan
+        aDoneOut = lenPlan
+    ENDIF
+ENDIF
+
+IF GLOB_UI_BUTTON_ID = 1 THEN
+    sAcc = 0
+    FOR i = 2 TO n
+        jSeg = i - 1
+        GOSUB "seg"
+        sAcc = sAcc + sLen
+        nz[i] = nz[1] + slopePercent / 100 * sAcc
+    NEXT i
+ENDIF
+
+! curve grips: the dragged change of a segment's bulge becomes its new arc
+FOR j = 1 TO n - 1
+    IF ABS (sg[j] - sgd[j]) > GRIP_EPS THEN
+        jSeg = j
+        GOSUB "seg"
+        IF sChord > EPS THEN
+            sOld = 0
+            IF sIsArc THEN sOld = sChord / 2 * TAN (na[j] / 4)
+            sNew = sOld + sg[j] - sgd[j]
+            na[j] = 4 * ATN (2 * sNew / sChord)
+            IF ABS (na[j]) < 0.01 THEN na[j] = 0
+        ENDIF
+        sgd[j] = sg[j]
+    ENDIF
+NEXT j
+
+! insert grip: slid along segment j from its home one third along, it inserts
+! a node at that point of the segment, on the arc if the segment is one. On an
+! arc the grip slides along the tangent at its home, so a slide d is the arc
+! angle ASN (d / radius) from there.
+jIns = 0
+FOR j = 1 TO n - 1
+    IF jIns = 0 AND ABS (il[j] - idn[j]) > GRIP_EPS THEN jIns = j
+NEXT j
+IF jIns > 0 THEN
+    jSeg = jIns
+    GOSUB "seg"
+    insOff = il[jIns] - idn[jIns]
+    idn[jIns] = il[jIns]
+    tIns = -1
+    IF sChord > EPS THEN tIns = (sChord / 3 + insOff) / sChord
+    IF sIsArc AND sRad > EPS AND ABS (na[jIns]) > 0.01 THEN tIns = 1 / 3 + ASN (MAX (-1, MIN (1, insOff / sRad))) / ABS (na[jIns])
+    IF tIns > 0.02 AND tIns < 0.98 THEN
+        IF sIsArc THEN
+            pth = na[jIns] * tIns
+            pvx = nx[jIns] - sCx
+            pvy = ny[jIns] - sCy
+            newX = sCx + pvx * COS (pth) - pvy * SIN (pth)
+            newY = sCy + pvx * SIN (pth) + pvy * COS (pth)
+        ELSE
+            newX = nx[jIns] + (nx[jIns + 1] - nx[jIns]) * tIns
+            newY = ny[jIns] + (ny[jIns + 1] - ny[jIns]) * tIns
+        ENDIF
+        newZ = nz[jIns] + (nz[jIns + 1] - nz[jIns]) * tIns
+        newR = nr[jIns] + (nr[jIns + 1] - nr[jIns]) * tIns
+        a1 = na[jIns] * tIns
+        a2 = na[jIns] * (1 - tIns)
+        FOR k = n TO jIns + 1 STEP -1
+            nx[k + 1] = nx[k]
+            ny[k + 1] = ny[k]
+            nz[k + 1] = nz[k]
+            nr[k + 1] = nr[k]
+            na[k + 1] = na[k]
+            sg[k + 1] = sg[k]
+            sgd[k + 1] = sgd[k]
+            il[k + 1] = il[k]
+            idn[k + 1] = idn[k]
+        NEXT k
+        nx[jIns + 1] = newX
+        ny[jIns + 1] = newY
+        nz[jIns + 1] = newZ
+        nr[jIns + 1] = newR
+        na[jIns] = a1
+        na[jIns + 1] = a2
+        sg[jIns + 1] = 0
+        sgd[jIns + 1] = 0
+        il[jIns + 1] = 0
+        idn[jIns + 1] = 0
+        n = n + 1
+        na[n] = 0
+    ENDIF
+ENDIF
+
+! add-node grips past the ends: slid out along the end direction, they append
+! (or prepend) a node that far past the end, continuing the slope
+IF ABS (extEnd - eEd) > GRIP_EPS THEN
+    extDist = EXT_PARK + extEnd - eEd
+    eEd = extEnd
+    IF extDist > 0.01 THEN
+        jSeg = n - 1
+        GOSUB "seg"
+        GOSUB "tans"
+        nx[n + 1] = nx[n] + tanEx * extDist
+        ny[n + 1] = ny[n] + tanEy * extDist
+        nz[n + 1] = nz[n] + tRise * extDist
+        nr[n + 1] = nr[n]
+        na[n] = 0
+        sgd[n] = sg[n]
+        idn[n] = il[n]
+        sg[n + 1] = 0
+        sgd[n + 1] = 0
+        il[n + 1] = 0
+        idn[n + 1] = 0
+        n = n + 1
+        na[n] = 0
+    ENDIF
+ENDIF
+IF ABS (extStart - eSd) > GRIP_EPS THEN
+    extDist = EXT_PARK + extStart - eSd
+    eSd = extStart
+    IF extDist > 0.01 THEN
+        jSeg = 1
+        GOSUB "seg"
+        GOSUB "tans"
+        FOR k = n TO 1 STEP -1
+            nx[k + 1] = nx[k]
+            ny[k + 1] = ny[k]
+            nz[k + 1] = nz[k]
+            nr[k + 1] = nr[k]
+            na[k + 1] = na[k]
+            sg[k + 1] = sg[k]
+            sgd[k + 1] = sgd[k]
+            il[k + 1] = il[k]
+            idn[k + 1] = idn[k]
+        NEXT k
+        nx[1] = nx[2] - tanSx * extDist
+        ny[1] = ny[2] - tanSy * extDist
+        nz[1] = nz[2] - tRise * extDist
+        nr[1] = nr[2]
+        na[1] = 0
+        sg[1] = 0
+        sgd[1] = 0
+        il[1] = 0
+        idn[1] = 0
+        n = n + 1
+        na[n] = 0
+    ENDIF
+ENDIF
+
+! merge: a node dragged within 1 cm (plan) of a neighbour disappears
+IF (GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME = "nodeZ") AND n > 2 THEN
+    j = 1
+    WHILE j < n AND n > 2 DO
+        dPlan = SQR ((nx[j + 1] - nx[j])^2 + (ny[j + 1] - ny[j])^2)
+        IF dPlan < 0.01 THEN
+            jDel = j + 1
+            IF jDel = n THEN jDel = j
+            IF jDel > 1 AND jDel < n THEN
+                lenA = SQR ((nx[jDel] - nx[jDel - 1])^2 + (ny[jDel] - ny[jDel - 1])^2)
+                lenB = SQR ((nx[jDel + 1] - nx[jDel])^2 + (ny[jDel + 1] - ny[jDel])^2)
+                IF lenB > lenA THEN na[jDel - 1] = na[jDel]
+            ENDIF
+            FOR k = jDel TO n - 1
+                nx[k] = nx[k + 1]
+                ny[k] = ny[k + 1]
+                nz[k] = nz[k + 1]
+                nr[k] = nr[k + 1]
+                na[k] = na[k + 1]
+                sg[k] = sg[k + 1]
+                sgd[k] = sgd[k + 1]
+                il[k] = il[k + 1]
+                idn[k] = idn[k + 1]
+            NEXT k
+            n = n - 1
+            na[n] = 0
+        ELSE
+            j = j + 1
+        ENDIF
+    ENDWHILE
+ENDIF
+
+! ---- 3. write back, with arrays of exactly n items ----
+! extStart and extEnd are never written: they are what a grip drag changes.
+DIM ox[], oy[], oz[], orl[], oa[], osg[], osd[], oil[], oidn[]
+FOR i = 1 TO n
+    ox[i] = nx[i]
+    oy[i] = ny[i]
+    oz[i] = nz[i]
+    orl[i] = nr[i]
+    oa[i] = na[i]
+    osg[i] = sg[i]
+    osd[i] = sgd[i]
+    oil[i] = il[i]
+    oidn[i] = idn[i]
+NEXT i
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
+END
+
+! ---- subroutines ----
+"seg":
+    ! plan geometry of segment jSeg (node jSeg to jSeg + 1)
+    sdx = nx[jSeg + 1] - nx[jSeg]
+    sdy = ny[jSeg + 1] - ny[jSeg]
+    sChord = SQR (sdx * sdx + sdy * sdy)
+    sIsArc = 0
+    sRad = 0
+    sCx = 0
+    sCy = 0
+    sLen = sChord
+    IF ABS (na[jSeg]) > 0.01 AND ABS (na[jSeg]) < 359.9 AND sChord > EPS THEN
+        sIsArc = 1
+        sRad = sChord / (2 * SIN (ABS (na[jSeg]) / 2))
+        sD = sChord / 2 * COS (na[jSeg] / 2) / SIN (na[jSeg] / 2)
+        sCx = (nx[jSeg] + nx[jSeg + 1]) / 2 - sdy / sChord * sD
+        sCy = (ny[jSeg] + ny[jSeg + 1]) / 2 + sdx / sChord * sD
+        sLen = sRad * ABS (na[jSeg]) * PI / 180
+    ENDIF
+RETURN
+
+"tans":
+    ! unit plan tangents at the start (tanSx, tanSy) and end (tanEx, tanEy) of segment
+    ! jSeg after "seg", and its rise per plan metre (tRise)
+    IF sIsArc THEN
+        tsg = SGN (na[jSeg])
+        tanSx = -(ny[jSeg] - sCy) / sRad * tsg
+        tanSy = (nx[jSeg] - sCx) / sRad * tsg
+        tanEx = -(ny[jSeg + 1] - sCy) / sRad * tsg
+        tanEy = (nx[jSeg + 1] - sCx) / sRad * tsg
+    ELSE
+        tanSx = 1
+        tanSy = 0
+        IF sChord > EPS THEN
+            tanSx = sdx / sChord
+            tanSy = sdy / sChord
+        ENDIF
+        tanEx = tanSx
+        tanEy = tanSy
+    ENDIF
+    tRise = 0
+    IF sLen > EPS THEN tRise = (nz[jSeg + 1] - nz[jSeg]) / sLen
+RETURN

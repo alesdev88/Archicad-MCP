@@ -397,6 +397,52 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                         port: int | None = None) -> dict:
         return _create.create_elements(_conn(port), element_type, items, dry_run)
 
+    from archicad_mcp.core import swept_beam as _swept
+
+    @mcp.tool(description=(
+        "Place a Swept Beam: a sloped, curved beam with a Profile Manager profile "
+        "or a rectangle, as the 'Swept Beam' library part. The path comes from "
+        "source_guid (a Morph line, Polyline, Line or Arc) or from points "
+        "[{x, y, z}] in metres. Flat sources take start_height (metres above the "
+        "source) and slope_percent; morph lines and points keep their own heights. "
+        "profile is {\"attribute\": \"<Profile name>\"} or {\"rectangle\": {\"width\", "
+        "\"height\", \"building_material\"}} (default 0.2 x 0.2 rectangle). "
+        "update_guid rewrites the path of an existing Swept Beam, keeping its GUID; "
+        "its profile, offsets, flip and end cuts stay unless given, and node roll "
+        "resets to 0. End cuts in degrees: cut_start_plan and cut_end_plan turn a cut "
+        "counter-clockwise from square in plan (-80 to 80); cut_start_tilt and "
+        "cut_end_tilt lean the top of the face out past the end (-85 to 85, 0 is "
+        "square to the beam, the beam's slope there gives a vertical face). "
+        "ref_line ('left face', 'centre', 'right face', looking from the first "
+        "point to the last) puts that face of the beam on the path; ref_offset "
+        "(metres) moves the beam that far away from it (with centre, to the right). "
+        "DRY-RUN BY DEFAULT: reports nodes, arcs, the maximum deviation from the "
+        "source and warnings. Pass dry_run=false to place or update."),
+        **_tool_meta("Create Swept Beam", read_only=False, destructive=True))
+    @_guarded
+    def create_swept_beam(source_guid: str | None = None,
+                          points: list[dict] | str | None = None,
+                          start_height: float | None = None,
+                          slope_percent: float | None = None,
+                          profile: dict | str | None = None,
+                          offset_u: float | None = None, offset_w: float | None = None,
+                          flip: bool | None = None, path_tolerance: float = 0.002,
+                          update_guid: str | None = None, dry_run: bool = True,
+                          cut_start_plan: float | None = None,
+                          cut_start_tilt: float | None = None,
+                          cut_end_plan: float | None = None,
+                          cut_end_tilt: float | None = None,
+                          ref_line: str | None = None, ref_offset: float | None = None,
+                          port: int | None = None) -> dict:
+        return _swept.create_swept_beam(_conn(port), source_guid, points, start_height,
+                                        slope_percent, profile, offset_u, offset_w, flip,
+                                        path_tolerance, update_guid, dry_run,
+                                        cut_start_plan=cut_start_plan,
+                                        cut_start_tilt=cut_start_tilt,
+                                        cut_end_plan=cut_end_plan,
+                                        cut_end_tilt=cut_end_tilt,
+                                        ref_line=ref_line, ref_offset=ref_offset)
+
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
                           "confirm=true. Archicad changes only elements in the "
                           "database of the active window, so elements it would "

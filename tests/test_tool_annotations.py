@@ -39,6 +39,7 @@ WRITERS = {
     # so claiming readOnlyHint would let a client run arbitrary code unprompted.
     "run_script", "apply_changeset",
     "edit_property_definitions", "edit_classifications", "import_definitions",
+    "create_swept_beam",
 }
 
 # Writes that change only transient application state, never project data or a

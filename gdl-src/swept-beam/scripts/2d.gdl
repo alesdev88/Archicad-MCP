@@ -1,0 +1,281 @@
+! Swept Beam, 2D Script
+! Plan symbol: a projection of the 3D model (spec 1.5). parts = 1+2+4+8 keeps
+! the 3D grips out of the plan. planMethod: 2 hidden lines, 3 shading (cut
+! polygons exist only with 3); +32 draws with the current pen.
+
+planMethod = 2 + 32
+
+! the section's extent beside the axis, positive to the right looking along
+! the path (with Flip the section's sides swap), with the reference line
+! shift, as the 3D script works it out; used by the footprint fill and the
+! end cut grips
+uLo = -rectW / 2 - profileOffsetU
+uHi = rectW / 2 - profileOffsetU
+IF profileMode = "Profile attribute" THEN
+    rqB = REQUEST ("Profile_default_boundingbox", beamProfile, gbXmin, gbYmin, gbXmax, gbYmax)
+    IF rqB > 0 THEN
+        uLo = gbXmin - profileOffsetU
+        uHi = gbXmax - profileOffsetU
+    ENDIF
+ENDIF
+IF flipProfile THEN
+    uTmp = uLo
+    uLo = -uHi
+    uHi = -uTmp
+ENDIF
+refU = refOffset
+IF refLine = "Left face" THEN refU = refOffset - uLo
+IF refLine = "Right face" THEN refU = -refOffset - uHi
+uLo = uLo + refU
+uHi = uHi + refU
+
+! ---- footprint fill: the band the beam covers in plan, closed on the end
+! cuts. A fill makes the whole symbol clickable, not only its lines (as in the
+! office closet object); by default it is empty with a transparent background,
+! so the plan looks as before. Taken at the path's height: rolled sections and
+! tilted end faces are approximated ----
+IF nPath > 1 THEN
+    fpU = uHi
+    FOR iP = 1 TO nPath
+        GOSUB "fpPoint"
+        PUT fpx, fpy, 1
+    NEXT iP
+    fpU = uLo
+    FOR iP = nPath TO 1 STEP -1
+        GOSUB "fpPoint"
+        PUT fpx, fpy, 1
+    NEXT iP
+    fpU = uHi
+    iP = 1
+    GOSUB "fpPoint"
+    PUT fpx, fpy, -1
+    IF showPlanFill AND planFill > 0 THEN
+        SET FILL planFill
+    ELSE
+        ! No fill shown: the part's own empty fill. SET FILL 0 draws the same
+        ! nothing, but Archicad does not pick an object by it; a defined empty
+        ! fill it does, like a project's empty fill attribute (gate F)
+        DEFINE EMPTY_FILL "Swept Beam empty fill"
+        SET FILL "Swept Beam empty fill"
+    ENDIF
+    POLY2_B{5} 2 * nPath + 1, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
+ENDIF
+
+IF nPath < 2 THEN
+    LINE2 -0.1, 0, 0.1, 0
+    LINE2 0, -0.1, 0, 0.1
+ELSE
+    PEN outlinePen
+    PROJECT2{3} 3, 270, planMethod, 1 + 2 + 4 + 8
+ENDIF
+
+! the axis node to node as true lines and arcs, so a dashed line type runs on
+! (drawn through every sample, each short piece restarted the pattern)
+IF showAxis AND nNode > 1 THEN
+    PEN axisPen
+    LINE_TYPE axisLineType
+    FOR iS = 1 TO nNode - 1
+        IF segIsArc[iS] THEN
+            IF segAng[iS] > 0 THEN
+                ARC2 segCx[iS], segCy[iS], segR[iS], segA0[iS], segA0[iS] + segAng[iS]
+            ELSE
+                ARC2 segCx[iS], segCy[iS], segR[iS], segA0[iS] + segAng[iS], segA0[iS]
+            ENDIF
+        ELSE
+            LINE2 nodeX[iS], nodeY[iS], nodeX[iS + 1], nodeY[iS + 1]
+        ENDIF
+    NEXT iS
+ENDIF
+
+IF showNodeHeights THEN
+    DEFINE STYLE "sbHeights" "Arial", MAX (0.5, textSizeMm), 1, 0
+    SET STYLE "sbHeights"
+    PEN textPen
+    FOR iN = 1 TO nNode
+        TEXT2 nodeX[iN], nodeY[iN], STR ("%.3m", GLOB_ELEVATION + nodeZ[iN])
+    NEXT iN
+ENDIF
+
+! ---- grips, filtered by the Grips setting ----
+showNodeGrips = (gripMode = "All" OR gripMode = "Nodes")
+showCurveGrips = (gripMode = "All" OR gripMode = "Curves")
+showAddGrips = (gripMode = "All" OR gripMode = "Add nodes")
+showCutGrips = (gripMode = "All" OR gripMode = "End cuts")
+
+! node grips: combined nodeX / nodeY drag (reference, Example 2)
+IF showNodeGrips THEN
+    FOR iN = 1 TO nNode
+        hId = 100000 + iN * 10
+        HOTSPOT2 nodeX[iN], 0, hId, nodeY[iN], 1 + 128
+        HOTSPOT2 nodeX[iN], -1, hId + 1, nodeY[iN], 3
+        HOTSPOT2 nodeX[iN], nodeY[iN], hId + 2, nodeY[iN], 2, nodeY[iN], "Node " + STR (iN, 1, 0) + " y"
+        HOTSPOT2 0, nodeY[iN], hId + 3, nodeX[iN], 1 + 128
+        HOTSPOT2 -1, nodeY[iN], hId + 4, nodeX[iN], 3
+        HOTSPOT2 nodeX[iN], nodeY[iN], hId + 5, nodeX[iN], 2, nodeX[iN], "Node " + STR (iN, 1, 0) + " x"
+    NEXT iN
+ENDIF
+
+FOR jS = 1 TO nNode - 1
+    gdx = nodeX[jS + 1] - nodeX[jS]
+    gdy = nodeY[jS + 1] - nodeY[jS]
+    gChord = SQR (gdx * gdx + gdy * gdy)
+    IF gChord > EPS THEN
+        gux = gdx / gChord
+        guy = gdy / gChord
+        ! Helper grips sit at home + (value - marker); see the Parameter Script.
+        ! curve grip: sideways at the chord midpoint, home = the arc's midpoint
+        IF showCurveGrips AND jS <= VARDIM1 (segSag) AND jS <= VARDIM1 (sagDone) THEN
+            gmx = (nodeX[jS] + nodeX[jS + 1]) / 2
+            gmy = (nodeY[jS] + nodeY[jS + 1]) / 2
+            gHome = 0
+            IF ABS (segArc[jS]) > 0.01 AND ABS (segArc[jS]) < 359.9 THEN gHome = gChord / 2 * TAN (segArc[jS] / 4)
+            gbx = gmx + guy * (gHome - sagDone[jS])
+            gby = gmy - gux * (gHome - sagDone[jS])
+            hId = 200000 + jS * 10
+            HOTSPOT2 gbx, gby, hId, segSag[jS], 1 + 128
+            HOTSPOT2 gbx - guy, gby + gux, hId + 1, segSag[jS], 3
+            HOTSPOT2 gbx + guy * segSag[jS], gby - gux * segSag[jS], hId + 2, segSag[jS], 2, segSag[jS], "Curve segment " + STR (jS, 1, 0) + ": bulge"
+        ENDIF
+        ! insert grip: home one third along the segment, on the arc if it is
+        ! one, sliding along the segment's direction there
+        IF showAddGrips AND jS <= VARDIM1 (insL) AND jS <= VARDIM1 (insDone) THEN
+            gqx = nodeX[jS] + gux * gChord / 3
+            gqy = nodeY[jS] + guy * gChord / 3
+            gtx = gux
+            gty = guy
+            IF segIsArc[jS] THEN
+                gpx = nodeX[jS] - segCx[jS]
+                gpy = nodeY[jS] - segCy[jS]
+                gTh = segArc[jS] / 3
+                gqx = segCx[jS] + gpx * COS (gTh) - gpy * SIN (gTh)
+                gqy = segCy[jS] + gpx * SIN (gTh) + gpy * COS (gTh)
+                gtx = -(gqy - segCy[jS]) / segR[jS]
+                gty = (gqx - segCx[jS]) / segR[jS]
+                IF segArc[jS] < 0 THEN
+                    gtx = -gtx
+                    gty = -gty
+                ENDIF
+            ENDIF
+            gbx = gqx - gtx * insDone[jS]
+            gby = gqy - gty * insDone[jS]
+            hId = 300000 + jS * 10
+            HOTSPOT2 gbx, gby, hId, insL[jS], 1 + 128
+            HOTSPOT2 gbx - gtx, gby - gty, hId + 1, insL[jS], 3
+            HOTSPOT2 gbx + gtx * insL[jS], gby + gty * insL[jS], hId + 2, insL[jS], 2, insL[jS], "Insert node on segment " + STR (jS, 1, 0) + ": slide, release"
+        ENDIF
+    ENDIF
+NEXT jS
+
+! add-node grips past the ends, along the end directions
+IF showAddGrips AND nNode > 1 THEN
+    geX = eTx[nNode - 1]
+    geY = eTy[nNode - 1]
+    gbx = nodeX[nNode] + geX * (EXT_PARK - extEndDone)
+    gby = nodeY[nNode] + geY * (EXT_PARK - extEndDone)
+    HOTSPOT2 gbx, gby, 390000, extEnd, 1 + 128
+    HOTSPOT2 gbx - geX, gby - geY, 390001, extEnd, 3
+    HOTSPOT2 gbx + geX * extEnd, gby + geY * extEnd, 390002, extEnd, 2, extEnd, "Add node at the end: slide out, release"
+    gsX = sTx[1]
+    gsY = sTy[1]
+    gbx = nodeX[1] - gsX * (EXT_PARK - extStartDone)
+    gby = nodeY[1] - gsY * (EXT_PARK - extStartDone)
+    HOTSPOT2 gbx, gby, 390010, extStart, 1 + 128
+    HOTSPOT2 gbx + gsX, gby + gsY, 390011, extStart, 3
+    HOTSPOT2 gbx - gsX * extStart, gby - gsY * extStart, 390012, extStart, 2, extStart, "Add node at the start: slide out, release"
+ENDIF
+
+! end cut grips: turn the plan cut around the end node. Angle editing from the
+! square cut, counter-clockwise, like the parameter; the parameter is edited
+! directly, the Parameter Script never sets it, so Archicad keeps the drag.
+! The grip sits on the corner where the cut meets the beam's edge on the left
+! looking out of the end: that edge is gD from the axis, and along a cut turned
+! by the angle the corner is gD / cos (angle) away.
+IF showCutGrips AND nNode > 1 THEN
+    ! start: left looking out of the start is right looking along the path (+U)
+    gD = uHi
+    IF ABS (gD) < 0.01 THEN gD = uLo
+    gC = COS (cutStartPlan)
+    IF ABS (gC) < 0.17 THEN
+        IF gC >= 0 THEN
+            gC = 0.17
+        ELSE
+            gC = -0.17
+        ENDIF
+    ENDIF
+    gox = -startTX
+    goy = -startTY
+    gqx = -goy * COS (cutStartPlan) - gox * SIN (cutStartPlan)
+    gqy = -goy * SIN (cutStartPlan) + gox * COS (cutStartPlan)
+    HOTSPOT2 nodeX[1], nodeY[1], 390100, cutStartPlan, 6
+    HOTSPOT2 nodeX[1] - goy * gD, nodeY[1] + gox * gD, 390101, cutStartPlan, 4 + 128
+    HOTSPOT2 nodeX[1] + gqx * gD / gC, nodeY[1] + gqy * gD / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    ! end: left looking out of the end is left looking along the path (-U)
+    gD = -uLo
+    IF ABS (gD) < 0.01 THEN gD = -uHi
+    gC = COS (cutEndPlan)
+    IF ABS (gC) < 0.17 THEN
+        IF gC >= 0 THEN
+            gC = 0.17
+        ELSE
+            gC = -0.17
+        ENDIF
+    ENDIF
+    gox = endTX
+    goy = endTY
+    gqx = -goy * COS (cutEndPlan) - gox * SIN (cutEndPlan)
+    gqy = -goy * SIN (cutEndPlan) + gox * COS (cutEndPlan)
+    HOTSPOT2 nodeX[nNode], nodeY[nNode], 390110, cutEndPlan, 6
+    HOTSPOT2 nodeX[nNode] - goy * gD, nodeY[nNode] + gox * gD, 390111, cutEndPlan, 4 + 128
+    HOTSPOT2 nodeX[nNode] + gqx * gD / gC, nodeY[nNode] + gqy * gD / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+ENDIF
+END
+
+"fpPoint":
+    ! the footprint's point at path sample iP, fpU to the right of the path:
+    ! the end cut's corner at either end (as the grips place it), the mitre
+    ! offset of the two neighbouring pieces elsewhere
+    IF iP = 1 THEN
+        fa = ecPlan[1]
+        fLx = startTY * COS (fa) + startTX * SIN (fa)
+        fLy = startTY * SIN (fa) - startTX * COS (fa)
+        fpx = pathX[1] + fpU / COS (fa) * fLx
+        fpy = pathY[1] + fpU / COS (fa) * fLy
+    ELSE
+        IF iP = nPath THEN
+            fa = ecPlan[2]
+            fLx = -endTY * COS (fa) - endTX * SIN (fa)
+            fLy = -endTY * SIN (fa) + endTX * COS (fa)
+            fpx = pathX[nPath] - fpU / COS (fa) * fLx
+            fpy = pathY[nPath] - fpU / COS (fa) * fLy
+        ELSE
+            fd1x = pathX[iP] - pathX[iP - 1]
+            fd1y = pathY[iP] - pathY[iP - 1]
+            fd2x = pathX[iP + 1] - pathX[iP]
+            fd2y = pathY[iP + 1] - pathY[iP]
+            fl1 = SQR (fd1x * fd1x + fd1y * fd1y)
+            fl2 = SQR (fd2x * fd2x + fd2y * fd2y)
+            ! a piece with no plan length (vertical) takes its neighbour's direction
+            IF fl1 < EPS THEN
+                fd1x = fd2x
+                fd1y = fd2y
+                fl1 = fl2
+            ENDIF
+            IF fl2 < EPS THEN
+                fd2x = fd1x
+                fd2y = fd1y
+                fl2 = fl1
+            ENDIF
+            fpx = pathX[iP]
+            fpy = pathY[iP]
+            IF fl1 > EPS AND fl2 > EPS THEN
+                fd1x = fd1x / fl1
+                fd1y = fd1y / fl1
+                fd2x = fd2x / fl2
+                fd2y = fd2y / fl2
+                fDen = MAX (0.1, 1 + fd1x * fd2x + fd1y * fd2y)
+                fpx = pathX[iP] + fpU * (fd1y + fd2y) / fDen
+                fpy = pathY[iP] - fpU * (fd1x + fd2x) / fDen
+            ENDIF
+        ENDIF
+    ENDIF
+RETURN
