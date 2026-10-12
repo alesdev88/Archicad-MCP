@@ -95,5 +95,64 @@ order over a faked Archicad and the refusals. Sections across the markings: see 
 
 ## Sections
 
-The user's section and 3D screenshots of the trial markings are the visual check; noted here when
-they arrive.
+No sections of the trial markings were taken; the live check below measured the paint against the
+surfaces from an IFC export instead, and the user's plan view of story 1 shows both sets.
+
+## Live check (after the build)
+
+12.10.2026, MCP-Test on port 19725 (Archicad 29, Tapir 1.5.10; port 19724 held the real project CVP and
+was not touched), the build at dde91c9, then the no-sink fix acafd05 (below). The trial's surfaces were
+made again from `tests/fixtures/road_marking/surfaces_mcp_test.json` 80 m north, on story 1, with a 5 by 5 m
+regular grid Mesh (a saddle, 5 cm a metre squared) at x 630 to 635 and a Polyline source:
+
+| Surface | GUID |
+| --- | --- |
+| Slab, Top, 3.25 | `62827FEB-2368-184B-9820-8B82E2EC1D90` |
+| Slab, CoreBottom, 3.80 | `AFB5AF4C-E8F4-6343-9AEB-9796AE445247` |
+| Mesh, crowned road | `2021B414-573E-DC4D-9C1E-58F58BDFD77A` |
+| Mesh, crossing level lines | `D4DB880C-8083-F749-B27F-0886B2D6044B` |
+| Mesh, road edge level lines | `2D9CEEF9-C2C0-D446-8D3C-A7D30EA5FCAC` |
+| Mesh, regular grid | `A507A0CB-6E91-DB43-9F12-269E6A24D0DC` |
+| Polyline with an arc | `6193D3B3-34D7-F54B-84E4-8BF6605F6D41` |
+
+Every bay, stop and lettering preset, the zebra, a lane line from the Polyline and one on the grid, dry run
+then write (floats as reported after the no-sink fix; every case also warns that draping replaced the
+points' heights):
+
+| Case | Element | Nodes (added) | Reach | Floats up to | Reads back | Warnings |
+| --- | --- | --- | --- | --- | --- | --- |
+| zebra | `78437388` | 5 (3) | -2 to 2 | 0 mm | 5231 Pedestrian crossing | none |
+| bus_lane | `EE744E16` | 2 (0) | -0.075 to 2.8 | 0 mm | 5111-1 Bus lane line | none |
+| taxi_lane | `162E1FA9` | 2 (0) | -0.075 to 3.125 | 32.73 mm | 5111-2 Taxi lane line | floats |
+| taxi_lane_broken | `A0B29075` | 19 (17) | -0.075 to 3.125 | 58.88 mm | 5121-2 Taxi lane line, broken | floats; level lines cross |
+| bus_lane_broken | `F392F46F` | 21 (19) | -0.075 to 2.8 | 42.83 mm | 5121-1 Bus lane line, broken | floats; level lines cross |
+| lane_from_polyline | `2413D5BF` | 10 (7) | -0.075 to 0.075 | 5.97 mm | 5121 Broken divider, in settlements | none (story 1, the arc split in 5) |
+| bus_stop_layby | `77CCB49E` | 5 (3) | -0.15 to 2.55 | 19.53 mm | 5333 Bus stop in a lay-by | floats |
+| taxi_stop_layby | `ADC192A1` | 6 (4) | -0.15 to 2.875 | 18.07 mm | 5334 Taxi stop in a lay-by | floats |
+| disabled | `DAFA4866` | 2 (0) | 0 to 5.45 | 0 mm | 5352 Disabled bay | none |
+| disabled_pair | `6F4E4812` | 2 (0) | 0 to 5.45 | 0 mm | 5352-1 Disabled bays, shared zone | none |
+| taxi_bay | `2999C079` | 2 (0) | 0 to 5.05 | 0 mm | 5351 Taxi bay | none |
+| ev_bay | `218104A4` | 2 (0) | 0 to 5.05 | 0 mm | 5354 EV charging bay | none |
+| disabled_parallel | `F40E94C9` | 2 (0) | 0 to 2.45 | 0 mm | 5352-2 Disabled bay, parallel | none |
+| taxi_stop_carriageway | `8ACAD59E` | 2 (0) | -0.075 to 2.55 | 0 mm | 5334-1 Taxi stop on the carriageway | none |
+| bus_stop_short | `7B9B017C` | 2 (0) | -0.15 to 3.05 | 0 mm | 5333-2 Bus stop on the carriageway | BUS (4.00 m) reaches past the 3.90 m path; partly off 0 to 3.9 (the end bars reach 5 cm past the Slab) |
+| ev_partly_off | `C1EAB5C9` | 2 (0) | 0 to 5.05 | 0 mm | 5354 EV charging bay | partly off 0 to 3.0 |
+| lane_on_grid | `54F4703E` | 10 (8) | -0.075 to 0.075 | 4.38 mm | 5121 Broken divider, in settlements | none |
+
+- **Placement.** Every marking's bounding box bottom equals the surface height at its first node; the
+  points' markings landed on story 1 from their z. The user's plan view of story 1 shows every layout,
+  word and symbol where and how it should be (both sets: the live check and the trial).
+- **Update in place.** The bus lane line draped again on its own path with a 0.12 m line: `updated`, 2
+  nodes as before, BUS kept, reads Custom.
+- **Paint against the surface** (the markings' undersides read from an IFC export, every point against
+  the surface at its plan position). On the Slabs 0.0 mm everywhere. On the Meshes the paint sank up to
+  4.2 mm (and 7.4 mm on a 2 cm grid of the tool's own heights): the station lines touched the surface only
+  at the cross samples, and the pieces between nodes could stray below them by the tolerance. Fixed in
+  acafd05 (a 5 cm check grid raising each segment by its deepest dip, two tests that failed first); the
+  nine Mesh markings draped again in place and exported again: no underside point below its surface
+  (lowest gap -0.0 mm), floats as in the table. The large floats are words and lines over a crown or a
+  bump, where one straight cross fall spans up to 3.2 m: reported, as designed.
+- **Regular grid against Archicad.** 50 triangles each, but Archicad chose the other diagonal in some
+  cells (its rows mostly one way with the last column flipped and the top row reversed; the tool's
+  alternate by row): worst 25.00 mm on 441 points, half the cells' twist. No rule to copy from one sample;
+  the guide states the limit.
