@@ -155,6 +155,10 @@
       "description": "Place a Swept Beam (sloped, curved, custom profile) along a morph line, polyline, line, arc or 3D points. Dry-run by default."
     },
     {
+      "name": "create_road_marking",
+      "description": "Place a Road Marking (lanes, crossings, stops, parking and bays, BUS and TAXI) along a line or points, draped onto Meshes and Slabs. Dry-run by default."
+    },
+    {
       "name": "move_elements",
       "description": "Move elements. Dry-run by default and requires confirm=true."
     },

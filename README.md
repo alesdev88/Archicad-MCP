@@ -411,8 +411,8 @@ rather than putting anything on your PATH.
 `highlight_failures`, `create_issues_from_failures`
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
-`set_element_data`, `create_elements`, `create_swept_beam`, `move_elements`,
-`delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
+`set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
+`move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
 `get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.

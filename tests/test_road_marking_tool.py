@@ -182,3 +182,29 @@ def test_path_errors_name_the_road_marking():
         "polygons": [], "wireEdges": [{"vertexIds": [0, 1]}, {"vertexIds": [1, 2]}, {"vertexIds": [1, 3]}]}}}
     r = rm.create_road_marking(_conn({"GetDetailsOfElements": _details({"m": morph})}), source_guid="m")
     assert "A Road Marking follows one unbranched line" in r["error"]
+
+
+async def _call_tool(monkeypatch, tapir, args):
+    import archicad_mcp.server as server_mod
+    from fastmcp import Client
+
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}}, tapir=tapir)
+    monkeypatch.setattr(server_mod, "get_connection", lambda port: ArchicadConnection(19725, core=core))
+    async with Client(server_mod.build_server(mode="full")) as client:
+        result = await client.call_tool("create_road_marking", args)
+        return json.loads(result.content[0].text)
+
+
+async def test_the_registered_tool_takes_its_lists_and_objects_as_json_text(monkeypatch):
+    tapir = {"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB}
+    payload = await _call_tool(monkeypatch, tapir, {
+        "points": json.dumps(PTS), "marking": "5351 Taxi bay", "bays": json.dumps({"depth": 4.5}),
+        "lettering": json.dumps({}), "stripes": json.dumps({"1": {"on": True, "width": 0.12}}),
+        "drape_on": json.dumps(["slab"])})
+    assert payload["dry_run"] is True and payload["reach"] == {"u_lo": -0.06, "u_hi": 4.55}
+    assert _params(payload)["bayDepth"] == 4.5
+
+
+async def test_the_registered_tool_explains_text_that_is_not_json(monkeypatch):
+    payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB}, {"points": "0,0 3,0"})
+    assert "points" in payload["error"] and "JSON" in payload["error"]

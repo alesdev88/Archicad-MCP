@@ -51,7 +51,8 @@ def main() -> None:
         run(["uv", "pip", "install", "--python", str(python), str(wheel)])
         for tool in ("archicad-mcp", "archicad-gdl"):
             run([str(bindir / (tool + (".exe" if WINDOWS else ""))), "--help"])
-        run([str(python), "-c", "import archicad_mcp.server, archicad_mcp.gdl.cli"])
+        # road_marking reads its preset table on import: this fails if the JSON is not in the wheel
+        run([str(python), "-c", "import archicad_mcp.server, archicad_mcp.gdl.cli, archicad_mcp.core.road_marking"])
         versions = run([str(python), "-c",
                         "import importlib.metadata as m; "
                         "print(m.version('archicad-mcp-server'), m.version('multiconn-archicad'))"])
