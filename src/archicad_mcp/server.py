@@ -443,6 +443,57 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                                         cut_end_tilt=cut_end_tilt,
                                         ref_line=ref_line, ref_offset=ref_offset)
 
+    from archicad_mcp.core import road_marking as _road
+
+    @mcp.tool(description=(
+        "Place a Road Marking (lane lines, zebra crossings, stop and give way lines, "
+        "parking rows, disabled, taxi and EV bays, bus and taxi stops, BUS and TAXI "
+        "lettering) as the 'Road Marking' library part, and drape it onto Meshes and "
+        "Slabs. The path comes from source_guid (a Morph line, Polyline, Line or Arc) "
+        "or points [{x, y, z}] in metres. marking is a preset name, for example "
+        "'5121 Broken divider, in settlements', '5352-1 Disabled bays, shared zone' or "
+        "'5333-2 Bus stop on the carriageway', or 'Custom'. stripes changes stripes: "
+        "{\"1\": {on, offset, width, dash, gap, angle, shape}}; bays sets {layout, "
+        "width, depth, zone_width, zone_first, bar_width, symbol}; lettering sets "
+        "{text, length, width, gap, offset, align, shift, repeat}. Offsets, bays and "
+        "the word lie to the right looking from the first point to the last. drape_on "
+        "lists Mesh and Slab GUIDs: the cross fall follows the surface, the paint never "
+        "sinks below it, and nodes are added until the marking is within "
+        "drape_tolerance (metres) of it along the path; lift raises it. update_guid "
+        "rewrites a placed marking, keeping its settings unless given; with drape_on and "
+        "no source it drapes the marking's own path. DRY-RUN BY DEFAULT: reports nodes, "
+        "the marking's reach, drape deviations, stretches off the surface and warnings. "
+        "Pass dry_run=false to place or update."),
+        **_tool_meta("Create Road Marking", read_only=False, destructive=True))
+    @_guarded
+    def create_road_marking(source_guid: str | None = None,
+                            points: list[dict] | str | None = None,
+                            start_height: float | None = None,
+                            slope_percent: float | None = None,
+                            marking: str | None = None,
+                            stripes: dict | str | None = None,
+                            bays: dict | str | None = None,
+                            lettering: dict | str | None = None,
+                            flip_sides: bool | None = None,
+                            pattern_align: str | None = None,
+                            pattern_shift: float | None = None,
+                            whole_dashes: bool | None = None,
+                            thickness: float | None = None,
+                            paint_surface: str | int | None = None,
+                            drape_on: list[str] | str | None = None,
+                            lift: float = 0.0, drape_tolerance: float = 0.005,
+                            path_tolerance: float = 0.002,
+                            update_guid: str | None = None, dry_run: bool = True,
+                            port: int | None = None) -> dict:
+        return _road.create_road_marking(
+            _conn(port), source_guid=source_guid, points=points, start_height=start_height,
+            slope_percent=slope_percent, marking=marking, stripes=stripes, bays=bays,
+            lettering=lettering, flip_sides=flip_sides, pattern_align=pattern_align,
+            pattern_shift=pattern_shift, whole_dashes=whole_dashes, thickness=thickness,
+            paint_surface=paint_surface, drape_on=drape_on, lift=lift,
+            drape_tolerance=drape_tolerance, path_tolerance=path_tolerance,
+            update_guid=update_guid, dry_run=dry_run)
+
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
                           "confirm=true. Archicad changes only elements in the "
                           "database of the active window, so elements it would "
