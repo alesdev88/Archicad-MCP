@@ -198,8 +198,22 @@ class CDT:
 
     def add_constraint(self, a, b) -> bool:
         """Make a-b an edge, splitting it at any point lying on it. False when it crosses an
-        earlier constraint; the pieces before the crossing stay."""
-        a, b = self.alias.get(a, a), self.alias.get(b, b)
+        earlier constraint; the pieces before the crossing stay. The pieces are worked off a
+        stack, not by recursion: a long outline edge can carry thousands of points (review,
+        12.10.2026: recursion overflowed past about 1000)."""
+        pieces = [(self.alias.get(a, a), self.alias.get(b, b))]
+        while pieces:
+            a, b = pieces.pop()
+            done = self._piece(a, b)
+            if done is False:
+                return False
+            if done is not True:              # a point on the piece: a to it first, then it to b
+                pieces += [(done, b), (a, done)]
+        return True
+
+    def _piece(self, a, b):
+        """Make a-b an edge. True when done, False when it crosses an earlier constraint, or the
+        vertex lying on it where it must be split first."""
         if a == b:
             return True
         if (a, b) in self.edge or (b, a) in self.edge:
@@ -207,12 +221,17 @@ class CDT:
             return True
         p = self.p
         pa, pb = p[a], p[b]
+        fan = self._around(a)
+        # a fan vertex on the line ahead splits it; test both of each triangle's vertices before
+        # looking for the triangle the line leaves through, or one whose orientation is a rounding
+        # error above zero passes as straddling it (review, 12.10.2026: zero-area triangles)
+        for _, u, v in fan:
+            for w in (u, v):
+                if abs(orient(pa, pb, p[w])) < EPS and _ahead(pa, pb, p[w]):
+                    return w
         right = left = None
-        for _, u, v in self._around(a):
-            ou, ov = orient(pa, pb, p[u]), orient(pa, pb, p[v])
-            if abs(ou) < EPS and _ahead(pa, pb, p[u]):
-                return self.add_constraint(a, u) and self.add_constraint(u, b)
-            if ou < 0 < ov:
+        for _, u, v in fan:
+            if orient(pa, pb, p[u]) < 0 < orient(pa, pb, p[v]):
                 right, left = u, v
                 break
         if right is None:
@@ -227,7 +246,7 @@ class CDT:
                 break
             ow = orient(pa, pb, p[w])
             if abs(ow) < EPS:
-                return self.add_constraint(a, w) and self.add_constraint(w, b)
+                return w
             if ow > 0:
                 left = w
             else:

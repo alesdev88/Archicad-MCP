@@ -166,8 +166,10 @@ containing the point, or None. A batch form later builds the set once.
   lies inside the outline and outside the holes are kept; heights inside a triangle are linear; point
   z is the story's level (`GetStories`) plus `level` plus its z. Triangles are bucketed on a grid for
   lookups. Measured: 0.35 s for 5000 points, 1.7 s for 20000, 5 to 7 microseconds a lookup.
-- **Edges:** a point within 1 mm of an outline counts as inside (on a Mesh, the nearest triangle's
-  plane gives its height).
+- **Edges:** a point within 1 mm of an outline counts as inside (on a Mesh it takes the height of
+  the closest point of the nearest triangle, never that triangle's plane extended, which runs off
+  steeply on a thin triangle: review, 12.10.2026). Zero-area triangles are dropped, and a drape whose
+  heights land more than 1 m outside the surfaces' own range is refused before anything is written.
 - Anything in `drape_on` that is not a Mesh or a Slab is refused.
 
 ### Sampling

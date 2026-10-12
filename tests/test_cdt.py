@@ -76,3 +76,34 @@ def test_a_regular_grid_triangulates_and_tiles_the_square():
     tris = cdt.triangles()
     assert len(tris) == 50
     assert sum(_area(pts, t) for t in tris) == pytest.approx(25.0)
+
+
+def test_a_long_straight_constraint_through_many_points_does_not_overflow():
+    # review, 12.10.2026: one recursion per point on the line overflowed past about 1000 points
+    pts = [(float(x), 0.0) for x in range(1201)] + [(600.0, 50.0), (600.0, -50.0)]
+    cdt = CDT(pts)
+    assert cdt.add_constraint(0, 1200)
+    assert all(frozenset((i, i + 1)) in _edges(cdt) for i in range(1200))
+
+
+def test_constraints_along_a_turned_row_of_points_leave_no_flat_triangles():
+    # review, 12.10.2026: a fan vertex lying on the constraint, its orientation a rounding error above zero,
+    # was taken as straddling it, and the constraint ran past it leaving zero-area triangles
+    import math
+    c, s = math.cos(math.radians(1.0)), math.sin(math.radians(1.0))
+
+    def at(x, y):
+        return (591.237 + x * c - y * s, 63.418 + x * s + y * c)
+
+    edge = [at(x, 0) for x in range(31)]                              # an outline edge with a point every metre
+    pts = edge + [at(30, 8), at(0, 8)] + [at(x, 4) for x in range(0, 31, 2)]
+    cdt = CDT(pts)
+    ring = list(range(31)) + [31, 32]
+    for i in range(len(ring)):
+        assert cdt.add_constraint(ring[i], ring[(i + 1) % len(ring)])
+    for i in range(30):                                               # the level line along the same edge
+        assert cdt.add_constraint(i, i + 1)
+    for t in cdt.triangles():
+        a, b, c3 = (pts[i] for i in t)
+        longest = max(math.dist(a, b), math.dist(b, c3), math.dist(c3, a))
+        assert abs(_area(pts, t)) > 1e-9 * longest ** 2

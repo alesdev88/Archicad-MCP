@@ -78,11 +78,16 @@ def _in_ring(x, y, ring) -> bool:
     return inside
 
 
-def _seg_dist(x, y, a, b) -> float:
+def _closest(x, y, a, b) -> tuple[float, float]:
+    """The closest point of the segment a-b to (x, y): its fraction along a-b and its distance."""
     dx, dy = b[0] - a[0], b[1] - a[1]
     ln2 = dx * dx + dy * dy
     t = 0.0 if ln2 < 1e-18 else max(0.0, min(1.0, ((x - a[0]) * dx + (y - a[1]) * dy) / ln2))
-    return math.hypot(x - a[0] - t * dx, y - a[1] - t * dy)
+    return t, math.hypot(x - a[0] - t * dx, y - a[1] - t * dy)
+
+
+def _seg_dist(x, y, a, b) -> float:
+    return _closest(x, y, a, b)[1]
 
 
 def _ring_dist(x, y, ring) -> float:
@@ -112,6 +117,10 @@ class SlabSurface:
     def height(self, x, y):
         return self.top if _covers(x, y, self.outline, self.holes) else None
 
+    @property
+    def z_range(self):
+        return self.top, self.top
+
 
 @dataclass
 class MeshSurface:
@@ -140,18 +149,25 @@ class MeshSurface:
         for k in self._grid.get(cell, ()):
             p, q, r = self.triangles[k]
             d = (q[1] - r[1]) * (p[0] - r[0]) + (r[0] - q[0]) * (p[1] - r[1])
-            if abs(d) < 1e-15:
+            if abs(d) <= 1e-12 * ((q[0] - r[0]) ** 2 + (q[1] - r[1]) ** 2 + (p[0] - r[0]) ** 2 + (p[1] - r[1]) ** 2):
                 continue
             l1 = ((q[1] - r[1]) * (x - r[0]) + (r[0] - q[0]) * (y - r[1])) / d
             l2 = ((r[1] - p[1]) * (x - r[0]) + (p[0] - r[0]) * (y - r[1])) / d
             l3 = 1 - l1 - l2
             if min(l1, l2, l3) >= -1e-9:
                 return l1 * p[2] + l2 * q[2] + l3 * r[2]
-            # just outside: the nearest triangle within EDGE_TOL, its plane extended
-            dist = min(_seg_dist(x, y, p, q), _seg_dist(x, y, q, r), _seg_dist(x, y, r, p))
-            if dist <= best_d:
-                best, best_d = l1 * p[2] + l2 * q[2] + l3 * r[2], dist
+            # just outside: the closest point of the nearest triangle within EDGE_TOL, never its plane
+            # extended, which runs off steeply on a thin triangle (review, 12.10.2026: -10 m at 1 mm out)
+            for a, b in ((p, q), (q, r), (r, p)):
+                f, dist = _closest(x, y, a, b)
+                if dist <= best_d:
+                    best, best_d = a[2] + (b[2] - a[2]) * f, dist
         return best
+
+    @property
+    def z_range(self):
+        zs = [p[2] for t in self.triangles for p in t]
+        return min(zs), max(zs)
 
 
 def slab_surface(guid: str, d: dict) -> SlabSurface:
@@ -193,6 +209,11 @@ def mesh_surface(guid: str, d: dict, story_level: float) -> MeshSurface:
     dropped = sum(1 for s in paths for i in range(len(s) - 1) if not cdt.add_constraint(s[i], s[i + 1]))
     tris = []
     for a, b, c in cdt.triangles():
+        pa, pb, pc = pts[a], pts[b], pts[c]
+        twice_area = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0])
+        longest = max(math.dist(pa[:2], pb[:2]), math.dist(pb[:2], pc[:2]), math.dist(pc[:2], pa[:2]))
+        if abs(twice_area) <= 1e-9 * longest ** 2:      # a sliver carries no surface, only a runaway plane
+            continue
         cx = (pts[a][0] + pts[b][0] + pts[c][0]) / 3
         cy = (pts[a][1] + pts[b][1] + pts[c][1]) / 3
         if _in_ring(cx, cy, outline) and not any(_in_ring(cx, cy, h) for h in holes):
@@ -479,10 +500,6 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
         raise DrapeError(f"Draping needs {len(kept)} nodes, more than {max_nodes}; {most} of them between "
                          f"stations {s_a:.1f} and {s_b:.1f} m. Use a coarser drape_tolerance or a shorter source.")
     max_along = max((err(j, a, b) for a, b in zip(kept, kept[1:]) for j in range(a + 1, b)), default=0.0)
-    raise_by, floats = _raise_to_surface(path, [st[j] for j in kept], [z0[j] for j in kept],
-                                         [f[j] for j in kept], u_lo, u_hi, surfaces)
-    for j, r in zip(kept, raise_by):
-        z0[j] += r
     out_nodes, out_arcs, out_falls = [], [], []
     for seg in range(len(nodes) - 1):
         a, b = node_idx[seg], node_idx[seg + 1]
@@ -490,12 +507,26 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
         ang = arcs_deg[seg]
         fracs = [(st[j] - st[a]) / (st[b] - st[a]) for j in inner] + [1.0]
         for j, t0, t1 in zip(inner, fracs, fracs[1:]):
-            out_nodes.append(_on_segment(nodes[seg], nodes[seg + 1], ang, t0) + (z0[j] + lift,))
+            out_nodes.append(_on_segment(nodes[seg], nodes[seg + 1], ang, t0) + (z0[j],))
             out_falls.append(f[j])
             out_arcs.append(ang * (t1 - t0) if abs(ang) > ARC_EPS_DEG else 0.0)
-    out_nodes.append(tuple(nodes[-1][:2]) + (z0[node_idx[-1]] + lift,))
+    out_nodes.append(tuple(nodes[-1][:2]) + (z0[node_idx[-1]],))
     out_falls.append(f[node_idx[-1]])
     out_arcs.append(0.0)
+    # The part maps the paint along the marking's own nodes: a node added beside a kink has a plain
+    # normal where the source path had an interpolated mitre, so the no-sink check runs on the output
+    # path (review, 12.10.2026: a kinked parking row sank 28.5 mm when checked on the source path).
+    out_path = PlanPath(out_nodes, out_arcs, path_tol)
+    raise_by, floats = _raise_to_surface(out_path, out_path.node_s, [n[2] for n in out_nodes], out_falls,
+                                         u_lo, u_hi, surfaces)
+    out_nodes = [(x, y, z + r + lift) for (x, y, z), r in zip(out_nodes, raise_by)]
+    bounds = [s.z_range for s in surfaces.surfaces if hasattr(s, "z_range")]
+    if bounds:
+        lo, hi = min(b[0] for b in bounds) - 1.0, max(b[1] for b in bounds) + 1.0
+        bad = [n[2] - lift for n in out_nodes if not lo <= n[2] - lift <= hi]
+        if bad:
+            raise DrapeError(f"Draping gave a height of {bad[0]:.3f} m, more than 1 m outside the drape_on "
+                             f"surfaces ({lo + 1.0:.3f} to {hi - 1.0:.3f} m); nothing was written.")
     warnings = []
     max_across = max((g for _, g in floats), default=0.0)
     if max_across > tol:

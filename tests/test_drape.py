@@ -83,7 +83,7 @@ def test_mesh_point_heights_are_relative_to_the_story_and_the_level():
     assert s.height(4, 2) == pytest.approx(3.6)
     assert s.height(2, 2) == pytest.approx(3.4)
     assert s.height(5, 2) is None
-    assert s.height(4.0005, 2) == pytest.approx(3.60005, abs=1e-6)     # within 1 mm: the nearest triangle's plane
+    assert s.height(4.0005, 2) == pytest.approx(3.6, abs=1e-6)     # within 1 mm: the closest point of the edge
 
 
 def test_a_level_line_along_an_outline_edge_and_through_its_corners():
@@ -247,3 +247,54 @@ def test_the_paint_never_dips_under_a_ridge_between_cross_samples():
     low, high = _gaps(d, s, (0, 3.2))
     assert low >= -1e-6
     assert d.max_across == pytest.approx(high, abs=0.001)       # the report says how far the paint floats
+
+
+def _turned(x, y, degrees=1.0):
+    r = math.radians(degrees)
+    return 591.237 + x * math.cos(r) - y * math.sin(r), 63.418 + x * math.sin(r) + y * math.cos(r)
+
+
+def _edge_z(x):
+    return 0.02 * x + 0.1 * math.sin(x / 3)
+
+
+def _road_with_a_line_along_its_edge():
+    """A 30 by 8 m road Mesh turned 1 degree, with a level line along its outer edge, a point every metre
+    (a road built from 3D edges, its kerb line on the outline)."""
+    corners = [(0, 0, 0.0), (30, 0, _edge_z(30)), (30, 8, 0.6), (0, 8, 0.0)]
+    poly = [dict(zip("xyz", _turned(x, y) + (z,))) for x, y, z in corners]
+    line = [dict(zip("xyz", _turned(x, 0) + (_edge_z(x),))) for x in range(31)]
+    middle = [dict(zip("xyz", _turned(x, 4) + (0.02 * x + 0.05,))) for x in range(0, 31, 2)]
+    return dr.mesh_surface("m", {"level": 0.0, "polygonCoordinates": poly + [poly[0]],
+                                 "sublines": [{"coordinates": line}, {"coordinates": middle}]}, 0.0)
+
+
+@pytest.mark.parametrize("reach", [(-0.075, 0.075), (0.0, 0.15), (-0.15, 0.0)])
+def test_a_line_just_outside_a_turned_mesh_edge_drapes_to_sane_heights(reach):
+    # review, 12.10.2026: 0.5 mm outside a 1 degree turned edge the tool returned heights of 1e8 m
+    surfaces = dr.SurfaceSet([_road_with_a_line_along_its_edge()])
+    a, b = _turned(0.5, -0.0005), _turned(29.5, -0.0005)
+    d = dr.drape([(a[0], a[1], 0), (b[0], b[1], 0)], [0.0, 0.0], reach, surfaces)
+    assert all(-0.5 < n[2] < 1.0 for n in d.nodes)
+    assert all(abs(f) < 50 for f in d.falls)
+
+
+def test_a_point_just_outside_an_edge_takes_the_edges_height_not_a_far_plane():
+    # review, 12.10.2026: a level line point 10 micrometres inside the edge made a sliver whose plane gave -10 m
+    d = {"level": 0.0,
+         "polygonCoordinates": [{"x": 0, "y": 0, "z": 0.0}, {"x": 10, "y": 0, "z": 0.0},
+                                {"x": 10, "y": 10, "z": 1.0}, {"x": 0, "y": 10, "z": 1.0}],
+         "sublines": [{"coordinates": [{"x": 5, "y": 0.00001, "z": 0.3}, {"x": 5, "y": 5, "z": 0.5}]}]}
+    s = dr.mesh_surface("m", d, story_level=0.0)
+    for x in (2.5, 4.999, 5.0, 5.001, 7.5):
+        assert -0.01 < s.height(x, -0.0009) < 0.31
+
+
+def test_the_paint_never_dips_beside_a_kink_where_nodes_were_added():
+    # review, 12.10.2026: a wide row along a kinked kerb on a crest sank 28.5 mm: nodes added beside the kink
+    # change the part's own offset mapping, so the check must run on the marking's output path
+    s = dr.SurfaceSet([Plane(lambda x, y: -0.0005 * (x - 10) ** 2)])
+    d = dr.drape([(0, 0, 0), (30, 0, 0), (45, 25.98, 0)], [0.0, 0.0, 0.0], (0, 5.45), s)
+    low, high = _gaps(d, s, (0, 5.45), step=0.05)
+    assert low >= -1e-4
+    assert d.max_across == pytest.approx(high, abs=0.002)

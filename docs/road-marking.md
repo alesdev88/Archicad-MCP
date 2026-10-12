@@ -49,12 +49,16 @@ is refused.
 `drape_on` lists Meshes and Slabs; where they overlap, the highest wins.
 
 - The tool samples the surface every 0.1 m along the path and every 0.5 m across the
-  marking's reach, exactly where the part draws the paint. At each station a straight
-  cross fall follows the surface and is raised until no sample is above it. Nodes are
-  added until the marking stays within `drape_tolerance` (5 mm by default) of those lines
-  along the path. A last check on a 5 cm grid raises any stretch that would still dip
-  below the surface (on a crest between nodes, on a ridge between samples), so the paint
-  never sinks into the road. `lift` raises the whole marking.
+  marking's reach, mapped as the part maps its paint. At each station a straight cross
+  fall follows the surface and is raised until no sample is above it. Nodes are added
+  until the marking stays within `drape_tolerance` (5 mm by default) of those lines along
+  the path. A last check on a 5 cm grid, along the marking's own nodes exactly as the part
+  draws them, raises any stretch that would still dip below the surface (on a crest
+  between nodes, on a ridge between samples, beside a kink), so the paint never sinks into
+  the road. `lift` raises the whole marking.
+- Near a Mesh outline (within 1 mm) the height is the closest point of the surface, never
+  a triangle's plane carried outward; a drape whose heights would land more than 1 m
+  outside the surfaces' own range is refused before anything is written.
 - A Slab's top is exact. A Mesh is triangulated as Archicad triangulates it (its level
   lines are edges), which matched Archicad's own surface to the millimetre in the trial.
 - The report: `nodes_added_for_drape`, `max_along_deviation_mm`, `max_across_misfit_mm`
