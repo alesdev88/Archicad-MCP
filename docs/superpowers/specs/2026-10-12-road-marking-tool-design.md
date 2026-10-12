@@ -230,7 +230,8 @@ word None has no effect.
   parsing, the path from a Morph line, Polyline, Line, Arc or points, `_details`, the library part
   check, the placed element's frame, the transform to local coordinates, placement and the parameter
   write, each taking the library part name where it needs one. `swept_beam.py` imports them.
-- `src/archicad_mcp/core/drape.py`, `src/archicad_mcp/core/road_marking.py`,
+- `src/archicad_mcp/core/cdt.py` (the constrained Delaunay triangulation, on its own so drape.py
+  stays readable), `src/archicad_mcp/core/drape.py`, `src/archicad_mcp/core/road_marking.py`,
   `src/archicad_mcp/core/road_marking_presets.json`.
 - `server.py` registration; `manifest.json`; `tests/test_tool_annotations.py`;
   `scripts/build_dashboard.py` (command map: `GetDetailsOfElements`, `CreateObjects`,
