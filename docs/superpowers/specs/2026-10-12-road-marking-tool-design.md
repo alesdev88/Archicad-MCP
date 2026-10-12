@@ -1,8 +1,8 @@
 # Road Marking tool (`create_road_marking`): Design
 
 **Date:** 2026-10-12
-**Status:** Approved in brainstorming (12.10.2026). A trial run settles the open facts (see "Trial
-run") before the implementation plan is written.
+**Status:** Approved in brainstorming (12.10.2026). Trial run done the same day; its findings
+(`2026-10-12-road-marking-tool-findings.md`) are folded in below. Next: the implementation plan.
 **Repo:** this one (the tool). The library part is private: `Road Marking` in the Archicad GDL repo
 (`~/Documents/Archicad GDL`, `road_marking/`), installed in `Library/Site/Road Marking`.
 **Parent spec:** `~/Documents/Archicad GDL/docs/superpowers/specs/2026-10-07-road-marking-design.md`
@@ -45,23 +45,29 @@ Success means:
   open. Ports move when Archicad restarts: `list_instances` and the project name before every write.
 - **Slab.** `GetDetailsOfElements` gives `level`, `offsetFromTop`, `zCoordinate`, `thickness`,
   `referencePlaneLocation` (Top, CoreTop, CoreBottom, Bottom), `polygonOutline`, `polygonArcs` and
-  `holes`. MCP-Test's one Slab (story 0, `level` 0, `offsetFromTop` 0.1, CoreTop, thickness 0.3) has
-  its `Get3DBoundingBoxes` top at 0.1 and bottom at -0.2. Every field there is 0 or the same, so the
-  top's formula is settled by the trial (step 1).
+  `holes`. Its top is `zCoordinate + offsetFromTop` (`zCoordinate` absolute, the story's level plus
+  `level`): three Slabs with Top, CoreTop and CoreBottom reference planes on stories 0 and 1 agree with
+  `Get3DBoundingBoxes` (trial).
 - **Mesh.** `GetDetailsOfElements` gives `level`, `polygonCoordinates` (3D), `polygonArcs`, `holes`
-  (3D) and `sublines` (the level lines, 3D polylines). It gives no triangles. Whether point z is
-  absolute or relative to `level` and the story is settled by the trial (step 2).
-- **Archicad's own triangles** are in an IFC export: `IFCFileOperation` with `method: "save"` exists
-  since Tapir 1.2.6.
-- **Stanezice (August 2026)** draped markings on road Meshes with a constrained Delaunay
-  triangulation (level lines as breaklines) and lost points that fell exactly on Mesh outlines
-  without an edge fallback. Whether Archicad itself honours level lines as edges is settled by the
-  trial (step 3).
+  (3D) and `sublines` (the level lines, 3D polylines), outlines closed (the first point repeated). It
+  gives no triangles and no `zCoordinate`: a point's absolute z is the story's level (`GetStories`)
+  plus `level` plus its z (trial).
+- **Archicad triangulates a Mesh as a constrained Delaunay** of its outline, hole and level line
+  points with the level lines as edges: 0.0 mm from Archicad's own triangles (read from an IFC export)
+  on two test Meshes, where a plain Delaunay was 120 mm and 0.91 mm off. A level line segment that
+  crosses an earlier one is left out (no points added); near such crossings Archicad's triangles are
+  not quite Delaunay, and the tool's heights were up to 51 mm off there (trial).
+- **Stanezice (August 2026)** lost points that fell exactly on Mesh outlines without an edge
+  fallback (hence the 1 mm edge rule below).
 - **The part through the API** (parent spec, "Through the API"): lengths in metres; `segArc` items in
   radians; `s1Angle` to `s3Angle` written in degrees and read back in radians; `nodeFall` in percent;
   `A` and `aDone` return to 1 m; a preset written after a stripe value replaces it, so `markingType`
   goes first. On Archicad 29 with Tapir 1.5.10 an API write of a node array does not trigger the
-  Parameter Script's merge.
+  Parameter Script's merge. `GetGDLParametersOfElements` returns strings as text, arrays as lists,
+  the paint surface as an index and single angles in radians (trial).
+- **Placement** with `CreateObjects` and only the name and absolute coordinates sets dimensions 1 by
+  1 by 1 and `useFixSize: true`, and a marking placed from points lands on the story its z falls in
+  (trial). A Road Marking's bounding box top is 1 m above its bottom (the nominal box), not its paint.
 
 ## Arguments
 
@@ -135,9 +141,9 @@ draping, and to write only what differs from the preset.
 - **Order** (parent spec): `A = 1.0` and `aDone = 1.0`; the node arrays and grip helpers (`nodeX`
   first; to rewrite the same number of nodes, `nodeX` as 0, 1, 2 and so on, then `nodeY`, then the
   real `nodeX`); `markingType`; the values that differ from the preset; the rest. The node arrays
-  are always written; a setting equal to the marking's current value (after the preset) is not. Whether this works as one
-  `SetGDLParametersOfElements` call or needs `markingType` in a call of its own is settled by the
-  trial (step 4).
+  are always written; a setting equal to the marking's current value (after the preset) is not. All
+  of it goes in one `SetGDLParametersOfElements` call (trial: the 5333-2 bus stop kept a
+  `letterOffset` written after `markingType` in the same call).
 - **Read back.** After a write the tool reads `markingType` back and reports it as `marking_after`:
   a call that changes a value the preset sets (a 0.12 m line on a 5121) leaves the part reading
   "Custom", and the report says so instead of claiming the preset.
@@ -151,13 +157,17 @@ Pure Python, no new dependency.
 `read_surfaces(conn, guids) -> SurfaceSet`; `SurfaceSet.height(x, y)` returns the highest surface
 containing the point, or None. A batch form later builds the set once.
 
-- **Slab:** its outline and holes (arcs as chords within 1 mm) at its top height (formula from trial
-  step 1).
-- **Mesh:** triangulated by the tool from its outline points and level line points, keeping the
-  triangles whose centroid lies inside the outline and outside the holes. Plain Delaunay (Bowyer and
-  Watson) or constrained by the level lines, whichever matches Archicad's triangles in trial step 3;
-  heights per trial step 2. Heights inside a triangle are linear.
-- **Edges:** a point within 1 mm of an outline counts as inside.
+- **Slab:** its outline and holes (arcs as chords within 1 mm) at `zCoordinate + offsetFromTop`.
+- **Mesh:** a constrained Delaunay of its outline, hole and level line points (points at the same
+  plan position within 1 micrometre are one point): Delaunay by incremental insertion with Lawson
+  flips, then the outline, the holes and the level lines in that order as edges by Sloan's edge
+  flipping, with a vertex to triangle map so finding where an edge starts walks round the vertex. A
+  segment that crosses an earlier edge is left out and counted (warning). Triangles whose centroid
+  lies inside the outline and outside the holes are kept; heights inside a triangle are linear; point
+  z is the story's level (`GetStories`) plus `level` plus its z. Triangles are bucketed on a grid for
+  lookups. Measured: 0.35 s for 5000 points, 1.7 s for 20000, 5 to 7 microseconds a lookup.
+- **Edges:** a point within 1 mm of an outline counts as inside (on a Mesh, the nearest triangle's
+  plane gives its height).
 - Anything in `drape_on` that is not a Mesh or a Slab is refused.
 
 ### Sampling
@@ -168,9 +178,11 @@ containing the point, or None. A batch form later builds the set once.
 - **Where a sample lands:** the part's own mapping (parent spec, Master Script step 7): the path
   sampled as the part samples it (arcs within `path_tolerance`), offset vectors the mitres at the
   samples and linear between them, so the tool samples the surface where the paint is drawn.
-- **At each station:** a least squares line in `u` through the lateral heights gives the height
-  `z0 (s)` at `u = 0` and the cross fall `f (s)`. What the line cannot follow (a crown under a wide
-  zebra) is the across misfit at that station.
+- **At each station:** a least squares line in `u` through the lateral heights gives the cross fall
+  `f (s)`; the line is then raised until no lateral sample lies above it, which gives the height
+  `z0 (s)` at `u = 0`. The paint never sinks into the surface (a least squares line through a crown
+  lies under the ridge: 1.5 mm under it for a 15 cm line on a 3 % crown, trial). How far the paint
+  floats at most (a crown under a wide zebra) is the across misfit at that station.
 
 ### Nodes
 
@@ -202,13 +214,15 @@ containing the point, or None. A batch form later builds the set once.
 
 `dry_run`, `marking` (the preset asked for), `nodes`, `arcs`, `nodes_added_for_drape`,
 `max_deviation_mm` (the source fit), `max_along_deviation_mm` (what the nodes left, within the
-tolerance), `max_across_misfit_mm`, `steepest_cross_fall_percent`, `reach` (`u_lo`, `u_hi`),
+tolerance), `max_across_misfit_mm` (how far the paint floats above the surface at most),
+`steepest_cross_fall_percent`, `reach` (`u_lo`, `u_hi`),
 `off_surface`, `partly_off_surface`, `origin`, `story`, `warnings`. A dry run adds `gdl_parameters`
 (in write order); a write adds `element`, `created` or `updated`, and `marking_after`.
 
 Warnings, besides those above: the part is not loaded (a dry run warns, a write is refused); the
-across misfit exceeds `drape_tolerance` (with the stations); a `bays` value with layout None or a
-`lettering` value with word None has no effect.
+across misfit exceeds `drape_tolerance` (with the stations); a Mesh's level line segments were left
+out where they cross (with the count); a `bays` value with layout None or a `lettering` value with
+word None has no effect.
 
 ## Files
 
@@ -238,8 +252,12 @@ across misfit exceeds `drape_tolerance` (with the stations); a `bays` value with
 
 - `tests/test_drape.py`: Slab heights inside, in a hole, outside and on the edge; Mesh triangulation
   exact at points and linear inside triangles; the tool's heights against Archicad's grid heights
-  from the trial fixture; the highest surface wins; no nodes added on a plane, nodes where the
-  surface bends; a crown gives across misfit without extra nodes; arcs split in proportion; one and
+  (`tests/fixtures/road_marking/`: `surfaces_mcp_test.json` with the test Slabs' and Meshes' details
+  and the stories, `archicad_heights_crown.json` and `archicad_heights_road_edges.json` within 1
+  micrometre, `archicad_heights_crossing_lines.json` with the three dropped segments); both Slab tops
+  against their bounding boxes; a level line through an outline point; the highest surface wins; no nodes added on a plane, nodes where the
+  surface bends; a crown gives across misfit without extra nodes and keeps the paint on the ridge;
+  arcs split in proportion; one and
   no lateral samples on the surface; off and partly off stretches; lift added; the 500 node cap.
 - `tests/test_road_marking_tool.py` with the fake connection (as `test_swept_beam_tool.py`): the dry
   run report and write order; preset, stripe, bay and lettering validation and ranges; the reach of
@@ -249,10 +267,11 @@ across misfit exceeds `drape_tolerance` (with the stations); a `bays` value with
 - `tests/test_road_marking_presets.py`: the JSON's shape, every preset value inside the part's ranges.
 - `tests/test_swept_beam_tool.py` and `tests/test_swept_path.py` pass unchanged after the move.
 
-## Trial run (before the plan)
+## Trial run (done 12.10.2026)
 
-Throwaway code in the scratchpad; live writes only in MCP-Test (port and project name checked before
-each write), test elements at x 560 to 620, clear of the markings at x 520 to 550.
+Results, test element GUIDs and the trial markings: `2026-10-12-road-marking-tool-findings.md`. The
+steps as approved (the test elements ended up at x 560 to 620, y 40 to 68 on story 1: the Road
+Markings on story 0 span x 520 to 732):
 
 1. **Slab top.** A test Slab on a raised story with non-zero `level` and offset and reference plane
    Top, and one with CoreBottom: `GetDetailsOfElements` against `Get3DBoundingBoxes` gives the top's
