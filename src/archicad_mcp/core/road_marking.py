@@ -14,9 +14,12 @@ ends.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
+from archicad_mcp.core import drape as dr
 from archicad_mcp.core import placed_path as pp
+from archicad_mcp.core import swept_path as sp
 
 LIBRARY_PART = "Road Marking"
 CUSTOM = "Custom"
@@ -176,3 +179,173 @@ def no_effect(p: dict, bays, lettering) -> list[str]:
     if p["letterText"] == "None" and any(k != "text" for k in (lettering or {})):
         out.append("The lettering values have no effect while the word is None.")
     return out
+
+
+# ---------------------------------------------------------------- the tool
+
+NOT_LOADED = (f"'{LIBRARY_PART}' is not loaded in this project. Load the Road Marking library part "
+              "(Library/Site/Road Marking in the office GDL library) and reload libraries.")
+
+
+def create_road_marking(conn, source_guid=None, points=None, start_height=None, slope_percent=None,
+                        marking=None, stripes=None, bays=None, lettering=None, flip_sides=None,
+                        pattern_align=None, pattern_shift=None, whole_dashes=None, thickness=None,
+                        paint_surface=None, drape_on=None, lift=0.0, drape_tolerance=0.005,
+                        path_tolerance=0.002, update_guid=None, dry_run=True) -> dict:
+    """Values left as None take the part's defaults on a new marking and keep the marking's
+    own on an update; a preset replaces what it sets. Offsets, bays and the word lie to the
+    right looking from the first point to the last."""
+    try:
+        given = {name: pp.from_json_text(value, name, kind) for name, value, kind in (
+            ("points", points, list), ("stripes", stripes, dict), ("bays", bays, dict),
+            ("lettering", lettering, dict), ("drape_on", drape_on, list))}
+        flat = {"flipSides": flip_sides, "patternAlign": pattern_align, "patternShift": pattern_shift,
+                "wholeDashes": whole_dashes, "thickness": thickness}
+        return _create(conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface,
+                       lift, drape_tolerance, path_tolerance, update_guid, dry_run)
+    except sp.PathError as exc:
+        return {"error": str(exc).replace("Swept Beam", LIBRARY_PART)}
+    except (pp.PlacedPathError, dr.DrapeError) as exc:
+        return {"error": str(exc)}
+
+
+def _create(conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface, lift,
+            drape_tolerance, path_tolerance, update_guid, dry_run) -> dict:
+    points, drape_on = given["points"], given["drape_on"]
+    own_path = bool(update_guid and drape_on and source_guid is None and points is None)
+    if not own_path and (source_guid is None) == (points is None):
+        raise RoadMarkingError("Give exactly one of source_guid or points (an update with drape_on may give "
+                               "neither: it drapes the marking's own path).")
+    if path_tolerance <= 0 or drape_tolerance <= 0:
+        raise RoadMarkingError("path_tolerance and drape_tolerance must be positive lengths in metres.")
+    warnings: list[str] = []
+    frame = pp.existing_frame(conn, update_guid, LIBRARY_PART) if update_guid else None
+    current = read_parameters(conn, update_guid) if update_guid else dict(TABLE["defaults"])
+    if paint_surface is not None:
+        flat["paintSurface"] = _surface_index(conn, paint_surface)
+    want, state = resolve(current, marking, given["stripes"], given["bays"], given["lettering"], flat)
+    warnings += no_effect(want, given["bays"], given["lettering"])
+    u_lo, u_hi = reach(want)
+    path, floor_index, flat_source = _path(conn, source_guid, points, own_path, current, frame, path_tolerance)
+    nodes, arcs, falls = path.nodes, path.arcs, [0.0] * len(path.nodes)
+    drape_report = {"nodes_added_for_drape": 0, "max_along_deviation_mm": 0.0, "max_across_misfit_mm": 0.0,
+                    "off_surface": [], "partly_off_surface": []}
+    if drape_on:
+        d = dr.drape(nodes, arcs, (u_lo, u_hi), dr.read_surfaces(conn, drape_on), tol=drape_tolerance,
+                     lift=float(lift), path_tol=path_tolerance)
+        nodes, arcs, falls = d.nodes, d.arcs, d.falls
+        warnings += d.warnings
+        if not flat_source and not own_path:
+            warnings.append("Draping replaces the source's own heights.")
+        if start_height is not None or slope_percent is not None:
+            warnings.append("start_height and slope_percent do not apply to a draped marking.")
+        drape_report = {"nodes_added_for_drape": d.added, "max_along_deviation_mm": round(d.max_along * 1000, 2),
+                        "max_across_misfit_mm": round(d.max_across * 1000, 2), "off_surface": d.off_surface,
+                        "partly_off_surface": d.partly_off_surface}
+    elif flat_source:
+        nodes = sp.apply_slope(nodes, arcs, nodes[0][2] + (start_height or 0.0), slope_percent or 0.0)
+    elif start_height is not None or slope_percent is not None:
+        warnings.append("start_height and slope_percent apply to flat sources only; this source keeps its own "
+                        "heights.")
+    warnings += overhang(want, dr.PlanPath(nodes, arcs, path_tolerance).length)
+    loaded = pp.library_part_loaded(conn, LIBRARY_PART)
+    if not loaded:
+        warnings.append(NOT_LOADED)
+    origin, angle = frame if frame else (nodes[0], 0.0)
+    same_count = bool(update_guid) and len(nodes) == len(current["nodeX"])
+    params = node_params(pp.to_local(nodes, origin, angle), arcs, falls, path_tolerance, y_first=same_count)
+    if want["markingType"] != current["markingType"]:
+        params.append({"name": "markingType", "value": want["markingType"]})
+    params += [{"name": k, "value": want[k]} for k in TABLE["settings"] if not _same(want[k], state[k])]
+    report = {"dry_run": dry_run, "marking": want["markingType"], "nodes": len(nodes),
+              "arcs": sum(1 for a in arcs[:-1] if abs(a) > sp.ARC_EPS_DEG), **drape_report,
+              "max_deviation_mm": round(path.max_deviation * 1000, 2),
+              "steepest_cross_fall_percent": round(max(abs(f) for f in falls), 2),
+              "reach": {"u_lo": round(u_lo, 3), "u_hi": round(u_hi, 3)},
+              "origin": {"x": origin[0], "y": origin[1], "z": origin[2]}, "story": floor_index,
+              "warnings": warnings}
+    if dry_run:
+        report["gdl_parameters"] = params
+        return report
+    if not loaded:
+        raise RoadMarkingError(NOT_LOADED)
+    guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
+    if same_count:
+        # the same number of nodes: nodeX as 0, 1, 2 first, then nodeY before the real nodeX, so the
+        # part's node merge never compares a new x with an old y (parent spec, "Through the API")
+        pp.write_parameters(conn, guid, [{"name": "nodeX", "value": [float(i) for i in range(len(nodes))]}],
+                            LIBRARY_PART)
+    pp.write_parameters(conn, guid, params, LIBRARY_PART)
+    report["element"] = guid
+    report["updated" if update_guid else "created"] = True
+    report["marking_after"] = read_parameters(conn, guid)["markingType"]
+    return report
+
+
+def _path(conn, source_guid, points, own_path, current, frame, tol):
+    """The path in absolute coordinates, the source's story, and whether the source is flat."""
+    if own_path:
+        (ox, oy, oz), angle = frame
+        c, s = math.cos(angle), math.sin(angle)
+        nodes = [(ox + x * c - y * s, oy + x * s + y * c, oz + z)
+                 for x, y, z in zip(current["nodeX"], current["nodeY"], current["nodeZ"])]
+        return sp.SweptPath(nodes, [math.degrees(a) for a in current["segArc"]][:len(nodes)]), None, False
+    if source_guid is not None:
+        return pp.path_from_element(conn, source_guid, tol, LIBRARY_PART)
+    return pp.path_from_points(points, tol), None, False
+
+
+def read_parameters(conn, guid: str) -> dict:
+    """A placed marking's parameters by name, single angles in degrees (the API reads them
+    back in radians)."""
+    res = conn.tapir("GetGDLParametersOfElements", {"elements": [{"elementId": {"guid": guid}}]})
+    entry = (res.get("gdlParametersOfElements") or [{}])[0]
+    params = entry.get("parameters")
+    if not params:
+        raise RoadMarkingError(f"Could not read the parameters of element {guid}: {entry.get('error', entry)}")
+    values = {p["name"]: p["value"] for p in params}
+    for k in (1, 2, 3):
+        values[f"s{k}Angle"] = math.degrees(float(values[f"s{k}Angle"]))
+    return values
+
+
+def _surface_index(conn, value) -> int:
+    if isinstance(value, bool):
+        raise RoadMarkingError("paint_surface must be a Surface attribute name or index.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    if isinstance(value, str):
+        return pp.attribute_index(conn, "Surface", value)
+    raise RoadMarkingError("paint_surface must be a Surface attribute name or index.")
+
+
+def _same(a, b) -> bool:
+    if isinstance(a, float) or isinstance(b, float):
+        return a is not None and b is not None and abs(float(a) - float(b)) < 1e-9
+    return a == b
+
+
+def node_params(local, arcs, falls, tol, y_first=False) -> list[dict]:
+    """The node arrays and grip helpers in write order: A and aDone at 1 m first (the part
+    returns A to 1 m), then nodeX so it sets the row count (nodeY first after a same count
+    rewrite has written nodeX as 0, 1, 2), the arc angles in radians, every grip helper
+    equal to its marker so the Parameter Script reads no pending drag."""
+    n = len(local)
+
+    def r6(values):
+        return [round(v, 6) + 0.0 for v in values]
+
+    xy = [{"name": "nodeX", "value": r6(p[0] for p in local)},
+          {"name": "nodeY", "value": r6(p[1] for p in local)}]
+    return ([{"name": "A", "value": 1.0}, {"name": "aDone", "value": 1.0}]
+            + (xy[::-1] if y_first else xy)
+            + [{"name": "nodeZ", "value": r6(p[2] for p in local)},
+               {"name": "nodeFall", "value": r6(falls)},
+               {"name": "segArc", "value": [round(math.radians(a), 9) + 0.0 for a in arcs]},
+               {"name": "segSag", "value": [0.0] * n}, {"name": "sagDone", "value": [0.0] * n},
+               {"name": "insL", "value": [0.0] * n}, {"name": "insDone", "value": [0.0] * n},
+               {"name": "extStart", "value": 0.0}, {"name": "extStartDone", "value": 0.0},
+               {"name": "extEnd", "value": 0.0}, {"name": "extEndDone", "value": 0.0},
+               {"name": "pathTolerance", "value": tol}])
