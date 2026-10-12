@@ -17,6 +17,8 @@ from archicad_mcp.core.cdt import CDT
 EDGE_TOL = 0.001      # a point this close to an outline counts as inside
 CHORD_TOL = 0.001     # an outline arc becomes chords within this sagitta
 ARC_EPS_DEG = 0.01    # smaller arc angles are straight (the part's rule)
+CHECK_STEP = 0.05     # the no-sink check grid, along and across the marking
+MAX_CHECKS = 250000   # on a very large marking the check grid coarsens to stay within this many points
 
 
 class DrapeError(ValueError):
@@ -373,15 +375,43 @@ def _on_segment(p1, p2, ang, t):
     return (cx + vx * math.cos(th) - vy * math.sin(th), cy + vx * math.sin(th) + vy * math.cos(th))
 
 
+def _raise_to_surface(path, ss, zs, fs, u_lo, u_hi, surfaces):
+    """Check the marking (heights zs and cross falls fs at stations ss, linear between) against
+    the surface on a CHECK_STEP grid, and raise both nodes of each segment by its deepest dip, so
+    the paint is nowhere below the surface: neither between nodes on a crest nor between the fit's
+    cross samples on a ridge (live check, 12.10.2026). Returns the raise per node and, per checked
+    station, how far the paint floats above the surface after the raise."""
+    grid = max(CHECK_STEP, math.sqrt(max(u_hi - u_lo, CHECK_STEP) * path.length / MAX_CHECKS))
+    nu = max(1, math.ceil((u_hi - u_lo) / grid - 1e-9))
+    cross = [u_lo + (u_hi - u_lo) * k / nu for k in range(nu + 1)]
+    dips, rows = [], []
+    for a in range(len(ss) - 1):
+        m = max(1, math.ceil((ss[a + 1] - ss[a]) / grid - 1e-9))
+        dip = 0.0
+        for i in range(m + 1):
+            t = i / m
+            s = ss[a] + (ss[a + 1] - ss[a]) * t
+            z = zs[a] + (zs[a + 1] - zs[a]) * t
+            fall = fs[a] + (fs[a + 1] - fs[a]) * t
+            gaps = [z + u * fall / 100 - h for u in cross if (h := surfaces.height(*path.xy(s, u))) is not None]
+            if gaps:
+                dip = max(dip, -min(gaps))
+                rows.append((a, t, s, max(gaps)))
+        dips.append(dip)
+    lift = [max(dips[a - 1] if a > 0 else 0.0, dips[a] if a < len(dips) else 0.0) for a in range(len(ss))]
+    return lift, [(s, g + lift[a] + (lift[a + 1] - lift[a]) * t) for a, t, s, g in rows]
+
+
 def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
           step=0.1, lateral_step=0.5, max_nodes=500) -> Drape:
     """Heights and cross falls for the marking's nodes, and the nodes the surface needs.
 
     Every `step` along the path the surface is sampled at `lateral_step` across the
     marking's reach; a least squares line gives the cross fall and is raised until no
-    sample lies above it, so the paint never sinks. Douglas and Peucker on each segment
-    adds a node where the marking's linear heights would leave those lines by more than
-    `tol`."""
+    sample lies above it. Douglas and Peucker on each segment adds a node where the
+    marking's linear heights would leave those lines by more than `tol`. A last check on a
+    fine grid raises any segment that would still dip below the surface, so the paint
+    never sinks."""
     path = PlanPath(nodes, arcs_deg, path_tol)
     us = _lateral(reach, lateral_step)
     st, node_idx = [], []
@@ -393,7 +423,7 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
             node_idx.append(0)
         st += [s0 + (s1 - s0) * k / m for k in range(1, m + 1)]
         node_idx.append(len(st) - 1)
-    z0, f, res, valid = [], [], [], []
+    z0, f, valid = [], [], []
     for s in st:
         ok = [(u, h) for u in us if (h := surfaces.height(*path.xy(s, u))) is not None]
         valid.append(len(ok))
@@ -406,11 +436,9 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
             a += max(h - (a + b * u) for u, h in ok)      # never under the surface
             z0.append(a)
             f.append(b * 100)
-            res.append(max(a + b * u - h for u, h in ok))
         else:
             z0.append(ok[0] if ok else None)              # one sample: resolved below
             f.append(None)
-            res.append(0.0)
     if not any(valid):
         raise DrapeError("No surface in drape_on lies under the marking anywhere along its path.")
     two = [j for j, n in enumerate(valid) if n >= 2]
@@ -451,6 +479,10 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
         raise DrapeError(f"Draping needs {len(kept)} nodes, more than {max_nodes}; {most} of them between "
                          f"stations {s_a:.1f} and {s_b:.1f} m. Use a coarser drape_tolerance or a shorter source.")
     max_along = max((err(j, a, b) for a, b in zip(kept, kept[1:]) for j in range(a + 1, b)), default=0.0)
+    raise_by, floats = _raise_to_surface(path, [st[j] for j in kept], [z0[j] for j in kept],
+                                         [f[j] for j in kept], u_lo, u_hi, surfaces)
+    for j, r in zip(kept, raise_by):
+        z0[j] += r
     out_nodes, out_arcs, out_falls = [], [], []
     for seg in range(len(nodes) - 1):
         a, b = node_idx[seg], node_idx[seg + 1]
@@ -465,9 +497,9 @@ def drape(nodes, arcs_deg, reach, surfaces, tol=0.005, lift=0.0, path_tol=0.002,
     out_falls.append(f[node_idx[-1]])
     out_arcs.append(0.0)
     warnings = []
-    max_across = max(res)
+    max_across = max((g for _, g in floats), default=0.0)
     if max_across > tol:
-        bad = [s for s, r in zip(st, res) if r > tol]
+        bad = [s for s, g in floats if g > tol]
         warnings.append(f"The surface is not flat across the marking: the paint floats up to "
                         f"{max_across * 1000:.0f} mm above it between stations {bad[0]:.1f} and {bad[-1]:.1f} m.")
     dropped = sum(getattr(s, "dropped_lines", 0) for s in surfaces.surfaces)

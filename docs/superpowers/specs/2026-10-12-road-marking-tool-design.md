@@ -192,6 +192,13 @@ containing the point, or None. A batch form later builds the set once.
   compares with the
   fitted line, not the raw surface, so a crown does not add a node every 0.1 m.
 - A node added on an arc splits the arc in proportion to plan length.
+- **No sinking** (live check, 12.10.2026): the station lines touch the surface only at the cross
+  samples, and the straight pieces between nodes may stray below them by up to `drape_tolerance`;
+  in MCP-Test the paint dipped up to 7.4 mm under a warped Mesh, burying 3 mm paint. So the
+  marking is checked against the surface on a 5 cm grid along and across (coarser only on a marking
+  that would need more than 250000 points), and both nodes of each segment are raised by its deepest
+  dip. The paint is then nowhere below the surface but for the grid's resolution (under 1 mm in the
+  live check).
 - `nodeZ` is `z0 + lift`, `nodeFall` is `f` in percent.
 - More than 500 nodes is refused, naming the stretch that needs them (a coarser `drape_tolerance` or
   a shorter source).
@@ -213,8 +220,9 @@ containing the point, or None. A batch form later builds the set once.
 ## Report
 
 `dry_run`, `marking` (the preset asked for), `nodes`, `arcs`, `nodes_added_for_drape`,
-`max_deviation_mm` (the source fit), `max_along_deviation_mm` (what the nodes left, within the
-tolerance), `max_across_misfit_mm` (how far the paint floats above the surface at most),
+`max_deviation_mm` (the source fit), `max_along_deviation_mm` (what the nodes left before the
+no-sink raise, within the tolerance), `max_across_misfit_mm` (how far the paint floats above the
+surface at most, on the check grid after the raise),
 `steepest_cross_fall_percent`, `reach` (`u_lo`, `u_hi`),
 `off_surface`, `partly_off_surface`, `origin`, `story`, `warnings`. A dry run adds `gdl_parameters`
 (in write order); a write adds `element`, `created` or `updated`, and `marking_after`.

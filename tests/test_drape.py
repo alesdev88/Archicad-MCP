@@ -212,3 +212,38 @@ def test_the_crossing_level_lines_warning_reaches_the_report():
     d = dr.drape([(591, 14, 0), (619, 14, 0)], [0.0, 0.0], (-0.075, 0.075),
                  dr.SurfaceSet([_mesh("mesh_crossing_lines")]))
     assert any("level line segments cross" in w for w in d.warnings)
+
+
+def _gaps(d, surface, reach, step=0.01):
+    """The paint's lowest and highest point against the surface on a fine grid (negative: under it)."""
+    path = dr.PlanPath(d.nodes, d.arcs, 0.002)
+    ns, low, high = path.node_s, float("inf"), float("-inf")
+    for i in range(round(path.length / step) + 1):
+        s = min(i * step, path.length)
+        k = min(max(j for j in range(len(ns) - 1) if ns[j] <= s + 1e-12), len(ns) - 2)
+        t = (s - ns[k]) / (ns[k + 1] - ns[k])
+        z = d.nodes[k][2] + (d.nodes[k + 1][2] - d.nodes[k][2]) * t
+        f = d.falls[k] + (d.falls[k + 1] - d.falls[k]) * t
+        for j in range(round((reach[1] - reach[0]) / step) + 1):
+            u = reach[0] + j * step
+            h = surface.height(*path.xy(s, u))
+            if h is not None:
+                low, high = min(low, z + u * f / 100 - h), max(high, z + u * f / 100 - h)
+    return low, high
+
+
+def test_the_paint_never_dips_under_a_crest_between_nodes():
+    # a crest of 1000 m radius along the path: straight pieces between nodes would cut under it (live check, 12.10.2026)
+    s = dr.SurfaceSet([Plane(lambda x, y: -0.0005 * (x - 10) ** 2)])
+    d = dr.drape([(0, 0, 0), (20, 0, 0)], [0.0, 0.0], (-0.075, 0.075), s)
+    assert d.added > 0
+    assert _gaps(d, s, (-0.075, 0.075))[0] >= -1e-6
+
+
+def test_the_paint_never_dips_under_a_ridge_between_cross_samples():
+    # a ridge 0.2 m right of the path, between the cross samples at 0 and 0.46 m (looking along +x, right is -y)
+    s = dr.SurfaceSet([Plane(lambda x, y: 1 - 0.03 * abs(y + 0.2))])
+    d = dr.drape([(0, 0, 0), (10, 0, 0)], [0.0, 0.0], (0, 3.2), s)
+    low, high = _gaps(d, s, (0, 3.2))
+    assert low >= -1e-6
+    assert d.max_across == pytest.approx(high, abs=0.001)       # the report says how far the paint floats

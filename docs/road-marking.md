@@ -50,14 +50,16 @@ is refused.
 
 - The tool samples the surface every 0.1 m along the path and every 0.5 m across the
   marking's reach, exactly where the part draws the paint. At each station a straight
-  cross fall follows the surface and is raised until no sample is above it, so the paint
-  never sinks into the road. Nodes are added until the marking stays within
-  `drape_tolerance` (5 mm by default) of those lines along the path; `lift` raises it.
+  cross fall follows the surface and is raised until no sample is above it. Nodes are
+  added until the marking stays within `drape_tolerance` (5 mm by default) of those lines
+  along the path. A last check on a 5 cm grid raises any stretch that would still dip
+  below the surface (on a crest between nodes, on a ridge between samples), so the paint
+  never sinks into the road. `lift` raises the whole marking.
 - A Slab's top is exact. A Mesh is triangulated as Archicad triangulates it (its level
   lines are edges), which matched Archicad's own surface to the millimetre in the trial.
 - The report: `nodes_added_for_drape`, `max_along_deviation_mm`, `max_across_misfit_mm`
-  (how far the paint floats above a surface that is not flat across the marking, a crown
-  under a wide zebra), `steepest_cross_fall_percent`, `reach`, `off_surface` and
+  (how far the paint floats above the surface at most: a crown or a bump under a wide
+  marking, a word beside a lane line), `steepest_cross_fall_percent`, `reach`, `off_surface` and
   `partly_off_surface` (stretches by station).
 
 Limits:
@@ -65,8 +67,11 @@ Limits:
 - Where a Mesh's level lines cross each other, Archicad leaves the later segments out;
   the tool does the same and warns, because heights near the crossing can differ from
   Archicad's surface (up to 51 mm in the trial).
-- On a regular grid Mesh every cell's diagonal is a free choice, and whether Archicad
-  picks the same diagonals as the tool has not been checked yet.
+- On a regular grid Mesh every cell's diagonal is a free choice, and Archicad picks other
+  diagonals than the tool in some cells: heights there can differ by up to half the
+  cell's twist (its corner heights z1 + z3 - z2 - z4), 25 mm on the 1 m cells of the
+  live check's saddle (5 cm a metre squared). Archicad's choice showed no rule the tool
+  could copy.
 - A bay row or word reaching past the path's ends is drawn there by the part but not
   draped; a warning says how far.
 - More than 500 nodes is refused: use a coarser `drape_tolerance` or a shorter source.
