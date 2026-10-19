@@ -314,3 +314,9 @@ def test_plan_without_tapir_leaves_editability_to_archicad():
     planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert len(planned) == 2 and skipped == []
     assert not any(c == "FilterElements" for c, _ in core.calls)
+
+
+def test_group_failures_takes_a_detail_key():
+    failed = [{"guid": "A", "command": "ModifyWalls", "code": 1, "message": "m"}]
+    assert group_failures(failed, detail_key="command")[0]["sample"] == \
+        [{"guid": "A", "command": "ModifyWalls"}]

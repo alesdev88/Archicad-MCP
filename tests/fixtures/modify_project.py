@@ -20,6 +20,17 @@ from tests.fixtures.modify_elements import all_details, layers_answer, load
 
 BAD_ID = -2130313115
 
+# The top-level array of each Modify command, as the bundled definitions name it.
+LIST_KEYS = {
+    "ModifyWalls": "wallsWithDetails", "ModifyBeams": "beamsWithDetails",
+    "ModifySlabs": "slabsWithDetails", "ModifyColumns": "columnsWithDetails",
+    "ModifyWindows": "windowsWithDetails", "ModifyDoors": "doorsWithDetails",
+    "ModifyMorphs": "morphsWithDetails", "ModifyRoofs": "roofsWithDetails",
+    "ModifyMeshes": "meshesData", "ModifyObjects": "objectsWithDetails",
+    "ModifyLamps": "lampsWithDetails", "ModifyTexts": "textsWithDetails",
+    "ModifyLabels": "labelsWithDetails",
+}
+
 
 class ModifyProject:
     def __init__(self, window: str = "FloorPlan", version: str = "1.7.1",
@@ -38,6 +49,13 @@ class ModifyProject:
         self.suspend = False
         self.suspend_history: list[bool] = []
         self.missing_commands: set[str] = set()
+        # Write behaviour.
+        self.ignore_draw: set[str] = set()          # draw order steps that do nothing
+        self.fail_setdetails: dict[str, dict] = {}  # GUID -> error
+        self.fail: dict[tuple[str, str], dict] = {}  # (command, GUID) -> error
+        self.partial: set[str] = set()              # applied, then answered failure
+        self.raise_on: set[str] = set()             # commands that raise
+        self.mate_changes: dict[str, dict] = {}     # group mate -> entry keys a Modify sets
         self.stories = load("stories.json")
         self.attributes: dict[str, list[dict]] = {
             "Composite": [
@@ -167,8 +185,105 @@ class ModifyProject:
         self.core = FakeCore(official=official, tapir=tapir)
         return ArchicadConnection(19723, core=self.core)
 
+    # ---------- write handlers ----------
+
+    def _raise_if(self, command: str) -> None:
+        if command in self.raise_on:
+            raise TapirCommandError(message=f"{command} timed out", code=None)
+
+    def _level(self, index) -> float:
+        return {s["index"]: float(s["level"]) for s in self.stories["stories"]}.get(index, 0.0)
+
+    def _shift_absolute(self, entry: dict, dz: float) -> None:
+        details = entry.get("details", {})
+        if "zCoordinate" in details:
+            details["zCoordinate"] += dz
+        origin = details.get("origin")
+        if isinstance(origin, dict) and "z" in origin:
+            origin["z"] += dz
+
+    def set_details(self, p):
+        self._raise_if("SetDetailsOfElements")
+        items = p["elementsWithDetails"]
+
+        def needs_host(item):
+            # Tapir's pre-scan (ElementCommands.cpp): doors, windows and
+            # skylights without a draw order of 1 to 7 run first.
+            entry = self.elements.get(item["elementId"]["guid"], {})
+            order = item["details"].get("drawIndex", -1)
+            return entry.get("type") in ("Door", "Window", "Skylight") and not 0 < order <= 7
+
+        ordered = [i for i in items if needs_host(i)] + [i for i in items if not needs_host(i)]
+        results = []
+        for item in ordered:
+            guid = item["elementId"]["guid"]
+            if guid in self.fail_setdetails:
+                results.append({"success": False, "error": self.fail_setdetails[guid]})
+                continue
+            entry, details = self.elements[guid], item["details"]
+            if "floorIndex" in details:
+                # Keeps the height above the story, so it moves with the story.
+                shift = self._level(details["floorIndex"]) - self._level(entry["floorIndex"])
+                entry["floorIndex"] = details["floorIndex"]
+                self._shift_absolute(entry, shift)
+            if "layerIndex" in details:
+                entry["layerIndex"] = details["layerIndex"]
+            if "drawIndex" in details and guid not in self.ignore_draw:
+                entry["drawIndex"] = details["drawIndex"] or entry["drawIndex"]
+            results.append({"success": True})
+        return {"executionResults": results}
+
+    # Where a written field shows in the details, where the name differs.
+    _WRITE_KEYS = {("ModifyWalls", "thickness"): "begThickness",
+                   ("ModifyObjects", "coordinates"): "origin",
+                   ("ModifyLamps", "coordinates"): "origin"}
+
+    def _apply(self, command: str, guid: str, fields: dict) -> None:
+        details = self.elements[guid]["details"]
+        for name, value in fields.items():
+            details[self._WRITE_KEYS.get((command, name), name)] = copy.deepcopy(value)
+        group = self.groups.get(guid)
+        for mate, patch in self.mate_changes.items():
+            if mate != guid and self.groups.get(mate) == group:
+                self.elements[mate].update(copy.deepcopy(patch))
+
+    def modify(self, command: str, list_key: str):
+        def handler(p):
+            self._raise_if(command)
+            results = []
+            for item in p[list_key]:
+                guid = item["elementId"]["guid"]
+                fields = item.get("meshData") if "meshData" in item else \
+                    {k: v for k, v in item.items() if k != "elementId"}
+                if (command, guid) in self.fail:
+                    results.append({"success": False, "error": self.fail[(command, guid)]})
+                    continue
+                self._apply(command, guid, fields)
+                if guid in self.partial:
+                    results.append({"success": False,
+                                    "error": {"code": 2, "message": "second step failed"}})
+                else:
+                    results.append({"success": True})
+            return {"executionResults": results}
+        return handler
+
+    def move(self, p):
+        self._raise_if("MoveElements")
+        for item in p["elementsWithMoveVectors"]:
+            self._shift_absolute(self.elements[item["elementId"]["guid"]],
+                                 item["moveVector"]["z"])
+        return {"executionResults": [{"success": True} for _ in p["elementsWithMoveVectors"]]}
+
+    def set_suspend(self, p):
+        self.suspend = p["suspendGroups"]
+        self.suspend_history.append(self.suspend)
+        return {"executionResult": {"success": True}}
+
     def _write_handlers(self) -> dict:
-        return {}
+        handlers = {"SetDetailsOfElements": self.set_details, "MoveElements": self.move,
+                    "SetSuspendGroupsMode": self.set_suspend}
+        for command, list_key in LIST_KEYS.items():
+            handlers[command] = self.modify(command, list_key)
+        return handlers
 
 
-__all__ = ["ModifyProject", "TapirCommandError"]

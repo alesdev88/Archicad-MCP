@@ -454,4 +454,5 @@ def modify_elements(conn: ArchicadConnection, changes, dry_run: bool = True) -> 
         return plan
     if dry_run:
         return report_dry_run(plan)
-    return {"error": "not implemented"}
+    from archicad_mcp.core.modify_commit import commit  # imports this module
+    return commit(conn, plan)
