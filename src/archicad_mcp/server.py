@@ -689,6 +689,39 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _attributes.list_attributes(_conn(port), attribute_type, details, names,
                                            limit, offset)
 
+    from archicad_mcp.core import attribute_edit as _attribute_edit
+
+    @mcp.tool(description=(
+        "Create, modify and delete attributes (layers, layer combinations, lines, "
+        "fills, zone categories, pen tables, profiles, building materials, composites, "
+        "surfaces) and set attribute property values (Tapir). DRY-RUN BY DEFAULT; pass "
+        "dry_run=false to commit. Each change has one action key whose value is the "
+        "type: {\"create\": \"Layer\", \"name\": \"X\", <fields>} makes a new one and "
+        "NEVER overwrites (an existing name is skipped, with what would change and the "
+        "modify to send instead); {\"modify\": \"Composite\", \"attribute\": \"<name or "
+        "GUID>\", <fields>} changes an existing one (name renames; fields not given keep "
+        "their value, including what Tapir's own overwrite would drop: a composite's "
+        "useWith, a building material's texts); {\"modify\": ..., \"properties\": "
+        "{\"Group/Name\": \"value\"}} sets property values; {\"delete\": \"Fill\", "
+        "\"attribute\": ...} deletes. Fields use Tapir's names and units (metres, "
+        "radians, pen numbers); a field holding another attribute (buildingMaterialId, "
+        "lineTypeId, fillId, cutFillIndex, a layer combination's layers[].attributeId) "
+        "takes its name. changes=[] lists every type's fields; list_attributes"
+        "(details=true) shows current values in the same form. The dry run shows "
+        "current -> new and skips with the reason anything Archicad or Tapir would "
+        "refuse or silently get wrong: misspelt enums, unknown references, Archicad's "
+        "own index 1 attributes, a layer delete while elements are on the layer (it "
+        "would delete them) or without the floor plan active. In Teamwork the "
+        "attribute type's set must be reserved (reserve_elements object_sets). "
+        "Attribute writes cannot be undone. A commit returns applied (read back), "
+        "not_applied, failed (grouped) and stopped."),
+              **_tool_meta("Edit attributes", read_only=False, destructive=True))
+    @_guarded
+    def edit_attributes(changes: list[dict], dry_run: bool = True,
+                        port: int | None = None) -> dict:
+        return _attribute_edit.edit_attributes(_tapir_conn(port, "edit_attributes"),
+                                               changes, dry_run)
+
     @mcp.tool(description="List the issues in the open project, with their ids "
                           "(requires the Tapir add-on).",
               **_tool_meta("List issues", read_only=True, destructive=False))

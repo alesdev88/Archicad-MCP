@@ -175,3 +175,175 @@ class AttributeStore:
         table = {"GetAttributesByType": self.get_by_type}
         table.update({c: self.getter(c) for c in GET_COMMANDS})
         return table
+
+
+# ---------- writes, the way Tapir 1.7.1's AttributeCommands.cpp does them ----------
+
+CREATE_COMMANDS = {
+    "CreateLayers": ("Layer", "layerDataArray"),
+    "CreateLayerCombinations": ("LayerCombination", "layerCombinationDataArray"),
+    "CreateLines": ("Line", "lineDataArray"),
+    "CreateFills": ("Fill", "fillDataArray"),
+    "CreateZoneCategories": ("ZoneCategory", "zoneCategoryDataArray"),
+    "CreatePenTables": ("PenTable", "penTableDataArray"),
+    "CreateProfiles": ("Profile", "profileDataArray"),
+    "CreateBuildingMaterials": ("BuildingMaterial", "buildingMaterialDataArray"),
+    "CreateComposites": ("Composite", "compositeDataArray"),
+    "CreateSurfaces": ("Surface", "surfaceDataArray"),
+}
+ATTREXIST = {"code": -2130312915, "message": "Already exists."}
+COMPOSITE_EXISTS = {"code": -7003, "message": "Composite already exists."}
+REFUSED = -2130312311
+
+
+class WritableStore(AttributeStore):
+    """AttributeStore that also answers Create*, DeleteAttributes and the
+    attribute property commands. Each Create keeps what Tapir keeps and loses
+    what Tapir loses (the danger list in the design), so a test can show the
+    tool puts the lost parts back."""
+
+    def __init__(self, records=None, properties=None, available=None):
+        super().__init__(records)
+        # (attribute guid, property guid) -> display string
+        self.values: dict[tuple[str, str], str] = dict(properties or {})
+        # pairs the property is available for
+        self.available: set[tuple[str, str]] = set(available or self.values)
+        self.created: list[tuple[str, str]] = []
+        self.deleted: list[tuple[str, str]] = []
+
+    def by_name(self, attr_type, name):
+        return next((r for r in self.records.get(attr_type, []) if r["name"] == name), None)
+
+    def creator(self, command):
+        attr_type, key = CREATE_COMMANDS[command]
+
+        def answer(params):
+            overwrite = params.get("overwriteExisting", False)
+            out = []
+            for item in params[key]:
+                out.append(self._one(attr_type, item, overwrite))
+            return {"attributeIds": out}
+        return answer
+
+    def _one(self, attr_type, item, overwrite):
+        name = item["name"]
+        if overwrite:
+            guid = (item.get("attributeId") or {}).get("guid")
+            existing = self.by_guid(attr_type, guid) if guid else self.by_name(attr_type, name)
+        else:
+            existing = self.by_name(attr_type, name)
+            if existing is not None:
+                return {"error": COMPOSITE_EXISTS if attr_type == "Composite" else ATTREXIST}
+        if existing is None:
+            if self.by_name(attr_type, name) is not None:
+                return {"error": {"code": -1, "message": "Failed to create."}}
+            guid = G(f"new-{attr_type}-{name}")
+            record = {"attributeId": {"guid": guid},
+                      "index": max([r["index"] for r in self.records[attr_type]] or [0]) + 1,
+                      "name": name}
+            self._apply(attr_type, record, item, created=True)
+            self.records[attr_type].append(record)
+            self.created.append((attr_type, name))
+            return {"attributeId": {"guid": guid}}
+        if existing["index"] == 1 and attr_type in ("Layer", "Line", "Fill"):
+            return {"error": {"code": REFUSED, "message": "Failed to modify."}}
+        clash = self.by_name(attr_type, name)
+        if clash is not None and clash is not existing:
+            return {"error": {"code": -2130312988, "message": "Failed to modify."}}
+        existing["name"] = name
+        self._apply(attr_type, existing, item, created=False)
+        return {"attributeId": existing["attributeId"]}
+
+    def _apply(self, attr_type, record, item, created):
+        fields = {k: copy.deepcopy(v) for k, v in item.items()
+                  if k not in ("attributeId", "index", "name")}
+        if attr_type == "Composite":
+            # Tapir clears useWith and rebuilds skins and separators from the request.
+            record["useWith"] = fields.pop("useWith", [])
+        if attr_type == "BuildingMaterial" and not created:
+            # Unverified in Archicad; the worst case: omitted texts are wiped.
+            for text in ("id", "manufacturer", "description"):
+                record[text] = fields.pop(text, "")
+        if attr_type == "Line" and "lineType" not in fields:
+            for ignored in ("period", "height", "dashItems", "lineItems"):
+                fields.pop(ignored, None)
+        if attr_type == "LayerCombination" and "layers" in fields:
+            listed = {e["attributeId"]["guid"]: {"attributeId": e["attributeId"],
+                                                 "isHidden": e.get("isHidden", False),
+                                                 "isLocked": e.get("isLocked", False),
+                                                 "isWireframe": e.get("isWireframe", False),
+                                                 "intersectionGroupNr":
+                                                     e.get("intersectionGroupNr", 1)}
+                      for e in fields.pop("layers")}
+            keep = [] if created else [e for e in record.get("layers", [])
+                                       if e["attributeId"]["guid"] not in listed]
+            record["layers"] = keep + list(listed.values())
+        if attr_type == "PenTable" and "pens" in fields:
+            pens = {p["index"]: p for p in record.get("pens", [])}
+            for pen in fields.pop("pens"):
+                pens.setdefault(pen["index"], {"index": pen["index"]}).update(pen)
+            record["pens"] = [pens[i] for i in sorted(pens)]
+        if attr_type == "Surface" and "texture" in fields:
+            texture = fields.pop("texture")
+            current = record.setdefault("texture", {})
+            for k, v in texture.items():
+                # Flags can only be switched on.
+                current[k] = (current.get(k, False) or v) if isinstance(v, bool) else v
+        if attr_type == "Profile" and "skinOverrides" in fields:
+            for override in fields.pop("skinOverrides"):
+                for skin in record.get("skins", []):
+                    if skin["skinId"] == override["skinId"]:
+                        skin.update({k: v for k, v in override.items() if k != "skinId"})
+        record.update(fields)
+
+    def delete(self, params):
+        results = []
+        for item in params["attributesToDelete"]:
+            attr_type = item["attributeType"]
+            guid = item["attributeId"]["attributeId"]["guid"]
+            record = self.by_guid(attr_type, guid)
+            if record is None:
+                results.append({"success": False, "error": {
+                    "code": -2130313115, "message": "Attribute not found."}})
+            elif record["index"] == 1:
+                results.append({"success": False, "error": {
+                    "code": REFUSED, "message": "Failed to delete."}})
+            else:
+                self.records[attr_type].remove(record)
+                self.deleted.append((attr_type, record["name"]))
+                results.append({"success": True})
+        return {"executionResults": results}
+
+    def get_property_values(self, params):
+        out = []
+        for a in params["attributeIds"]:
+            guid = a["attributeId"]["guid"]
+            values = []
+            for p in params["properties"]:
+                key = (guid, p["propertyId"]["guid"])
+                if key in self.available:
+                    values.append({"propertyValue": {"value": self.values.get(key, "")}})
+                else:
+                    values.append({"error": {"code": -1,
+                                             "message": "Failed to get property value"}})
+            out.append({"propertyValues": values})
+        return {"propertyValuesForAttributes": out}
+
+    def set_property_values(self, params):
+        results = []
+        for item in params["attributePropertyValues"]:
+            key = (item["attributeId"]["guid"], item["propertyId"]["guid"])
+            if key not in self.available:
+                results.append({})
+                continue
+            self.values[key] = item["propertyValue"]["value"]
+            results.append({"success": True})
+        return {"executionResults": results}
+
+    def tapir_table(self) -> dict:
+        table = super().tapir_table()
+        table.update({c: self.creator(c) for c in CREATE_COMMANDS})
+        table["DeleteAttributes"] = self.delete
+        table["GetPropertyValuesOfAttributes"] = self.get_property_values
+        table["SetPropertyValuesOfAttributes"] = self.set_property_values
+        return table

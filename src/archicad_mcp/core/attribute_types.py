@@ -115,12 +115,3 @@ ENUMS: dict[tuple[str, str], tuple[str, ...]] = {
     ("Composite", "useWith[]"): ("Wall", "Slab", "Roof", "Shell"),
     ("Composite", "skins[].type"): ("Core", "Finish", "Other"),
 }
-
-# Fields a Get answer carries that no Create accepts (Tapir's schemas reject
-# the whole request for an unknown key).
-READ_ONLY_FIELDS: dict[str, frozenset[str]] = {
-    "Profile": frozenset({"useWith", "width", "height", "minimumWidth", "minimumHeight",
-                          "widthStretchable", "heightStretchable", "hasCoreSkin",
-                          "profileModifiers", "skins"}),
-}
-IDENTITY_FIELDS = frozenset({"attributeId", "index", "attributeIndex"})

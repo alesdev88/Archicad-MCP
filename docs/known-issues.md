@@ -327,6 +327,36 @@ The server probes availability per command, so an older add-on degrades to
 `tapir_version` in `list_instances` come from Tapir too. Without the add-on they
 are `null` even though the instance is otherwise fine.
 
+## Attribute writes: what Tapir's create-or-overwrite commands do
+
+Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
+`edit_attributes` plans the way it does:
+
+- **Create or overwrite.** Without `overwriteExisting` an existing name answers
+  "Already exists." per item; with it, the given GUID (or else the name) is
+  overwritten, and a name that matches nothing is created. `edit_attributes`
+  sends creates with it off, so a create can never replace an attribute.
+- **What an overwrite drops.** Fields not sent keep their value, except: a
+  composite's `useWith` is cleared and its skins and separators rebuilt from the
+  request; a pen table or profile overwrite with `sourceAttributeId` replaces all
+  pens or the geometry; a building material's `id`, `manufacturer` and
+  `description` reach Archicad as null when not sent (keep or clear unverified).
+  A `modify` resends those from the current attribute and refuses the
+  source-copy fields.
+- **Silent defaults.** A misspelt `lineType` makes the line Solid, a misspelt
+  `subType` makes the fill Vector, an unknown `cutFillOrientation` becomes
+  ProjectOrigin, an unknown building material or line type in a composite
+  becomes index 0. All checked before sending.
+- **Texture flags can only be switched on.** Turning one off is refused.
+- **Archicad's own attributes** (index 1 of layers, lines and fills; the Solid
+  and Empty fills; the last composite) refuse changes and deletes.
+- **Deleting a layer deletes its elements**, in every view (DevKit). The tool
+  deletes a layer only with the floor plan active and no floor-plan element on
+  it, and says that other views are not counted.
+- **Nothing is undoable** except `SetPropertyValuesOfAttributes`.
+- **Property values of attributes** answer `{}` (neither success nor error) for a
+  property not available for the attribute; counted as not written.
+
 ## Teamwork reservation: what Tapir reports and what is derived
 
 Tapir 1.5.9's `ReserveElements` (present since 1.1.4, wrapping
@@ -362,6 +392,35 @@ So Archicad does reserve linked elements on the side, in both directions
 catches it. Tapir reports none of that; the DevKit documentation is silent on
 it. Not seen live yet: a `reserved_by_others` conflict, because no teammate
 held the door at the time. Its shape is the one in Tapir's source.
+
+### Non-element object sets (Tapir 1.7.1)
+
+`reserve_elements` and `release_elements` take `object_sets`, which go through
+Tapir 1.7.1's `ReserveLockableObjectSet`, `ReleaseLockableObjectSet` and
+`GetLockableObjectSetStatus` (`ACAPI_Teamwork_ReserveLockable`,
+`ReleaseLockable`, `GetLockableStatus`, dialogs off). Unlike elements, a set's
+holder can be read without attempting the reservation, so the dry run is
+complete. A commit reads the status back rather than trusting the answer.
+
+- **Solo projects answer an error for every name.** Live on MCP-Test
+  (19.10.2026): "No lockable object set named 'LayerSettingsDialog' was
+  found", for documented names too. `FindLockableObjectSet` finds nothing
+  outside Teamwork, so the tools ask only when `isTeamwork` is true, and the
+  names cannot be checked in a solo project.
+- **Layers and layer combinations are one set**, `LayerSettingsDialog`. The
+  DevKit says a member of a compound set must not be reserved alone, so
+  `Layers` and `LayerCombinations` both map to it.
+- **Releasing sends.** The DevKit: the set's modifications are sent to the
+  server right before it is unlocked.
+- **Properties and classifications: a guessed set.** No documented set covers
+  them. Archicad 29's `APICore` has `ClassificationsAndProperties` in the same
+  string table as the documented names, so `Properties` and `Classifications`
+  map to it. Until a Teamwork project confirms it, the definition tools only
+  warn when it is not reserved, and still send; Archicad's refusals then carry
+  the reserve hint. Attribute types use their documented sets, and an edit
+  whose set is free or held by someone else is skipped with the reason.
+- **Not verified on a Teamwork project yet.** Unit-tested against the shapes
+  in Tapir's source only.
 
 ## `publish` is unvalidated
 

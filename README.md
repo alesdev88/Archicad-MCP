@@ -475,7 +475,7 @@ rather than putting anything on your PATH.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -517,6 +517,20 @@ never unlocked. A commit reads the elements back, so a field Archicad answered
 success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
 or newer.
 
+`edit_attributes` creates, changes and deletes attributes (layers, layer
+combinations, lines, fills, zone categories, pen tables, profiles, building
+materials, composites, surfaces) and sets their property values. Tapir's attribute
+commands create *or overwrite*, and an overwrite quietly drops what it is not sent
+(a composite's wall/slab/roof availability, for one). So a `create` never replaces
+an existing attribute (the dry run shows what would change and the `modify` to send
+instead), a `modify` names the attribute and keeps every field it does not change,
+and values Tapir would silently replace with a default (a misspelt line type, an
+unknown building material) are refused before anything is sent. A layer is deleted
+only when no element is on it, since Archicad deletes a layer's elements with it.
+Fields reference other attributes by name; `list_attributes(details=true)` shows
+current settings in the same form. Attribute writes cannot be undone in Archicad.
+Needs Tapir 1.5.4 or newer.
+
 **Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
 confirm-gated. A dry run reports what can be known without touching the
 server: unknown GUIDs and elements already in your workspace. Who holds the
@@ -525,6 +539,15 @@ with `confirm=true` the result separates reserved, reserved by others (with the
 user's name), already mine, not found, and indirectly reserved. Verified live:
 reserving one door also pulled in its wall and the wall's other door, and the
 tool reported both. Sending and receiving stay in the gateway. Needs Tapir.
+Both also take `object_sets`, the non-element things Teamwork reserves: an
+attribute type (`Layers`, `Composites`, `Fills`, ...), `Properties` /
+`Classifications`, or any Archicad set name (`Favorites`, `ProjectInfo`, ...).
+For sets the dry run does say who holds them. Releasing a set sends its changes
+to the server, as Archicad does. In a Teamwork project the definition tools and
+`edit_attributes` name the set to reserve when it is not reserved. Needs Tapir
+1.7.1. Not yet verified on a Teamwork project: the set names come from the
+Archicad DevKit, except `ClassificationsAndProperties` (properties and
+classifications), which Archicad 29 carries but does not document.
 
 **Definitions (full mode):** `edit_property_definitions`, `edit_classifications`,
 `import_definitions`. They edit property definitions and classification systems in
