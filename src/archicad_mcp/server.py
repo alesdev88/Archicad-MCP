@@ -32,6 +32,7 @@ from archicad_mcp.rules.engine import (
 )
 from archicad_mcp.rules.loader import load_rules
 from archicad_mcp.rules.types import Verdict
+from archicad_mcp.tapir_requirements import tapir_refusal
 
 # Errors the tool layer converts into an actionable {"error": ...} envelope
 # instead of leaking a protocol-level ToolError. ArchicadUnavailableError is
@@ -54,6 +55,14 @@ def _tool_error(exc: Exception) -> dict:
                         "Settings) blocking the API, and retry.")
         return {"error": message}
     return {"error": str(exc)}
+
+
+def require_tapir(conn, tool: str):
+    """conn, or ArchicadUnavailableError naming the Tapir the tool needs."""
+    refusal = tapir_refusal(conn, tool)
+    if refusal is not None:
+        raise ArchicadUnavailableError(refusal["error"])
+    return conn
 
 
 def _tool_meta(title: str, *, read_only: bool, destructive: bool = False) -> dict:
@@ -217,6 +226,8 @@ def build_server(
               **_tool_meta("Highlight failing elements", read_only=False, destructive=False))
     @_guarded
     def highlight_failures(rule_id: str, port: int | None = None) -> dict:
+        require_tapir(get_connection(port if port is not None else default_port),
+                      "highlight_failures")
         rules = _rules_subset(rule_id=rule_id)
         verdict = _verdict_for(rules, port)
         guids = [g for r in verdict.results for g in r.failing_guids]
@@ -228,6 +239,8 @@ def build_server(
               **_tool_meta("Create issues from rule failures", read_only=False, destructive=True))
     @_guarded
     def create_issues_from_failures(rule_id: str, port: int | None = None) -> dict:
+        require_tapir(get_connection(port if port is not None else default_port),
+                      "create_issues_from_failures")
         rules = _rules_subset(rule_id=rule_id)
         verdict = _verdict_for(rules, port)
         result = verdict.results[0]
@@ -256,6 +269,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     def _conn(port: int | None):
         return get_connection(port if port is not None else default_port)
+
+    def _tapir_conn(port: int | None, tool: str):
+        return require_tapir(_conn(port), tool)
 
     @mcp.tool(description=(
         "Find elements matching criteria groups. Groups combine with OR; inside "
@@ -434,7 +450,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           cut_end_tilt: float | None = None,
                           ref_line: str | None = None, ref_offset: float | None = None,
                           port: int | None = None) -> dict:
-        return _swept.create_swept_beam(_conn(port), source_guid, points, start_height,
+        conn = _tapir_conn(port, "create_swept_beam")
+        return _swept.create_swept_beam(conn, source_guid, points, start_height,
                                         slope_percent, profile, offset_u, offset_w, flip,
                                         path_tolerance, update_guid, dry_run,
                                         cut_start_plan=cut_start_plan,
@@ -486,7 +503,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                             update_guid: str | None = None, dry_run: bool = True,
                             port: int | None = None) -> dict:
         return _road.create_road_marking(
-            _conn(port), source_guid=source_guid, points=points, start_height=start_height,
+            _tapir_conn(port, "create_road_marking"), source_guid=source_guid,
+            points=points, start_height=start_height,
             slope_percent=slope_percent, marking=marking, stripes=stripes, bays=bays,
             lettering=lettering, flip_sides=flip_sides, pattern_align=pattern_align,
             pattern_shift=pattern_shift, whole_dashes=whole_dashes, thickness=thickness,
@@ -508,7 +526,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def move_elements(guids: list[str], vector: dict, confirm: bool = False,
                       port: int | None = None) -> dict:
-        return _mutate.move_elements(_conn(port), guids, vector, confirm)
+        return _mutate.move_elements(_tapir_conn(port, "move_elements"), guids, vector, confirm)
 
     from archicad_mcp.core import modify as _modify
 
@@ -555,7 +573,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def delete_elements(guids: list[str], confirm: bool = False,
                         port: int | None = None) -> dict:
-        return _mutate.delete_elements(_conn(port), guids, confirm)
+        return _mutate.delete_elements(_tapir_conn(port, "delete_elements"), guids, confirm)
 
     @mcp.tool(description="Return the GUIDs of the elements currently selected in "
                           "Archicad, and 'coverage': 'whole-plan' when read "
@@ -598,7 +616,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def reserve_elements(guids: list[str], confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.reserve_elements(_conn(port), guids, confirm)
+        return _teamwork.reserve_elements(_tapir_conn(port, "reserve_elements"), guids, confirm)
 
     @mcp.tool(description=(
         "Release elements from your Teamwork workspace (Tapir). CONFIRM-GATED: "
@@ -611,7 +629,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def release_elements(guids: list[str], confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.release_elements(_conn(port), guids, confirm)
+        return _teamwork.release_elements(_tapir_conn(port, "release_elements"), guids, confirm)
 
     from archicad_mcp.core import attributes as _attributes
     from archicad_mcp.core import issues as _issues
@@ -637,21 +655,22 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
               **_tool_meta("List issues", read_only=True, destructive=False))
     @_guarded
     def list_issues(port: int | None = None) -> dict:
-        return _issues.list_issues(_conn(port))
+        return _issues.list_issues(_tapir_conn(port, "list_issues"))
 
     @mcp.tool(description="Create a new issue in the open project and return its id "
                           "(requires the Tapir add-on).",
               **_tool_meta("Create an issue", read_only=False, destructive=True))
     @_guarded
     def create_issue(name: str, port: int | None = None) -> dict:
-        return _issues.create_issue(_conn(port), name)
+        return _issues.create_issue(_tapir_conn(port, "create_issue"), name)
 
     @mcp.tool(description="Add a text comment to an existing issue, addressed by its id "
                           "(requires the Tapir add-on).",
               **_tool_meta("Comment on an issue", read_only=False, destructive=True))
     @_guarded
     def add_issue_comment(issue_id: str, comment: str, port: int | None = None) -> dict:
-        return _issues.add_issue_comment(_conn(port), issue_id, comment)
+        conn = _tapir_conn(port, "add_issue_comment")
+        return _issues.add_issue_comment(conn, issue_id, comment)
 
     @mcp.tool(description="Attach elements to an existing issue as highlights "
                           "(requires the Tapir add-on).",
@@ -659,7 +678,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def attach_elements_to_issue(issue_id: str, guids: list[str],
                                  port: int | None = None) -> dict:
-        return _issues.attach_elements_to_issue(_conn(port), issue_id, guids)
+        conn = _tapir_conn(port, "attach_elements_to_issue")
+        return _issues.attach_elements_to_issue(conn, issue_id, guids)
 
     @mcp.tool(description="Export every issue in the project to a BCF file at the given "
                           "path, aligned to the survey point. Overwrites the file if it "
@@ -667,20 +687,46 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
               **_tool_meta("Export issues to BCF", read_only=False, destructive=True))
     @_guarded
     def export_issues_bcf(bcf_path: str, port: int | None = None) -> dict:
-        return _issues.export_issues_bcf(_conn(port), bcf_path)
+        return _issues.export_issues_bcf(_tapir_conn(port, "export_issues_bcf"), bcf_path)
 
     @mcp.tool(description="Import issues into the project from a BCF file, aligned to "
                           "the survey point (requires the Tapir add-on).",
               **_tool_meta("Import issues from BCF", read_only=False, destructive=True))
     @_guarded
     def import_issues_bcf(bcf_path: str, port: int | None = None) -> dict:
-        return _issues.import_issues_bcf(_conn(port), bcf_path)
+        return _issues.import_issues_bcf(_tapir_conn(port, "import_issues_bcf"), bcf_path)
 
     @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).",
               **_tool_meta("Run a publisher set", read_only=False, destructive=True))
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
-        return _publish.publish(_conn(port), publisher_set_name)
+        return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
+
+    @mcp.tool(description=(
+        "Install the pinned Tapir add-on (1.7.1) into Archicad's Add-Ons folder. "
+        "Dry run by default: it finds every Archicad on this computer, downloads and "
+        "checks the file (sha256) and says what it would do. confirm=true writes. "
+        "Never replaces an existing Tapir unless replace_existing=true, and then "
+        "moves the old copy to a backup folder; a custom Tapir build loses its own "
+        "commands when replaced. archicad_version limits it to one version. On macOS "
+        "a protected Add-Ons folder brings up the system password dialog; on "
+        "Windows it returns the command to run from an administrator terminal. "
+        "Archicad must be restarted afterwards. Needs no running Archicad."),
+        **_tool_meta("Install the Tapir add-on", read_only=False, destructive=True))
+    def install_tapir(archicad_version: int | None = None, replace_existing: bool = False,
+                      confirm: bool = False) -> dict:
+        from archicad_mcp.tapir_install import InstallError
+        from archicad_mcp.tapir_install import run as _tapir_run
+        try:
+            report = _tapir_run.run(
+                versions={archicad_version} if archicad_version else None,
+                replace=replace_existing, dry_run=not confirm)
+        except InstallError as exc:
+            return {"error": str(exc)}
+        result = report.to_dict()
+        result["restart_required"] = [o.version for o in report.outcomes if o.installed]
+        result["backups"] = [str(o.backup) for o in report.outcomes if o.backup]
+        return result
 
     @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
                           "criteria and its ordered columns, with what each column "
@@ -802,7 +848,10 @@ def _instance_line(info: InstanceInfo, mode: str) -> str:
     if info.tapir_available:
         parts.append(f"Tapir {info.tapir_version or 'version unknown'}")
     else:
-        parts.append(f"Tapir add-on not installed ({_NO_TAPIR_NOTE})")
+        install = ("archicad-mcp install-tapir"
+                   + (f" --archicad {info.version}" if info.version else ""))
+        parts.append(f"Tapir add-on not installed ({_NO_TAPIR_NOTE}); "
+                     f"install with: {install}")
     return f"{_BANNER_PREFIX} " + ", ".join(parts)
 
 
@@ -972,6 +1021,11 @@ def check_script_transport(enable_scripts: bool, mode: str, transport: str,
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["install-tapir"]:
+        # A subcommand, not a server flag: hand off before the server's own
+        # parse_known_args would swallow its options.
+        from archicad_mcp.tapir_install import cli as tapir_cli
+        raise SystemExit(tapir_cli.main(sys.argv[2:]))
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
                         default=resolve_mode(os.environ.get("ARCHICAD_MCP_MODE")))

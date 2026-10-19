@@ -196,6 +196,10 @@ TOOLS: list[dict] = [
      "desc": "Import issues into the project from a BCF file (requires the Tapir add-on)."},
     {"name": "publish", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Fire an Archicad publisher set by name (Tapir)."},
+    # Setup. Writes into Archicad's Add-Ons folder, not the project; no API
+    # command wraps it.
+    {"name": "install_tapir", "cat": "Discovery & model", "mode": "full", "mutates": True,
+     "desc": "Install the pinned Tapir add-on into Archicad's Add-Ons folder. Dry run by default; never replaces an existing Tapir unless asked, and keeps a backup."},
     # Schedules. No API command wraps these: Archicad exposes no schedule API at
     # any level, so they work on an exported Scheme Settings XML file instead.
     # That is also why none of them appears in WRAPPED_BY.

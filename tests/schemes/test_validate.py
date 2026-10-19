@@ -67,13 +67,14 @@ def test_property_index_treats_dict_properties_as_empty():
     assert index == {}
 
 
+@pytest.mark.usefixtures("mac_host")
 def test_property_index_raises_a_clear_actionable_error_when_tapir_is_absent():
     with pytest.raises(ArchicadUnavailableError) as exc_info:
         property_index(conn_without_tapir())
     message = str(exc_info.value)
     assert "GetAllProperties" in message
     assert "Tapir add-on" in message
-    assert "Install it from" in message
+    assert "install-tapir" in message and "TapirAddOn_AC" in message
 
 
 def test_validate_scheme_raises_a_clear_actionable_error_when_tapir_is_absent():

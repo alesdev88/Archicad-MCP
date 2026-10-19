@@ -17,22 +17,17 @@ from multiconn_archicad.errors import APIErrorBase
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.element_data import error_fields, value_fit
 
-EDIT_MARKER = "UpdateClassificationItems"
 FAILURE_SAMPLE = 5
 
-NEEDS_BUILD = (
-    "Editing definitions needs a Tapir add-on that has UpdateClassificationItems: "
-    "the property-classification-editing build, or the upstream Tapir release that "
-    "ships it. The add-on installed in this Archicad does not have it, so nothing "
-    "was sent. Older Tapir versions accept UpdatePropertyDefinitions but ignore the "
-    "new fields, which is why this is checked first.")
+def editing_unavailable(conn: ArchicadConnection,
+                        tool: str = "edit_property_definitions") -> dict | None:
+    """An error result when the running Tapir lacks the editing commands.
 
-
-def editing_unavailable(conn: ArchicadConnection) -> dict | None:
-    """An error result when the running Tapir lacks the editing commands."""
-    if conn.tapir_command_available(EDIT_MARKER):
-        return None
-    return {"error": NEEDS_BUILD}
+    Older Tapir versions accept UpdatePropertyDefinitions but ignore the new
+    fields, which is why this is checked first.
+    """
+    from archicad_mcp.tapir_requirements import tapir_refusal
+    return tapir_refusal(conn, tool)
 
 
 def group_by_error(failed: list[dict]) -> list[dict]:

@@ -389,5 +389,9 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
         from fastmcp.utilities.types import Image
 
         conn = get_connection(port if port is not None else default_port)
+        from archicad_mcp.tapir_requirements import tapir_refusal
+        refusal = tapir_refusal(conn, "deploy_gdl_object")
+        if refusal is not None:
+            return refusal
         payload, png = _deploy_object(ws, conn, name, (x, y), keep, embed)
         return [payload, Image(data=png, format="png")]
