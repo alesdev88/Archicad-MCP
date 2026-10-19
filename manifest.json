@@ -231,6 +231,10 @@
       "description": "Import issues into the project from a BCF file."
     },
     {
+      "name": "export_ifc",
+      "description": "Save the project as IFC with a named translator and scope. Dry-run by default."
+    },
+    {
       "name": "publish",
       "description": "Run a publisher set."
     },

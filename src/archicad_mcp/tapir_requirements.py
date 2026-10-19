@@ -35,6 +35,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     "publish": ("PublishPublisherSet",),
     "highlight_failures": ("HighlightElements",),
     "save_project": ("SaveProject",),
+    "export_ifc": ("IFCFileOperation", "GetIFCExportTranslators"),
     "show_elements": ("ChangeWindow", "FitInWindow", "ChangeSelectionOfElements",
                       "HighlightElements", "GetNavigatorItemTree",
                       "GetDatabaseIdFromNavigatorItemId"),

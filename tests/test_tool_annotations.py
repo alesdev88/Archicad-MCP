@@ -41,7 +41,7 @@ WRITERS = {
     "edit_property_definitions", "edit_classifications", "import_definitions",
     "create_swept_beam", "create_road_marking", "modify_elements",
     # Writes the .pln: File > Revert can no longer go back past it.
-    "save_project", "show_elements",
+    "save_project", "show_elements", "export_ifc",
     # Writes into Archicad's Add-Ons folder: outside the project, still a file
     # change a client must ask about.
     "install_tapir",

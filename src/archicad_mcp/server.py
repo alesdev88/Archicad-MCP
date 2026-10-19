@@ -757,6 +757,28 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def import_issues_bcf(bcf_path: str, port: int | None = None) -> dict:
         return _issues.import_issues_bcf(_tapir_conn(port, "import_issues_bcf"), bcf_path)
 
+    from archicad_mcp.core import ifc_export as _ifc_export
+
+    @mcp.tool(description=(
+        "Save the project as an IFC file, the step after verify_ifc_export_readiness. "
+        "DRY-RUN BY DEFAULT: returns the translator, path, file type and scope, and "
+        "lists every translator; pass dry_run=false to write. path: absolute, ending in "
+        ".ifc or .ifczip. translator: a name from the project's IFC translators "
+        "(default: the preview translator). scope: EntireProject, "
+        "VisibleElementsOnAllStories (default), AllElementsOnCurrentStory, "
+        "VisibleElementsOnCurrentStory or SelectedElementsOnly. Refuses to replace an "
+        "existing file unless overwrite=true. Archicad exports from the floor plan or "
+        "the 3D window, so from any other window it first brings the floor plan to "
+        "the front and leaves it there. The commit checks the file and returns its "
+        "size. Never opens or merges IFC. Needs Tapir 1.6.0."),
+              **_tool_meta("Export IFC", read_only=False, destructive=True))
+    @_guarded
+    def export_ifc(path: str, translator: str | None = None,
+                   scope: str = "VisibleElementsOnAllStories", overwrite: bool = False,
+                   dry_run: bool = True, port: int | None = None) -> dict:
+        return _ifc_export.export_ifc(_tapir_conn(port, "export_ifc"), path, translator,
+                                      scope, overwrite, dry_run)
+
     @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).",
               **_tool_meta("Run a publisher set", read_only=False, destructive=True))
     @_guarded

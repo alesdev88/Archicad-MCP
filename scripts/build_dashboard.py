@@ -118,6 +118,8 @@ WRAPPED_BY: dict[str, list[str]] = {
     "FilterElements": ["reserve_elements", "release_elements", "modify_elements"],
     "HighlightElements": ["highlight_failures", "show_elements"],
     "SaveProject": ["save_project"],
+    "IFCFileOperation": ["export_ifc"],
+    "GetIFCExportTranslators": ["export_ifc"],
 }
 # Every element type create_elements covers, read from its table so the two
 # cannot drift; CreateObjects keeps its entry above, which names more tools.
@@ -202,6 +204,8 @@ TOOLS: list[dict] = [
      "desc": "Export every issue in the project to a BCF file (requires the Tapir add-on)."},
     {"name": "import_issues_bcf", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Import issues into the project from a BCF file (requires the Tapir add-on)."},
+    {"name": "export_ifc", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Save the project as IFC with a translator chosen by name and an element scope. Dry-run by default; never replaces a file unless asked; checks the file afterwards."},
     {"name": "publish", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Fire an Archicad publisher set by name (Tapir)."},
     {"name": "save_project", "cat": "Discovery & model", "mode": "both", "mutates": True,
