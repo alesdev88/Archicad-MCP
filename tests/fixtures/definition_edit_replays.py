@@ -86,9 +86,10 @@ ALL_PROPERTIES = {
 }
 
 
-def fake_editing_core(update=None, extra_tapir=None, marker=True):
+def fake_editing_core(update=None, extra_tapir=None, marker=True, teamwork=None):
     """A FakeCore wired with the synthetic definitions. `update` answers every
-    Update* Tapir command (default: all succeed)."""
+    Update* Tapir command (default: all succeed). `teamwork` makes it a
+    Teamwork project: {set name: (status, [holder names])}."""
     from tests.conftest import FakeCore
 
     def ok(params):
@@ -106,7 +107,16 @@ def fake_editing_core(update=None, extra_tapir=None, marker=True):
              "UpdatePropertyDefinitions": update or ok,
              "UpdatePropertyGroups": update or ok,
              "UpdateClassificationSystems": update or ok,
-             "UpdateClassificationItems": update or ok}
+             "UpdateClassificationItems": update or ok,
+             "GetProjectInfo": {"projectName": "Synthetic", "isTeamwork": teamwork is not None}}
+    if teamwork is not None:
+        def status(params):
+            state, holders = teamwork[params["objectSetName"]]
+            out = {"status": state}
+            if holders:
+                out["conflicts"] = [{"userId": i, "userName": n} for i, n in enumerate(holders)]
+            return out
+        tapir["GetLockableObjectSetStatus"] = status
     tapir.update(extra_tapir or {})
     return FakeCore(official=official, tapir=tapir)
 

@@ -14,8 +14,8 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.definition_edit import (
-    ClassificationIndex, Definitions, PlannedEdit, editing_unavailable, group_by_error,
-    split_results)
+    ClassificationIndex, Definitions, PlannedEdit, definitions_reservation,
+    editing_unavailable, group_by_error, split_results, with_hint)
 from archicad_mcp.core.definition_xml import parse_classification_xml, parse_property_xml
 from archicad_mcp.core.element_data import error_fields
 
@@ -112,6 +112,10 @@ def edit_classifications(conn: ArchicadConnection, changes: list[dict],
         ("UpdateClassificationItems", "classificationItems",
          [p for k, p in plans if k == "item" and not p.errors and len(p.payload) > 1]),
     ]
+    teamwork, hint = definitions_reservation(
+        conn, [p.target for _, _, batch in batches for p in batch])
+    if teamwork:
+        result["teamwork"] = teamwork
     if dry_run or not any(b for _, _, b in batches):
         return result
 
@@ -129,7 +133,7 @@ def edit_classifications(conn: ArchicadConnection, changes: list[dict],
         failed += bad
     result["applied"] = applied
     if failed:
-        result["failed"] = group_by_error(failed)
+        result["failed"] = with_hint(group_by_error(failed), hint)
     return result
 
 
@@ -195,6 +199,9 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
     except ValueError as exc:
         return {"error": str(exc)}
     result["policy"] = POLICY_EFFECT[(kind, conflict)]
+    teamwork, hint = definitions_reservation(conn, [str(path)])
+    if teamwork:
+        result["teamwork"] = teamwork
     if dry_run:
         return result
 
@@ -211,6 +218,8 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
     outcome = response.get("executionResult", {})
     if not outcome.get("success"):
         result["error"] = outcome.get("error", {}).get("message", "import refused")
+        if hint:
+            result["hint"] = hint
         return result
     created = [c["guid"] for c in response.get("created", [])]
     removed = [c["guid"] for c in response.get("removed", [])]

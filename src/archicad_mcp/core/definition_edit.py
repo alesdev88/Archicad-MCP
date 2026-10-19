@@ -30,6 +30,33 @@ def editing_unavailable(conn: ArchicadConnection,
     return tapir_refusal(conn, tool)
 
 
+def definitions_reservation(conn: ArchicadConnection,
+                            targets: list[str]) -> tuple[list[dict] | None, str | None]:
+    """(the result's `teamwork` list, the hint for refusals) in a Teamwork project;
+    (None, None) in a solo one.
+
+    The set is a guess (teamwork.DEFINITIONS_SET), so a missing reservation only
+    warns: the edit is still sent, and Archicad's refusals carry the hint.
+    """
+    from archicad_mcp.core.teamwork import (DEFINITIONS_SET, object_set_states,
+                                            set_problem, teamwork_entries)
+    if not targets:
+        return None, None
+    states = object_set_states(conn, [DEFINITIONS_SET])
+    if states is None:
+        return None, None
+    problem = set_problem(states[DEFINITIONS_SET])
+    return (teamwork_entries(states, {DEFINITIONS_SET: targets}),
+            problem.text if problem else None)
+
+
+def with_hint(groups: list[dict], hint: str | None) -> list[dict]:
+    if hint:
+        for g in groups:
+            g["hint"] = hint
+    return groups
+
+
 def group_by_error(failed: list[dict]) -> list[dict]:
     """Refusals grouped by message, largest group first, a few targets each."""
     groups: dict[str, dict] = {}
@@ -585,6 +612,9 @@ def edit_property_definitions(conn: ArchicadConnection, changes: list[dict],
     skipped = [p.entry() for p in plans if p.errors]
     if skipped:
         result["skipped"] = skipped
+    teamwork, hint = definitions_reservation(conn, [p.target for p in to_send])
+    if teamwork:
+        result["teamwork"] = teamwork
     if dry_run or not to_send:
         return result
 
@@ -602,5 +632,5 @@ def edit_property_definitions(conn: ArchicadConnection, changes: list[dict],
                                   index, by_target[t].changes)}
         for t in applied if by_target[t].payload["propertyId"]["guid"] in after.by_guid]
     if failed:
-        result["failed"] = group_by_error(failed)
+        result["failed"] = with_hint(group_by_error(failed), hint)
     return result

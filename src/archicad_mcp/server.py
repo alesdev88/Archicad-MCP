@@ -617,34 +617,48 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import teamwork as _teamwork
 
     @mcp.tool(description=(
-        "Reserve elements in a Teamwork project so you can edit them (Tapir). "
-        "CONFIRM-GATED: without confirm=true it only reports what it can "
-        "learn without touching the server: not_found, already_mine, and "
-        "would_attempt. Whether another user holds an element is only "
-        "learned by attempting, because Archicad exposes no read for it. "
-        "With confirm=true returns reserved, reserved_by_others (with the "
-        "user's name), already_mine, not_found, and indirectly_reserved: "
-        "elements Archicad pulled into your workspace that you did not ask "
-        "for, such as a door's wall. A reservation is visible to every "
+        "Reserve elements, and non-element object sets, in a Teamwork project so "
+        "you can edit them (Tapir). CONFIRM-GATED: without confirm=true it only "
+        "reports what it can learn without touching the server: not_found, "
+        "already_mine, and would_attempt. Whether another user holds an element is "
+        "only learned by attempting, because Archicad exposes no read for it. With "
+        "confirm=true returns reserved, reserved_by_others (with the user's name), "
+        "already_mine, not_found, and indirectly_reserved: elements Archicad pulled "
+        "into your workspace that you did not ask for, such as a door's wall. "
+        "object_sets reserves what attribute, property and classification edits "
+        "need: an attribute type (Layers, Composites, Fills, Lines, PenTables, "
+        "Profiles, BuildingMaterials, Surfaces, ZoneCategories), Properties or "
+        "Classifications, or any Archicad set name (Favorites, ProjectInfo, ...); "
+        "needs Tapir 1.7.1. Each set's entry says status, held_by and outcome "
+        "(would_reserve, already_mine, held_by_others, reserved, failed); for sets "
+        "the dry run does know who holds them. A reservation is visible to every "
         "teammate and blocks their edits until released."),
-              **_tool_meta("Reserve Teamwork elements", read_only=False, destructive=False))
+              **_tool_meta("Reserve Teamwork elements and sets", read_only=False,
+                           destructive=False))
     @_guarded
-    def reserve_elements(guids: list[str], confirm: bool = False,
+    def reserve_elements(guids: list[str] | None = None,
+                         object_sets: list[str] | None = None, confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.reserve_elements(_tapir_conn(port, "reserve_elements"), guids, confirm)
+        return _teamwork.reserve_elements(_tapir_conn(port, "reserve_elements"), guids,
+                                          confirm, object_sets)
 
     @mcp.tool(description=(
-        "Release elements from your Teamwork workspace (Tapir). CONFIRM-GATED: "
-        "without confirm=true it reports would_release (the ones actually in "
-        "your workspace), not_mine and not_found. With confirm=true releases "
-        "them and reports released and still_mine. Unsent changes on a "
-        "released element are not lost by this call; TeamworkSend is the "
-        "gateway's job."),
-              **_tool_meta("Release Teamwork elements", read_only=False, destructive=False))
+        "Release elements, and non-element object sets, from your Teamwork "
+        "workspace (Tapir). CONFIRM-GATED: without confirm=true it reports "
+        "would_release (the ones actually in your workspace), not_mine and "
+        "not_found. With confirm=true releases them and reports released and "
+        "still_mine. Unsent changes on a released element are not lost by this "
+        "call; TeamworkSend is the gateway's job. object_sets takes the names "
+        "reserve_elements takes; releasing a set sends that set's changes to the "
+        "server first (Archicad does that as part of the release)."),
+              **_tool_meta("Release Teamwork elements and sets", read_only=False,
+                           destructive=False))
     @_guarded
-    def release_elements(guids: list[str], confirm: bool = False,
+    def release_elements(guids: list[str] | None = None,
+                         object_sets: list[str] | None = None, confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.release_elements(_tapir_conn(port, "release_elements"), guids, confirm)
+        return _teamwork.release_elements(_tapir_conn(port, "release_elements"), guids,
+                                          confirm, object_sets)
 
     from archicad_mcp.core import attributes as _attributes
     from archicad_mcp.core import issues as _issues
