@@ -672,12 +672,22 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def get_project_info(port: int | None = None) -> dict:
         return _project.get_project_info(_conn(port))
 
-    @mcp.tool(description="List attribute names by type: Layer, BuildingMaterial, "
-                          "Composite, Surface, Profile, ZoneCategory.",
+    @mcp.tool(description=(
+        "List attributes by type: Layer, LayerCombination, Line, Fill, ZoneCategory, "
+        "PenTable, Profile, BuildingMaterial, Composite, Surface (plurals work). "
+        "Names only by default. details=true returns each attribute's settings "
+        "(Tapir): a composite's skins and separators, a building material's fills "
+        "and physical values, a layer combination's layer states, a pen table's "
+        "pens, ... with references to other attributes shown by name, in the "
+        "vocabulary edit_attributes takes. names= picks attributes; otherwise "
+        "details are paged (limit, offset; next_offset when more remain)."),
               **_tool_meta("List attributes", read_only=True, destructive=False))
     @_guarded
-    def list_attributes(attribute_type: str, port: int | None = None) -> dict:
-        return _attributes.list_attributes(_conn(port), attribute_type)
+    def list_attributes(attribute_type: str, details: bool = False,
+                        names: list[str] | None = None, limit: int | None = None,
+                        offset: int = 0, port: int | None = None) -> dict:
+        return _attributes.list_attributes(_conn(port), attribute_type, details, names,
+                                           limit, offset)
 
     @mcp.tool(description="List the issues in the open project, with their ids "
                           "(requires the Tapir add-on).",
