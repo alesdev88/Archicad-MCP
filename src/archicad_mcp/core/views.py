@@ -25,6 +25,7 @@ from multiconn_archicad.errors import APIErrorBase
 from archicad_mcp.actions import clear_highlight, fit_in_window, highlight_elements
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.editability import _details, active_window
+from archicad_mcp.core.selection import replace_selection
 from archicad_mcp.extract import (
     PROPERTY_FETCH_CHUNK,
     element_payload,
@@ -259,23 +260,6 @@ def _go_to_story(conn: ArchicadConnection, story: int) -> None:
         conn.tapir("ChangeWindow", {"windowType": "FloorPlan"})
 
 
-def _replace_selection(conn: ArchicadConnection, guids: list[str]) -> tuple[int, list[str]]:
-    """Select exactly `guids`; (how many Archicad really selected, the rest).
-
-    Tapir adds before it removes, so an element in both lists would end up
-    deselected: only what is not wanted is removed.
-    """
-    wanted = {g.upper() for g in guids}
-    current = get_selected_element_ids(conn)
-    conn.tapir("ChangeSelectionOfElements", {
-        "addElementsToSelection": element_payload(guids),
-        "removeElementsFromSelection": element_payload(
-            [g for g in current if g.upper() not in wanted])})
-    now = {g.upper() for g in get_selected_element_ids(conn)}
-    missed = [g for g in guids if g.upper() not in now]
-    return len(guids) - len(missed), missed
-
-
 def clear(conn: ArchicadConnection, select: bool) -> dict:
     """Remove the highlight and, with select, the selection."""
     clear_highlight(conn)
@@ -343,7 +327,7 @@ def show_elements(conn: ArchicadConnection, guids: list[str], select: bool = Tru
     out["shown"] = len(shown)
     if view is not None:
         if select:
-            out["selected"], out["not_selectable"] = _replace_selection(conn, marked)
+            out["selected"], out["not_selectable"] = replace_selection(conn, marked)
         if highlight:
             out["highlighted"] = highlight_elements(conn, marked)["highlighted"]
         else:
