@@ -101,10 +101,10 @@ def test_shape_errors_are_skipped_with_the_reason(change, needle):
 def test_create_is_planned_and_nothing_is_sent_in_a_dry_run():
     conn, _ = make()
     out = edit_attributes(conn, [{"create": "Layers", "name": "MCP-Canary Layer",
-                                  "isLocked": True}])
+                                  "isLocked": True, "intersectionGroupNr": 1}])
     [entry] = out["planned"]
     assert entry == {"action": "create", "type": "Layer", "target": "MCP-Canary Layer",
-                     "fields": {"isLocked": True}}
+                     "fields": {"isLocked": True, "intersectionGroupNr": 1}}
     assert out["dry_run"] is True and writes(conn) == []
 
 
@@ -192,6 +192,40 @@ def test_a_reference_to_an_attribute_created_in_the_same_call_resolves_on_commit
     assert composite["skins"][0]["buildingMaterialId"] == material["attributeId"] or \
         composite["skins"][0]["buildingMaterialId"] == {"attributeId": material["attributeId"]}
     assert {a["target"] for a in out["applied"]} == {"MCP-Canary Wall", "MCP-Canary Material"}
+
+
+def test_a_reference_to_an_attribute_renamed_in_the_same_call_keeps_its_guid():
+    """Live 19.10.2026: the layer was renamed first (layers go before layer
+    combinations), and a by-name lookup at send time no longer found it."""
+    conn, store = make()
+    out = edit_attributes(conn, [
+        {"modify": "Layer", "attribute": "Interior - Partition", "name": "MCP-Canary Renamed"},
+        {"modify": "LayerCombination", "attribute": "02 Drafting",
+         "layers": [{"attributeId": "Interior - Partition", "isLocked": True}]}],
+        dry_run=False)
+    assert "failed" not in out, out
+    assert "not_applied" not in out, out["not_applied"]
+    combination = record(store, "LayerCombination", "02 Drafting")
+    partition = next(e for e in combination["layers"] if e["attributeId"]["guid"] == G("lay-2"))
+    assert partition["isLocked"] is True
+
+
+def test_a_dashed_line_period_alone_is_refused():
+    """Live 19.10.2026: period 3 on a Dashed line read back as 2, the sum of its
+    dash items."""
+    conn, _ = make()
+    out = edit_attributes(conn, [{"modify": "Line", "attribute": "Dotted Dense", "period": 3.0}])
+    assert "dashItems" in out["skipped"][0]["errors"][0]
+
+
+def test_new_layers_and_materials_warn_about_zero_starts():
+    conn, _ = make()
+    out = edit_attributes(conn, [{"create": "Layer", "name": "MCP-Canary Layer"},
+                                 {"create": "BuildingMaterial", "name": "MCP-Canary Material"}])
+    layer, material = out["planned"]
+    assert "intersectionGroupNr" in layer["warnings"][0]
+    assert "cutSurfaceIndex" in material["warnings"][0]
+    assert "cutFillIndex" in material["warnings"][0]
 
 
 # ---------- references and values Tapir would silently get wrong ----------
@@ -309,8 +343,8 @@ def test_a_building_material_takes_its_fill_by_name():
 
 def test_line_pattern_fields_carry_the_line_type():
     conn, _ = make()
-    edit_attributes(conn, [{"modify": "Line", "attribute": "Dotted Dense", "period": 2.0}],
-                    dry_run=False)
+    edit_attributes(conn, [{"modify": "Line", "attribute": "Dotted Dense",
+                            "dashItems": [{"dash": 1.0, "gap": 1.0}]}], dry_run=False)
     [payload] = sent(conn, "CreateLines")
     assert payload["lineDataArray"][0]["lineType"] == "Dashed"
 

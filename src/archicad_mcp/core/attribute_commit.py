@@ -20,6 +20,7 @@ from archicad_mcp.core.attribute_edit import (
     _item_schema,
     _project,
     _to_tapir,
+    renamed_references,
 )
 from archicad_mcp.core.attribute_types import WRITE_ORDER
 from archicad_mcp.core.attributes import named_references, read_records
@@ -150,13 +151,14 @@ class _Run:
                                     "message": error.get("message", "no answer for this item")})
 
 
-def _verify_shape(p: Plan) -> dict:
+def _verify_shape(p: Plan, rename_to: dict) -> dict:
     """What the read-back is compared with: the merged values of the fields asked
-    for (a create also its name), a profile's skinOverrides as asked."""
+    for (a create also its name), a profile's skinOverrides as asked, references
+    to attributes renamed in this call by their new name."""
     shape = {"name": p.target, **p.expected} if p.action == "create" else dict(p.expected)
     if "skinOverrides" in p.asked:
         shape["skinOverrides"] = p.asked["skinOverrides"]
-    return shape
+    return renamed_references(shape, p.type_name, rename_to)
 
 
 def _now_shape(named: dict, shape: dict) -> dict:
@@ -180,7 +182,7 @@ def _read_back(run: _Run) -> tuple[list[dict], list[dict]]:
         header = (ctx.names.by_name(p.type_name, p.target) if p.action == "create"
                   else ctx.names.by_guid(p.type_name, p.guid))
         entry = applied.setdefault(id(p), {**p.head(), "now": {}})
-        shape = _verify_shape(p)
+        shape = _verify_shape(p, ctx.rename_to)
         record = read_records(ctx.conn, p.attr, [header["guid"]])[0] if header else None
         if record is None:
             not_applied.append({"type": p.type_name, "target": p.target, "field": "(read)",

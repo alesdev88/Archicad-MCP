@@ -154,6 +154,12 @@ class _Context:
         self.conn = conn
         self.names = AttributeNames(conn)
         self.creating: dict[str, set[str]] = {}
+        # (type, old or new name) -> GUID for renames in this call, so a reference
+        # by either name still finds the attribute after the rename is sent.
+        self.renamed: dict[tuple[str, str], str] = {}
+        # (type, old name) -> new name, to compare a read-back that names the
+        # attribute by its new name.
+        self.rename_to: dict[tuple[str, str], str] = {}
         self._records: dict[tuple[str, str], dict | None] = {}
         self._available: dict[str, str | None] = {}
         self._defs: Definitions | None = None
@@ -285,6 +291,20 @@ def _need(ctx: _Context, plan: Plan, *commands: str) -> bool:
 
 # ---------- create ----------
 
+def _zero_starts(type_name: str, fields: dict) -> list[str]:
+    """Tapir builds a new attribute from an empty one, so what is not given starts
+    at zero, not at Archicad's defaults (live 19.10.2026: a new building material
+    had cut surface index 0, which is no surface)."""
+    if type_name == "Layer" and "intersectionGroupNr" not in fields:
+        return ["intersectionGroupNr is not given and starts at 0, not Archicad's usual 1"]
+    if type_name == "BuildingMaterial":
+        missing = [k for k in ("cutFillIndex", "cutSurfaceIndex") if k not in fields]
+        if missing:
+            return [f"{' and '.join(missing)} not given: they start at index 0, which is no "
+                    "attribute"]
+    return []
+
+
 def _plan_create(ctx: _Context, plan: Plan, change: dict) -> None:
     attr = plan.attr
     name = change.get("name")
@@ -315,6 +335,7 @@ def _plan_create(ctx: _Context, plan: Plan, change: dict) -> None:
         plan.warnings.append(
             f"{attr.name} {', '.join(repr(n) for n in near)} already exists; this creates "
             "a second, nearly identical name")
+    plan.warnings.extend(_zero_starts(attr.name, fields))
     missing = [k for k in attr.create_requires if k not in fields]
     if missing:
         plan.errors.append(f"a new {attr.name} needs {missing}"
@@ -397,6 +418,11 @@ def _plan_modify_fields(ctx: _Context, plan: Plan, fields: dict) -> None:
     if err:
         plan.errors.append(err)
         return
+    if attr.name == "Line" and "period" in asked and "dashItems" not in asked \
+            and merged.get("lineType", current.get("lineType")) == "Dashed":
+        plan.errors.append("a Dashed line's period follows its dash items (live: period 3 "
+                           "read back as 2, their sum); send dashItems instead")
+        return
     plan.asked = asked
     plan.expected = merged
     plan.changes = _diff(current, merged)
@@ -418,6 +444,10 @@ def _plan_modify_fields(ctx: _Context, plan: Plan, fields: dict) -> None:
                 named[key] = current[key]
     plan.named = named
     plan.send_fields = bool(plan.changes)
+    if "name" in plan.changes:
+        ctx.renamed[(attr.name, plan.target)] = plan.guid
+        ctx.renamed[(attr.name, asked["name"])] = plan.guid
+        ctx.rename_to[(attr.name, plan.target)] = asked["name"]
     plan.advisory_set = attr.name == "Layer" and set(asked) <= _LAYER_FLAGS
 
 
@@ -607,6 +637,8 @@ def _reference(ctx: _Context, ref_type: str, form: str, value, errors: list[str]
     header = None
     if isinstance(value, str):
         header = ctx.names.by_name(ref_type, value) or ctx.names.by_guid(ref_type, value)
+        if header is None and (ref_type, value) in ctx.renamed:
+            header = ctx.names.by_guid(ref_type, ctx.renamed[(ref_type, value)])
         if header is None and pending_ok and value in ctx.creating.get(ref_type, set()):
             header = {"guid": PENDING, "index": 0}
         if header is None:
@@ -766,6 +798,27 @@ def _diff(current, new, path: str = "", out: dict | None = None) -> dict:
                       new[i] if i < len(new) else None, f"{path}[{i}]", out)
     elif not _same(current, new):
         out[path] = [current, new]
+    return out
+
+
+def renamed_references(value, type_name: str, rename_to: dict, in_layer_list=False):
+    """`value` with references to attributes renamed in this call by their new name."""
+    if not rename_to:
+        return value
+    if isinstance(value, list):
+        return [renamed_references(v, type_name, rename_to, in_layer_list) for v in value]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for key, item in value.items():
+        if key in REFERENCE_FIELDS and isinstance(item, str):
+            ref_type = REFERENCE_FIELDS[key][0] or type_name
+            out[key] = rename_to.get((ref_type, item), item)
+        elif in_layer_list and key == "attributeId" and isinstance(item, str):
+            out[key] = rename_to.get(("Layer", item), item)
+        else:
+            out[key] = renamed_references(item, type_name, rename_to,
+                                          type_name == "LayerCombination" and key == LAYER_LIST)
     return out
 
 
