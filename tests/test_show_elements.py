@@ -463,6 +463,17 @@ async def test_3d_window_stays_and_zooms_every_story(monkeypatch):
     assert out["on_other_stories"] == []
 
 
+async def test_3d_window_goes_to_the_floor_plan_for_2d_elements(monkeypatch):
+    # A label or a dimension is not drawn in 3D: staying there would show nothing.
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0),
+                                           "L": {"type": "Label", "floorIndex": 0}}},
+                          window="3DModel")
+    core = serve(monkeypatch, project)
+    out = await show({"guids": ["A", "L"]})
+    assert windows_asked(core) == [{"windowType": "FloorPlan", "storyIndex": 0}]
+    assert out["view"]["type"] == "FloorPlan"
+
+
 async def test_nothing_found_touches_nothing(monkeypatch):
     project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}}, selected={"X"})
     core = serve(monkeypatch, project)

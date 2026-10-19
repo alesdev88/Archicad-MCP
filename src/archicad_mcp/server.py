@@ -222,11 +222,14 @@ def build_server(
                              "rules to your rules directory."}
         return _verdict_for(ifc_rules, port).to_dict()
 
-    @mcp.tool(description="Highlight the elements failing a rule in the Archicad window "
-                          "and zoom to them (zoom=false to leave the view). Highlights "
-                          "every story at once; show_elements opens the right story or "
-                          "view and selects, and show_elements with guids=[] removes the "
-                          "highlight (requires Tapir add-on).",
+    highlight_text = ("Highlight the elements failing a rule in the Archicad window and "
+                      "zoom to them (zoom=false to leave the view). Highlights every story "
+                      "at once. A rule with no failures removes the highlight.")
+    if mode == "full":
+        highlight_text += (" show_elements opens the right story or view and selects; "
+                           "show_elements with guids=[] removes the highlight.")
+
+    @mcp.tool(description=highlight_text + " Requires the Tapir add-on.",
               **_tool_meta("Highlight failing elements", read_only=False, destructive=False))
     @_guarded
     def highlight_failures(rule_id: str, zoom: bool = True, port: int | None = None) -> dict:
@@ -236,6 +239,9 @@ def build_server(
         verdict = _verdict_for(rules, port)
         guids = [g for r in verdict.results for g in r.failing_guids]
         conn = get_connection(port if port is not None else default_port)
+        if not guids:
+            # Nothing fails: put the view back rather than leave an old highlight.
+            actions.clear_highlight(conn)
         result = actions.highlight_elements(conn, guids)
         result["zoomed"] = bool(zoom and guids) and actions.fit_in_window(conn, guids)
         if zoom and guids and not result["zoomed"]:

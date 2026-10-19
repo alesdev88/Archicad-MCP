@@ -481,7 +481,8 @@ Save As itself. `file_updated` says whether the file on disk changed. On a
 Teamwork project it saves your local copy and sends nothing; that is Graphisoft's
 documented behaviour of File > Save in Teamwork, not tried live here. In
 verdicts mode it leaves the project name and location out of its answer.
-`highlight_failures` zooms to the failures as well as highlighting them.
+`highlight_failures` zooms to the failures as well as highlighting them, and a
+rule with no failures removes the highlight.
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
@@ -535,7 +536,8 @@ time). It opens that story or view, selects the elements, highlights them and
 zooms to them. Archicad answers success for selections and zooms it did not
 make, so the selection is read back (`selected`, `not_selectable`) and the story
 or window is checked after the switch. Elements on other stories or in other
-views are listed for another call. With the 3D window in front it stays in 3D.
+views are listed for another call. With the 3D window in front it stays in 3D,
+unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
 `guids=[]` removes the highlight and the selection. It changes only what is on
 screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
 older Tapir the result says which story to open by hand.

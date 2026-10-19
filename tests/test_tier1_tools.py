@@ -179,6 +179,23 @@ async def test_highlight_failures_zoom_false(fake_archicad, tmp_path):
     assert not any(c == "FitInWindow" for c, _ in fake_archicad.calls)
 
 
+async def test_highlight_failures_with_no_failures_clears_the_highlight(fake_archicad, tmp_path):
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "highlight_failures", {"rule_id": "zones-numbered"})
+    assert payload["highlighted"] == 0
+    sent = [p for c, p in fake_archicad.calls if c == "HighlightElements"]
+    assert sent == [{"elements": [], "highlightedColors": []}]
+
+
+async def test_highlight_failures_names_only_tools_the_mode_has(tmp_path):
+    for mode in ("verdicts", "full"):
+        async with Client(build_server(mode=mode, rules_dir=rules_dir(tmp_path))) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+        text = tools["highlight_failures"].description
+        assert ("show_elements" in text) is (mode == "full")
+        assert "no failures" in text
+
+
 async def test_create_issues_from_failures(fake_archicad, tmp_path):
     mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
     payload = await call(mcp, "create_issues_from_failures", {"rule_id": "walls-fire-ifc"})

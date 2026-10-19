@@ -45,9 +45,16 @@ PROJECT_MAP_VIEWS = ("SectionItem", "ElevationItem", "InteriorElevationItem",
 LAYOUT_VIEWS = ("LayoutItem",)
 MASTER_VIEWS = ("MasterLayoutItem",)
 
+# Element types the 3D window does not draw: showing them there shows nothing.
+TWO_D_TYPES = frozenset({
+    "Dimension", "RadialDimension", "LevelDimension", "AngleDimension", "Text", "Label",
+    "Hatch", "Line", "PolyLine", "Arc", "Circle", "Spline", "Hotspot", "CutPlane", "Camera",
+    "CamSet", "SectElem", "Drawing", "Picture", "Detail", "Elevation", "InteriorElevation",
+    "Worksheet", "ChangeMarker"})
+
 # The windows from which a GetDetailsOfElements read reaches every database
-# (live 19.10.2026: layout and section elements read fine from the floor
-# plan). From a Layout it missed floor-plan labels (28.09.2026), so from any
+# (live 19.10.2026: section, layout and master layout elements read fine from
+# the floor plan and from the 3D window). From a Layout it missed floor-plan labels (28.09.2026), so from any
 # other window an unreadable GUID is searched for anyway.
 _READS_EVERYWHERE = ("FloorPlan", "3DModel")
 
@@ -71,6 +78,7 @@ class Located:
     not_found: list[str]
     not_searched: list[str]
     views: list[View] = field(default_factory=list)  # views holding any, walk order
+    types: dict[str, str | None] = field(default_factory=dict)  # guid -> type, if read
 
 
 def _listing(conn: ArchicadConnection, database_id: str) -> set[str] | None:
@@ -151,7 +159,8 @@ def locate(conn: ArchicadConnection, guids: list[str], window: str | None) -> Lo
     if window in _READS_EVERYWHERE:
         not_found = [g for g in rest if read.get(g) is None]
         rest = [g for g in rest if read.get(g) is not None]
-    located = Located(floor_plan, {}, not_found, [])
+    located = Located(floor_plan, {}, not_found, [],
+                      types={g: (read.get(g) or {}).get("type") for g in wanted.values()})
     if not rest:
         return located
 
@@ -194,7 +203,8 @@ def choose(located: Located, window: str | None,
     then to the view met first in the walk. On the floor plan, the story
     holding the most wins, a tie going to the active story, then the lowest
     index. With the 3D window in front, a floor-plan win stays in 3D, which
-    shows every story. (None, None) when nothing was located.
+    shows every story, unless some of them are 2D elements 3D does not draw.
+    (None, None) when nothing was located.
     """
     per_view = Counter(v.database_id for v in located.elsewhere.values())
     best: tuple[View | None, int] = (None, 0)
@@ -208,7 +218,8 @@ def choose(located: Located, window: str | None,
         return None, None
     if view is not FLOOR_PLAN:
         return view, None
-    if window == "3DModel":
+    if window == "3DModel" and not any(located.types.get(g) in TWO_D_TYPES
+                                       for g in located.floor_plan):
         return MODEL_3D, None
     stories = Counter(s for s in located.floor_plan.values() if s is not None)
     if not stories:

@@ -124,7 +124,8 @@ whose property reads can crash Archicad 29, and the README warning points to `sa
 2. **Choose one view.** The view holding the most of the elements wins; a tie goes to the floor plan,
    then to the first view in navigator order. On the floor plan, the story holding the most of them
    wins, a tie going to the active story, then the lowest index. Exception: with the 3D window in front
-   and every element a floor plan element, stay in 3D and show them all.
+   and the floor plan winning, stay in 3D and show them all, unless some are 2D elements (labels,
+   dimensions, texts, markers) that 3D does not draw.
 3. **Switch.** Floor plan: `ChangeWindow {windowType: FloorPlan, storyIndex}` when the window or the
    story differs, then `GetStories` to confirm the story moved; when it did not (Tapir before 1.7.0),
    a warning names the story to open by hand. Another view: `ChangeWindow {navigatorItemId}`, then
@@ -231,6 +232,8 @@ the empty selection were restored; the IFC files went to a scratch folder and we
     `in_other_views`.
   - A made-up GUID: `not_found` in 0.7 s, without walking the navigator.
   - `guids=[]` cleared.
+  - From the 3D window, a details read found a section Object, a layout Drawing and a master
+    layout Text, as from the floor plan: the unreadable-GUID shortcut holds for both windows.
   - Objects on the layer "Marker - Elevation" (elevation marker parts) came back `not_selectable`:
     they are not selectable on their own.
   - Highlight and zoom answered success and cannot be read back; they were not checked on screen.

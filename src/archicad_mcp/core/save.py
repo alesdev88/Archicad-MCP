@@ -55,14 +55,14 @@ def _mtime(path: Path | None) -> int | None:
         return None
 
 
-def _failure(exc: APIErrorBase, path: Path | None) -> dict:
+def _failure(exc: APIErrorBase, path: Path | None, show_identity: bool) -> dict:
     code = getattr(exc, "code", None)
     said = f"{exc.message}" + (f", code {code}" if code is not None else "")
     text = f"Archicad did not save the project ({said}). "
     if path is not None and not (os.access(path, os.W_OK)
                                  and os.access(path.parent, os.W_OK)):
-        text += (f"The project file or its folder is not writable for this user "
-                 f"({path}). ")
+        where = f" ({path})" if show_identity else ""
+        text += f"The project file or its folder is not writable for this user{where}. "
     return {"error": text + _CAUSES}
 
 
@@ -87,7 +87,7 @@ def save_project(conn: ArchicadConnection, confirm: bool, show_identity: bool) -
     try:
         conn.tapir("SaveProject")
     except APIErrorBase as exc:
-        return _failure(exc, path)
+        return _failure(exc, path, show_identity)
     out["saved"] = True
     if teamwork:
         out["sent"] = False
@@ -96,6 +96,10 @@ def save_project(conn: ArchicadConnection, confirm: bool, show_identity: bool) -
         after = _mtime(path)
         out["file_updated"] = before is not None and after is not None and after != before
         if not out["file_updated"]:
-            out["note"] = ("Archicad answered success, but the file on disk was not "
-                           "rewritten. Usually that means there was nothing unsaved.")
+            # Archicad 29 rewrites the .pln on every save, changes or not
+            # (live 19.10.2026), so an untouched file is a warning sign.
+            out["note"] = ("Archicad answered success, but the file's modification time "
+                           "did not change, although Archicad rewrites the file on every "
+                           "save. Treat the work as unsaved until it is checked in "
+                           "Archicad.")
     return out

@@ -91,7 +91,10 @@ async def test_save_that_left_the_file_reports_it(monkeypatch, plan):
     out = await call({"confirm": True})
     assert out["saved"] is True
     assert out["file_updated"] is False
-    assert out["note"]
+    # Archicad rewrites the .pln on every save (live 19.10.2026), so an
+    # unchanged file is no sign that there was nothing to save.
+    assert "nothing unsaved" not in out["note"]
+    assert "unsaved until" in out["note"]
 
 
 async def test_failure_names_the_older_version_case(monkeypatch, plan):
@@ -155,3 +158,14 @@ async def test_needs_save_project_command(monkeypatch, plan):
     out = await call({"confirm": True})
     assert "1.3.1" in out["error"]
     assert not _saved(core)
+
+
+async def test_failed_save_in_verdicts_mode_hides_the_path(monkeypatch, plan):
+    def save(params):
+        raise TapirCommandError(message="Failed to save the project.", code=-1)
+    core = _core(_local(plan), save=save)
+    _use(monkeypatch, core)
+    monkeypatch.setattr("archicad_mcp.core.save.os.access", lambda path, mode: False)
+    out = await call({"confirm": True}, mode="verdicts")
+    assert "not writable" in out["error"]
+    assert str(plan) not in out["error"] and "House" not in out["error"]
