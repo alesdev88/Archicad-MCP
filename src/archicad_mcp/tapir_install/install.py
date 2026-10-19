@@ -80,15 +80,22 @@ def _uv_tool(executable: str) -> bool:
     return "tools" in parts and "archicad-mcp-server" in parts
 
 
+def _ps_quote(arg: str) -> str:
+    return f'"{arg}"' if any(c in arg for c in " '&;()") else arg
+
+
 def windows_admin_text(row: Row, *, executable: str | None = None,
-                       uv_tool: bool | None = None) -> str:
+                       uv_tool: bool | None = None, extra_args: list[str] = ()) -> str:
+    """extra_args repeats the flags of the run that got here (--replace and
+    the like), so the administrator rerun does the same thing."""
     executable = executable or sys.executable
     uv_tool = _uv_tool(executable) if uv_tool is None else uv_tool
     version = row.inst.version
+    args = " ".join([f"--archicad {version}", *map(_ps_quote, extra_args)])
     # PowerShell (what Windows Terminal opens) needs the call operator in front
     # of a quoted program path; without it the line is a parse error.
-    command = (f"archicad-mcp install-tapir --archicad {version}" if uv_tool else
-               f'& "{executable}" -I -m archicad_mcp.tapir_install --archicad {version}')
+    command = (f"archicad-mcp install-tapir {args}" if uv_tool else
+               f'& "{executable}" -I -m archicad_mcp.tapir_install {args}')
     text = (f"Archicad {version}'s Add-Ons folder ({row.inst.add_ons}) needs "
             "administrator rights, so nothing was changed. Open PowerShell as "
             "administrator (right-click it, Run as administrator) and run: "
@@ -229,7 +236,8 @@ def _place(staged: Path, target: Path) -> bool:
 
 def apply_row(row: Row, staged: Path, *, platform: str | None = None,
               backups: Path | None = None, now: datetime | None = None,
-              elevate: Callable[[list[list[str]]], None] | None = None) -> Outcome:
+              elevate: Callable[[list[list[str]]], None] | None = None,
+              rerun_args: list[str] = ()) -> Outcome:
     platform = platform or sys.platform
     now = now or datetime.now()
     out = Outcome(row.inst.version, row.inst.add_ons, restart_note=_restart_note(row))
@@ -249,7 +257,8 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
         out.backup = backup
 
     if not row.writable:
-        return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate)
+        return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
+                               rerun_args)
 
     done: list[tuple[Path, Path]] = []
     placed, copied, made_tapir_dir = None, False, False
@@ -267,7 +276,8 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
         if isinstance(exc, PermissionError) and not done and not made_tapir_dir:
             # The folder refused before anything changed: the not-writable path.
             row.writable = False
-            return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate)
+            return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
+                                   rerun_args)
         out.restored = _roll_back(done, staged, placed, copied)
         if made_tapir_dir and tapir_dir.is_dir() and not any(tapir_dir.iterdir()):
             tapir_dir.rmdir()
@@ -308,11 +318,12 @@ def _roll_back(done: list[tuple[Path, Path]], staged: Path, placed: Path | None,
 
 def _apply_elevated(row: Row, out: Outcome, staged: Path, target: Path, backup: Path | None,
                     moves: list[tuple[Path, Path]], platform: str,
-                    elevate: Callable[[list[list[str]]], None] | None) -> Outcome:
+                    elevate: Callable[[list[list[str]]], None] | None,
+                    rerun_args: list[str] = ()) -> Outcome:
     if platform != "darwin":
         _discard_backup(backup)
         out.backup = None
-        out.error = windows_admin_text(row)
+        out.error = windows_admin_text(row, extra_args=rerun_args)
         return out
     elevate = elevate or _osascript_elevate
     # The backup folder is this user's; create it as this user so only the

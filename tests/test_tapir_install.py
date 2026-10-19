@@ -344,3 +344,11 @@ def test_windows_admin_text_works_in_powershell(tmp_path):
     text = windows_admin_text(row, executable=r"C:\Users\a\Claude\runtime\python.exe", uv_tool=False)
     assert "PowerShell" in text
     assert r'& "C:\Users\a\Claude\runtime\python.exe" -I -m archicad_mcp.tapir_install --archicad 29' in text
+
+
+def test_windows_admin_text_repeats_the_original_flags(tmp_path):
+    row, _ = win_row(tmp_path)
+    text = windows_admin_text(row, uv_tool=True, extra_args=[
+        "--replace", "--from-file", r"C:\My Files\TapirAddOn_AC29_Win.apx"])
+    assert ('archicad-mcp install-tapir --archicad 29 --replace '
+            r'--from-file "C:\My Files\TapirAddOn_AC29_Win.apx"') in text

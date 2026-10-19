@@ -159,6 +159,11 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
             report.notes.append("Dry run: the files were downloaded and checked, "
                                 "nothing was written.")
             return report
+        rerun = (["--replace"] if replace else []) + ([] if release.pinned else ["--latest"])
+        if from_file is not None:
+            rerun += ["--from-file", str(from_file)]
+        if add_ons_folder is not None:
+            rerun += ["--add-ons-folder", str(add_ons_folder)]
         todo = [r for r in rows if r.action in ("install", "replace")]
         chosen = todo
         if confirm_rows is not None and todo:
@@ -169,7 +174,8 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
         for row in chosen:
             try:
                 staged = stage(reference[row.inst.version], row, work, platform=platform)
-                report.outcomes.append(apply_row(row, staged, platform=platform, backups=backups))
+                report.outcomes.append(apply_row(row, staged, platform=platform, backups=backups,
+                                                 rerun_args=rerun))
             except (InstallError, OSError) as exc:
                 report.outcomes.append(Outcome(row.inst.version, row.inst.add_ons, error=str(exc)))
         return report
