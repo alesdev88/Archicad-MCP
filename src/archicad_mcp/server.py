@@ -944,6 +944,11 @@ def check_script_transport(enable_scripts: bool, mode: str, transport: str,
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["install-tapir"]:
+        # A subcommand, not a server flag: hand off before the server's own
+        # parse_known_args would swallow its options.
+        from archicad_mcp.tapir_install import cli as tapir_cli
+        raise SystemExit(tapir_cli.main(sys.argv[2:]))
     parser = argparse.ArgumentParser(prog="archicad-mcp")
     parser.add_argument("--mode", choices=["verdicts", "full"],
                         default=resolve_mode(os.environ.get("ARCHICAD_MCP_MODE")))
