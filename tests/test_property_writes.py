@@ -370,3 +370,39 @@ def test_group_failures_takes_a_detail_key():
     failed = [{"guid": "A", "command": "ModifyWalls", "code": 1, "message": "m"}]
     assert group_failures(failed, detail_key="command")[0]["sample"] == \
         [{"guid": "A", "command": "ModifyWalls"}]
+
+
+def test_plan_accepts_lowercase_guids_when_tapir_answers_uppercase():
+    # Live 19.10.2026: Tapir FilterElements answers every GUID uppercase,
+    # whatever case it was sent in. Compared as given, every element of a
+    # lowercase call read as not editable (on a hidden layer).
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert skipped == []
+    assert [p["guid"] for p in planned] == ["d-1", "d-2"]
+
+
+def test_lowercase_guids_still_name_the_refused_element():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"}, hotlinked={"d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert [s["guid"] for s in skipped] == ["d-2"]
+    assert skipped[0]["reason"] == HOTLINK_REASON
+
+
+def test_lowercase_guids_in_teamwork_still_tell_reserved_from_unreserved():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"},
+                                    mine={"d-1", "d-2"}, teamwork=True, hotlinked={"d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert skipped[0]["reason"] == HOTLINK_REASON
