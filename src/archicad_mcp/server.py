@@ -417,8 +417,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "[\"Uniclass/Ss_25/*\"]}, \"enum\": {\"rename\": {\"Old\": \"New\"}, "
         "\"remove\": [\"X\"], \"add\": [\"Y\"], \"order\": [...]}, \"default\": "
         "\"New\"}. GUIDs are kept, so element values survive everything except "
-        "removing an option (those elements show <Undefined>) or availability. Needs "
-        "the Tapir build with UpdateClassificationItems."),
+        "removing an option (those elements show <Undefined>) or availability. In a "
+        "Teamwork project the Properties set must be reserved first (reserve_elements "
+        "object_sets). Needs the Tapir build with UpdateClassificationItems."),
         **_tool_meta("Edit property definitions", read_only=False, destructive=True))
     @_guarded
     def edit_property_definitions(changes: list[dict], dry_run: bool = True,
@@ -431,7 +432,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "\"name\"?, \"description\"?}. Systems: {\"system\": \"Name\", \"name\"?, "
         "\"description\"?, \"source\"?, \"version\"?, \"date\"? (YYYY-MM-DD)}. Items "
         "keep their GUID, so classified elements and property availability stay "
-        "attached. Moving an item to another parent is not supported."),
+        "attached. Moving an item to another parent is not supported. In a Teamwork "
+        "project the Classifications set must be reserved first (reserve_elements "
+        "object_sets)."),
         **_tool_meta("Edit classifications", read_only=False, destructive=True))
     @_guarded
     def edit_classifications(changes: list[dict], dry_run: bool = True,
@@ -696,34 +699,48 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import teamwork as _teamwork
 
     @mcp.tool(description=(
-        "Reserve elements in a Teamwork project so you can edit them (Tapir). "
-        "CONFIRM-GATED: without confirm=true it only reports what it can "
-        "learn without touching the server: not_found, already_mine, and "
-        "would_attempt. Whether another user holds an element is only "
-        "learned by attempting, because Archicad exposes no read for it. "
-        "With confirm=true returns reserved, reserved_by_others (with the "
-        "user's name), already_mine, not_found, and indirectly_reserved: "
-        "elements Archicad pulled into your workspace that you did not ask "
-        "for, such as a door's wall. A reservation is visible to every "
+        "Reserve elements, and non-element object sets, in a Teamwork project so "
+        "you can edit them (Tapir). CONFIRM-GATED: without confirm=true it only "
+        "reports what it can learn without touching the server: not_found, "
+        "already_mine, and would_attempt. Whether another user holds an element is "
+        "only learned by attempting, because Archicad exposes no read for it. With "
+        "confirm=true returns reserved, reserved_by_others (with the user's name), "
+        "already_mine, not_found, and indirectly_reserved: elements Archicad pulled "
+        "into your workspace that you did not ask for, such as a door's wall. "
+        "object_sets reserves what attribute, property and classification edits "
+        "need: an attribute type (Layers, Composites, Fills, Lines, PenTables, "
+        "Profiles, BuildingMaterials, Surfaces, ZoneCategories), Properties or "
+        "Classifications, or any Archicad set name (Favorites, ProjectInfo, ...); "
+        "needs Tapir 1.7.1. Each set's entry says status, held_by and outcome "
+        "(would_reserve, already_mine, held_by_others, reserved, failed); for sets "
+        "the dry run does know who holds them. A reservation is visible to every "
         "teammate and blocks their edits until released."),
-              **_tool_meta("Reserve Teamwork elements", read_only=False, destructive=False))
+              **_tool_meta("Reserve Teamwork elements and sets", read_only=False,
+                           destructive=False))
     @_guarded
-    def reserve_elements(guids: list[str], confirm: bool = False,
+    def reserve_elements(guids: list[str] | None = None,
+                         object_sets: list[str] | None = None, confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.reserve_elements(_tapir_conn(port, "reserve_elements"), guids, confirm)
+        return _teamwork.reserve_elements(_tapir_conn(port, "reserve_elements"), guids,
+                                          confirm, object_sets)
 
     @mcp.tool(description=(
-        "Release elements from your Teamwork workspace (Tapir). CONFIRM-GATED: "
-        "without confirm=true it reports would_release (the ones actually in "
-        "your workspace), not_mine and not_found. With confirm=true releases "
-        "them and reports released and still_mine. Unsent changes on a "
-        "released element are not lost by this call; TeamworkSend is the "
-        "gateway's job."),
-              **_tool_meta("Release Teamwork elements", read_only=False, destructive=False))
+        "Release elements, and non-element object sets, from your Teamwork "
+        "workspace (Tapir). CONFIRM-GATED: without confirm=true it reports "
+        "would_release (the ones actually in your workspace), not_mine and "
+        "not_found. With confirm=true releases them and reports released and "
+        "still_mine. Unsent changes on a released element are not lost by this "
+        "call; TeamworkSend is the gateway's job. object_sets takes the names "
+        "reserve_elements takes; releasing a set sends that set's changes to the "
+        "server first (Archicad does that as part of the release)."),
+              **_tool_meta("Release Teamwork elements and sets", read_only=False,
+                           destructive=False))
     @_guarded
-    def release_elements(guids: list[str], confirm: bool = False,
+    def release_elements(guids: list[str] | None = None,
+                         object_sets: list[str] | None = None, confirm: bool = False,
                          port: int | None = None) -> dict:
-        return _teamwork.release_elements(_tapir_conn(port, "release_elements"), guids, confirm)
+        return _teamwork.release_elements(_tapir_conn(port, "release_elements"), guids,
+                                          confirm, object_sets)
 
     from archicad_mcp.core import attributes as _attributes
     from archicad_mcp.core import issues as _issues
@@ -737,12 +754,55 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def get_project_info(port: int | None = None) -> dict:
         return _project.get_project_info(_conn(port))
 
-    @mcp.tool(description="List attribute names by type: Layer, BuildingMaterial, "
-                          "Composite, Surface, Profile, ZoneCategory.",
+    @mcp.tool(description=(
+        "List attributes by type: Layer, LayerCombination, Line, Fill, ZoneCategory, "
+        "PenTable, Profile, BuildingMaterial, Composite, Surface (plurals work). "
+        "Names only by default. details=true returns each attribute's settings "
+        "(Tapir): a composite's skins and separators, a building material's fills "
+        "and physical values, a layer combination's layer states, a pen table's "
+        "pens, ... with references to other attributes shown by name, in the "
+        "vocabulary edit_attributes takes. names= picks attributes; otherwise "
+        "details are paged (limit, offset; next_offset when more remain)."),
               **_tool_meta("List attributes", read_only=True, destructive=False))
     @_guarded
-    def list_attributes(attribute_type: str, port: int | None = None) -> dict:
-        return _attributes.list_attributes(_conn(port), attribute_type)
+    def list_attributes(attribute_type: str, details: bool = False,
+                        names: list[str] | None = None, limit: int | None = None,
+                        offset: int = 0, port: int | None = None) -> dict:
+        return _attributes.list_attributes(_conn(port), attribute_type, details, names,
+                                           limit, offset)
+
+    from archicad_mcp.core import attribute_edit as _attribute_edit
+
+    @mcp.tool(description=(
+        "Create, modify and delete attributes (layers, layer combinations, lines, "
+        "fills, zone categories, pen tables, profiles, building materials, composites, "
+        "surfaces) and set attribute property values (Tapir). DRY-RUN BY DEFAULT; pass "
+        "dry_run=false to commit. Each change has one action key whose value is the "
+        "type: {\"create\": \"Layer\", \"name\": \"X\", <fields>} makes a new one and "
+        "NEVER overwrites (an existing name is skipped, with what would change and the "
+        "modify to send instead); {\"modify\": \"Composite\", \"attribute\": \"<name or "
+        "GUID>\", <fields>} changes an existing one (name renames; fields not given keep "
+        "their value, including what Tapir's own overwrite would drop: a composite's "
+        "useWith, a building material's texts); {\"modify\": ..., \"properties\": "
+        "{\"Group/Name\": \"value\"}} sets property values; {\"delete\": \"Fill\", "
+        "\"attribute\": ...} deletes. Fields use Tapir's names and units (metres, "
+        "radians, pen numbers); a field holding another attribute (buildingMaterialId, "
+        "lineTypeId, fillId, cutFillIndex, a layer combination's layers[].attributeId) "
+        "takes its name. changes=[] lists every type's fields; list_attributes"
+        "(details=true) shows current values in the same form. The dry run shows "
+        "current -> new and skips with the reason anything Archicad or Tapir would "
+        "refuse or silently get wrong: misspelt enums, unknown references, Archicad's "
+        "own index 1 attributes, a layer delete while elements are on the layer (it "
+        "would delete them) or without the floor plan active. In Teamwork the "
+        "attribute type's set must be reserved (reserve_elements object_sets). "
+        "Attribute writes cannot be undone. A commit returns applied (read back), "
+        "not_applied, failed (grouped) and stopped."),
+              **_tool_meta("Edit attributes", read_only=False, destructive=True))
+    @_guarded
+    def edit_attributes(changes: list[dict], dry_run: bool = True,
+                        port: int | None = None) -> dict:
+        return _attribute_edit.edit_attributes(_tapir_conn(port, "edit_attributes"),
+                                               changes, dry_run)
 
     @mcp.tool(description="List the issues in the open project, with their ids "
                           "(requires the Tapir add-on).",

@@ -30,6 +30,45 @@ def editing_unavailable(conn: ArchicadConnection,
     return tapir_refusal(conn, tool)
 
 
+@dataclass
+class Reservation:
+    """What a Teamwork project says about the definitions set, for one call."""
+    teamwork: list[dict] | None = None   # the result's `teamwork` list
+    block: str | None = None             # free or a teammate's: nothing is sent
+    hint: str | None = None              # unknown: sent, refusals carry this
+
+
+def definitions_reservation(conn: ArchicadConnection, targets: list[str]) -> Reservation:
+    """The definitions set's state in a Teamwork project; empty in a solo one.
+
+    Property and classification definitions are the ClassificationsAndProperties
+    set (teamwork.DEFINITIONS_SET; CVP answered for it on 19.10.2026). Free or
+    held by a teammate blocks the edit before anything is sent; a status that
+    cannot be learned only warns, and Archicad's refusals then carry the hint.
+    """
+    from archicad_mcp.core.teamwork import (DEFINITIONS_SET, object_set_states,
+                                            set_problem, teamwork_entries)
+    if not targets:
+        return Reservation()
+    states = object_set_states(conn, [DEFINITIONS_SET])
+    if states is None:
+        return Reservation()
+    entries = teamwork_entries(states, {DEFINITIONS_SET: targets})
+    problem = set_problem(states[DEFINITIONS_SET])
+    if problem is None:
+        return Reservation(entries)
+    if problem.blocking:
+        return Reservation(entries, block=problem.text)
+    return Reservation(entries, hint=problem.text)
+
+
+def with_hint(groups: list[dict], hint: str | None) -> list[dict]:
+    if hint:
+        for g in groups:
+            g["hint"] = hint
+    return groups
+
+
 def group_by_error(failed: list[dict]) -> list[dict]:
     """Refusals grouped by message, largest group first, a few targets each."""
     groups: dict[str, dict] = {}
@@ -580,11 +619,18 @@ def edit_property_definitions(conn: ArchicadConnection, changes: list[dict],
              if any("availability" in c for c in changes) else None)
     plans = [plan_property_change(c, defs, index) for c in changes]
     to_send = [p for p in plans if not p.errors and len(p.payload) > 1]
+    reservation = definitions_reservation(conn, [p.target for p in to_send])
+    if reservation.block:
+        for p in to_send:
+            p.errors.append(reservation.block)
+        to_send = []
     result: dict = {"dry_run": dry_run,
                     "planned": [p.entry() for p in plans if not p.errors]}
     skipped = [p.entry() for p in plans if p.errors]
     if skipped:
         result["skipped"] = skipped
+    if reservation.teamwork:
+        result["teamwork"] = reservation.teamwork
     if dry_run or not to_send:
         return result
 
@@ -602,5 +648,5 @@ def edit_property_definitions(conn: ArchicadConnection, changes: list[dict],
                                   index, by_target[t].changes)}
         for t in applied if by_target[t].payload["propertyId"]["guid"] in after.by_guid]
     if failed:
-        result["failed"] = group_by_error(failed)
+        result["failed"] = with_hint(group_by_error(failed), reservation.hint)
     return result

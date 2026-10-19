@@ -39,6 +39,7 @@ WRITERS = {
     # so claiming readOnlyHint would let a client run arbitrary code unprompted.
     "run_script", "apply_changeset",
     "edit_property_definitions", "edit_classifications", "import_definitions",
+    "edit_attributes",
     "create_swept_beam", "create_road_marking", "modify_elements",
     # Writes the .pln: File > Revert can no longer go back past it.
     "save_project", "show_elements", "export_ifc",

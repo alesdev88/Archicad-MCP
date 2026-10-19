@@ -204,7 +204,11 @@
     },
     {
       "name": "list_attributes",
-      "description": "List layers, materials, composites, profiles, and other attributes."
+      "description": "List attributes by type, with their settings on request."
+    },
+    {
+      "name": "edit_attributes",
+      "description": "Create, modify and delete attributes without silent overwrites. Dry-run by default."
     },
     {
       "name": "list_issues",

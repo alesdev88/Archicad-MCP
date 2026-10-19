@@ -487,7 +487,7 @@ rule with no failures removes the highlight.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`show_elements`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -564,6 +564,20 @@ after the export it checks that the file is there. Archicad exports only from
 the floor plan or the 3D window, so from another window it brings the floor
 plan to the front first. It never opens or merges IFC. Needs Tapir 1.6.0.
 
+`edit_attributes` creates, changes and deletes attributes (layers, layer
+combinations, lines, fills, zone categories, pen tables, profiles, building
+materials, composites, surfaces) and sets their property values. Tapir's attribute
+commands create *or overwrite*, and an overwrite quietly drops what it is not sent
+(a composite's wall/slab/roof availability, for one). So a `create` never replaces
+an existing attribute (the dry run shows what would change and the `modify` to send
+instead), a `modify` names the attribute and keeps every field it does not change,
+and values Tapir would silently replace with a default (a misspelt line type, an
+unknown building material) are refused before anything is sent. A layer is deleted
+only when no element is on it, since Archicad deletes a layer's elements with it.
+Fields reference other attributes by name; `list_attributes(details=true)` shows
+current settings in the same form. Attribute writes cannot be undone in Archicad.
+Needs Tapir 1.5.4 or newer.
+
 **Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
 confirm-gated. A dry run reports what can be known without touching the
 server: unknown GUIDs and elements already in your workspace. Who holds the
@@ -572,6 +586,18 @@ with `confirm=true` the result separates reserved, reserved by others (with the
 user's name), already mine, not found, and indirectly reserved. Verified live:
 reserving one door also pulled in its wall and the wall's other door, and the
 tool reported both. Sending and receiving stay in the gateway. Needs Tapir.
+Both also take `object_sets`, the non-element things Teamwork reserves: an
+attribute type (`Layers`, `Composites`, `Fills`, ...), `Properties` /
+`Classifications`, or any Archicad set name (`Favorites`, `ProjectInfo`, ...).
+For sets the dry run does say who holds them. Releasing a set sends its changes
+to the server, as Archicad does. In a Teamwork project the definition tools and
+`edit_attributes` refuse an edit whose set is not reserved (or a teammate holds)
+and name the exact call to reserve it, before anything is sent. Needs Tapir
+1.7.1. The set names come from the Archicad DevKit, except
+`ClassificationsAndProperties` (properties and classifications), which Archicad
+carries but does not document; all of them answered on the CVP Teamwork project
+(read only). Reserving, releasing and the refusal without a reservation have not
+been tried on a Teamwork project yet.
 
 **Definitions (full mode):** `edit_property_definitions`, `edit_classifications`,
 `import_definitions`. They edit property definitions and classification systems in

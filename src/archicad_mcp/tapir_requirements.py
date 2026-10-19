@@ -47,6 +47,9 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     "edit_property_definitions": ("UpdateClassificationItems",),
     "edit_classifications": ("UpdateClassificationItems",),
     "import_definitions": ("UpdateClassificationItems",),
+    # Each type's Create*/Get*, DeleteAttributes and the attribute property
+    # commands are checked per change, in core/attribute_edit.py.
+    "edit_attributes": ("GetAttributesByType",),
     "deploy_gdl_object": ("ReloadLibraries", "CreateObjects", "GetElementPreviewImage"),
 }
 
