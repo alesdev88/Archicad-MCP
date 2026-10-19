@@ -87,6 +87,14 @@ ABSOLUTE_Z_FIELDS: dict[str, str] = {
     "ModifyLamps": "coordinates", "ModifyTexts": "coordinate",
 }
 
+# Fields that set a height above the home story: with keep_elevation they would
+# undo the move back.
+RELATIVE_Z_FIELDS: dict[str, frozenset[str]] = {
+    "ModifyBeams": frozenset({"level"}), "ModifyMeshes": frozenset({"level"}),
+    "ModifyMorphs": frozenset({"level"}), "ModifyWalls": frozenset({"bottomOffset"}),
+    "ModifyColumns": frozenset({"bottomOffset"}),
+}
+
 _NOT_SETTABLE = frozenset({"elementId", "floorIndex"})
 
 _DISCARDED = ("Archicad discards this field (Tapir's own definition says so), so "
@@ -227,6 +235,9 @@ def refusal(command: str, field: str, fields: dict, entry: dict,
     if ABSOLUTE_Z_FIELDS.get(command) == field and "story" in fields:
         return (f"give either 'story' or '{field}': Tapir takes the story from the "
                 f"absolute z in {field}, so the two would fight")
+    if fields.get("keep_elevation") is True and field in RELATIVE_Z_FIELDS.get(command, ()):
+        return (f"give either keep_elevation or '{field}': {field} sets the height above "
+                "the new story, so the element would not stay at its height")
     return None
 
 

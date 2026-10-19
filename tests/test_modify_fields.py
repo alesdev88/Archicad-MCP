@@ -63,6 +63,10 @@ def test_allowed_fields():
     ("ModifyWalls", "elementId", {"elementId": {}}, "slab", "guid"),
     ("ModifyRoofs", "thickness", {"thickness": 0.2}, "roof_single", "single-plane"),
     ("ModifySlabs", "zCoordinate", {"zCoordinate": 1.0, "story": 1}, "slab", "story"),
+    ("ModifyBeams", "level", {"level": 0.5, "story": 1, "keep_elevation": True}, "slab",
+     "keep_elevation"),
+    ("ModifyWalls", "bottomOffset", {"bottomOffset": 0.1, "story": 1, "keep_elevation": True},
+     "slab", "keep_elevation"),
 ])
 def test_refused_fields_name_the_reason(command, field, fields, entry_key, fragment):
     assert fragment in refusal(command, field, fields, ENTRIES[entry_key], NEW)

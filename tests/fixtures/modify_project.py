@@ -56,6 +56,12 @@ class ModifyProject:
         self.partial: set[str] = set()              # applied, then answered failure
         self.raise_on: set[str] = set()             # commands that raise
         self.mate_changes: dict[str, dict] = {}     # group mate -> entry keys a Modify sets
+        self.dead_after: str | None = None          # this command, and every call after it, raises
+        self._dead = False
+        self.suspend_fail: set[bool] = set()        # SetSuspendGroupsMode answers failure for these
+        # Elements of another view's database that FilterElements IsEditable still
+        # passes (seen live 19.10.2026 from the floor plan); details do not find them.
+        self.other_database: set[str] = set()
         self.stories = load("stories.json")
         self.attributes: dict[str, list[dict]] = {
             "Composite": [
@@ -87,12 +93,15 @@ class ModifyProject:
     # ---------- state rules ----------
 
     def _in_database(self, guid: str) -> bool:
-        return self.window == "FloorPlan" and guid in self.elements
+        return (self.window == "FloorPlan" and guid in self.elements
+                and guid not in self.other_database)
 
     def _mine(self, guid: str) -> bool:
         return not self.teamwork or self.mine is None or guid in self.mine
 
     def _editable(self, guid: str) -> bool:
+        if guid in self.other_database:
+            return True
         return (self._in_database(guid) and guid not in self.not_editable
                 and guid not in self.hidden and self._mine(guid))
 
@@ -182,8 +191,21 @@ class ModifyProject:
         tapir = dict(api_replays.TAPIR)
         tapir.update(self._tapir_handlers())
         tapir.update(self._write_handlers())
+        official = {name: self._mortal(name, h) for name, h in official.items()}
+        tapir = {name: self._mortal(name, h) for name, h in tapir.items()}
         self.core = FakeCore(official=official, tapir=tapir)
         return ArchicadConnection(19723, core=self.core)
+
+    def _mortal(self, name: str, handler):
+        """The handler, raising once the connection has died (dead_after)."""
+        def call(p):
+            if name == self.dead_after:
+                self._dead = True
+            if self._dead:
+                raise TapirCommandError(message="Invalid program status (ongoing user input)",
+                                        code=4001)
+            return handler(p) if callable(handler) else handler
+        return call
 
     # ---------- write handlers ----------
 
@@ -269,12 +291,23 @@ class ModifyProject:
 
     def move(self, p):
         self._raise_if("MoveElements")
+        results = []
         for item in p["elementsWithMoveVectors"]:
-            self._shift_absolute(self.elements[item["elementId"]["guid"]],
-                                 item["moveVector"]["z"])
-        return {"executionResults": [{"success": True} for _ in p["elementsWithMoveVectors"]]}
+            guid = item["elementId"]["guid"]
+            if ("MoveElements", guid) in self.fail:
+                results.append({"success": False, "error": self.fail[("MoveElements", guid)]})
+                continue
+            self._shift_absolute(self.elements[guid], item["moveVector"]["z"])
+            results.append({"success": True})
+        return {"executionResults": results}
 
     def set_suspend(self, p):
+        # Tapir answers a refusal as executionResult success false, without
+        # raising (ElementGroupingCommands.cpp).
+        self._raise_if("SetSuspendGroupsMode")
+        if p["suspendGroups"] in self.suspend_fail:
+            return {"executionResult": {"success": False,
+                                        "error": {"code": 3, "message": "not now"}}}
         self.suspend = p["suspendGroups"]
         self.suspend_history.append(self.suspend)
         return {"executionResult": {"success": True}}

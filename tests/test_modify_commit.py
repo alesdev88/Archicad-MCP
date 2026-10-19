@@ -103,18 +103,85 @@ def test_suspend_groups_restored_when_move_raises():
     assert project.suspend_history[-1] is False and project.suspend is False
 
 
+def _not_sent(out) -> dict[str, str]:
+    return {g: group["reason"] for group in out.get("not_sent", []) for g in group["guids"]}
+
+
 def test_raising_command_stops_and_reports():
     project = ModifyProject()
     project.raise_on = {"ModifySlabs"}
     out = _commit(project, [{"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25},
                             {"guid": MESH, "level": 0.3}])
     assert "ModifySlabs" in out["stopped"]["message"]
-    [group] = out["not_sent"]
-    assert group["guids"] == [MESH]
-    assert [n["field"] for n in out["not_applied"]] == ["thickness"]
+    reasons = _not_sent(out)
+    assert "stopped before Archicad answered" in reasons[SLAB]
+    assert "the run stopped" in reasons[MESH]
+    assert "not_applied" not in out          # nothing answered success
+    assert out["partly_applied"] == {"count": 1, "guids": [SLAB]}   # the layer landed
     assert project.elements[SLAB]["layerIndex"] == FINISH_FLOOR
     assert "ModifyMeshes" not in project.command_names()
     assert out["modified"] == 0
+
+
+def test_a_stop_before_a_later_command_reports_what_landed():
+    project = ModifyProject()
+    project.raise_on = {"ModifyWalls"}       # walls go before slabs
+    out = _commit(project, [{"guid": "WALL-1", "height": 2.8},
+                            {"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25}])
+    reasons = _not_sent(out)
+    assert "stopped before Archicad answered" in reasons["WALL-1"]
+    assert "the run stopped" in reasons[SLAB]
+    assert out["partly_applied"]["guids"] == [SLAB]
+    assert "not_applied" not in out
+
+
+def test_a_readback_that_fails_still_reports():
+    # The connection dies at the move: the move, the restore and the readback
+    # all raise. The story change has already lifted the slab.
+    project = ModifyProject()
+    project.dead_after = "MoveElements"
+    out = _commit(project, [{"guid": SLAB, "story": 1, "keep_elevation": True}])
+    assert out["modified"] == 0
+    assert "ongoing user input" in out["stopped"]["message"]
+    assert out["unconfirmed"]["guids"] == [SLAB]
+    assert "dry run" in out["unconfirmed"]["note"]
+
+
+def test_suspend_groups_that_will_not_turn_on_skips_the_move():
+    project = ModifyProject()
+    project.groups = {OBJECT: "GROUP-1"}
+    project.suspend_fail = {True}
+    out = _commit(project, [{"guid": OBJECT, "story": 1, "keep_elevation": True}])
+    assert "MoveElements" not in project.command_names()
+    assert "Suspend Groups" in _not_sent(out)[OBJECT]
+    assert out["partly_applied"]["guids"] == [OBJECT]     # it moved with the story
+    assert out["modified"] == 0
+
+
+def test_suspend_groups_left_on_is_reported():
+    project = ModifyProject()
+    project.groups = {OBJECT: "GROUP-1"}
+    project.suspend_fail = {False}
+    out = _commit(project, [{"guid": OBJECT, "story": 1, "keep_elevation": True}])
+    assert "left on" in out["suspend_groups"]
+    assert project.suspend is True
+
+
+def test_a_failed_move_is_named_in_the_skip():
+    project = ModifyProject()
+    project.fail = {("MoveElements", OBJECT): {"code": 5, "message": "cannot move"}}
+    out = _commit(project, [{"guid": OBJECT, "story": 1, "keep_elevation": True,
+                             "angle": 0.5}])
+    reason = _not_sent(out)[OBJECT]
+    assert "move" in reason and "story, layer or draw order" not in reason
+    assert "ModifyObjects" not in project.command_names()
+
+
+def test_a_draw_order_reset_is_unverified():
+    project = ModifyProject()
+    out = _commit(project, [{"guid": SLAB, "draw_order": 0}])
+    assert out["unverified"] == {"draw_order": 1}
+    assert out["modified"] == 1
 
 
 def test_group_mates_changed_are_reported():

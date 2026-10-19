@@ -263,3 +263,32 @@ def test_empty_and_fieldless_changes():
     assert project.core.calls == []
     out = _dry(ModifyProject(), [{"guid": SLAB, "keep_elevation": False}])
     assert "nothing to change" in _reason(out, SLAB)
+
+
+def test_door_draw_order_warns_about_the_wall_and_its_openings():
+    out = _dry(ModifyProject(), [{"guid": "DOOR-1", "draw_order": 0}])
+    assert any("every opening" in w for w in _warnings(out, "DOOR-1"))
+
+
+def test_keep_elevation_with_a_relative_level_is_refused():
+    out = _dry(ModifyProject(), [{"guid": "BEAM-1", "story": 1, "keep_elevation": True,
+                                  "level": 0.5}])
+    assert "keep_elevation" in _reason(out, "BEAM-1")
+
+
+def test_large_objects_show_only_the_keys_that_change():
+    out = _dry(ModifyProject(), [{"guid": SLAB, "floorFill": {"orientation": {"matrix00": 2}}},
+                                 {"guid": "TEXT-1", "style": {"height": 3.5}}])
+    assert _planned(out, SLAB)["changes"]["floorFill"] == {
+        "current": {"orientation": {"matrix00": 1}}, "new": {"orientation": {"matrix00": 2}}}
+    assert _planned(out, "TEXT-1")["changes"]["style"] == {
+        "current": {"height": 2.5}, "new": {"height": 3.5}}
+
+
+def test_an_element_of_another_database_is_not_found():
+    # Live 19.10.2026: from the floor plan, IsEditable passed a layout Text.
+    # The details read, which acts on the active database, does not find it.
+    project = ModifyProject()
+    project.other_database = {"TEXT-1"}
+    out = _dry(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"}])
+    assert "not found" in _reason(out, "TEXT-1")

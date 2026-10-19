@@ -11,6 +11,7 @@ anything is sent. The design is docs/superpowers/specs/2026-10-19-modify-element
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -216,6 +217,23 @@ def _shown_current(field_name: str, value, ctx: _Context):
     return mf.summarize(value)
 
 
+def _project(full, given):
+    """`full` cut down to the keys `given` names, at every level."""
+    if isinstance(full, dict) and isinstance(given, dict):
+        return {k: _project(full.get(k), v) for k, v in given.items()}
+    return full
+
+
+def _shown_pair(current, new, given) -> tuple:
+    """Current and new for a report. A large object (a fill, a text style)
+    shows only the keys the caller gave, so the change stays visible; a small
+    one (coordinates) shows whole, completed."""
+    if isinstance(given, dict) and (len(json.dumps(current, default=str)) > 200
+                                    or len(json.dumps(new, default=str)) > 200):
+        return _project(current, given), _project(new, given)
+    return current, new
+
+
 def _plan_common(p: Planned, fields: dict, ctx: _Context) -> None:
     entry = p.entry
     if "story" in fields:
@@ -272,6 +290,7 @@ def _plan_typed(p: Planned, fields: dict, typed: dict, ctx: _Context) -> None:
         # An attribute shows by the name it was given; anything else shows as
         # sent, completed, so it compares with the current value.
         new = shown if isinstance(shown, str) and shown is value else sent
+        current, new = _shown_pair(current, new, value)
         p.display[name] = {"current": _shown_current(name, current, ctx),
                            "new": mf.summarize(new)}
         if mf.compared(command, name):
@@ -317,8 +336,9 @@ def _element_warnings(p: Planned, typed: dict, ctx: _Context) -> list[str]:
                            "story from the absolute z")
         out.extend(mf.side_effects(p.command, typed, p.entry))
     if p.draw_order is not None and p.type in mf.OPENING_TYPES:
-        out.append("a door or window cannot go below draw order 7, and above its "
-                   "wall's level it moves with the wall")
+        out.append("draw_order on a door or window goes through its wall: 0 resets the "
+                   "wall and every opening in it, a level above 7 lifts every opening "
+                   "in that wall, and 1 to 6 are unreachable")
     return out
 
 

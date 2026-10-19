@@ -18,9 +18,15 @@ property/element combination*, most likely a property that is not applicable to
 that element, which the API aborts on instead of returning a per-element error.
 
 This is an Archicad-side fault. The server can trigger it but **cannot prevent
-it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`, or
-`set_element_data` against a model you care about as capable of crashing it.
-**Save first.**
+it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`,
+`set_element_data`, or `modify_elements` (its dry run too) against a model you
+care about as capable of crashing it. **Save first.**
+
+`modify_elements` reads one built-in property, `General_Locked` (the element
+lock, which no Tapir command reads), on every element it plans. Built-in
+properties are the read class that has not crashed Archicad, and it read cleanly
+on slabs, objects and meshes in MCP-Test on 19.10.2026, but it has not been read
+live on texts, labels, dimensions or other 2D elements yet.
 
 ### The element ceiling is blast-radius control, not a fix
 
