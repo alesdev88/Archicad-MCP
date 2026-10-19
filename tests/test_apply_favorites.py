@@ -245,3 +245,95 @@ def test_to_defaults_dry_run():
     assert result["tool"] == "Wall"
     assert not p.sent("ApplyFavoritesToElementDefaults")
     assert "error" in run(Project(), [WALL], "Partition Wall", to_defaults=True)
+
+
+# The commit
+
+def test_commit_reports_changes():
+    p = Project()
+    result = run(p, [WALL], "Partition Wall", dry_run=False, keep=[])
+    assert result["dry_run"] is False
+    assert result["applied"] == 1
+    changed = result["changed"][WALL]
+    assert changed["id"] == {"current": "TEST-A", "new": "SW - 001"}
+    assert changed["layer"] == {"current": "Shell - General", "new": "Structural - Bearing"}
+    assert changed["details.height"] == {"current": 2.4, "new": 3}
+    assert changed["details.relativeTopStory"] == {"current": 0, "new": 1}
+    assert changed["details.compositeId"] == {"current": None, "new": "Partition 100"}
+    assert changed["details.buildingMaterialId"] == {"current": "Concrete", "new": None}
+    assert "details.begCoordinate.x" not in changed
+    sent = p.sent("ApplyFavoritesToElements")[0]
+    assert sent == {"favoritesToApply": [{"elementId": {"guid": WALL},
+                                          "favorite": "Partition Wall"}],
+                    "applySettings": True, "applyClassifications": True,
+                    "applyCategories": True, "applyProperties": True}
+
+
+def test_keep_id_restores():
+    p = Project()
+    result = run(p, [WALL], "Partition Wall", dry_run=False)
+    written = p.sent("API.SetPropertyValuesOfElements")[0]["elementPropertyValues"]
+    assert written == [{"elementId": {"guid": WALL}, "propertyId": ELEMENT_ID_PROPERTY,
+                        "propertyValue": {"type": "string", "status": "normal",
+                                          "value": "TEST-A"}}]
+    assert result["restored"] == {"id": 1}
+    assert "id" not in result["changed"][WALL]
+    assert p.elements[WALL]["id"] == "TEST-A"
+
+
+def test_keep_empty_id():
+    elements = {WALL: dict(copy.deepcopy(WALL_DETAILS), id="")}
+    p = Project(elements=elements)
+    run(p, [WALL], "Partition Wall", dry_run=False)
+    written = p.sent("API.SetPropertyValuesOfElements")[0]["elementPropertyValues"]
+    assert written[0]["propertyValue"]["value"] == ""
+    assert p.elements[WALL]["id"] == ""
+
+
+def test_keep_layer_restores():
+    p = Project()
+    result = run(p, [WALL], "Partition Wall", dry_run=False, keep=["id", "layer"])
+    assert p.sent("SetDetailsOfElements")[0] == {"elementsWithDetails": [
+        {"elementId": {"guid": WALL}, "details": {"layerIndex": 54}}]}
+    assert result["restored"] == {"id": 1, "layer": 1}
+    assert "layer" not in result["changed"][WALL]
+
+
+def test_nothing_to_restore_sends_nothing():
+    p = Project()
+    run(p, [DOOR], "Internal Door", dry_run=False, keep=["id", "layer"])
+    assert not p.sent("API.SetPropertyValuesOfElements")
+    assert not p.sent("SetDetailsOfElements")
+
+
+def test_unchanged_reported():
+    result = run(Project(), [DOOR], "Internal Door", dry_run=False)
+    assert result["unchanged"] == [DOOR]
+    assert result["applied"] == 1
+    assert DOOR not in result.get("changed", {})
+
+
+def test_failures_grouped():
+    p = Project(fail_apply={
+        WALL: (-2130312311, "Failed to apply favorite to element")})
+    result = run(p, [WALL], "Partition Wall", dry_run=False)
+    assert result["applied"] == 0
+    failure = result["failed"][0]
+    assert failure["code"] == -2130312311 and failure["count"] == 1
+    assert "#812" in failure["message"]
+    assert not p.sent("API.SetPropertyValuesOfElements")
+
+
+def test_not_read_back_note():
+    result = run(Project(), [DOOR], "Entrance Door", dry_run=False)
+    assert any("not read back" in n for n in result["notes"])
+    quiet = run(Project(), [DOOR], "Entrance Door", dry_run=False,
+                classifications=False, categories=False, properties=False)
+    assert "notes" not in quiet
+
+
+def test_to_defaults_commit():
+    p = Project()
+    result = run(p, None, "Partition Wall", dry_run=False, to_defaults=True)
+    assert p.sent("ApplyFavoritesToElementDefaults") == [{"favorites": ["Partition Wall"]}]
+    assert result["applied"] is True and result["tool"] == "Wall"
