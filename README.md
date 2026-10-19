@@ -578,10 +578,13 @@ attribute type (`Layers`, `Composites`, `Fills`, ...), `Properties` /
 `Classifications`, or any Archicad set name (`Favorites`, `ProjectInfo`, ...).
 For sets the dry run does say who holds them. Releasing a set sends its changes
 to the server, as Archicad does. In a Teamwork project the definition tools and
-`edit_attributes` name the set to reserve when it is not reserved. Needs Tapir
-1.7.1. Not yet verified on a Teamwork project: the set names come from the
-Archicad DevKit, except `ClassificationsAndProperties` (properties and
-classifications), which Archicad 29 carries but does not document.
+`edit_attributes` refuse an edit whose set is not reserved (or a teammate holds)
+and name the exact call to reserve it, before anything is sent. Needs Tapir
+1.7.1. The set names come from the Archicad DevKit, except
+`ClassificationsAndProperties` (properties and classifications), which Archicad
+carries but does not document; all of them answered on the CVP Teamwork project
+(read only). Reserving, releasing and the refusal without a reservation have not
+been tried on a Teamwork project yet.
 
 **Definitions (full mode):** `edit_property_definitions`, `edit_classifications`,
 `import_definitions`. They edit property definitions and classification systems in

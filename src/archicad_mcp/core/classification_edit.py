@@ -101,21 +101,26 @@ def edit_classifications(conn: ArchicadConnection, changes: list[dict],
         else:
             plans.append(("item", _plan_item(change, index)))
 
-    result: dict = {"dry_run": dry_run,
-                    "planned": [p.entry() for _, p in plans if not p.errors]}
-    skipped = [p.entry() for _, p in plans if p.errors]
-    if skipped:
-        result["skipped"] = skipped
     batches = [
         ("UpdateClassificationSystems", "classificationSystems",
          [p for k, p in plans if k == "system" and not p.errors and len(p.payload) > 1]),
         ("UpdateClassificationItems", "classificationItems",
          [p for k, p in plans if k == "item" and not p.errors and len(p.payload) > 1]),
     ]
-    teamwork, hint = definitions_reservation(
+    reservation = definitions_reservation(
         conn, [p.target for _, _, batch in batches for p in batch])
-    if teamwork:
-        result["teamwork"] = teamwork
+    if reservation.block:
+        for _, _, batch in batches:
+            for p in batch:
+                p.errors.append(reservation.block)
+        batches = [(command, key, []) for command, key, _ in batches]
+    result: dict = {"dry_run": dry_run,
+                    "planned": [p.entry() for _, p in plans if not p.errors]}
+    skipped = [p.entry() for _, p in plans if p.errors]
+    if skipped:
+        result["skipped"] = skipped
+    if reservation.teamwork:
+        result["teamwork"] = reservation.teamwork
     if dry_run or not any(b for _, _, b in batches):
         return result
 
@@ -133,7 +138,7 @@ def edit_classifications(conn: ArchicadConnection, changes: list[dict],
         failed += bad
     result["applied"] = applied
     if failed:
-        result["failed"] = with_hint(group_by_error(failed), hint)
+        result["failed"] = with_hint(group_by_error(failed), reservation.hint)
     return result
 
 
@@ -199,9 +204,13 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
     except ValueError as exc:
         return {"error": str(exc)}
     result["policy"] = POLICY_EFFECT[(kind, conflict)]
-    teamwork, hint = definitions_reservation(conn, [str(path)])
-    if teamwork:
-        result["teamwork"] = teamwork
+    reservation = definitions_reservation(conn, [str(path)])
+    if reservation.teamwork:
+        result["teamwork"] = reservation.teamwork
+    if reservation.block:
+        # Nothing is sent: an import into an unreserved set would be refused.
+        result["blocked" if dry_run else "error"] = reservation.block
+        return result
     if dry_run:
         return result
 
@@ -218,8 +227,8 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
     outcome = response.get("executionResult", {})
     if not outcome.get("success"):
         result["error"] = outcome.get("error", {}).get("message", "import refused")
-        if hint:
-            result["hint"] = hint
+        if reservation.hint:
+            result["hint"] = reservation.hint
         return result
     created = [c["guid"] for c in response.get("created", [])]
     removed = [c["guid"] for c in response.get("removed", [])]

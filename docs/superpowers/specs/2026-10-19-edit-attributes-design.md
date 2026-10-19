@@ -191,7 +191,7 @@ result's `teamwork` list). The definition tools reach them through
 `definition_edit.definitions_reservation`. Each set's status is read once per
 call and classified:
 
-| Status | Documented set (attribute types) | Undocumented mapping (`ClassificationsAndProperties`, property values of attributes) |
+| Status | Blocking (attribute types, `ClassificationsAndProperties`) | Warning only (attribute property values, layer flag edits) |
 |---|---|---|
 | `Editable` | proceed | proceed |
 | `Free` | the targets are skipped: "the Composites set is not reserved; reserve it first with reserve_elements(object_sets=["Composites"], confirm=true)" | warning with the same call; the commit still sends, and a failure group carries the hint |
@@ -199,10 +199,13 @@ call and classified:
 | `NotAvailable` | warning "Teamwork server unavailable, reservation unknown"; sent | same |
 | error, or Tapir older than 1.7.1 | warning "could not check the reservation of X: <message>"; sent | same |
 
-Why two columns: blocking on a documented set saves a batch of cryptic
-per-item refusals; blocking on a guessed set name could stop a write that would
-have worked. CVP confirmed `ClassificationsAndProperties` as a set on
-2026-10-19; the proposal to move it to the left column is in Verification.
+Why two columns: blocking on a known set saves a batch of cryptic per-item
+refusals; blocking where the set Archicad wants is not known could stop a write
+that would have worked. `ClassificationsAndProperties` started in the warning
+column as a guess; CVP confirmed it as a set on 2026-10-19 and, with Aleš's
+go-ahead the same day, it moved to the blocking column. For
+`import_definitions` (one file, not a list of targets) a block is `blocked` in
+the dry run and `error` on a commit, with nothing sent.
 
 Every dry run in a Teamwork project carries a `teamwork` list:
 `[{"set", "status", "held_by", "needed_for": [targets]}]`.
@@ -211,7 +214,7 @@ Wired into:
 
 | Tool | Set |
 |---|---|
-| `edit_property_definitions`, `edit_classifications`, `import_definitions` | `ClassificationsAndProperties` (warning column) |
+| `edit_property_definitions`, `edit_classifications`, `import_definitions` | `ClassificationsAndProperties` (blocking column since 2026-10-19) |
 | `edit_attributes` create, modify (fields), delete | the attribute type's set (blocking column) |
 | `edit_attributes` layer modifies that only show, hide, lock, unlock or wireframe a layer | `LayerSettingsDialog` (warning column: Archicad's interface lets Teamwork users do that without reserving, and reserving the set blocks every teammate's layer edits; whether the API agrees is unverified) |
 | `edit_attributes` property values | the attribute type's set (warning column; which set Archicad wants is unverified) |
@@ -659,7 +662,9 @@ What this settles:
   DevKit says not to reserve alone. The alias table keeps sending
   `LayerSettingsDialog` for it.
 
-**Proposal: move `ClassificationsAndProperties` to the blocking column.** It
+**Proposal: move `ClassificationsAndProperties` to the blocking column.**
+(Done 2026-10-19 with Aleš's go-ahead; the text below is the proposal as
+written.) It
 was a warning because blocking on a guessed name "could stop a write that would
 have worked". The name is no longer a guess: it is a real set on a Teamwork
 project, and it is named for exactly these definitions. In Teamwork a user
@@ -705,6 +710,7 @@ parts stay unit-tested against the shapes in Tapir's source.
   plan is the active window.
 - Layer flag-only modifies in Teamwork warn instead of block.
 - Attribute property values compared only for String properties.
-- Blocking only on documented sets; warnings for the guessed
-  `ClassificationsAndProperties` and for attribute property values.
+- Blocking only on known sets; warnings for attribute property values.
+  `ClassificationsAndProperties` was a warning until CVP confirmed it; Aleš
+  chose to make it blocking (2026-10-19).
 - `MCP-Canary` prefix for live attributes.

@@ -156,9 +156,10 @@ _SET_ALIASES = {
     **dict.fromkeys(("buildingmaterial", "buildingmaterials"), "BuildingMaterials"),
     **dict.fromkeys(("surface", "surfaces"), "Surfaces"),
     **dict.fromkeys(("zonecategory", "zonecategories"), "ZoneCategories"),
-    # Not in the DevKit's list. Archicad 29's APICore string table has it next
-    # to the documented names, and no documented set covers property or
-    # classification definitions. Unverified until a Teamwork project answers.
+    # Not in the DevKit's list. Archicad 29's and 30's APICore string tables have
+    # it next to the documented names, no documented set covers property or
+    # classification definitions, and CVP (Teamwork) answered a status for it
+    # on 19.10.2026 while an unknown name errored.
     **dict.fromkeys(("properties", "property", "propertydefinitions", "classifications",
                      "classification", "classificationsandproperties"),
                     "ClassificationsAndProperties"),

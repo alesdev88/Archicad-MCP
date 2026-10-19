@@ -398,8 +398,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "[\"Uniclass/Ss_25/*\"]}, \"enum\": {\"rename\": {\"Old\": \"New\"}, "
         "\"remove\": [\"X\"], \"add\": [\"Y\"], \"order\": [...]}, \"default\": "
         "\"New\"}. GUIDs are kept, so element values survive everything except "
-        "removing an option (those elements show <Undefined>) or availability. Needs "
-        "the Tapir build with UpdateClassificationItems."),
+        "removing an option (those elements show <Undefined>) or availability. In a "
+        "Teamwork project the Properties set must be reserved first (reserve_elements "
+        "object_sets). Needs the Tapir build with UpdateClassificationItems."),
         **_tool_meta("Edit property definitions", read_only=False, destructive=True))
     @_guarded
     def edit_property_definitions(changes: list[dict], dry_run: bool = True,
@@ -412,7 +413,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "\"name\"?, \"description\"?}. Systems: {\"system\": \"Name\", \"name\"?, "
         "\"description\"?, \"source\"?, \"version\"?, \"date\"? (YYYY-MM-DD)}. Items "
         "keep their GUID, so classified elements and property availability stay "
-        "attached. Moving an item to another parent is not supported."),
+        "attached. Moving an item to another parent is not supported. In a Teamwork "
+        "project the Classifications set must be reserved first (reserve_elements "
+        "object_sets)."),
         **_tool_meta("Edit classifications", read_only=False, destructive=True))
     @_guarded
     def edit_classifications(changes: list[dict], dry_run: bool = True,

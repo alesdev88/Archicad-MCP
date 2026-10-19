@@ -1,9 +1,11 @@
-"""The definition editors in a Teamwork project name the set to reserve.
+"""The definition editors in a Teamwork project name the set to reserve, and
+refuse to send while it is free or held by a teammate.
 
-Property and classification definitions are guessed to live in the
-undocumented ClassificationsAndProperties set (Archicad 29's APICore string
-table), so a missing reservation is a warning and a hint on failures, never a
-block. Not verified live: the only Teamwork project here is production.
+Property and classification definitions live in the undocumented
+ClassificationsAndProperties set: Archicad 29's and 30's APICore list it with
+the documented names, and CVP answered a status for it on 19.10.2026 (read
+only). Whether Archicad refuses an unreserved edit, and how, is still unseen;
+the tools refuse first. A status that cannot be learned only warns.
 """
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.classification_edit import edit_classifications, import_definitions
@@ -40,41 +42,78 @@ def test_dry_run_in_teamwork_names_the_set_and_the_call():
     assert entry["set"] == SET and entry["status"] == "Free"
     assert entry["needed_for"] == ["ELEA/Sifra"]
     assert RESERVE in entry["problem"]
+    assert result["planned"] == []
+    assert RESERVE in result["skipped"][0]["errors"][0]
 
 
-def test_an_unreserved_set_still_sends_and_hints_on_failure():
-    conn, core = _conn(teamwork={SET: ("Free", [])}, update=refused)
+def test_an_unreserved_set_blocks_the_commit():
+    conn, core = _conn(teamwork={SET: ("Free", [])})
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}],
+                                       dry_run=False)
+    assert not any(c == "UpdatePropertyDefinitions" for c, _ in core.calls)
+    assert RESERVE in result["skipped"][0]["errors"][0]
+    assert "applied" not in result
+
+
+def test_an_unavailable_server_only_warns_and_hints_on_failure():
+    conn, core = _conn(teamwork={SET: ("NotAvailable", [])}, update=refused)
     result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}],
                                        dry_run=False)
     assert any(c == "UpdatePropertyDefinitions" for c, _ in core.calls)
     [group] = result["failed"]
-    assert RESERVE in group["hint"]
+    assert "unavailable" in group["hint"]
 
 
-def test_a_reserved_set_carries_no_problem():
-    conn, _ = _conn(teamwork={SET: ("Editable", [])})
-    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}])
+def test_an_unreadable_status_only_warns():
+    from multiconn_archicad.errors import TapirCommandError
+
+    def broken(params):
+        raise TapirCommandError(message="Invalid program status", code=4001)
+    conn, core = _conn(teamwork={SET: ("Free", [])},
+                       extra_tapir={"GetLockableObjectSetStatus": broken})
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}],
+                                       dry_run=False)
+    assert any(c == "UpdatePropertyDefinitions" for c, _ in core.calls)
+    assert "could not check" in result["teamwork"][0]["problem"]
+
+
+def test_a_reserved_set_carries_no_problem_and_sends():
+    conn, core = _conn(teamwork={SET: ("Editable", [])})
+    result = edit_property_definitions(conn, [{"property": "ELEA/Sifra", "name": "X"}],
+                                       dry_run=False)
     assert "problem" not in result["teamwork"][0]
+    assert result["applied"][0]["target"] == "ELEA/Sifra"
 
 
-def test_classification_edits_name_the_holder():
-    conn, _ = _conn(teamwork={SET: ("Locked", ["Someone Else"])})
-    result = edit_classifications(conn, [{"item": "ELEA/40.10", "name": "K"}])
-    assert "Someone Else" in result["teamwork"][0]["problem"]
+def test_classification_edits_held_by_a_teammate_are_refused():
+    conn, core = _conn(teamwork={SET: ("Locked", ["Someone Else"])})
+    result = edit_classifications(conn, [{"item": "ELEA/40.10", "name": "K"}],
+                                  dry_run=False)
+    assert "Someone Else" in result["skipped"][0]["errors"][0]
+    assert not any(c.startswith("UpdateClassification") for c, _ in core.calls)
 
 
-def test_import_dry_run_names_the_set():
-    conn, _ = _conn(teamwork={SET: ("Free", [])})
+def test_import_dry_run_says_it_is_blocked():
+    conn, core = _conn(teamwork={SET: ("Free", [])})
     result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
                                 "skip")
     assert RESERVE in result["teamwork"][0]["problem"]
+    assert RESERVE in result["blocked"]
 
 
-def test_import_refusal_carries_the_hint():
+def test_import_commit_is_refused_before_sending():
+    conn, core = _conn(teamwork={SET: ("Free", [])})
+    result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
+                                "skip", dry_run=False)
+    assert RESERVE in result["error"]
+    assert not any(c == "ImportPropertiesXml" for c, _ in core.calls)
+
+
+def test_import_refusal_carries_the_hint_when_the_status_is_unknown():
     refused_import = {"executionResult": {"success": False, "error": {
         "code": 1, "message": "no access right"}}, "created": [], "removed": []}
-    conn, _ = _conn(teamwork={SET: ("Free", [])},
+    conn, _ = _conn(teamwork={SET: ("NotAvailable", [])},
                     extra_tapir={"ImportPropertiesXml": refused_import})
     result = import_definitions(conn, "property", str(XML / "properties_mcp_test.xml"),
                                 "skip", dry_run=False)
-    assert result["error"] == "no access right" and RESERVE in result["hint"]
+    assert result["error"] == "no access right" and "unavailable" in result["hint"]

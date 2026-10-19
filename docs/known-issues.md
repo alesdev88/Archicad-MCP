@@ -425,15 +425,18 @@ complete. A commit reads the status back rather than trusting the answer.
   `Layers` and `LayerCombinations` both map to it.
 - **Releasing sends.** The DevKit: the set's modifications are sent to the
   server right before it is unlocked.
-- **Properties and classifications: a guessed set.** No documented set covers
-  them. Archicad 29's `APICore` has `ClassificationsAndProperties` in the same
-  string table as the documented names, so `Properties` and `Classifications`
-  map to it. Until a Teamwork project confirms it, the definition tools only
-  warn when it is not reserved, and still send; Archicad's refusals then carry
-  the reserve hint. Attribute types use their documented sets, and an edit
-  whose set is free or held by someone else is skipped with the reason.
-- **Not verified on a Teamwork project yet.** Unit-tested against the shapes
-  in Tapir's source only.
+- **Properties and classifications: an undocumented set.** No documented set
+  covers them. Archicad 29's and 30's `APICore` have
+  `ClassificationsAndProperties` in the same string table as the documented
+  names, so `Properties` and `Classifications` map to it. On CVP (Teamwork,
+  19.10.2026, status reads only) it answered `Free` like every documented name,
+  while an unknown name errored. The definition tools and `edit_attributes`
+  skip an edit whose set is free or held by someone else, with the reason and
+  the reserve call; a status that cannot be read (server offline, an old
+  Tapir) only warns.
+- **Not tried on a Teamwork project yet:** reserving, releasing, the
+  `Editable` and `Locked` answers, and Archicad's refusal of an edit without
+  the reservation. Unit-tested against the shapes in Tapir's source.
 
 ## `publish` is unvalidated
 
