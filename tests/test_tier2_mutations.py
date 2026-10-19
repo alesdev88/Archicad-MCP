@@ -6,7 +6,7 @@ from fastmcp import Client
 import archicad_mcp.server as server_mod
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.server import build_server
-from tests.conftest import FakeCore
+from tests.conftest import FakeCore, track_selection
 from tests.fixtures import api_replays
 
 
@@ -144,14 +144,17 @@ async def test_selection_get_reads_through_tapir(core):
 
 async def test_selection_set_replaces_current(core):
     # core fixture seeds the current selection as [w-1]
+    state = track_selection(core, selected=("w-1",))
     payload = await call("set_selection", {"guids": ["w-2"]})
-    assert payload == {"selected": 1}
+    assert payload == {"requested": 1, "selected": 1, "coverage": "whole-plan"}
+    assert state == {"W-2"}
     change = [params for cmd, params in core.calls if cmd == "ChangeSelectionOfElements"]
     assert len(change) == 1  # one call does both remove + add
     params = change[0]
     assert params["addElementsToSelection"] == [{"elementId": {"guid": "w-2"}}]
-    # the pre-existing selection is removed so "set" replaces rather than appends
-    assert params["removeElementsFromSelection"] == [{"elementId": {"guid": "w-1"}}]
+    # the pre-existing selection (read back in upper case) is removed so "set"
+    # replaces rather than appends
+    assert params["removeElementsFromSelection"] == [{"elementId": {"guid": "W-1"}}]
 
 
 async def test_selection_clear_removes_current(core):
