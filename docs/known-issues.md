@@ -204,20 +204,20 @@ call deleted all 12.
 Since then:
 
 - `delete_elements` and `move_elements` run the same `IsEditable` check as
-  `set_element_data` and send only the elements that pass (and that a read
-  finds, see below). The rest come back
+  `set_element_data` and send only the elements that pass and that the active
+  window's database lists (see below). The rest come back
   under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
   (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
   plan names the window first, because from a Layout even a reserved element
   reads as not editable and "not reserved" alone is the wrong lead.
-- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`, which
-  per Tapir's source reads the current database, the one `DeleteElements`
-  acted on), never the requested count. `DeleteElements` answers one success
-  for the whole batch, so its answer alone proves nothing.
+- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`),
+  never the requested count. `DeleteElements` answered one success for the
+  whole batch on Tapir 1.5.10, so its answer alone proved nothing. Tapir 1.7.1
+  answers per element, and a survivor carries Archicad's message.
 - `moved` counts Tapir's per-element `executionResults`, which `MoveElements`
   does report. Positions are not read back: there is no single position read
-  that covers every element type, and the pre-check removes the case that
-  failed silently.
+  that covers every element type, and the pre-checks remove the cases seen to
+  fail silently.
 - `set_element_data` already counted per-element results and still does; its
   values are not read back either, because that is the property read that has
   crashed Archicad (see above). `apply_changeset` does read back.
@@ -229,7 +229,8 @@ from further reads, in this order:
 
 | Reason | Read |
 |---|---|
-| not found | Tapir `GetDetailsOfElements` with `fields: ["type"]` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| not found | Tapir `GetDetailsOfElements` with `fields: ["type"]` answers an error entry (a wrong GUID, deleted already, or, from a window other than the floor plan, in another window's database) |
+| in another view's database | `IsEditable` passed it, but Tapir `GetAllElements` (the active window's database) does not list it |
 | hidden layer | `FilterElements` with `IsVisibleByLayer` |
 | not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
 | inside a hotlinked module | `GetDetailsOfElements` answers a `hotlinkId` |
@@ -240,24 +241,40 @@ from further reads, in this order:
 The lock reads are made only for the elements refused as locked, so a call
 where nothing is locked reads no layers and no properties.
 
-`IsEditable` is not a database check from the floor plan. Live on 19.10.2026,
-with the floor plan active, it passed a Text in a layout database and a Line in
-a section database as editable. All three tools therefore also read the
-elements `IsEditable` passed with `GetDetailsOfElements` (`fields: ["type"]`)
-and refuse the ones it does not find as not found.
+From the floor plan, the reads reach every database. Live on 19.10.2026, with
+the floor plan active, `IsEditable` passed a Text in a layout database and a
+Line in a section database as editable.
 
-**That read does not catch the case seen so far.** Read-only on MCP-Test the
-same day, floor plan active: `GetDetailsOfElements` answered for all 8 layout
-Drawings and all 6 section-only Objects, as `IsEditable` passed them, so they
-are still sent. Its "not found" is a database check only in the other
-direction (from a Layout, for floor-plan labels, 28.09.2026). No
-`FilterElements` filter separates them either: `IsVisibleIn3D` drops them, but
-it drops every floor-plan 2D element too. Tapir `GetAllElements` of the current
-database is the one read that left them out (0 of 8, 0 of 6). Not yet known:
-whether a floor-plan delete, move or property write acts on such an element.
-`delete_elements` reports one it passed over as still there (its read finds
-it), so its count stays honest; the same applies to `modify_elements`, whose
-details read finds these elements too.
+**Write test (MCP-Test, AC 29/5101, Tapir 1.7.1, 19.10.2026, floor plan
+active)** with probe Texts the test created on the Sheet Index layout, in
+Building Section and on the floor plan, and deleted again afterwards:
+
+| Sent from the floor plan | Floor-plan Text | Layout and section Texts |
+|---|---|---|
+| `FilterElements` `IsEditable` | passed | passed |
+| `GetDetailsOfElements` | found | found, with their real positions |
+| Tapir `GetAllElements` (no `databases`) | listed | not listed |
+| `MoveElements` by 1 cm | success, moved | **success, not moved** (read in their own windows) |
+| `DeleteElements` | success, gone | "Failed to delete the element." per element, kept |
+| `SetPropertyValuesOfElements` `General_ElementID` | 7203 "Element not supported" | 7203 "Element not supported" |
+
+So `move_elements` counted the passed-over elements as moved. A delete of only
+the layout Text, and a batch of a floor-plan Text with a layout Text, gave the
+same answer: the floor-plan one deleted, the layout one kept. The same holds
+read-only for what was already in MCP-Test: `GetDetailsOfElements` found all
+8 layout Drawings and all 6 section-only Objects, and `GetAllElements` listed
+none of them. No `FilterElements` filter separates them: `IsVisibleIn3D` drops
+them, but it drops every floor-plan 2D element too.
+
+All three tools therefore refuse the elements `IsEditable` passed that Tapir
+`GetAllElements` of the active database does not list, as "in another view's
+database", with the advice to open that view. GUIDs are compared without
+case, and an empty or failed listing refuses nothing. Not known: whether a
+property write from the floor plan lands on another database's element of a
+type the official API supports. Texts are not supported at all, so the test
+could not say. `modify_elements` still relies on its details read, which from
+the floor plan finds these elements, so it sends them (its readback then
+reports what did not change).
 
 The official `GetTypesOfElements` cannot answer "does it exist": live on
 28.09.2026 it answered 7203 "Element not supported" for every label, existing
@@ -268,8 +285,8 @@ report. By then 10 had been deleted from the floor plan and 2 kept and released
 from the workspace. The 10 came back "not found" and the 2 "not reserved in
 Teamwork", which is their actual state. `GetDetailsOfElements` with
 `fields: ["type"]` answered `{"type": "Label"}` for a kept one and an error
-entry for a deleted one. Not yet run live: the same check from a Layout, and a
-delete that goes through.
+entry for a deleted one. Not yet run live: the same check from a Layout. A
+delete that goes through ran in the write test above.
 
 ## Writing enum properties is not supported
 

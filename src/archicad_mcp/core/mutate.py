@@ -1,10 +1,11 @@
 """Move and delete elements, reporting what Archicad did rather than what was asked.
 
 Tapir DeleteElements answered one success for the whole batch (1.5.10; 1.7.1
-answers per element), and
-ACAPI_Element_Delete passes over elements outside the active window's database
-without an error. Seen live 28.09.2026: 12 floor-plan labels, a Layout window
-active, success, nothing deleted, and this tool used to report {"deleted": 12}.
+answers per element), and ACAPI_Element_Delete passes over elements outside
+the active window's database without an error. Seen live 28.09.2026: 12
+floor-plan labels, a Layout window active, success, nothing deleted, and this
+tool used to report {"deleted": 12}. MoveElements does the same from the floor
+plan: success for a layout or section Text, which did not move (19.10.2026).
 So both tools first leave out what Archicad would refuse (core.editability),
 then delete counts the elements a read no longer finds and move counts
 Archicad's per-element results.
