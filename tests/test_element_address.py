@@ -43,8 +43,13 @@ def test_ifc_splits_at_the_first_dot():
     ("classification:", "system"),
     ("ifc:NoDot", "ifc:<Pset>.<Name>"),
     ("ifc:.Name", "ifc:<Pset>.<Name>"),
-    ("", "empty"),
 ])
 def test_malformed_addresses_give_a_reason(text, words):
     reason = parse_address(text)
     assert isinstance(reason, str) and words in reason
+
+
+def test_a_blank_address_stays_a_property_as_before():
+    # A blank name read as a missing property (None) before addresses had
+    # prefixes; it must not start failing whole calls.
+    assert parse_address("").kind == PROPERTY

@@ -50,6 +50,7 @@ def _object_params():
         _param("gs_capped", "Length", 0.5, "Capped"),
         _param("gs_text", "String", "old", "Note"),
         _param("gs_arr", "Angle", [0.1, 0.2], "Angles", dimension1=2, dimension2=1),
+        _param("gs_lens", "Length", [0.1, 0.2], "Lengths", dimension1=2, dimension2=1),
         _param("hid", "Integer", 0, "Hidden one", flags=["Hidden"]),
     ]
 

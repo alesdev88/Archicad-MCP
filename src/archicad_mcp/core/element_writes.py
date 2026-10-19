@@ -61,6 +61,20 @@ _SIZE_TYPES = ("Object", "Lamp")
 # stored unit (size / the part's own A or B), so the object came out A x libA.
 # Fixed upstream in #718, first released in 1.6.0.
 SIZE_FIX_TAPIR = (1, 6, 0)
+# Tapir up to 1.7.1 writes a whole GDL array into the fetched parameter block
+# by hand and commits it without running the part's Parameter Script; on a
+# third-party window that left the parameters permanently unreadable and hung
+# Archicad on another (Tapir #557). From 1.7.2 every item goes through
+# ACAPI_LibraryPart_ChangeAParameter, and an array cannot be resized.
+ARRAY_FIX_TAPIR = (1, 7, 2)
+ARRAYS_UNSAFE = ("Tapir before 1.7.2 writes a whole GDL array without running the "
+                 "part's Parameter Script, which can leave the element's parameters "
+                 "unreadable (Tapir issue #557); update Tapir once 1.7.2 is released")
+# 1.7.2 writes each array item through ChangeAParameter, which takes a single
+# Angle in degrees (live 19.10.2026); whether an indexed item does too is not
+# verified, so Angle arrays wait for that check.
+ANGLE_ARRAYS_UNVERIFIED = ("writing an Angle array is not verified on this Tapir yet "
+                           "(item by item it may take degrees); not sent")
 # From Archicad 28 Tapir answers every SetIFCPropertiesOfElements with "not
 # supported": the IFCAPI that replaced ACAPI_Element_SetIFCProperty has no
 # write there yet (IFCCommands.cpp, 1.7.0 and 1.7.1).
@@ -110,7 +124,9 @@ class _Skip(Exception):
 
 
 def _identity(c: Change) -> tuple:
-    key = c.address.key.casefold() if c.address.kind in (GDL, MARKER) else c.address.key
+    # GDL names and classification systems match case-insensitively.
+    key = (c.address.key.casefold() if c.address.kind in (GDL, MARKER, CLASSIFICATION)
+           else c.address.key)
     return c.guid.upper(), c.address.kind, key
 
 
@@ -124,15 +140,15 @@ def _parse(changes, plan: Plan) -> list[Change]:
             continue
         guid, text = raw.get("guid"), raw.get("property")
         address = parse_address(text) if isinstance(text, str) else None
-        change = Change(order, guid if isinstance(guid, str) else None,
-                        address or Address(str(text), PROPERTY, str(text), False),
+        shown = address if isinstance(address, Address) else Address(
+            str(text) if text is not None else "", PROPERTY, str(text), False)
+        change = Change(order, guid if isinstance(guid, str) else None, shown,
                         raw.get("value"), raw.get("ifc_type"))
         if not isinstance(guid, str) or not guid.strip():
             plan.skip(change, "the change has no guid")
         elif not isinstance(text, str):
             plan.skip(change, "the change has no property address")
         elif isinstance(address, str):
-            change.address = Address(text, PROPERTY, text, False)
             plan.skip(change, address)
         elif "value" not in raw:
             plan.skip(change, "the change has no value")
@@ -263,7 +279,8 @@ def _plan_parameters(conn: ArchicadConnection, kind: str, changes: list[Change],
         return
     guids = list(dict.fromkeys(c.guid for c in changes))
     types = _fetch_types(conn, guids) if kind == GDL else {}
-    old_tapir = kind == GDL and (tapir_version(conn) or (0, 0, 0)) < SIZE_FIX_TAPIR
+    version = (tapir_version(conn) or (0, 0, 0)) if kind == GDL else (0, 0, 0)
+    old_tapir = kind == GDL and version < SIZE_FIX_TAPIR
     reads = read_parameters(conn, guids, kind)
     resolve, name_of = _attribute_resolver(conn)
     for c in changes:
@@ -279,6 +296,11 @@ def _plan_parameters(conn: ArchicadConnection, kind: str, changes: list[Change],
             if entry is None:
                 raise _Skip(f"no {kind} parameter '{c.address.key}' on this element; "
                             f"read {kind}:* with get_element_data to list them")
+            if kind == GDL and ev.is_array(entry):
+                if version < ARRAY_FIX_TAPIR:
+                    raise _Skip(ARRAYS_UNSAFE)
+                if entry.get("type") == "Angle":
+                    raise _Skip(ANGLE_ARRAYS_UNVERIFIED)
             if old_tapir and element_type in _SIZE_TYPES and entry["name"] in ("A", "B"):
                 raise _Skip(f"Tapir before {'.'.join(map(str, SIZE_FIX_TAPIR))} writes an "
                             "object's A and B in the wrong unit when its size is not fixed; "
@@ -476,6 +498,7 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
     failed: list[dict] = []
     not_sent: list[str] = []
     unconfirmed: list[str] = []
+    readback_error = None
     for kind in SEND_ORDER:
         changes = [c for c in p.changes if c.address.kind == kind]
         reached = [c for c in changes if outcomes.get(c.order) in ("ok", "unanswered")]
@@ -484,7 +507,9 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
             try:
                 verdicts = _read_back(conn, kind, reached, p)
             except _ERRORS as exc:
-                stopped = stopped or exc
+                # Every batch was sent; only the check failed, so the run did
+                # not stop. The error goes with the unconfirmed changes.
+                readback_error = readback_error or exc
                 verdicts = None
         for c in changes:
             outcome = outcomes.get(c.order, "not_sent")
@@ -520,6 +545,8 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
         shown, rest = cap_list(list(dict.fromkeys(unconfirmed)))
         result["unconfirmed"] = {"count": len(unconfirmed), "guids": shown,
                                  "note": UNCONFIRMED_NOTE}
+        if readback_error is not None:
+            result["unconfirmed"]["error"] = error_fields(readback_error)
         if rest:
             result["unconfirmed"]["not_shown"] = rest
     if stopped is not None:

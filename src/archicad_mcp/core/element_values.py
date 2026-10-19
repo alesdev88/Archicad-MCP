@@ -94,7 +94,9 @@ def fit(entry: dict, value, *, string_limit: int, arrays: bool,
     """The value to send in tool units, or the reason it does not fit.
 
     resolve_attribute(attribute_type, name) -> index raises ValueError(reason).
-    Arrays take the whole array: a list, or a list of rows of equal length.
+    An array takes the whole array in its own shape: Tapir 1.7.2 writes it
+    item by item and cannot resize it. A one-column array is a flat list
+    (rows of one are accepted and flattened, as it reads back flat).
     """
     type_ = entry.get("type", "")
     if not is_array(entry):
@@ -104,15 +106,21 @@ def fit(entry: dict, value, *, string_limit: int, arrays: bool,
     if not arrays:
         return value, "array parameters cannot be written here"
     rows, columns = entry.get("dimension1"), entry.get("dimension2") or 1
-    if not isinstance(value, list) or not value:
-        return value, (f"'{entry.get('name')}' is an array of {rows} x {columns}; send "
-                       "the whole array as a list (read it with get_element_data first)")
-    two_d = isinstance(value[0], list)
-    if two_d and not all(isinstance(r, list) and len(r) == len(value[0]) and r
-                         for r in value):
-        return value, "every row of a two-dimensional array must have the same length"
+    shape = (f"a list of {rows} items" if columns == 1
+             else f"{rows} rows of {columns} items ({rows} x {columns})")
+    if not isinstance(value, list):
+        return value, (f"'{entry.get('name')}' is an array; send the whole array as "
+                       f"{shape} (read it with get_element_data first)")
+    if columns == 1 and value and all(isinstance(r, list) and len(r) == 1 for r in value):
+        value = [r[0] for r in value]
+    grid = [value] if columns == 1 else value
+    if (columns == 1 and len(value) != rows) or (columns > 1 and not (
+            len(value) == rows and all(isinstance(r, list) and len(r) == columns
+                                       for r in value))):
+        return value, (f"'{entry.get('name')}' takes {shape}; arrays cannot be resized "
+                       "through the API")
     out = []
-    for row in (value if two_d else [value]):
+    for row in grid:
         fitted = []
         for item in row:
             sent, reason = _fit_one(type_, item, string_limit, None)
@@ -120,7 +128,7 @@ def fit(entry: dict, value, *, string_limit: int, arrays: bool,
                 return value, f"array item {item!r}: {reason}"
             fitted.append(sent)
         out.append(fitted)
-    return (out if two_d else out[0]), None
+    return (out[0] if columns == 1 else out), None
 
 
 def to_tapir(entry: dict, value, kind: str):
@@ -131,9 +139,15 @@ def to_tapir(entry: dict, value, kind: str):
 
 
 def _listed(entry: dict) -> list:
-    """The parameter's plain value list; ranges and steps are not one."""
-    return [p["value"] for p in entry.get("possibleValues") or []
-            if isinstance(p, dict) and "value" in p and "flag" not in p]
+    """The parameter's plain value list; ranges and steps are not one. Tapir
+    reads a text list as plain strings and a number list as {value} items."""
+    out = []
+    for p in entry.get("possibleValues") or []:
+        if isinstance(p, str):
+            out.append(p)
+        elif isinstance(p, dict) and "value" in p and "flag" not in p:
+            out.append(p["value"])
+    return out
 
 
 def warnings(entry: dict, value) -> list[str]:

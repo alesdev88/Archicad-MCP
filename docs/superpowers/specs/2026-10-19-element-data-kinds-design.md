@@ -101,9 +101,10 @@ written back:
 - Boolean as true/false; LightSwitch as "On"/"Off" (true/false accepted and converted).
 - String and Title as text: GDL up to 511 characters, marker up to 255 (Tapir copies
   into fixed buffers and truncates silently past these).
-- Arrays: a list for one dimension, a list of rows for two. The read reshapes Tapir's
-  flat list by `dimension2` (a dimension2 of 1 reads as a flat list, which is also how
-  Tapir stores a one-dimensional write).
+- Arrays: a list for one dimension, a list of rows for two, in the parameter's own
+  shape: Tapir 1.7.2 writes arrays item by item and cannot resize them. The read
+  reshapes Tapir's flat list by `dimension2` (a dimension2 of 1 reads as a flat list,
+  and rows of one item are accepted and flattened).
 
 ## get_element_data
 
@@ -182,8 +183,8 @@ it). Only the last value of a repeated cell counts. Result:
  "failed": [...],         # Archicad's refusals, group_failures() as today
  "skipped": [...],        # not sent, {guid, property, reason} as today
  "not_sent": {"count"},   # after a stop
- "unconfirmed": {...},    # the readback itself failed: count, GUIDs, note
- "stopped": {...}}        # the error that stopped the run, as today
+ "unconfirmed": {...},    # the readback itself failed: count, GUIDs, note, its error
+ "stopped": {...}}        # the error that stopped sending, as today
 ```
 
 Keys appear only when non-empty, as today. A property-only call whose writes all read
@@ -243,11 +244,19 @@ reads them itself as today.
   `GetStoredSizeScale`). With a Tapir reporting a version below 1.6.0 these two are
   skipped with an update hint. The gate is the reported version, not a command check:
   a local Tapir build can carry newer commands without #718.
+- **Arrays (added after review):** Tapir up to 1.7.1 writes a whole array into the
+  fetched parameter block by hand and commits it without running the part's Parameter
+  Script; on a third-party window that left the parameters permanently unreadable and
+  hung Archicad on another (Tapir #557, fixed by #558 on upstream main, which reports
+  1.7.2 and is not released). So GDL array writes are skipped below Tapir 1.7.2. From
+  1.7.2 each item goes through ACAPI_LibraryPart_ChangeAParameter, which takes a single
+  Angle in degrees; whether an indexed item does too is unverified, so Angle arrays
+  are skipped there until a live check. Other arrays must keep their shape.
 - **Angles:** Tapir passes a single Angle value to ACAPI_LibraryPart_ChangeAParameter,
   which takes degrees, and writes whole arrays straight into the parameter list, which
   holds radians; both read back in radians (found on the swept beam,
   `docs/superpowers/specs/2026-09-29-swept-beam-findings.md`). The tool takes radians and
-  converts a single Angle to degrees before sending; Angle arrays go as they are.
+  converts a single Angle to degrees before sending.
 - Attribute names for attribute-typed parameters resolve once per attribute type per
   call. current and new show names when the caller gave a name, indexes when an index.
 
@@ -287,9 +296,9 @@ reads them itself as today.
 - **Lowercase GUIDs failed the editability check.** Tapir FilterElements answers GUIDs
   uppercase (live 19.10.2026: a lowercase GUID came back uppercase), and
   `editability.classify` compared the answer with the GUIDs as given, so every element of
-  a lowercase call was refused as on a hidden layer. Comparisons become case-insensitive
-  in `editability` and `teamwork._in_my_workspace`; reasons stay keyed by the GUIDs as
-  given.
+  a lowercase call was refused as on a hidden layer. Comparisons in `editability` are
+  case-insensitive now; reasons stay keyed by the GUIDs as given. The same comparison in
+  `teamwork.reserve_elements` and `release_elements` is left for a follow-up.
 
 ## Code layout (builder's call where not stated)
 

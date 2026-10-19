@@ -102,3 +102,8 @@ def test_kinds_are_read_only_when_asked_for():
     assert not model.calls("GetGDLParametersOfElements")
     assert not model.calls("GetIFCPropertiesOfElements")
     assert not model.calls("API.GetAllClassificationSystems")
+
+
+def test_a_blank_address_reads_none_as_before():
+    element = _one(FakeModel(), OBJ, ["", "Office/Status"])
+    assert element["properties"] == {"": None, "Office/Status": "old"}

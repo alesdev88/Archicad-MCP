@@ -31,9 +31,10 @@ class Address:
 
 
 def parse_address(text: str) -> Address | str:
-    """The address, or why it is not one."""
-    if not isinstance(text, str) or not text.strip():
-        return "the address is empty"
+    """The address, or why it is not one. A blank address stays a property,
+    as it was before addresses had prefixes: it reads as missing."""
+    if not isinstance(text, str):
+        return "the address is not text"
     for prefix, kind in _PREFIXES.items():
         if text[:len(prefix)].lower() == prefix:
             key = text[len(prefix):].strip()

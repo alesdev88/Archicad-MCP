@@ -76,18 +76,27 @@ def test_an_unknown_attribute_name_gives_the_resolver_reason():
     assert reason == "no Fill named 'No Such Fill'"
 
 
-def test_an_array_takes_the_whole_array():
+def test_an_array_takes_the_whole_array_of_its_own_size():
+    # Tapir 1.7.2 writes arrays item by item and cannot resize them.
     entry = _entry("Length", [0.1, 0.2, 0.3], dimension1=3, dimension2=1)
-    assert _fit(entry, [1, 2, 3, 4]) == ([1.0, 2.0, 3.0, 4.0], None)
+    assert _fit(entry, [1, 2, 3]) == ([1.0, 2.0, 3.0], None)
+    _, reason = _fit(entry, [1, 2, 3, 4])
+    assert "3 items" in reason
     _, reason = _fit(entry, 0.5)
     assert "whole array" in reason
 
 
-def test_a_two_dimensional_array_takes_rows_of_equal_length():
+def test_rows_of_one_for_a_one_column_array_are_read_flat():
+    entry = _entry("Length", [0.1, 0.2], dimension1=2, dimension2=1)
+    assert _fit(entry, [[1], [2]]) == ([1.0, 2.0], None)
+
+
+def test_a_two_dimensional_array_takes_rows_of_its_own_shape():
     entry = _entry("Integer", [1, 2, 3, 4], dimension1=2, dimension2=2)
     assert _fit(entry, [[1, 2], [3, 4]]) == ([[1, 2], [3, 4]], None)
-    _, reason = _fit(entry, [[1, 2], [3]])
-    assert "same length" in reason
+    for value in ([[1, 2], [3]], [1, 2, 3, 4], [[1, 2, 3], [4, 5, 6]], [[1, 2]]):
+        _, reason = _fit(entry, value)
+        assert "2 x 2" in reason
     _, reason = _fit(entry, [[1, "x"], [3, 4]])
     assert reason is not None
 
@@ -134,6 +143,15 @@ def test_warnings_name_a_locked_parameter_and_an_unlisted_value():
     assert "1, 2" in warning
     custom = _entry("Integer", 1, possibleValues=[{"value": 1}], canHaveCustomValue=True)
     assert ev.warnings(custom, 3) == []
+
+
+def test_a_text_value_list_comes_as_plain_strings():
+    # Tapir reads a String parameter's value list as plain strings.
+    listed = _entry("String", "Modern", possibleValues=["Modern", "Classic"],
+                    canHaveCustomValue=False)
+    assert ev.warnings(listed, "Classic") == []
+    [warning] = ev.warnings(listed, "Rustic")
+    assert "Modern, Classic" in warning
 
 
 def test_range_entries_are_not_a_value_list():

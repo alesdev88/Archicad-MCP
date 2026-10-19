@@ -263,7 +263,6 @@ _EVERY_KIND = [
     {"guid": OBJ, "property": "classification:ARCHICAD Classification", "value": None},
     {"guid": OBJ, "property": "gdl:A", "value": 1.2},
     {"guid": OBJ, "property": "gdl:gs_angle", "value": math.pi / 2},
-    {"guid": OBJ, "property": "gdl:gs_arr", "value": [0.3, 0.4, 0.5]},
     {"guid": OBJ, "property": "gdl:gs_mat", "value": "Wood - Oak"},
     {"guid": DOOR, "property": "marker:iNumber", "value": "002"},
     {"guid": DOOR, "property": "marker:mAngle", "value": math.pi},
@@ -288,7 +287,6 @@ def test_angles_reach_tapir_in_the_unit_each_write_path_takes():
     [gdl] = model.calls("SetGDLParametersOfElements")
     sent = {p["name"]: p["value"] for p in gdl["elementsWithGDLParameters"][0]["gdlParameters"]}
     assert sent["gs_angle"] == pytest.approx(90.0)          # single Angle: degrees
-    assert sent["gs_arr"] == [0.3, 0.4, 0.5]                 # Angle array: radians
     [marker] = model.calls("SetMarkerParametersOfElements")
     sent = {p["name"]: p["value"]
             for p in marker["elementsWithMarkerParameters"][0]["markerParameters"]}
@@ -386,7 +384,6 @@ def test_a_failed_readback_leaves_the_changes_unconfirmed():
                           {"guid": OBJ, "property": "gdl:A", "value": 1.2}])
     assert out["applied"] == 1
     assert out["unconfirmed"]["count"] == 1 and out["unconfirmed"]["guids"] == [DOOR]
-    assert out["stopped"]["code"] == 4001
 
 
 def test_a_property_that_does_not_read_back_is_not_applied():
@@ -421,3 +418,68 @@ def test_a_commit_with_only_skips_sends_nothing():
     out = _commit(model, [{"guid": WALL, "property": "gdl:A", "value": 1.0}])
     assert out["applied"] == 0 and len(out["skipped"]) == 1
     assert _sent(model) == []
+
+
+# ---------- arrays, after review ----------
+
+def test_gdl_arrays_are_refused_on_a_tapir_that_writes_them_by_hand():
+    # Tapir up to 1.7.1 writes a whole array into the parameter block without
+    # running the part's Parameter Script; on a third-party window that left
+    # the parameters permanently unreadable (Tapir #557, fixed for 1.7.2).
+    out = _dry(FakeModel(tapir_version="1.7.1"), [
+        {"guid": OBJ, "property": "gdl:gs_lens", "value": [0.3, 0.4]}])
+    assert "1.7.2" in _skips(out)[(OBJ, "gdl:gs_lens")]
+
+
+def test_gdl_arrays_of_their_own_size_are_written_on_1_7_2():
+    model = FakeModel(tapir_version="1.7.2")
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:gs_lens", "value": [0.3, 0.4]}])
+    assert out == {"dry_run": False, "applied": 1}
+    out = _dry(model, [{"guid": OBJ, "property": "gdl:gs_lens", "value": [0.3, 0.4, 0.5]}])
+    assert "2 items" in _skips(out)[(OBJ, "gdl:gs_lens")]
+
+
+def test_angle_arrays_wait_for_their_unit_to_be_verified():
+    # 1.7.2 writes array items through ChangeAParameter, which takes a single
+    # Angle in degrees; whether an indexed item does too is not verified.
+    out = _dry(FakeModel(tapir_version="1.7.2"), [
+        {"guid": OBJ, "property": "gdl:gs_arr", "value": [0.3, 0.4]}])
+    assert "Angle array" in _skips(out)[(OBJ, "gdl:gs_arr")]
+
+
+# ---------- malformed and duplicate changes, after review ----------
+
+@pytest.mark.parametrize("change", [
+    {"property": "gdl:", "value": 1},
+    {"guid": "", "property": "ifc:Foo", "value": 1},
+    {"guid": OBJ, "property": "gdl:", "value": 1},
+])
+def test_a_malformed_address_with_other_problems_is_skipped_not_raised(change):
+    out = _dry(FakeModel(), [change, {"guid": DOOR, "property": "gdl:A", "value": 1.0}])
+    assert len(out["skipped"]) == 1
+    assert [p["guid"] for p in out["planned_changes"]] == [DOOR]
+
+
+def test_one_system_named_in_two_cases_is_one_change():
+    out = _dry(FakeModel(), [
+        {"guid": WALL, "property": "classification:ARCHICAD Classification", "value": "Wall"},
+        {"guid": WALL, "property": "classification:archicad classification", "value": "Door"}])
+    assert [s["reason"] for s in out["skipped"]] == ["given two different values"] * 2
+
+
+def test_a_failed_readback_is_not_reported_as_a_stopped_run():
+    model = FakeModel()
+    reads = {"n": 0}
+    real = model.core.tapir_responses["GetMarkerParametersOfElements"]
+
+    def second_read_fails(params):
+        reads["n"] += 1
+        if reads["n"] == 2:
+            from multiconn_archicad.errors import StandardAPIError
+            raise StandardAPIError(message="Invalid program status", code=4001)
+        return real(params)
+
+    model.core.tapir_responses["GetMarkerParametersOfElements"] = second_read_fails
+    out = _commit(model, [{"guid": DOOR, "property": "marker:iNumber", "value": "002"}])
+    assert "stopped" not in out
+    assert out["unconfirmed"]["error"] == {"code": 4001, "message": "Invalid program status"}

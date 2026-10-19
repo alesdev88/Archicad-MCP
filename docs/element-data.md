@@ -40,7 +40,8 @@ the same way:
 - Boolean true or false; a light switch "On" or "Off".
 - Text up to 511 characters (255 on a marker); Archicad would cut the rest.
 - Arrays as a list, or a list of rows for two dimensions. A write sends the
-  whole array; read it first to change one item.
+  whole array in its own shape (arrays cannot be resized); read it first to
+  change one item.
 
 Tapir takes a single GDL angle in degrees while it stores and reads radians;
 the tool converts, so radians are right everywhere.
@@ -99,6 +100,11 @@ back:
 - GDL parameters need Tapir 1.5.7, marker parameters Tapir 1.7.1.
 - A and B of an object or lamp need Tapir 1.6.0: older versions write them in
   the wrong unit when the object's size is not fixed.
+- GDL array parameters need Tapir 1.7.2 (not released on 19.10.2026). Tapir
+  1.7.1 and older write a whole array without running the part's Parameter
+  Script, which has left a library part's parameters unreadable (Tapir issue
+  #557), so the tool skips array writes there. Angle arrays are skipped on
+  1.7.2 too until their unit is checked live.
 - IFC properties: Tapir writes them only in Archicad 25 to 27 (Tapir 1.7.0 or
   newer). From Archicad 28 every `ifc:` change is skipped with that reason;
   map the value from an Archicad property in the IFC translator instead.
