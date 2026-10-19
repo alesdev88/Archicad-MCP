@@ -462,6 +462,36 @@ thickness, story), an object (coordinates x only, layer, draw order) and a mesh
 with LockElements, read `General_Locked` and the dry run's reason, unlock it;
 and one commit on a scratch element with readback.
 
+### Live check, 2026-10-19 (dry run only)
+
+MCP-Test on port 19723, Archicad 29/5101, Tapir 1.7.1 (Aleš updated it that
+day; an Archicad 30 with MCP-Test_30 ran beside it on 19724 and was not used).
+`list_instances` confirmed the project name first. The branch's
+`modify_elements` ran in a guard that failed on any write command:
+
+- Four changes planned: SLA - 001 layer, thickness and story 0 -> 1; FU - 003
+  coordinates `{"x": 4.0}` (completed to `{"x": 4.0, "y": 0, "z": 0}`), layer
+  and draw order 0; TR - 005 level; SLA - 002 story 1 -> 0 with
+  `keep_elevation`. A fifth change gave FU - 003 again in lower case with
+  `dimensions`; it merged into the uppercase one.
+- Current values matched the recorded fixtures. Warnings: "moves by +3.00 m"
+  for SLA - 001 and "stays at the same height; its offset from the story
+  changes by +3.00 m" for SLA - 002. Nothing skipped.
+- Commands called: only reads (GetAddOnVersion, GetDetailsOfElements,
+  FilterElements, GetStories, GetAttributesByType, GetLayers,
+  GetGroupsOfElements, IsAddOnCommandAvailable, GetPropertyIds,
+  GetPropertyValuesOfElements). The four elements read back identical.
+- New with Tapir 1.7.1: FU - 003's `dimensions` read `{x: 1.7, y: 0.54,
+  z: 1.89}`, its size in metres, where 1.5.10 had read `{x: 1, y: 1}` (the
+  ratio, `useFixSize` off). The #720 fix is live, and the 1.6.0 gate on
+  `dimensions` let the change through.
+- A first run of the live test met `4001 "Invalid program status (ongoing user
+  input)"`: Archicad refuses commands while a user is mid-input. That is the
+  dialog-blocked text the gateway notes had been waiting to see.
+
+Still owed, with Aleš's go-ahead: a LockElements / `General_Locked` check and
+one commit with readback on a scratch element.
+
 ## Out of scope
 
 - `SetDetailsOfElements` `typeSpecificDetails` (zones, lines, arcs, hotspots,
