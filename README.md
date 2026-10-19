@@ -16,8 +16,9 @@ does two jobs:
 > Archicad 29, even for a single property on a single element, taking unsaved
 > work with it. This is an Archicad-side fault the server can trigger but cannot
 > prevent. It affects `audit_delivery_readiness`, `run_rule`, `get_element_data`,
-> and `set_element_data`. See [Known issues](docs/known-issues.md) before you
-> point this at a model you care about.
+> and `set_element_data`. Ask the client to run `save_project` first. See
+> [Known issues](docs/known-issues.md) before you point this at a model you care
+> about.
 
 ## Requirements
 
@@ -304,7 +305,7 @@ command).
 | `--mode` | Tools exposed |
 |---|---|
 | `full` (default) | Everything: QA, core, and the API gateway. |
-| `verdicts` | The 8 QA tools only: rule ids, counts, and failing GUIDs, with no project name from `list_instances`. Element counts still reach the model, layer names included if you pass `include_layer_story=true`. |
+| `verdicts` | The 9 QA tools only: rule ids, counts, and failing GUIDs, with no project name from `list_instances`. Element counts still reach the model, layer names included if you pass `include_layer_story=true`. |
 
 ## Rules
 
@@ -470,13 +471,23 @@ rather than putting anything on your PATH.
 
 **QA (both modes):** `list_instances`, `get_model_summary`, `list_rules`,
 `run_rule`, `audit_delivery_readiness`, `verify_ifc_export_readiness`,
-`highlight_failures`, `create_issues_from_failures`
+`highlight_failures`, `create_issues_from_failures`, `save_project`
+
+`save_project` is File > Save behind a `confirm=true`, for the moment before a
+property read that could crash Archicad. A refused save is explained: a project
+made in an older Archicad needs File > Save As once (an Archicad 27 file in
+Archicad 28 was refused this way), as does one never saved, and the tool does no
+Save As itself. `file_updated` says whether the file on disk changed. On a
+Teamwork project it saves your local copy and sends nothing; that is Graphisoft's
+documented behaviour of File > Save in Teamwork, not tried live here. In
+verdicts mode it leaves the project name and location out of its answer.
+`highlight_failures` zooms to the failures as well as highlighting them.
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
-`attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `publish`,
+`show_elements`, `get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
 A tool that needs a newer Tapir than the one installed refuses before sending
@@ -516,6 +527,27 @@ locked layer, hotlinked module, locked, not reserved) are named and skipped,
 never unlocked. A commit reads the elements back, so a field Archicad answered
 success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
 or newer.
+
+`show_elements` is how an agent points at something. It finds the view that
+holds the elements: the floor plan with their story, or a section, elevation,
+detail, worksheet or layout (found through the Navigator, one database at a
+time). It opens that story or view, selects the elements, highlights them and
+zooms to them. Archicad answers success for selections and zooms it did not
+make, so the selection is read back (`selected`, `not_selectable`) and the story
+or window is checked after the switch. Elements on other stories or in other
+views are listed for another call. With the 3D window in front it stays in 3D.
+`guids=[]` removes the highlight and the selection. It changes only what is on
+screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
+older Tapir the result says which story to open by hand.
+
+`export_ifc` is the step after `verify_ifc_export_readiness`: it saves the
+project as `.ifc` or `.ifczip` with an export translator chosen by name (the
+preview translator by default) and one of Archicad's five element scopes. The
+dry run shows the translator, the path, the scope and every translator the
+project has. It never replaces an existing file without `overwrite=true`, and
+after the export it checks that the file is there. Archicad exports only from
+the floor plan or the 3D window, so from another window it brings the floor
+plan to the front first. It never opens or merges IFC. Needs Tapir 1.6.0.
 
 **Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
 confirm-gated. A dry run reports what can be known without touching the

@@ -248,8 +248,9 @@ def build_server(
         "without confirm=true it only reports what it would save. Call it before the "
         "reads that can crash Archicad 29 and lose unsaved work: property reads in "
         "get_element_data, set_element_data, find_elements with property comparisons, "
-        "audit_delivery_readiness, run_rule, verify_ifc_export_readiness and "
-        "get_model_summary with include_layer_story. A project never saved, or made in "
+        "audit_delivery_readiness, run_rule, verify_ifc_export_readiness, "
+        "get_model_summary with include_layer_story, modify_elements, and moving or "
+        "deleting a locked element. A project never saved, or made in "
         "an older Archicad, needs File > Save As in Archicad; this tool does no Save As "
         "and says why a save was refused. On Teamwork it saves your local copy and never "
         "sends. file_updated says whether the file on disk changed."),
