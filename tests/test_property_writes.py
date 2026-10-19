@@ -233,9 +233,20 @@ def test_group_failures_by_code_and_message_largest_first():
 
 # ---------- elements Archicad would refuse to write ----------
 
-def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="FloorPlan"):
-    """Like _conn_with_cells, with FilterElements answering per filter."""
+def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="FloorPlan",
+                       elsewhere=()):
+    """Like _conn_with_cells, with FilterElements answering per filter.
+
+    `elsewhere` are elements of another database than the active window's:
+    GetDetailsOfElements does not find them, whatever IsEditable says.
+    """
     conn, core = _conn_with_cells(cells)
+    details = core.tapir_responses["GetDetailsOfElements"]
+    core.tapir_responses["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
+        {"error": {"code": -2130313112, "message": "Failed to get the details"}}
+        if el["elementId"]["guid"] in elsewhere else item
+        for el, item in zip(params["elements"],
+                            details(params)["detailsOfElements"])]}
     core.tapir_responses["GetCurrentWindowType"] = {"currentWindowType": window}
     passing = {"IsEditable": set(editable), "InMyWorkspace": set(mine or ()),
                "IsVisibleByLayer": {guid for guid, _ in cells}}
@@ -308,12 +319,32 @@ def test_plan_names_a_guid_that_does_not_exist():
     assert "does not exist" in skipped[0]["reason"]
 
 
+def test_plan_skips_an_element_of_another_database_that_iseditable_passed():
+    # Live 19.10.2026: from the floor plan, IsEditable passed a Text in a
+    # layout database and a Line in a section database.
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"},
+                                 elsewhere={"d-2"})
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert [p["guid"] for p in planned] == ["d-1"]
+    assert [s["guid"] for s in skipped] == ["d-2"]
+    assert skipped[0]["reason"].startswith("not found")
+
+
+def test_set_element_data_sends_nothing_to_another_database():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"},
+                                    elsewhere={"d-2"})
+    out = set_element_data(conn, _TWO_CHANGES, dry_run=False)
+    assert out["applied"] == 1 and [s["guid"] for s in out["skipped"]] == ["d-2"]
+    [sent] = [p for c, p in core.calls if c == "API.SetPropertyValuesOfElements"]
+    assert [v["elementId"]["guid"] for v in sent["elementPropertyValues"]] == ["d-1"]
+
+
 def test_plan_without_tapir_leaves_editability_to_archicad():
     conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable=set())
     core.official_responses["API.IsAddOnCommandAvailable"] = {"available": False}
     planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert len(planned) == 2 and skipped == []
-    assert not any(c == "FilterElements" for c, _ in core.calls)
+    assert not any(c in ("FilterElements", "GetDetailsOfElements") for c, _ in core.calls)
 
 
 def test_group_failures_takes_a_detail_key():

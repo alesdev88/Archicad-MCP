@@ -162,14 +162,33 @@ def classify(conn: ArchicadConnection,
     return kinds, window
 
 
+def _elsewhere(conn: ArchicadConnection, passed: list[str]) -> set[str]:
+    """The elements IsEditable passed that the active window's database lacks.
+
+    IsEditable is not a database check from the floor plan: live on
+    19.10.2026 it passed a Text in a layout database and a Line in a section
+    database, which element commands then pass over (and which a delete,
+    reading afterwards, would count as gone).
+    """
+    if not passed or not conn.tapir_command_available("FilterElements"):
+        return set()
+    return set(passed) - present(conn, passed)
+
+
 def refusals(conn: ArchicadConnection,
              guids: list[str]) -> tuple[dict[str, str], str | None]:
     """(guid -> why Archicad would refuse to change it, the active window type).
 
-    The text of classify(): only refused elements are keyed.
+    The text of classify(), plus the elements of another database that
+    IsEditable passed, as not found. Only refused elements are keyed.
     """
     kinds, window = classify(conn, guids)
-    return {g: reason_text(kind, window) for g, kind in kinds.items()}, window
+    absent = _elsewhere(conn, [g for g in guids if g not in kinds])
+    if absent:
+        if not kinds:
+            window = active_window(conn)
+        kinds.update(dict.fromkeys(absent, NOT_FOUND))
+    return {g: reason_text(kinds[g], window) for g in guids if g in kinds}, window
 
 
 def lock_reasons(conn: ArchicadConnection, entries: dict[str, dict],

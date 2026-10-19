@@ -12,6 +12,10 @@ active window's database only, and DeleteElements answers success whatever it
 did. The official GetTypesOfElements answers 7203 "Element not supported" for
 a label, as it did live for every label on 28.09.2026, so it cannot say
 whether one exists; Tapir GetDetailsOfElements can.
+
+IsEditable is not a database check in one direction: live on 19.10.2026, from
+the floor plan, it passed a Text in a layout database and a Line in a section
+database. The fake passes every database's elements from the floor plan.
 """
 import pytest
 from multiconn_archicad.errors import StandardAPIError
@@ -25,9 +29,11 @@ BAD_ID = -2130313112
 
 
 class Project:
-    def __init__(self, floor_plan=(), layout=(), window="FloorPlan", locked=(),
-                 teamwork=False, mine=None, hidden=(), details_take_fields=True):
-        self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout)}
+    def __init__(self, floor_plan=(), layout=(), section=(), window="FloorPlan",
+                 locked=(), teamwork=False, mine=None, hidden=(),
+                 details_take_fields=True):
+        self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout),
+                          "Section": set(section)}
         self.window = window
         self.locked = set(locked)
         self.hidden = set(hidden)          # on a layer hidden in the active view
@@ -49,7 +55,8 @@ class Project:
         return set().union(*self.databases.values())
 
     def _editable(self, guid):
-        return (guid in self.active and guid not in self.locked
+        reach = self.everywhere() if self.window == "FloorPlan" else self.active
+        return (guid in reach and guid not in self.locked
                 and guid not in self.hidden
                 and (not self.teamwork or guid in self.mine))
 
@@ -247,6 +254,21 @@ def test_delete_refuses_without_confirm_and_touches_nothing():
     assert project.core.calls == []
 
 
+def test_delete_from_the_floor_plan_does_not_send_a_layout_text():
+    # Live 19.10.2026: from the floor plan, IsEditable passed a Text in a
+    # layout database. Sent, DeleteElements leaves it, and the read afterwards,
+    # which does not find it either, counted it as deleted.
+    project = Project(floor_plan=["a"], layout=["text"])
+    out = delete_elements(project.connect(), ["a", "text"], confirm=True)
+    assert out["deleted"] == 1
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["text"] and group["reason"].startswith("not found")
+    assert out["active_window"] == "FloorPlan"
+    [params] = project.sent("DeleteElements")
+    assert params == {"elements": [{"elementId": {"guid": "a"}}]}
+    assert project.databases["Layout"] == {"text"}
+
+
 # ---------- move ----------
 
 def test_move_from_a_layout_moves_nothing_and_says_why():
@@ -285,6 +307,27 @@ def test_move_with_everything_editable():
     out = move_elements(project.connect(), ["a", "b", "a"], VECTOR, confirm=True)
     assert out == {"requested": 2, "moved": 2}
     assert project.moved == ["a", "b"]
+
+
+def test_move_from_the_floor_plan_does_not_send_a_section_line():
+    # Live 19.10.2026: from the floor plan, IsEditable passed a Line in a
+    # section database.
+    project = Project(floor_plan=["a"], section=["line"])
+    out = move_elements(project.connect(), ["a", "line"], VECTOR, confirm=True)
+    assert out["moved"] == 1
+    group = _only_group(out, "not_moved")
+    assert group["guids"] == ["line"] and group["reason"].startswith("not found")
+    assert out["active_window"] == "FloorPlan"
+    assert project.moved == ["a"]
+
+
+def test_the_presence_check_reads_only_the_type():
+    # GetDetailsOfElements without `fields` builds every element's floor-plan
+    # polygons; the check needs only whether an entry comes back.
+    project = Project(floor_plan=["a", "b"], section=["line"])
+    move_elements(project.connect(), ["a", "b", "line"], VECTOR, confirm=True)
+    reads = project.sent("GetDetailsOfElements")
+    assert reads and all(p["fields"] == ["type"] for p in reads)
 
 
 def test_move_refuses_without_confirm_and_touches_nothing():
