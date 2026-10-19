@@ -21,6 +21,7 @@ from archicad_mcp.connection import (
     discover_instances,
     get_connection,
 )
+from archicad_mcp.core import save as _save
 from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
 from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
@@ -233,6 +234,23 @@ def build_server(
         guids = [g for r in verdict.results for g in r.failing_guids]
         conn = get_connection(port if port is not None else default_port)
         return actions.highlight_elements(conn, guids)
+
+    @mcp.tool(description=(
+        "Save the open project to its own file, as File > Save (Tapir). CONFIRM-GATED: "
+        "without confirm=true it only reports what it would save. Call it before the "
+        "reads that can crash Archicad 29 and lose unsaved work: property reads in "
+        "get_element_data, set_element_data, find_elements with property comparisons, "
+        "audit_delivery_readiness, run_rule, verify_ifc_export_readiness and "
+        "get_model_summary with include_layer_story. A project never saved, or made in "
+        "an older Archicad, needs File > Save As in Archicad; this tool does no Save As "
+        "and says why a save was refused. On Teamwork it saves your local copy and never "
+        "sends. file_updated says whether the file on disk changed."),
+              **_tool_meta("Save the project", read_only=False, destructive=True))
+    @_guarded
+    def save_project(confirm: bool = False, port: int | None = None) -> dict:
+        conn = require_tapir(get_connection(port if port is not None else default_port),
+                             "save_project")
+        return _save.save_project(conn, confirm, show_identity=(mode == "full"))
 
     @mcp.tool(description="Create an Archicad issue from a rule's failures and attach "
                           "the failing elements (requires Tapir add-on).",

@@ -12,7 +12,7 @@ from tests.fixtures import api_replays
 
 TIER1 = {"list_instances", "get_model_summary", "list_rules", "run_rule",
          "audit_delivery_readiness", "verify_ifc_export_readiness",
-         "highlight_failures", "create_issues_from_failures"}
+         "highlight_failures", "create_issues_from_failures", "save_project"}
 
 
 @pytest.fixture

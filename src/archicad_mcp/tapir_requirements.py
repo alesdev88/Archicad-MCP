@@ -34,6 +34,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     "import_issues_bcf": ("ImportIssuesFromBCF",),
     "publish": ("PublishPublisherSet",),
     "highlight_failures": ("HighlightElements",),
+    "save_project": ("SaveProject",),
     "create_issues_from_failures": ("CreateIssue", "AttachElementsToIssue"),
     "create_swept_beam": ("CreateObjects", "GetAvailableLibraryParts",
                           "SetGDLParametersOfElements"),

@@ -112,6 +112,7 @@ WRAPPED_BY: dict[str, list[str]] = {
     "ReleaseElements": ["release_elements"],
     "FilterElements": ["reserve_elements", "release_elements", "modify_elements"],
     "HighlightElements": ["highlight_failures"],
+    "SaveProject": ["save_project"],
 }
 # Every element type create_elements covers, read from its table so the two
 # cannot drift; CreateObjects keeps its entry above, which names more tools.
@@ -196,6 +197,8 @@ TOOLS: list[dict] = [
      "desc": "Import issues into the project from a BCF file (requires the Tapir add-on)."},
     {"name": "publish", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Fire an Archicad publisher set by name (Tapir)."},
+    {"name": "save_project", "cat": "Discovery & model", "mode": "both", "mutates": True,
+     "desc": "Save the open project to its own file, before the property reads that can crash Archicad 29. Confirm-gated; explains a refused save; never sends on Teamwork."},
     # Setup. Writes into Archicad's Add-Ons folder, not the project; no API
     # command wraps it.
     {"name": "install_tapir", "cat": "Discovery & model", "mode": "full", "mutates": True,
