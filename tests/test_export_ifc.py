@@ -133,7 +133,9 @@ async def test_a_folder_is_refused(archicad, tmp_path):
 
 
 async def test_tilde_is_expanded(archicad, tmp_path, monkeypatch):
+    # Path.expanduser reads HOME on macOS and Linux, USERPROFILE on Windows.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     archicad()
     out = await export({"path": "~/a.ifc", "dry_run": False})
     assert out["exported"] == str(tmp_path / "a.ifc")
