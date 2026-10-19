@@ -4,6 +4,7 @@ import pytest
 from multiconn_archicad.errors import StandardAPIError
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.editability import HOTLINK_REASON
 from archicad_mcp.core.element_data import (
     cap_list,
     group_failures,
@@ -234,17 +235,23 @@ def test_group_failures_by_code_and_message_largest_first():
 # ---------- elements Archicad would refuse to write ----------
 
 def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="FloorPlan",
-                       elsewhere=()):
+                       elsewhere=(), hotlinked=()):
     """Like _conn_with_cells, with FilterElements answering per filter.
 
     `elsewhere` are elements of another database than the active window's:
     GetDetailsOfElements does not find them, whatever IsEditable says.
+    `hotlinked` are inside a hotlinked module: their details carry a hotlinkId.
     """
     conn, core = _conn_with_cells(cells)
     details = core.tapir_responses["GetDetailsOfElements"]
+
+    def detail(guid, item):
+        if guid in elsewhere:
+            return {"error": {"code": -2130313112, "message": "Failed to get the details"}}
+        return {**item, "hotlinkId": {"guid": "HOTLINK-1"}} if guid in hotlinked else item
+
     core.tapir_responses["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
-        {"error": {"code": -2130313112, "message": "Failed to get the details"}}
-        if el["elementId"]["guid"] in elsewhere else item
+        detail(el["elementId"]["guid"], item)
         for el, item in zip(params["elements"],
                             details(params)["detailsOfElements"])]}
     core.tapir_responses["GetCurrentWindowType"] = {"currentWindowType": window}
@@ -273,11 +280,11 @@ def test_plan_skips_an_element_inside_a_hotlink():
     # Live 23.09.2026: 113 doors in hotlinked modules planned fine and were then
     # refused one by one at apply with a misleading "TeamWork permission denied",
     # in a file that was not a Teamwork project at all.
-    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"})
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"}, hotlinked={"d-2"})
     planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert [p["guid"] for p in planned] == ["d-1"]
     assert skipped[0]["guid"] == "d-2"
-    assert "hotlinked module" in skipped[0]["reason"]
+    assert skipped[0]["reason"] == HOTLINK_REASON
 
 
 def test_plan_names_an_unreserved_teamwork_element_as_such():
@@ -292,9 +299,17 @@ def test_plan_calls_a_reserved_but_locked_teamwork_element_a_hotlink():
     # Reserved yet still not editable: the hotlinked-module case on a Teamwork
     # project, where reserve_elements reports it as already mine.
     conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"},
-                                 mine={"d-1", "d-2"}, teamwork=True)
+                                 mine={"d-1", "d-2"}, teamwork=True, hotlinked={"d-2"})
     _, skipped = plan_property_writes(conn, _TWO_CHANGES)
-    assert "hotlinked module" in skipped[0]["reason"]
+    assert skipped[0]["reason"] == HOTLINK_REASON
+
+
+def test_plan_keeps_the_general_lock_reason_when_no_cause_is_found():
+    # No hotlinkId, no layer table, General_Locked unreadable: the reason
+    # names the possibilities rather than guessing one.
+    conn, _ = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"})
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert skipped[0]["reason"].startswith("not editable: it is inside a hotlinked module")
 
 
 def test_plan_from_a_layout_window_names_the_window_first():
