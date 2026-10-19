@@ -209,7 +209,7 @@ git commit -m "feat: export_ifc saves IFC with a named translator, dry run first
 - Modify: `README.md` (warning box points to `save_project`; QA list gains `save_project`; core list gains `show_elements`, `export_ifc`; one paragraph each; "The 8 QA tools" becomes 9; Teamwork save unverified live), `docs/known-issues.md` ("Save first" names `save_project`), `docs/api-dashboard.html` (regenerated)
 
 - [ ] **Step 1: Edit the docs**, then regenerate: `uv run python scripts/build_dashboard.py`
-- [ ] **Step 2: Check for dashes**: `grep -n "—\|–" README.md docs/known-issues.md docs/superpowers/plans/2026-10-19-save-show-export.md src/archicad_mcp/core/save.py src/archicad_mcp/core/views.py src/archicad_mcp/core/ifc_export.py` prints nothing.
+- [ ] **Step 2: Check for dashes**: `uv run python -c "import pathlib,sys; bad=[str(p) for p in map(pathlib.Path, sys.argv[1:]) if chr(0x2014) in p.read_text() or chr(0x2013) in p.read_text()]; print(bad)" README.md docs/known-issues.md docs/superpowers/plans/2026-10-19-save-show-export.md src/archicad_mcp/core/save.py src/archicad_mcp/core/views.py src/archicad_mcp/core/ifc_export.py` prints `[]`.
 - [ ] **Step 3: Run the whole suite**: `uv run pytest -q`, all pass.
 - [ ] **Step 4: Commit**: `git commit -am "docs: save_project, show_elements and export_ifc"`
 
