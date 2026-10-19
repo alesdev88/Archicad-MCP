@@ -50,10 +50,11 @@ can run without the project's identity entering the conversation at all.
 
 **Teamwork credential stripping.** On a Teamwork project, Archicad reports the
 project location as a `teamwork://user:<token>@host/path` URL in which the token
-is a live credential. The server removes the credential segment before returning
-the location, and applies a regex backstop that redacts any JWT-shaped string
-surviving elsewhere in the response, so a working credential is not placed into
-a model context or a session transcript.
+is a live credential. The server removes the credential segment from every
+tool's reply, including raw API answers and script output, and applies a regex
+backstop that redacts any JWT-shaped string surviving elsewhere in the response,
+so a working credential is not placed into a model context or a session
+transcript.
 
 ## What is stored, and for how long
 

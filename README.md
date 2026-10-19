@@ -729,7 +729,7 @@ conversation under [Anthropic's Privacy
 Policy](https://www.anthropic.com/legal/privacy). Nothing is cached or retained
 by the server between requests. Two reductions are built in: `verdicts` mode
 keeps the project name out of what the model sees, and Teamwork credentials are
-stripped from `get_project_info` before it returns.
+stripped from every tool's reply before it returns.
 
 Full text: **[PRIVACY.md](PRIVACY.md)**.
 
