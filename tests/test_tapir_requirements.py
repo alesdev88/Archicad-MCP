@@ -139,3 +139,9 @@ def test_editing_gate_uses_the_shared_refusal(tool):
     conn, _ = fake_conn({"UpdateClassificationItems"})
     error = editing_unavailable(conn, tool)["error"]
     assert f"'{tool}' needs Tapir 1.6.0" in error
+
+
+def test_outdated_refusal_and_instance_hint_say_replace():
+    conn, core = fake_conn({"UpdateClassificationItems"})
+    assert "--replace" in req.tapir_refusal(conn, "edit_classifications")["error"]
+    assert "--replace" in probe_port(19723, core=core).tapir_hint

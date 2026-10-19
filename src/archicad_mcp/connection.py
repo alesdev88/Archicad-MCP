@@ -191,9 +191,8 @@ def probe_port(port: int, core=None, timeout: float | None = PROBE_TIMEOUT,
             needing = []
         if needing:
             hint = (f"Tapir {tapir_version or '(version unknown)'} here lacks commands "
-                    f"that {', '.join(needing)} need. " + install_hint(version or None)
-                    + " Replacing a custom Tapir build with the release loses that "
-                    "build's own commands.")
+                    f"that {', '.join(needing)} need. "
+                    + install_hint(version or None, replace=True))
     return InstanceInfo(
         port=port,
         version=version,

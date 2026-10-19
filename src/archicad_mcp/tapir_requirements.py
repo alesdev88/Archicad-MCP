@@ -111,7 +111,7 @@ def require_tapir_command(conn: ArchicadConnection, command: str, tool: str) -> 
     from archicad_mcp.tapir_install.hint import install_hint
     return {"error": f"'{tool}' needs Tapir {version} or newer (this Archicad has "
                      f"{_installed(conn)}): it lacks {command}. Nothing was sent. "
-                     + install_hint(conn.archicad_version())}
+                     + install_hint(conn.archicad_version(), replace=True)}
 
 
 def tapir_refusal(conn: ArchicadConnection, tool: str) -> dict | None:

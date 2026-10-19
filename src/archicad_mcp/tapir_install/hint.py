@@ -30,7 +30,10 @@ def _detected_add_ons(version: int, platform: str) -> Path | None:
 
 
 def install_hint(archicad_version: int | None, platform: str | None = None, *,
-                 add_ons: Path | None = None, detect: bool = True) -> str:
+                 add_ons: Path | None = None, detect: bool = True,
+                 replace: bool = False) -> str:
+    """replace=True words it for a Tapir that is there but too old: a plain
+    install skips an existing Tapir, so the command needs --replace."""
     platform = platform or sys.platform
     try:
         key = platform_key(platform)
@@ -49,6 +52,12 @@ def install_hint(archicad_version: int | None, platform: str | None = None, *,
         where = (f"{add_ons / TAPIR_SUBFOLDER}" if add_ons is not None else
                  f"the Tapir folder inside the Archicad {archicad_version} Add-Ons folder")
     step = "unzip it into" if key == "Mac" else "copy it into"
+    if replace:
+        return (f"Update it with '{command} --replace' or the install_tapir tool with "
+                "replace_existing=true (the installed copy is moved to a backup folder, "
+                "and a custom Tapir build loses its own commands), or by hand: download "
+                f"{asset} from {release_page_url(release)}, {step} {where} in place of "
+                "the Tapir there, and restart Archicad.")
     return (f"Install it with '{command}' or the install_tapir tool, or by hand: "
             f"download {asset} from {release_page_url(release)}, {step} {where}, "
             "and restart Archicad.")

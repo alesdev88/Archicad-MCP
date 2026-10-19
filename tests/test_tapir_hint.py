@@ -24,3 +24,9 @@ def test_install_hint_without_a_version():
 
 def test_install_hint_on_an_unsupported_platform_still_points_somewhere():
     assert "releases" in install_hint(29, "linux")
+
+
+def test_update_hint_says_replace():
+    text = install_hint(30, "darwin", replace=True, detect=False)
+    assert "archicad-mcp install-tapir --archicad 30 --replace" in text
+    assert "replace_existing=true" in text and "backup" in text
