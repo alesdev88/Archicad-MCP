@@ -4,6 +4,7 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core import editability
+from archicad_mcp.core.element_kinds import send_items
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     PROPERTY_FETCH_CHUNK,
@@ -154,32 +155,21 @@ def send_property_writes(
     error rather than being lost to an exception. The error is None when every
     batch was sent; applied plus the failed count is then how many were sent.
     """
+    sent = send_items(conn.official, "API.SetPropertyValuesOfElements",
+                      "elementPropertyValues", [p["payload"] for p in planned],
+                      PROPERTY_FETCH_CHUNK)
     applied = 0
     failed: list[dict] = []
-    for start in range(0, len(planned), PROPERTY_FETCH_CHUNK):
-        chunk = planned[start:start + PROPERTY_FETCH_CHUNK]
-        try:
-            response = conn.official(
-                "API.SetPropertyValuesOfElements",
-                {"elementPropertyValues": [p["payload"] for p in chunk]})
-        except (APIErrorBase, ArchicadUnavailableError) as exc:
-            return applied, failed, exc
-        results = (response or {}).get("executionResults", [])
-        for i, p in enumerate(chunk):
-            # Lenient: missing/short executionResults (or a missing "success" key)
-            # are treated as success rather than crashing.
-            outcome = results[i] if i < len(results) else {}
-            if outcome.get("success", True):
-                applied += 1
-                continue
+    for p, outcome in zip(planned, sent.outcomes):
+        if outcome == "ok":
+            applied += 1
+        elif isinstance(outcome, dict):
             # Each failure names its element and Archicad's reason (6001 is a
             # Teamwork reservation, including elements inside a hotlink), so
             # the caller can act on it without a second query pass. Callers
             # group them with group_failures before reporting.
-            error = outcome.get("error") or {}
-            failed.append({"guid": p["guid"], "property": p["property"],
-                           "code": error.get("code"), "message": error.get("message")})
-    return applied, failed, None
+            failed.append({"guid": p["guid"], "property": p["property"], **outcome})
+    return applied, failed, sent.stopped
 
 
 def error_fields(exc: APIErrorBase | ArchicadUnavailableError) -> dict:
