@@ -575,9 +575,9 @@ one: each group is GUIDs (from `find_elements`, say) plus every element of the
 given types. It returns the colliding pairs with both elements' type and ID,
 counts by type pair, and every element involved, ready for `show_elements`. The
 volume tolerance (m3) ignores small overlaps; a surface tolerance (m2) also
-reports touching faces. Archicad leaves out what its own junctions clean up,
-such as crossing walls, and checks only closed solids whose building material
-takes part in collision detection, so an empty answer is not proof that nothing
+reports touching faces and open surfaces. Archicad leaves out what its own
+junctions clean up, such as crossing walls, and building materials set not to
+take part in collision detection, so an empty answer is not proof that nothing
 overlaps. Clashes can also be a QA rule, `no-collisions` (see Rules). Needs Tapir
 1.2.2.
 

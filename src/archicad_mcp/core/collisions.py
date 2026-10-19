@@ -5,9 +5,10 @@ groups of GUIDs. Live on MCP-Test, 19.10.2026 (Archicad 29, Tapir 1.7.1): one
 group sent as both sides answered each pair once, with no self pairs; the
 first element of a pair comes from group 1; the volume tolerance is the
 intersection volume in m3. Crossing walls Archicad joins gave no collision
-even at tolerance 0, and a Morph made as an open surface collided with
-nothing: only closed solids whose building material takes part in collision
-detection count. Built against Archicad 30, Tapir spells the clearance key
+even at tolerance 0. A Morph made as an open surface collided with nothing
+under the volume check and with the wall it crossed once the surface check
+was on. Archicad also leaves out building materials set not to take part in
+collision detection (its own setting, not tried live). Built against Archicad 30, Tapir spells the clearance key
 hasClearanceCollision; against 29 and older, hasClearenceCollision.
 The design is docs/superpowers/specs/2026-10-19-collisions-favorites-design.md.
 """

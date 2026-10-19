@@ -752,10 +752,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "each pair with both elements' type and ID, the first one's story, and kind "
         "(body, clearance for MEP clearance zones, or both), counts by type pair, and "
         "'elements', every GUID in a pair, to pass to show_elements. Archicad does not "
-        "count elements its own junctions clean up (crossing walls), and checks only "
-        "closed solids whose building material takes part in collision detection, so "
-        "no pairs is not proof that nothing overlaps. A whole-model check can take a "
-        "while. Reads only."),
+        "count elements its own junctions clean up (crossing walls); the volume check "
+        "sees only closed bodies, so an open surface (a Morph surface) clashes only "
+        "with surface_tolerance set; building materials set not to take part in "
+        "collision detection are left out. No pairs is not proof that nothing "
+        "overlaps. A whole-model check can take a while. Reads only."),
               **_tool_meta("Find collisions", read_only=True, destructive=False))
     @_guarded
     def find_collisions(guids: list[str] | None = None,

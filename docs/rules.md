@@ -183,9 +183,10 @@ the groups are the types, over the whole plan. A failure counts the colliding
 pairs, and the failing GUIDs are every element in a pair, so
 `highlight_failures` shows both sides.
 
-Archicad leaves out what its own junctions clean up (crossing walls), and checks
-only closed solids whose building material takes part in collision detection, so
-a pass is not proof that nothing overlaps. Needs the Tapir add-on with
+Archicad leaves out what its own junctions clean up (crossing walls). The volume
+check sees only closed bodies, so an open surface (a Morph surface, say) clashes
+only when `surface_tolerance` is set, and building materials set not to take part
+in collision detection are left out. A pass is not proof that nothing overlaps. Needs the Tapir add-on with
 `GetCollisions` (1.2.2); without it the rule reports `skipped`.
 
 ## Custom rules

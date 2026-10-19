@@ -38,9 +38,10 @@ test elements near the origin.
 - Live: two crossing walls (joined by Archicad) gave no collision, even at tolerance 0 with the surface
   check on. Archicad does not count elements its own junctions clean up.
 - Live: a Morph made by `CreateMorphs` with `size` is an open surface (5 faces, `isClosed` false, Tapir
-  #729 still open) and collides with nothing. A closed Morph body collided with the wall it crossed.
-  Archicad only checks closed solids whose building material takes part in collision detection, which
-  the tool says in its description so a missing clash is not read as proof.
+  #729 still open) and collides with nothing under the volume check. A closed Morph body collided with
+  the wall it crossed. In the live check the open surfaces did clash once the surface check was on.
+  Archicad also leaves out building materials set not to take part in collision detection (its own
+  setting, not tried live). The tool says all of this so a missing clash is not read as proof.
 - No GUID check: an unknown GUID is simply never in a pair.
 
 ### GetFavoritesByType (1.2.2)
@@ -180,3 +181,36 @@ group resolution, unknown types, tolerances sent, the rule through `build_snapsh
 (skip without Tapir), favourite listing, type mismatch skips, editability skips, the warnings, keep
 restores, the diff report, failure grouping. Then a live check on MCP-Test with test elements near the
 origin, deleted afterwards.
+
+## Live check
+
+19.10.2026, MCP-Test, Archicad 29 build 5101, Tapir 1.7.1, floor plan in front. The branch's code was
+run from a script against three walls, two doors, a window and four Morphs placed near the origin; all
+ten were deleted afterwards.
+
+`find_collisions`:
+
+- Two walls against two closed Morph boxes: 2 pairs, both with the wall the boxes cross (the other wall
+  is clear), kind `body`, IDs and story read.
+- Morphs as one group: 1 pair, the two closed boxes. The two open surface Morphs gave none.
+- Walls against Morphs at 0.2 m3: none (the wall was then 0.1 thick, an overlap of 0.1 m3).
+- Walls against Morphs with `surface_tolerance` 0.01: 4 pairs, the two open surface Morphs included.
+- A `no-collisions` rule, walls against Morphs, through `build_snapshot` and `run_rules`: fail, 2
+  failures, 3 GUIDs.
+
+`apply_favorites`:
+
+- Listing for a wall and a door: the 5 wall and 8 door favourites.
+- Dry run of "Generic Interior Wall" on two walls and a door: 2 planned, the door skipped as "not a Door
+  favourite (it is a Wall favourite)", the wall and layer warnings, `keep` `["id"]`.
+- "generic interior wall": refused, 'Generic Interior Wall' first among the close names.
+- `to_defaults` dry run: named the Wall tool. The commit was not run live, since it changes the Wall
+  tool's defaults.
+- Commit on two walls with IDs `LIVE-A` and empty: applied 2; `changed` listed structure, thickness,
+  composite and building material by name; `restored` id 2; the read showed `LIVE-A` and an empty ID,
+  so writing an empty Element ID back works.
+- "Internal Door" on a door with ID `D-LIVE`: library part "Entrance Door" to "Door", width 1 to 0.9,
+  ID restored.
+- A wall moved to "Shell - General" with height 2.4 (top unlinked), then "Generic Interior Wall" with
+  `keep` `["id", "layer"]`: `changed` showed height 2.4 to 3 and `relativeTopStory` 0 to 1; `restored`
+  id 1 and layer 1.
