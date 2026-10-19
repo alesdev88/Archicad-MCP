@@ -180,4 +180,27 @@ async def test_tool_registered_full_mode_only():
 
 def test_tool_needs_getcollisions():
     from archicad_mcp.tapir_requirements import TOOL_COMMANDS
-    assert TOOL_COMMANDS["find_collisions"] == ("GetCollisions", "GetElementsByType")
+    assert TOOL_COMMANDS["find_collisions"] == ("GetCollisions", "GetElementsByType",
+                                                "GetDetailsOfElements")
+
+
+def test_details_read_without_fields_on_an_old_tapir():
+    """A Tapir before `fields` (1.5.9) refuses the parameter; the read retries without."""
+    from multiconn_archicad.errors import TapirCommandError
+
+    def old_details(params):
+        if "fields" in params:
+            raise TapirCommandError(message="additional property 'fields'", code=4002)
+        return _details(dict(params, fields=list(DETAILS[WALL])))
+
+    conn, core = conn_with([_pair(WALL, BOX)])
+    core.tapir_responses["GetDetailsOfElements"] = old_details
+    result = collisions.find_collisions(conn, [WALL], None, [BOX], None)
+    assert result["pairs"][0]["element_type"] == "Wall"
+    assert result["pairs"][0]["against_type"] == "Morph"
+    assert "not_found" not in result
+
+
+def test_unknown_is_not_a_collision_type():
+    with pytest.raises(ValueError):
+        collisions.resolve_types(["Unknown"])

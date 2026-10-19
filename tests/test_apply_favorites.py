@@ -267,7 +267,35 @@ async def test_apply_favorites_registered():
 def test_tool_needs_apply_command():
     from archicad_mcp.tapir_requirements import TOOL_COMMANDS
     assert TOOL_COMMANDS["apply_favorites"] == ("GetFavoritesByType",
-                                                "ApplyFavoritesToElements")
+                                                "ApplyFavoritesToElements",
+                                                "GetDetailsOfElements")
+
+
+def test_old_tapir_without_fields():
+    """A Tapir before `fields` (1.5.9) refuses the parameter; reads retry without."""
+    from multiconn_archicad.errors import TapirCommandError
+
+    p = Project()
+    full = p.core.tapir_responses["GetDetailsOfElements"]
+
+    def old_details(params):
+        if "fields" in params:
+            raise TapirCommandError(message="additional property 'fields'", code=4002)
+        return full(params)
+
+    p.core.tapir_responses["GetDetailsOfElements"] = old_details
+    result = run(p, [WALL], "Partition Wall", dry_run=False)
+    assert result["applied"] == 1
+    assert result["changed"][WALL]["details.height"] == {"current": 2.4, "new": 3}
+
+
+def test_types_not_checked_live_get_a_general_warning():
+    slab = {"type": "Slab", "id": "SL-1", "floorIndex": 0, "layerIndex": 33,
+            "drawIndex": 7, "details": {"thickness": 0.2}}
+    p = Project(elements={"5"*8 + "-0000-0000-0000-000000000005": slab})
+    result = run(p, ["5"*8 + "-0000-0000-0000-000000000005"], "Ceiling")
+    warnings = [w["warning"] for w in result["warnings"]]
+    assert any("not checked live" in w and "commit reports" in w for w in warnings)
 
 
 async def test_tool_keeps_id_by_default(monkeypatch):
@@ -341,6 +369,26 @@ def test_nothing_to_restore_sends_nothing():
     run(p, [DOOR], "Internal Door", dry_run=False, keep=["id", "layer"])
     assert not p.sent("API.SetPropertyValuesOfElements")
     assert not p.sent("SetDetailsOfElements")
+
+
+def test_a_failed_read_after_the_apply_keeps_the_report():
+    """The apply landed but Archicad stopped answering: the caller still learns
+    what was sent and each element's own ID and layer, to write them back."""
+    from multiconn_archicad.errors import TapirCommandError
+
+    p = Project()
+    full = p.core.tapir_responses["GetDetailsOfElements"]
+
+    def details(params):
+        if p.sent("ApplyFavoritesToElements"):
+            raise TapirCommandError(message="Invalid program status", code=4001)
+        return full(params)
+
+    p.core.tapir_responses["GetDetailsOfElements"] = details
+    result = run(p, [WALL], "Partition Wall", dry_run=False)
+    assert result["stopped"]["code"] == 4001
+    assert result["unconfirmed"] == [WALL]
+    assert result["before"] == {WALL: {"id": "TEST-A", "layer": "Shell - General"}}
 
 
 def test_unchanged_reported():

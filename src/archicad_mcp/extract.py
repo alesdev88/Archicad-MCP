@@ -469,7 +469,14 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
             and conn.tapir_command_available("GetCollisions"):
         # Imported here: core.collisions imports this module.
         from archicad_mcp.core.collisions import answer
-        collisions = {q: tuple(answer(conn, q)) for q in collision_queries}
+        collisions = {}
+        for query in collision_queries:
+            try:
+                collisions[query] = tuple(answer(conn, query))
+            except (APIErrorBase, ArchicadUnavailableError) as exc:
+                # One refused query skips its rule, not the whole audit.
+                message = getattr(exc, "message", None) or str(exc)
+                collisions[query] = f"Archicad refused the check ({message})"
 
     return ModelSnapshot(elements=elements, layers=layers, zones=zones, ifc_properties=ifc,
                          collisions=collisions)

@@ -23,12 +23,12 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.attributes import layer_table
-from archicad_mcp.core.editability import NOT_FOUND, reason_text, refusals
+from archicad_mcp.core.editability import NOT_FOUND, _details, reason_text, refusals
 from archicad_mcp.core.element_data import cap_list
 from archicad_mcp.core.modify import _grouped_warnings
 from archicad_mcp.core.mutate import _group
 from archicad_mcp.core.query_schema import element_type_names
-from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
+from archicad_mcp.extract import PROPERTY_FETCH_CHUNK
 
 KEEPABLE = ("id", "layer")
 DEFAULT_KEEP = ("id",)
@@ -39,9 +39,14 @@ OPENING_TYPES = frozenset({"Door", "Window", "Skylight"})
 HIERARCHICAL_TYPES = frozenset({"Stair", "Railing", "CurtainWall"})
 _TYPE_WARNINGS = {
     "Wall": ("takes the favourite's height and top link, reference line, structure "
-             "and thickness, not only its materials and pens; it stays where it is"),
-    "Column": "takes the favourite's height and top link; it stays where it is",
+             "and thickness, not only its materials and pens; its plan position stays"),
+    "Column": "takes the favourite's height and top link; its plan position stays",
 }
+# Every type the live check did not cover: the wall shows the favourite can
+# carry more than its description says, so the dry run must not imply less.
+_UNCHECKED_WARNING = ("may also take the favourite's size, thickness, height or "
+                      "elevation (not checked live for this type); the commit reports "
+                      "every field it changed")
 _OPENING_WARNING = ("takes the favourite's library part, width, height and sill "
                     "height; it stays at its place in the wall")
 _HIERARCHICAL_WARNING = ("gets only its own settings: Tapir leaves the settings of its "
@@ -80,9 +85,8 @@ def _read(conn: ArchicadConnection, guids: list[str], fields: list[str]) -> dict
     found: dict[str, dict] = {}
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
         chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
-        items = conn.tapir("GetDetailsOfElements", {
-            "elements": element_payload(chunk), "fields": fields,
-        }).get("detailsOfElements", [])
+        # A Tapir before `fields` (1.5.9) refuses it; _details retries without.
+        items = _details(conn, chunk, fields).get("detailsOfElements", [])
         for guid, item in zip(chunk, items):
             if isinstance(item, dict) and "error" not in item:
                 found[guid] = item
@@ -134,6 +138,8 @@ def _warnings(element_type: str, keep: tuple[str, ...]) -> list[str]:
         out.append(_OPENING_WARNING)
     elif element_type in HIERARCHICAL_TYPES:
         out.append(_HIERARCHICAL_WARNING)
+    else:
+        out.append(_UNCHECKED_WARNING)
     if "layer" not in keep:
         out.append(_LAYER_WARNING)
     if "id" not in keep:

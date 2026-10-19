@@ -169,6 +169,29 @@ def _restore(conn: ArchicadConnection, p: FavoritePlan, before: dict[str, dict],
     return restored, missing, written
 
 
+def _unread(result: dict, p: FavoritePlan, before: dict[str, dict], landed: list[str],
+            applied: int, exc: APIErrorBase | ArchicadUnavailableError) -> dict:
+    """The report when Archicad stopped answering after the apply.
+
+    The favourite may have landed, so each element's own Element ID and layer
+    are handed back: without them a retry would read the favourite's values
+    as the elements' own and keep those.
+    """
+    result["applied"] = applied
+    result["stopped"] = error_fields(exc)
+    result["unconfirmed"] = landed
+    result["before"] = {g: {"id": before[g].get("id") or "",
+                            "layer": p.layers.get(before[g].get("layerIndex"),
+                                                  before[g].get("layerIndex"))}
+                        for g in landed if g in before}
+    result["notes"] = ["Archicad stopped answering after the apply, so nothing was read "
+                       "back or written back. 'before' holds each element's own Element "
+                       "ID and layer: once Archicad answers, check the elements and write "
+                       "those back with set_element_data (General_ElementID) and "
+                       "modify_elements (layer) where the favourite replaced them."]
+    return result
+
+
 def commit(conn: ArchicadConnection, p: FavoritePlan) -> dict:
     guids = [e["guid"] for e in p.planned]
     result: dict = {"dry_run": False, **_favorite_fields(p), "requested": p.requested,
@@ -202,8 +225,13 @@ def commit(conn: ArchicadConnection, p: FavoritePlan) -> dict:
             unconfirmed.append(guid)
 
     landed = applied + unconfirmed
-    after = {g: e for g, e in _read(conn, landed, DETAIL_FIELDS).items() if g in before}
-    restored, not_restored, _ = _restore(conn, p, before, after)
+    if failed:
+        result["failed"] = group_failures(failed, detail_key="favorite")
+    try:
+        after = {g: e for g, e in _read(conn, landed, DETAIL_FIELDS).items() if g in before}
+        restored, not_restored, _ = _restore(conn, p, before, after)
+    except _ERRORS as exc:
+        return _unread(result, p, before, landed, len(applied), stopped or exc)
     names = _Names(conn, p.layers)
     changes = {g: d for g in landed if g in after
                if (d := diff(before[g], after[g], names))}
@@ -218,8 +246,6 @@ def commit(conn: ArchicadConnection, p: FavoritePlan) -> dict:
         result["unchanged"], unchanged_rest = cap_list(unchanged)
         if unchanged_rest:
             result["unchanged_not_shown"] = unchanged_rest
-    if failed:
-        result["failed"] = group_failures(failed, detail_key="favorite")
     if restored:
         result["restored"] = restored
     if not_restored:

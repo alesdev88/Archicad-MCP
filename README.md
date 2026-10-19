@@ -537,12 +537,13 @@ it would change and skips elements of another type or ones Archicad would
 refuse. It also warns what a favourite takes over besides materials and pens,
 because Tapir's "never geometry" is not what Archicad does: live, a wall took the
 favourite's height, top link, reference line and layer, and doors and windows
-their library part, size and sill; positions stayed. Each element keeps its own
+their library part, size and sill; plan positions stayed. For the types not
+checked live the dry run says so. Each element keeps its own
 Element ID by default (`keep`, which can also keep the layer), since a
 favourite's ID is a template value. A commit reads the elements back and
 reports, per element, every field that changed. Classifications, categories and
 property values are applied but not read back. `to_defaults=true` sets a tool's
-defaults instead. Needs Tapir 1.5.4.
+defaults instead. Needs Tapir 1.5.7.
 
 `get_element_data` and `set_element_data` read and write more than property
 values, through one address syntax: `classification:<System>` for an element's
@@ -579,7 +580,7 @@ reports touching faces and open surfaces. Archicad leaves out what its own
 junctions clean up, such as crossing walls, and building materials set not to
 take part in collision detection, so an empty answer is not proof that nothing
 overlaps. Clashes can also be a QA rule, `no-collisions` (see Rules). Needs Tapir
-1.2.2.
+1.5.7; the rule needs only 1.2.2.
 
 `export_ifc` is the step after `verify_ifc_export_readiness`: it saves the
 project as `.ifc` or `.ifczip` with an export translator chosen by name (the

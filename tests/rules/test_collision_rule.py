@@ -52,6 +52,30 @@ def test_from_config_unknown_type():
                                       "element_types": ["Beem"]})
 
 
+def test_empty_volume_tolerance_takes_the_default():
+    rule = NoCollisionsRule.from_config({"id": "x", "type": "no-collisions",
+                                         "element_types": ["Wall"],
+                                         "volume_tolerance": None})
+    assert rule.collision_query.volume_tolerance == 0.001
+
+
+def test_a_refused_query_skips_only_its_rule():
+    from multiconn_archicad.errors import TapirCommandError
+
+    rule = NoCollisionsRule.from_config(CONFIG)
+    conn, core = _conn()
+
+    def refuse(params):
+        raise TapirCommandError(message="Failed to perform collision detection.",
+                                code=-2130313112)
+
+    core.tapir_responses["GetCollisions"] = refuse
+    snapshot = build_snapshot(conn, rule.needs, collision_queries=collision_queries([rule]))
+    result = rule.check(snapshot)
+    assert result.skipped is True
+    assert "Failed to perform collision detection." in result.skip_reason
+
+
 def test_check_fails_with_pairs():
     rule = NoCollisionsRule.from_config(CONFIG)
     snapshot = ModelSnapshot(collisions={rule.collision_query: (

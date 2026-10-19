@@ -28,9 +28,10 @@ def _types(cfg: dict, key: str, rule_id: str) -> tuple[str, ...] | None:
 
 
 def _tolerance(cfg: dict, key: str, rule_id: str, default):
-    value = cfg.get(key, default)
+    # A key left empty in YAML reads as None: take the default, as if absent.
+    value = cfg.get(key)
     if value is None:
-        return None
+        return default
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
         raise RuleConfigError(f"rule {rule_id!r}: '{key}' must be a number of 0 or more")
     return float(value)
@@ -89,7 +90,14 @@ class NoCollisionsRule:
                 message="Collision data not available", skipped=True,
                 skip_reason="Collision data unavailable: the Tapir add-on is missing "
                             "or has no GetCollisions (Tapir 1.2.2)")
-        pairs = snapshot.collisions.get(self.query, ())
+        pairs = snapshot.collisions.get(self.query)
+        if not isinstance(pairs, tuple):
+            # build_snapshot stores why a query could not be answered as text.
+            reason = pairs if isinstance(pairs, str) else "the collision check did not run"
+            return RuleResult(
+                rule_id=self.rule_id, passed=False, severity=self.severity,
+                message="Collision check failed", skipped=True,
+                skip_reason=f"Collision data unavailable: {reason}")
         failing = tuple(dict.fromkeys(g for c in pairs for g in (c.element, c.against)))
         return RuleResult(
             rule_id=self.rule_id,

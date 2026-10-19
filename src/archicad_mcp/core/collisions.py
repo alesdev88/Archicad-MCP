@@ -18,6 +18,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.editability import _details
 from archicad_mcp.core.element_data import cap_list
 from archicad_mcp.core.query_schema import element_type_names
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
@@ -54,8 +55,9 @@ class Collision:
 
 def resolve_types(names: list[str]) -> tuple[str, ...]:
     """Tapir's ElementType names for `names`, matched without case, with one
-    trailing 's' allowed. ValueError lists the valid names for a miss."""
-    known = [n for n in element_type_names() if n != "all"]
+    trailing 's' allowed. ValueError lists the valid names for a miss.
+    'Unknown' (an element with no type) is left out: GetElementsByType refuses it."""
+    known = [n for n in element_type_names() if n not in ("all", "Unknown")]
     by_lower = {n.lower(): n for n in known}
     out: list[str] = []
     for name in names:
@@ -128,9 +130,8 @@ def _read(conn: ArchicadConnection, guids: list[str]) -> dict[str, dict]:
     found: dict[str, dict] = {}
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
         chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
-        items = conn.tapir("GetDetailsOfElements", {
-            "elements": element_payload(chunk),
-            "fields": ["type", "id", "floorIndex"]}).get("detailsOfElements", [])
+        items = _details(conn, chunk, ["type", "id", "floorIndex"]).get(
+            "detailsOfElements", [])
         for guid, item in zip(chunk, items):
             if isinstance(item, dict) and "error" not in item:
                 found[guid] = item
