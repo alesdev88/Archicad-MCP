@@ -8,6 +8,7 @@ import jsonschema
 from collections.abc import Callable
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.project import scrub_credentials
 from archicad_mcp.gateway.registry import OFFICIAL_DOCS, TAPIR_DOCS, CommandInfo
 
 
@@ -78,9 +79,12 @@ def _validate(info: CommandInfo, params: dict | None) -> dict | None:
 
 
 def _dispatch(conn: ArchicadConnection, info: CommandInfo, params: dict | None) -> dict:
+    # Scrubbed here rather than only on the way out of the tool, because
+    # scripts reach commands through this too: GetProjectInfo on a Teamwork
+    # project carries a BIMcloud token that no caller needs.
     if info.kind == "official":
-        return conn.official(info.name, params)
-    return conn.tapir(info.name, params)
+        return scrub_credentials(conn.official(info.name, params))
+    return scrub_credentials(conn.tapir(info.name, params))
 
 
 def _resolve(registry: dict[str, CommandInfo], name: str,

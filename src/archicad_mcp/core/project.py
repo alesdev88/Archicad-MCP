@@ -1,33 +1,47 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlsplit, urlunsplit
 
 from archicad_mcp.connection import ArchicadConnection
 
 # On a Teamwork project Tapir's projectLocation is
-#   teamwork://<user>:<JWT refresh token>@<host>/<path>
+#   teamwork://<user email>:<JWT refresh token>@<host>/<path>
 # The token is a live credential. Returned verbatim it lands in the model's
-# context and in the session transcript (observed twice on a live BIMcloud
-# project), so it is stripped before the tool answers. The host and project
-# path are kept -- those are what callers actually use.
+# context and in the session transcript (observed on a live BIMcloud project
+# through get_project_info, and on 19.10.2026 through
+# execute_read_api_command), so it is stripped before any tool answers. The
+# host and project path are kept, since those are what callers actually use.
 _JWT = re.compile(r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
-
-
-def _strip_credentials(value: str) -> str:
-    parts = urlsplit(value)
-    if "@" not in parts.netloc:
-        return value
-    host = parts.netloc.rsplit("@", 1)[1]
-    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+# Everything between a URL's scheme and the last "@" before its path: the
+# user and token, even when the user is an email address. Matched in running
+# text as well as in a whole field, because a script's print output or a
+# traceback carries the location inside a repr. The scheme length is capped
+# so a long run of letters cannot make the search quadratic.
+_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]{0,31}://)[^\s/?#\"'<>]*@")
 
 
 def _scrub(value: object) -> object:
-    if not isinstance(value, str):
+    # Both patterns need one of these, and the backstop runs over every string
+    # in every tool's reply, so most strings are passed over without a search.
+    if not isinstance(value, str) or ("@" not in value and "eyJ" not in value):
         return value
-    # The netloc strip handles the known shape; the regex is the backstop for
-    # any other field that turns out to carry a token.
-    return _JWT.sub("[redacted-token]", _strip_credentials(value))
+    # The userinfo strip handles the known shape; the JWT regex is the backstop
+    # for any other place that turns out to carry a token.
+    return _JWT.sub("[redacted-token]", _USERINFO.sub(r"\1", value))
+
+
+def scrub_credentials(value):
+    """value with _scrub applied to every string in it, dict keys included.
+
+    The gateway runs it over each raw answer, and the tool wrapper over each
+    reply, so a credential cannot reach the model through a path that forgot
+    to shape its output.
+    """
+    if isinstance(value, dict):
+        return {_scrub(key): scrub_credentials(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [scrub_credentials(item) for item in value]
+    return _scrub(value)
 
 
 def sanitize_project_info(info: dict) -> dict:

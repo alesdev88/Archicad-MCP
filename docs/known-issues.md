@@ -183,6 +183,20 @@ session transcript. The tool now drops the `user:token` segment and keeps the
 host and project path, with a regex backstop that redacts any JWT-shaped string
 surviving in another field.
 
+## Teamwork credentials were not stripped from raw API answers
+
+`get_project_info` was not the only way to read that location.
+`execute_read_api_command("GetProjectInfo")` returned Tapir's answer verbatim,
+token included (seen live on a BIMcloud project on 19.10.2026), and `run_script`
+could return, print or raise it. Now the gateway scrubs every answer it gets
+back, which also covers `ac.cmd` in scripts, and every tool's reply, errors
+included, passes the same scrub on the way out. A URL's `user:token@` segment
+is dropped wherever it sits, inside a traceback or printed text as well as in
+a field of its own, and any JWT-shaped string becomes `[redacted-token]`. A
+script that calls the connection directly still sees the raw answer, but what
+it hands back is scrubbed. One side effect: any value holding a URL with a
+user name in it, such as a property value, comes back without the user name.
+
 ## The gateway tools tolerate `params` sent as text
 
 Some MCP clients collapse a nullable object field (`dict | None`) to an untyped

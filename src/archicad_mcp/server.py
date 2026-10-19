@@ -22,6 +22,7 @@ from archicad_mcp.connection import (
     get_connection,
 )
 from archicad_mcp.core import save as _save
+from archicad_mcp.core.project import scrub_credentials
 from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
 from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
@@ -93,13 +94,18 @@ def _tool_meta(title: str, *, read_only: bool, destructive: bool = False) -> dic
 
 
 def _guarded(func):
-    """Wrap a tool handler so connection/API errors become {"error": ...}."""
+    """Wrap a tool handler so connection/API errors become {"error": ...}.
+
+    Every reply, error or not, is also scrubbed of Teamwork credentials: the
+    backstop for a tool that passes a raw answer through, or a script that
+    returns, prints or raises one.
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            return func(*args, **kwargs)
+            return scrub_credentials(func(*args, **kwargs))
         except _HANDLED_ERRORS as exc:
-            return _tool_error(exc)
+            return scrub_credentials(_tool_error(exc))
     return wrapper
 
 
