@@ -412,7 +412,7 @@ rather than putting anything on your PATH.
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
-`move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
+`modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
 `get_project_info`, `list_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
@@ -428,6 +428,18 @@ is the discovery step before it: fuzzy, accent-insensitive search over property
 and attribute definitions that returns the exact property address the other
 tools accept and whether the value can be written. Both are documented in
 [the query guide](docs/query.md).
+
+`modify_elements` changes elements that already exist: story, layer and draw
+order for any element, and for walls, beams, slabs, columns, doors, windows,
+morphs, multi-plane roofs, meshes, objects, lamps, texts and labels the fields
+of Tapir's own Modify command (height, thickness, sill height, sizes, attributes
+by name). The dry run shows the current value next to the new one for every
+element. A story change moves the element with the story, as Archicad does;
+`keep_elevation` relinks it in place. Elements Archicad would refuse (hidden or
+locked layer, hotlinked module, locked, not reserved) are named and skipped,
+never unlocked. A commit reads the elements back, so a field Archicad answered
+success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
+or newer.
 
 **Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
 confirm-gated. A dry run reports what can be known without touching the
