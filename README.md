@@ -214,9 +214,9 @@ archicad-mcp install-tapir --dry-run
 ```
 
 That lists every Archicad on the computer and the Tapir each one has, downloads
-the pinned Tapir release for every Archicad that has none, checks each file's
-sha256 against the value committed in this repository, and says what it would
-do. Without `--dry-run` it shows the same plan and asks before writing
+the pinned Tapir release for each listed Archicad version (also where a Tapir is
+already there, to tell whether it is the same file), checks each file's sha256
+against the value committed in this repository, and says what it would do. Without `--dry-run` it shows the same plan and asks before writing
 anything. Restart Archicad afterwards.
 
 The Claude Desktop extension puts no command on your PATH, so from there ask
