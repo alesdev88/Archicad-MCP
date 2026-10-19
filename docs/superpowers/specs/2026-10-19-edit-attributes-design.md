@@ -119,7 +119,8 @@ Documented in the DevKit (`ACAPI_Teamwork_FindLockableObjectSet`):
 documented ones:** `ClassificationsAndProperties`, `ProjectLibraryList`,
 `IssueTags`, `LayerCombinations`. Property definitions and classifications have
 no documented set, and `ClassificationsAndProperties` is the only candidate. It
-is unverified until a Teamwork project answers for it (see Verification).
+was a guess until CVP answered for it on 2026-10-19: a real set (see
+Verification).
 
 The tool accepts these names, Archicad's exact spelling, plus aliases so an
 agent does not need to know the API names:
@@ -200,8 +201,8 @@ call and classified:
 
 Why two columns: blocking on a documented set saves a batch of cryptic
 per-item refusals; blocking on a guessed set name could stop a write that would
-have worked. Once a Teamwork project confirms `ClassificationsAndProperties`,
-the right column can move to the left one.
+have worked. CVP confirmed `ClassificationsAndProperties` as a set on
+2026-10-19; the proposal to move it to the left column is in Verification.
 
 Every dry run in a Teamwork project carries a `teamwork` list:
 `[{"set", "status", "held_by", "needed_for": [targets]}]`.
@@ -616,12 +617,70 @@ fixed test first and the live check rerun clean on MCP-Test:
 - Smaller: a missing Get answer, an empty `pens` list, float pen indices, a
   composite skin whose material no longer resolves (now says so).
 
-**Teamwork, not verified.** Whether `ClassificationsAndProperties` is the set
-Archicad wants for definitions, which set attribute property values need, and
-the exact refusal Archicad gives without a reservation can only be seen on a
-Teamwork project. The only one here is CVP, production, which needs Aleš's
-explicit go-ahead; until then the Teamwork half is unit-tested against the
-shapes in Tapir's source and the README and known-issues say so.
+### Teamwork set names on CVP, 2026-10-19 (reads only)
+
+With Aleš's go-ahead, on CVP (the office's BIMcloud project, AC 29/5101,
+Tapir 1.7.1, `GetProjectInfo` `isTeamwork: true`). Only
+`GetLockableObjectSetStatus {"objectSetName": ...}` through
+`execute_read_api_command`, one name at a time; nothing reserved, released or
+written.
+
+| Name | Answer |
+|---|---|
+| `LayerSettingsDialog` | `{"status": "Free"}` |
+| `Composites` | `Free` |
+| `FillTypes` | `Free` |
+| `LineTypes` | `Free` |
+| `PenTables` | `Free` |
+| `Profiles` | `Free` |
+| `BuildingMaterials` | `Free` |
+| `Surfaces` | `Free` |
+| `ZoneCategories` | `Free` |
+| `ClassificationsAndProperties` | `Free` |
+| `LayerCombinations` (control; the tools never send it) | `Free` |
+| `Properties` (control) | error "No lockable object set named 'Properties' was found. Check the name and that the project is a Teamwork project." |
+| `MCPNoSuchSet` (control) | the same error |
+
+What this settles:
+
+- Every name the tools send is a set Archicad knows on a Teamwork project,
+  `ClassificationsAndProperties` included. The controls show that an unknown
+  name errors there too, so `Free` is not a default answer.
+- Archicad 30's `APICore` has the same name table as 29's, in the same order
+  (`ClassificationsAndProperties` right after `ModelViewOptions`, then
+  `ProjectLibraryList`, `IssueTags`, `GeoLocation`, `GraphicOverrides`). No other
+  string in either names a property or classification set, so there is no
+  other candidate. (`Cities`, `MarkupStyles` and `PreferencesDialog` are in the
+  DevKit list but not in `APICore`'s table.)
+- A free set answers `status` alone, with no `conflicts` key; `_holders` already
+  reads a missing key as no holders. The error text is the one the fake in
+  `tests/test_teamwork_object_sets.py` uses, word for word.
+- `LayerCombinations` is a set of its own as well: the compound member the
+  DevKit says not to reserve alone. The alias table keeps sending
+  `LayerSettingsDialog` for it.
+
+**Proposal: move `ClassificationsAndProperties` to the blocking column.** It
+was a warning because blocking on a guessed name "could stop a write that would
+have worked". The name is no longer a guess: it is a real set on a Teamwork
+project, and it is named for exactly these definitions. In Teamwork a user
+edits a set only after reserving it, so a `Free` or `Locked` status should skip
+the targets with the reserve hint before anything is sent, as the attribute
+sets do. `NotAvailable`, a read error and a Tapir older than 1.7.1 stay
+warnings. The change: `definition_edit.definitions_reservation` skips when
+`set_problem(...).blocking` (its docstring says "a missing reservation only
+warns"); the "Unverified until a Teamwork project answers" comment at the alias
+in `core/teamwork.py`; `tests/test_definition_teamwork.py` (its docstring and
+the Free/Locked cases); the two column and wiring tables above; the README and
+`docs/known-issues.md` wording. The risk left: if Archicad's API accepted
+definition writes without the reservation, the block would stop a write that
+would have worked. The first definition write on a Teamwork test project (not
+CVP) settles that.
+
+**Teamwork, still not verified.** The `Editable` and `Locked` answers (with
+holders), Archicad's refusal of a definition or attribute write while its set
+is free, and which set attribute property values need. Each needs a
+reservation or a write on a Teamwork project, and CVP is production, so those
+parts stay unit-tested against the shapes in Tapir's source.
 
 ## Out of scope
 
