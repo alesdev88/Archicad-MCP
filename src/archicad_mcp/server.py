@@ -404,10 +404,24 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import mutate as _mutate
     from archicad_mcp.core import selection as _selection
 
-    @mcp.tool(description="Create elements (column/slab/zone/polyline/object/mesh) via "
-                          "Tapir. DRY-RUN BY DEFAULT: shows the exact command and payload. "
-                          "Pass dry_run=false to create. Other types: use "
-                          "execute_write_api_command.",
+    @mcp.tool(description=(
+        "Create elements of any type Tapir can create. element_type: model wall, "
+        "beam, column, slab, roof, morph, mesh, stair, railing, zone, object, lamp; "
+        "hosted door, window (in a wall), opening; MEP mep_route, mep_element "
+        "(Archicad 28+); markers section, interior_elevation; hotlink_instance; 2D "
+        "line, arc, circle, polyline, spline, hatch, hotspot, text, label, "
+        "keynote_label; dimension, wall_thickness_dimension, section_dimension; "
+        "drawing (on a layout). Plurals and Tapir command names work too. Items use "
+        "Tapir's field names and units (metres, radians): call with items=[] to get "
+        "the item schema for a type. DRY-RUN BY DEFAULT: every item is validated "
+        "against the schema (any problem: nothing is sent, problems listed by item "
+        "index and field), a favoriteName must exist, and hosts (a door's wall, "
+        "the elements a dimension measures, a label's parent) must exist, be the "
+        "right type and be editable; items failing those are skipped with the "
+        "reason and the rest go ahead. Warns when the active window is wrong for "
+        "the type. Pass dry_run=false to create: returns created GUIDs, plus "
+        "Tapir's per-item errors grouped with item indices and by_index (item "
+        "index -> GUID) when not every item was created."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,

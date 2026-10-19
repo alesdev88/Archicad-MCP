@@ -19,6 +19,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from archicad_mcp.core.create import CREATE_TYPES
 from archicad_mcp.gateway.registry import build_registry
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,16 +84,11 @@ WRAPPED_BY: dict[str, list[str]] = {
     "GetLayers": ["modify_elements"],
     "DeleteElements": ["delete_elements"],
     "ChangeSelectionOfElements": ["set_selection", "clear_selection"],
-    "CreateColumns": ["create_elements"],
-    "CreateSlabs": ["create_elements"],
-    "CreateZones": ["create_elements"],
-    "CreatePolylines": ["create_elements"],
     "CreateObjects": ["create_elements", "create_swept_beam", "create_road_marking"],
     "GetAvailableLibraryParts": ["create_swept_beam", "create_road_marking"],
     "GetAttributesByType": ["create_swept_beam", "create_road_marking", "modify_elements"],
     "SetGDLParametersOfElements": ["create_swept_beam", "create_road_marking"],
     "GetGDLParametersOfElements": ["create_road_marking"],
-    "CreateMeshes": ["create_elements"],
     "GetIssues": ["list_issues"],
     "CreateIssue": ["create_issue", "create_issues_from_failures"],
     "AddCommentToIssue": ["add_issue_comment"],
@@ -117,6 +113,10 @@ WRAPPED_BY: dict[str, list[str]] = {
     "FilterElements": ["reserve_elements", "release_elements", "modify_elements"],
     "HighlightElements": ["highlight_failures"],
 }
+# Every element type create_elements covers, read from its table so the two
+# cannot drift; CreateObjects keeps its entry above, which names more tools.
+for _spec in CREATE_TYPES.values():
+    WRAPPED_BY.setdefault(_spec.command, ["create_elements"])
 
 # The dedicated high-level MCP tools, transcribed from server.py. "mode" is which
 # server mode exposes the tool; "mutates" flags tools that can change the model.
@@ -146,7 +146,7 @@ TOOLS: list[dict] = [
     {"name": "import_definitions", "cat": "Discovery & model", "mode": "full", "mutates": True,
      "desc": "Import a Property or Classification Manager XML with a conflict policy. Dry-run by default."},
     {"name": "create_elements", "cat": "Elements", "mode": "full", "mutates": True,
-     "desc": "Create elements (column/slab/zone/polyline/object/mesh) via Tapir. Dry-run by default. Other types: use execute_write_api_command."},
+     "desc": "Create any element Tapir can create (34 types: walls, doors, windows, roofs, stairs, MEP, 2D, dimensions, sections, drawings). Dry-run by default; validates items, favourites and hosts first."},
     {"name": "create_swept_beam", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Place a Swept Beam (sloped, curved, custom profile) along a morph line, polyline, line, arc or 3D points, or rewrite one in place. Dry-run by default."},
     {"name": "create_road_marking", "cat": "Elements", "mode": "full", "mutates": True,

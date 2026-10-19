@@ -70,8 +70,9 @@ async def test_create_elements_commit(core):
 
 
 async def test_create_elements_unknown_type_points_to_gateway(core):
-    payload = await call("create_elements", {"element_type": "door", "items": [{}]})
+    payload = await call("create_elements", {"element_type": "layout", "items": [{}]})
     assert "execute_write_api_command" in payload["error"]
+    assert "door" in payload["valid_types"]
 
 
 RAILING_ITEM = {"referenceLinePoints": [{"x": 0, "y": 0, "z": 0},
