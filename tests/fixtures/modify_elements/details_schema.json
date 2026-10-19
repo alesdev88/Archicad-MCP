@@ -1,5 +1,5 @@
 {
- "_source": "Written from the bundled Tapir 1.5.9 schemas (WallDetails, WindowDoorDetails, RoofDetails, TextDetails, MorphDetails, BeamDetails, CurtainWallDetails, HatchDetails), NOT recorded: MCP-Test has no walls, doors, windows, roofs, texts, morphs, beams, curtain walls or hatches. Attribute GUIDs like BM-CONCRETE are placeholders.",
+ "_source": "Written from the bundled Tapir 1.5.9 schemas (WallDetails, WindowDoorDetails, RoofDetails, TextDetails, MorphDetails, BeamDetails, CurtainWallDetails, HatchDetails), NOT recorded: MCP-Test has no walls, doors, windows, roofs, texts, morphs, beams, curtain walls or hatches. Attribute GUIDs like B0000000-0000-0000-0000-0000000C0C0E are placeholders. SLAB-B is the recorded SLA - 001 made Basic (buildingMaterialId, thickness 0.2): MCP-Test's slabs are all Composite, and thickness only applies to a Basic slab (seen live 19.10.2026).",
  "elements": {
   "WALL-1": {
    "type": "Wall",
@@ -27,7 +27,7 @@
     "endThickness": 0.3,
     "structureType": "Basic",
     "buildingMaterialId": {
-     "guid": "BM-CONCRETE"
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
     },
     "referenceLineLocation": "Outside",
     "profileType": "Normal",
@@ -87,7 +87,7 @@
     "endThickness": 0.2,
     "structureType": "Basic",
     "buildingMaterialId": {
-     "guid": "BM-CONCRETE"
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
     },
     "referenceLineLocation": "Outside",
     "profileType": "Normal",
@@ -203,7 +203,7 @@
     "level": 0.5,
     "zCoordinate": 3.5,
     "buildingMaterialId": {
-     "guid": "BM-CONCRETE"
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
     },
     "eavesOverhang": 0.6,
     "levels": [
@@ -420,7 +420,7 @@
     "height": 0.4,
     "isWidthAndHeightLinked": false,
     "buildingMaterialId": {
-     "guid": "BM-CONCRETE"
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
     },
     "holes": []
    }
@@ -455,6 +455,83 @@
      }
     ],
     "zCoordinate": 0
+   }
+  },
+  "SLAB-B": {
+   "type": "Slab",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "SLA - 101",
+   "details": {
+    "structureType": "Basic",
+    "thickness": 0.2,
+    "level": 0,
+    "offsetFromTop": 0,
+    "zCoordinate": 0,
+    "referencePlaneLocation": "Top",
+    "topMaterial": {
+     "overridden": false
+    },
+    "sideMaterial": {
+     "overridden": false
+    },
+    "bottomMaterial": {
+     "overridden": false
+    },
+    "cutFillPen": {
+     "overridden": false
+    },
+    "cutFillBackgroundPen": {
+     "overridden": false
+    },
+    "floorFill": {
+     "use": false,
+     "foregroundPen": 89,
+     "backgroundPen": -1,
+     "fillId": {
+      "guid": "06F2E4EB-9150-43AE-93ED-618E14DE01BE"
+     },
+     "use3DHatching": false,
+     "orientation": {
+      "type": "Global",
+      "origin": {
+       "x": 0,
+       "y": 0
+      },
+      "matrix00": 1,
+      "matrix10": 0,
+      "matrix01": 0,
+      "matrix11": 1,
+      "innerRadius": 0
+     }
+    },
+    "polygonOutline": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 2,
+      "y": 0
+     },
+     {
+      "x": 2,
+      "y": 2
+     },
+     {
+      "x": 0,
+      "y": 2
+     },
+     {
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "holes": [],
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    }
    }
   }
  }

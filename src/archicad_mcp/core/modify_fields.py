@@ -208,6 +208,26 @@ def _number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+# Elements whose thickness counts only for a Basic structure: a Composite or
+# Profile one takes its thickness from the attribute (Tapir documents it from
+# 1.7.0; ModifySlabs answered success on a Composite slab and changed nothing,
+# live 19.10.2026).
+_STRUCTURED = {"ModifyWalls": "wall", "ModifySlabs": "slab", "ModifyRoofs": "roof"}
+
+
+def _structure(fields: dict, details: dict) -> str | None:
+    """The structure the element will have once the change lands. A lone
+    building material, composite or profile implies its structure, as Tapir's
+    ParseStructureSelection does."""
+    if "structureType" in fields:
+        return fields["structureType"]
+    for key, structure in (("buildingMaterialId", "Basic"), ("compositeId", "Composite"),
+                           ("profileId", "Profile")):
+        if key in fields:
+            return structure
+    return details.get("structureType")
+
+
 def refusal(command: str, field: str, fields: dict, entry: dict,
             tapir: tuple[int, int, int]) -> str | None:
     """Why `field` cannot be sent for this element, or None.
@@ -235,6 +255,13 @@ def refusal(command: str, field: str, fields: dict, entry: dict,
     if ABSOLUTE_Z_FIELDS.get(command) == field and "story" in fields:
         return (f"give either 'story' or '{field}': Tapir takes the story from the "
                 f"absolute z in {field}, so the two would fight")
+    if field == "thickness" and command in _STRUCTURED:
+        structure = _structure(fields, details)
+        if structure not in (None, "Basic"):
+            return (f"thickness applies only to a Basic {_STRUCTURED[command]}; this one "
+                    f"is {structure}, so Archicad keeps the thickness the {structure.lower()} "
+                    "gives and still answers success (seen live 19.10.2026). Change the "
+                    "composite, or make it Basic with structureType or buildingMaterialId")
     if fields.get("keep_elevation") is True and field in RELATIVE_Z_FIELDS.get(command, ()):
         return (f"give either keep_elevation or '{field}': {field} sets the height above "
                 "the new story, so the element would not stay at its height")

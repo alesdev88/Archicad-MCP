@@ -296,10 +296,13 @@ def test_modify_elements_dry_run_is_read_only(conn):
     payload = {"elements": [{"elementId": {"guid": slabs[0]}}],
                "fields": ["floorIndex", "layerIndex", "drawIndex", "details"]}
     before = conn.tapir("GetDetailsOfElements", payload)
-    out = modify_elements(conn, [{"guid": slabs[0], "thickness": 0.123, "draw_order": 1}])
+    current = before["detailsOfElements"][0]["details"].get("referencePlaneLocation")
+    other = "Bottom" if current != "Bottom" else "Top"
+    out = modify_elements(conn, [{"guid": slabs[0], "referencePlaneLocation": other,
+                                  "draw_order": 1}])
     assert out["dry_run"] is True and out["planned_count"] == 1, out
     [planned] = out["planned"]
-    assert planned["changes"]["thickness"]["new"] == 0.123
+    assert planned["changes"]["referencePlaneLocation"] == {"current": current, "new": other}
     assert planned["changes"]["draw_order"]["current"] == \
         before["detailsOfElements"][0]["drawIndex"]
     assert conn.tapir("GetDetailsOfElements", payload) == before

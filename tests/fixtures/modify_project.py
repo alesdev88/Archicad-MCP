@@ -72,7 +72,7 @@ class ModifyProject:
             "Line": [
                 {"index": 1, "name": "Solid Line", "guid": "28A7C677-9234-418F-9E4D-D10C22581DF6"},
                 {"index": 4, "name": "Dashed", "guid": "11111111-0000-0000-0000-000000000004"}],
-            "BuildingMaterial": [{"index": 2, "name": "Concrete", "guid": "BM-CONCRETE"}],
+            "BuildingMaterial": [{"index": 2, "name": "Concrete", "guid": "B0000000-0000-0000-0000-0000000C0C0E"}],
             "Fill": [{"index": 3, "name": "Background", "guid": "1D87AE9A-3C74-4A1A-BE7C-56B7651F0F3C"}],
             "Profile": [],
         }

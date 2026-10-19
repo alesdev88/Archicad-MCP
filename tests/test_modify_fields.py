@@ -28,6 +28,7 @@ SLAB2 = D["8BD33B9C-5B7D-5C46-8B28-9EC1CB9310CC"]
 OBJECT = D["5349C8FC-A4BF-3548-A614-77BEB2CE4261"]
 MESH = D["D4DB880C-8083-F749-B27F-0886B2D6044B"]
 WALL, WALL_TRAPEZOID = D["WALL-1"], D["WALL-2"]
+SLAB_B = D["SLAB-B"]                      # Basic: thickness applies
 DOOR, ROOF_M, ROOF_S = D["DOOR-1"], D["ROOF-M"], D["ROOF-S"]
 TEXT, MORPH = D["TEXT-1"], D["MORPH-1"]
 ENTRIES = {"slab": SLAB, "object": OBJECT, "mesh": MESH, "morph": MORPH,
@@ -63,6 +64,7 @@ def test_allowed_fields():
     ("ModifyWalls", "elementId", {"elementId": {}}, "slab", "guid"),
     ("ModifyRoofs", "thickness", {"thickness": 0.2}, "roof_single", "single-plane"),
     ("ModifySlabs", "zCoordinate", {"zCoordinate": 1.0, "story": 1}, "slab", "story"),
+    ("ModifySlabs", "thickness", {"thickness": 0.25}, "slab", "Basic"),
     ("ModifyBeams", "level", {"level": 0.5, "story": 1, "keep_elevation": True}, "slab",
      "keep_elevation"),
     ("ModifyWalls", "bottomOffset", {"bottomOffset": 0.1, "story": 1, "keep_elevation": True},
@@ -73,7 +75,7 @@ def test_refused_fields_name_the_reason(command, field, fields, entry_key, fragm
 
 
 @pytest.mark.parametrize("command,field,fields,entry", [
-    ("ModifySlabs", "thickness", {"thickness": 0.25}, SLAB),
+    ("ModifySlabs", "thickness", {"thickness": 0.25}, SLAB_B),
     ("ModifySlabs", "holes", {"holes": []}, SLAB),          # slabs reuse the outline
     ("ModifySlabs", "polygonArcs", {"polygonArcs": [], "polygonOutline": []}, SLAB),
     ("ModifyMeshes", "contourPen", {"contourPen": 3}, MESH),
@@ -197,3 +199,16 @@ def test_values_match():
     assert not values_match({"overridden": True}, {"overridden": False})
     assert values_match(True, True) and not values_match(True, 1)
     assert not values_match("Note", "note")
+
+
+def test_thickness_follows_the_structure():
+    # Live 19.10.2026: ModifySlabs thickness on a Composite slab answered success
+    # and the slab kept its composite's 0.3 m.
+    assert SLAB["details"]["structureType"] == "Composite"
+    assert refusal("ModifySlabs", "thickness", {"thickness": 0.25, "structureType": "Basic"},
+                   SLAB, NEW) is None
+    assert refusal("ModifySlabs", "thickness", {"thickness": 0.25, "buildingMaterialId": "C"},
+                   SLAB, NEW) is None
+    assert refusal("ModifyWalls", "thickness", {"thickness": 0.25}, WALL, NEW) is None
+    assert "Basic" in refusal("ModifyWalls", "thickness",
+                              {"thickness": 0.25, "compositeId": "X"}, WALL, NEW)

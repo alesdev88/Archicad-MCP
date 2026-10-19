@@ -12,6 +12,7 @@ from tests.fixtures.modify_project import ModifyProject
 SLAB = "05C7A02F-4251-6F40-8407-67893BEFF6AC"
 OBJECT = "5349C8FC-A4BF-3548-A614-77BEB2CE4261"
 MESH = "D4DB880C-8083-F749-B27F-0886B2D6044B"
+SLAB_B = "SLAB-B"          # Basic, so thickness applies
 FINISH_FLOOR = 51
 WRITES = ("Modify", "SetDetails", "Move", "SetSuspend")
 
@@ -22,12 +23,12 @@ def _commit(project, changes):
 
 def test_commit_sends_setdetails_then_modify_and_reads_back():
     project = ModifyProject()
-    out = _commit(project, [{"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25}])
+    out = _commit(project, [{"guid": SLAB_B, "layer": "Finish - Floor", "thickness": 0.25}])
     assert out == {"dry_run": False, "requested": 1, "modified": 1}
     names = project.command_names()
     assert names.index("SetDetailsOfElements") < names.index("ModifySlabs")
-    assert project.elements[SLAB]["layerIndex"] == FINISH_FLOOR
-    assert project.elements[SLAB]["details"]["thickness"] == 0.25
+    assert project.elements[SLAB_B]["layerIndex"] == FINISH_FLOOR
+    assert project.elements[SLAB_B]["details"]["thickness"] == 0.25
 
 
 def test_setdetails_order_matches_tapir():
@@ -110,15 +111,15 @@ def _not_sent(out) -> dict[str, str]:
 def test_raising_command_stops_and_reports():
     project = ModifyProject()
     project.raise_on = {"ModifySlabs"}
-    out = _commit(project, [{"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25},
+    out = _commit(project, [{"guid": SLAB_B, "layer": "Finish - Floor", "thickness": 0.25},
                             {"guid": MESH, "level": 0.3}])
     assert "ModifySlabs" in out["stopped"]["message"]
     reasons = _not_sent(out)
-    assert "stopped before Archicad answered" in reasons[SLAB]
+    assert "stopped before Archicad answered" in reasons[SLAB_B]
     assert "the run stopped" in reasons[MESH]
     assert "not_applied" not in out          # nothing answered success
-    assert out["partly_applied"] == {"count": 1, "guids": [SLAB]}   # the layer landed
-    assert project.elements[SLAB]["layerIndex"] == FINISH_FLOOR
+    assert out["partly_applied"] == {"count": 1, "guids": [SLAB_B]}   # the layer landed
+    assert project.elements[SLAB_B]["layerIndex"] == FINISH_FLOOR
     assert "ModifyMeshes" not in project.command_names()
     assert out["modified"] == 0
 
@@ -127,11 +128,11 @@ def test_a_stop_before_a_later_command_reports_what_landed():
     project = ModifyProject()
     project.raise_on = {"ModifyWalls"}       # walls go before slabs
     out = _commit(project, [{"guid": "WALL-1", "height": 2.8},
-                            {"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25}])
+                            {"guid": SLAB_B, "layer": "Finish - Floor", "thickness": 0.25}])
     reasons = _not_sent(out)
     assert "stopped before Archicad answered" in reasons["WALL-1"]
-    assert "the run stopped" in reasons[SLAB]
-    assert out["partly_applied"]["guids"] == [SLAB]
+    assert "the run stopped" in reasons[SLAB_B]
+    assert out["partly_applied"]["guids"] == [SLAB_B]
     assert "not_applied" not in out
 
 

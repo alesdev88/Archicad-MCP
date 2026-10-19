@@ -9,6 +9,7 @@ SLAB = "05C7A02F-4251-6F40-8407-67893BEFF6AC"     # SLA - 001, story 0, layer 33
 SLAB2 = "8BD33B9C-5B7D-5C46-8B28-9EC1CB9310CC"    # SLA - 002, story 1, z 3.25
 OBJECT = "5349C8FC-A4BF-3548-A614-77BEB2CE4261"   # FU - 003, story 0, layer 3
 MESH = "D4DB880C-8083-F749-B27F-0886B2D6044B"     # TR - 005, story 1, layer 45
+SLAB_B = "SLAB-B"                                 # SLA - 101, Basic, story 0, layer 33
 
 WRITES = ("Modify", "SetDetails", "Move", "SetSuspend", "Lock", "Unlock")
 
@@ -34,13 +35,13 @@ def _planned(out, guid):
 
 
 def test_dry_run_shows_current_and_new_per_field():
-    out = _dry(ModifyProject(), [{"guid": SLAB, "layer": "Finish - Floor", "thickness": 0.25}])
+    out = _dry(ModifyProject(), [{"guid": SLAB_B, "layer": "Finish - Floor", "thickness": 0.25}])
     assert out["dry_run"] is True and out["requested"] == 1 and out["planned_count"] == 1
-    entry = _planned(out, SLAB)
-    assert entry["id"] == "SLA - 001" and entry["type"] == "Slab"
+    entry = _planned(out, SLAB_B)
+    assert entry["id"] == "SLA - 101" and entry["type"] == "Slab"
     assert entry["changes"] == {
         "layer": {"current": "Structural - Bearing", "new": "Finish - Floor"},
-        "thickness": {"current": 0.3, "new": 0.25}}
+        "thickness": {"current": 0.2, "new": 0.25}}
     assert "skipped" not in out
 
 
@@ -150,10 +151,10 @@ def test_partial_coordinates_are_completed_and_rehoming_warned():
 
 
 def test_schema_failures_are_skips():
-    out = _dry(ModifyProject(), [{"guid": SLAB, "thickness": 0},
+    out = _dry(ModifyProject(), [{"guid": SLAB_B, "thickness": 0},
                                  {"guid": OBJECT, "draw_order": 15},
                                  {"guid": MESH, "draw_order": 0}])
-    assert "thickness" in _reason(out, SLAB)
+    assert "thickness" in _reason(out, SLAB_B) and "minimum" in _reason(out, SLAB_B)
     assert "0 to 14" in _reason(out, OBJECT)
     assert _planned(out, MESH)["changes"]["draw_order"] == {"current": 7, "new": 0}
 
@@ -187,9 +188,9 @@ def test_layout_window_refuses_with_the_window_named():
 def test_grouped_elements_warn_with_the_suspend_state():
     project = ModifyProject()
     project.groups = {OBJECT: "GROUP-1", "CW-1": "GROUP-1"}
-    out = _dry(project, [{"guid": OBJECT, "angle": 0.5}, {"guid": SLAB, "thickness": 0.2}])
+    out = _dry(project, [{"guid": OBJECT, "angle": 0.5}, {"guid": SLAB_B, "thickness": 0.25}])
     assert any("Suspend Groups is off" in w for w in _warnings(out, OBJECT))
-    assert not _warnings(out, SLAB)
+    assert _planned(out, SLAB_B) and not _warnings(out, SLAB_B)
 
 
 def test_old_or_missing_tapir_is_refused_before_any_read():
@@ -210,12 +211,12 @@ def test_object_dimensions_depend_on_the_tapir_version():
 
 
 def test_duplicate_guids_merge_and_conflicts_skip():
-    out = _dry(ModifyProject(), [{"guid": SLAB, "layer": "Finish - Floor"},
-                                 {"guid": SLAB, "thickness": 0.25},
+    out = _dry(ModifyProject(), [{"guid": SLAB_B, "layer": "Finish - Floor"},
+                                 {"guid": SLAB_B, "thickness": 0.25},
                                  {"guid": OBJECT, "angle": 0.5},
                                  {"guid": OBJECT, "angle": 0.7}])
     assert out["requested"] == 2
-    assert set(_planned(out, SLAB)["changes"]) == {"layer", "thickness"}
+    assert set(_planned(out, SLAB_B)["changes"]) == {"layer", "thickness"}
     assert "two different values" in _reason(out, OBJECT)
 
 
@@ -253,7 +254,7 @@ def test_long_values_are_summarized():
 
 
 def test_lowercase_guids_plan_like_uppercase():
-    out = _dry(ModifyProject(), [{"guid": SLAB.lower(), "thickness": 0.25}])
+    out = _dry(ModifyProject(), [{"guid": SLAB.lower(), "referencePlaneLocation": "Top"}])
     assert out["planned"][0]["guid"] == SLAB
 
 
@@ -292,3 +293,12 @@ def test_an_element_of_another_database_is_not_found():
     project.other_database = {"TEXT-1"}
     out = _dry(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"}])
     assert "not found" in _reason(out, "TEXT-1")
+
+
+def test_thickness_on_a_composite_slab_is_refused():
+    # Live 19.10.2026: Archicad kept the composite's thickness and answered success.
+    out = _dry(ModifyProject(), [{"guid": SLAB, "thickness": 0.25},
+                                 {"guid": SLAB2, "thickness": 0.25, "structureType": "Basic",
+                                  "buildingMaterialId": "Concrete"}])
+    assert "Basic" in _reason(out, SLAB) and "Composite" in _reason(out, SLAB)
+    assert _planned(out, SLAB2)["changes"]["thickness"] == {"current": 0.3, "new": 0.25}
