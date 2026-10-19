@@ -22,7 +22,14 @@ from jsonschema.exceptions import best_match
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core import modify_fields as mf
 from archicad_mcp.core.attributes import layer_table, tapir_attributes
-from archicad_mcp.core.editability import LOCKED, NOT_FOUND, classify, lock_reasons, reason_text
+from archicad_mcp.core.editability import (
+    LOCKED,
+    NOT_FOUND,
+    add_elsewhere,
+    classify,
+    lock_reasons,
+    reason_text,
+)
 from archicad_mcp.core.element_data import cap_list
 from archicad_mcp.core.mutate import _group
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
@@ -380,6 +387,9 @@ def plan_changes(conn: ArchicadConnection, changes) -> Plan | dict:
     plan.tapir = tapir
     entries = _read_details(conn, guids)
     kinds, window = classify(conn, guids)
+    # From the floor plan the details read finds other views' elements too.
+    window = add_elsewhere(conn, [g for g in guids if g in entries and g not in kinds],
+                           kinds, window)
     plan.window = window
     plan.stories = conn.tapir("GetStories").get("stories", [])
     ctx = _Context(conn, plan.stories, layer_table(conn), tapir)

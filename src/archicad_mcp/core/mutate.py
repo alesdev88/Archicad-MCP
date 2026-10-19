@@ -1,9 +1,11 @@
 """Move and delete elements, reporting what Archicad did rather than what was asked.
 
-Tapir DeleteElements answers one success for the whole batch, and
-ACAPI_Element_Delete passes over elements outside the active window's database
-without an error. Seen live 28.09.2026: 12 floor-plan labels, a Layout window
-active, success, nothing deleted, and this tool used to report {"deleted": 12}.
+Tapir DeleteElements answered one success for the whole batch (1.5.10; 1.7.1
+answers per element), and ACAPI_Element_Delete passes over elements outside
+the active window's database without an error. Seen live 28.09.2026: 12
+floor-plan labels, a Layout window active, success, nothing deleted, and this
+tool used to report {"deleted": 12}. MoveElements does the same from the floor
+plan: success for a layout or section Text, which did not move (19.10.2026).
 So both tools first leave out what Archicad would refuse (core.editability),
 then delete counts the elements a read no longer finds and move counts
 Archicad's per-element results.
@@ -44,6 +46,19 @@ def _outcome(requested: int, key: str, count: int, reasons: dict[str, str],
     if stopped is not None:
         result["stopped"] = error_fields(stopped)
     return result
+
+
+def _refused_deletions(response: dict, sent: list[str]) -> dict[str, str]:
+    """guid -> Archicad's refusal, where Tapir answers per element (1.7.1 does)."""
+    results = response.get("executionResults")
+    if not isinstance(results, list):
+        return {}
+    out = {}
+    for guid, outcome in zip(sent, results):
+        if isinstance(outcome, dict) and outcome.get("success") is False:
+            error = outcome.get("error") or {}
+            out[guid] = f"Archicad refused the deletion: {error.get('message', error)}"
+    return out
 
 
 def _survivor_reason(response: dict,
@@ -104,9 +119,10 @@ def delete_elements(conn: ArchicadConnection, guids: list[str],
         # Read from the database the delete acted on (see editability.present).
         remaining = present(conn, send)
         survivor = _survivor_reason(response or {}, stopped)
+        refused = _refused_deletions(response or {}, send)
         for guid in send:
             if guid in remaining:
-                reasons[guid] = survivor
+                reasons[guid] = refused.get(guid, survivor)
             else:
                 deleted += 1
     return _outcome(len(guids), "deleted", deleted, reasons, window, stopped)

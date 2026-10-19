@@ -31,6 +31,14 @@ def test_commit_sends_setdetails_then_modify_and_reads_back():
     assert project.elements[SLAB_B]["details"]["thickness"] == 0.25
 
 
+def test_commit_sends_nothing_to_an_element_of_another_database():
+    project = ModifyProject()
+    project.elsewhere = {"TEXT-1"}
+    out = _commit(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"}])
+    assert out["modified"] == 0
+    assert not [n for n in project.command_names() if n.startswith(WRITES)]
+
+
 def test_setdetails_order_matches_tapir():
     def planned(guid, kind, **kw):
         return Planned(guid=guid, type=kind, id=None, entry={}, **kw)

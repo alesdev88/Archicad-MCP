@@ -552,7 +552,8 @@ def test_deploy_reloads_places_renders_and_deletes(ws):
                                             keep=False, embed=False)
     assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
                                "GetElementPreviewImage", "FilterElements",
-                               "DeleteElements", "GetDetailsOfElements"]
+                               "GetAllElements", "DeleteElements",
+                               "GetDetailsOfElements"]
     assert png == PNG
     assert payload["kept"] is False
     assert "cleanup_failed" not in payload

@@ -64,6 +64,11 @@ class ModifyProject:
         # floor plan, layout Drawings and section-only Objects are found by the
         # details read too (19.10.2026), so that case is not this one.
         self.other_database: set[str] = set()
+        # Elements of another view's database seen from the floor plan: IsEditable
+        # passes them and the details read finds them, but Tapir GetAllElements of
+        # the active database does not list them (write test on MCP-Test,
+        # 19.10.2026, where MoveElements answered success and moved nothing).
+        self.elsewhere: set[str] = set()
         self.stories = load("stories.json")
         self.attributes: dict[str, list[dict]] = {
             "Composite": [
@@ -171,6 +176,9 @@ class ModifyProject:
         return {
             "GetAddOnVersion": lambda p: {"version": self.version},
             "GetDetailsOfElements": self.details,
+            "GetAllElements": lambda p: {"elements": [
+                {"elementId": {"guid": g}} for g in self.elements
+                if self._in_database(g) and g not in self.elsewhere]},
             "FilterElements": self.filter_elements,
             "GetCurrentWindowType": lambda p: {"currentWindowType": self.window},
             "GetProjectInfo": lambda p: {**api_replays.TAPIR["GetProjectInfo"],

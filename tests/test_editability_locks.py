@@ -2,6 +2,8 @@
 
 Layer answers are the ones recorded on MCP-Test (tests/fixtures/modify_elements).
 """
+from multiconn_archicad.errors import StandardAPIError
+
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.attributes import layer_table, tapir_attributes
 from archicad_mcp.core.editability import (
@@ -82,12 +84,26 @@ def test_lock_reasons_hotlink_then_layer_then_element_lock():
     assert "OK" not in out
 
 
-def test_lock_reasons_reads_general_locked_once():
-    conn, core = _lock_conn()
+def test_lock_reasons_reads_general_locked_once_where_nothing_else_explains():
+    # A property read, the read class that has crashed Archicad: not for an
+    # element a hotlink or a locked layer already explains.
+    conn, core = _lock_conn(locked_layers={56})
     lock_reasons(conn, ENTRIES, layer_table(conn))
     reads = [p for name, p in core.calls if name == "API.GetPropertyValuesOfElements"]
     assert len(reads) == 1
-    assert len(reads[0]["elements"]) == 4 and len(reads[0]["properties"]) == 1
+    assert [e["elementId"]["guid"] for e in reads[0]["elements"]] == ["E", "OK"]
+    assert len(reads[0]["properties"]) == 1
+
+
+def test_lock_reasons_keeps_the_other_reasons_when_the_property_read_fails():
+    conn, core = _lock_conn(locked_layers={56}, general_locked={"E"})
+
+    def refuse(params):
+        raise StandardAPIError(message="Invalid program status", code=4001)
+
+    core.official_responses["API.GetPropertyValuesOfElements"] = refuse
+    out = lock_reasons(conn, ENTRIES, layer_table(conn))
+    assert set(out) == {"H", "L"}
 
 
 def test_lock_reasons_skips_the_element_lock_when_the_property_does_not_resolve():
