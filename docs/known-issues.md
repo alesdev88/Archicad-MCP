@@ -105,6 +105,17 @@ the same `coverage` field for it, with a `coverage_note` on the fallback. Before
 the fix, `clear_selection` left such an element selected and `set_selection`
 appended to it instead of replacing it.
 
+**Tapir adds before it removes.** `ChangeSelectionOfElements` runs every add
+first and every remove second (Tapir 1.7.1, ElementCommands.cpp,
+`ChangeSelectionOfElementsCommand::Execute`). `set_selection` used to send the
+whole current selection as the remove list, so an element that was already
+selected and was asked for again ended up deselected. It now removes only what
+is not in the new list, compared without case, and reads the selection back:
+`selected` is the count Archicad really selected, `not_selected` lists the rest
+(it answers success for section Objects, railing sub-elements and elevation
+marker parts and leaves them unselected), and the result carries the same
+`coverage` field as `get_selection`.
+
 **Element types had the same gap, far wider than MEP.** Types were read with
 the official `API.GetTypesOfElements` alone. It answers one item per requested
 element, in request order, and names model elements only. Measured live on AC

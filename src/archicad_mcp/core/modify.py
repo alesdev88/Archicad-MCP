@@ -12,7 +12,6 @@ anything is sent. The design is docs/superpowers/specs/2026-10-19-modify-element
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -31,6 +30,7 @@ from archicad_mcp.core.editability import (
     reason_text,
 )
 from archicad_mcp.core.element_data import cap_list
+from archicad_mcp.core.element_kinds import tapir_version as _version
 from archicad_mcp.core.mutate import _group
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
 from archicad_mcp.gateway.registry import build_registry
@@ -97,14 +97,6 @@ def _merge_changes(changes) -> tuple[dict[str, dict], dict[str, str]] | str:
                 conflicts[guid] = f"'{key}' is given two different values"
             target[key] = value
     return merged, conflicts
-
-
-def _version(conn: ArchicadConnection) -> tuple[int, int, int] | None:
-    if not conn.tapir_available():
-        return None
-    raw = str(conn.tapir("GetAddOnVersion").get("version", ""))
-    numbers = [int(n) for n in re.findall(r"\d+", raw)[:3]]
-    return tuple((numbers + [0, 0, 0])[:3])
 
 
 def _version_text(version: tuple[int, int, int]) -> str:

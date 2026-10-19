@@ -16,6 +16,10 @@ three are derived here:
   plan, which is FilterElements in 2000-element chunks and never touches a
   property value (63k elements took seconds live).
 
+Tapir answers every GUID uppercase whatever case it was sent in (live
+19.10.2026), so membership is compared on g.upper() and the results keep the
+caller's spelling.
+
 There is no read that says who holds an element without trying to reserve
 it: ACAPI_Teamwork_GetLockableStatus covers lockable sets (attributes), not
 elements. So the dry run can report not-found and already-mine, and must say
@@ -57,14 +61,26 @@ def _in_my_workspace(conn: ArchicadConnection, guids: list[str]) -> set[str]:
     return mine
 
 
+def _upper(guids) -> set[str]:
+    return {g.upper() for g in guids}
+
+
+def _unique(guids: list[str]) -> list[str]:
+    """The caller's GUIDs deduplicated whatever their case, first spelling kept."""
+    first: dict[str, str] = {}
+    for g in guids:
+        first.setdefault(g.upper(), g)
+    return list(first.values())
+
+
 def _partition(conn: ArchicadConnection, guids: list[str]) -> tuple[list[str], list[str], list[str]]:
     """(known, not_found, already_mine) in the caller's order, deduplicated."""
-    guids = list(dict.fromkeys(guids))
+    guids = _unique(guids)
     types = _fetch_types(conn, guids) if guids else {}
     known = [g for g in guids if g in types]
     not_found = [g for g in guids if g not in types]
-    mine = _in_my_workspace(conn, known) if known else set()
-    return known, not_found, [g for g in known if g in mine]
+    mine = _upper(_in_my_workspace(conn, known)) if known else set()
+    return known, not_found, [g for g in known if g.upper() in mine]
 
 
 def _execution_error(response: dict, what: str) -> dict | None:
@@ -81,7 +97,7 @@ def reserve_elements(conn: ArchicadConnection, guids: list[str],
         return err
     known, not_found, already_mine = _partition(conn, guids)
     candidates = [g for g in known if g not in set(already_mine)]
-    base = {"requested": len(dict.fromkeys(guids)), "not_found": not_found,
+    base = {"requested": len(_unique(guids)), "not_found": not_found,
             "already_mine": already_mine}
     if not confirm:
         return {"dry_run": True, **base, "would_attempt": candidates,
@@ -91,21 +107,23 @@ def reserve_elements(conn: ArchicadConnection, guids: list[str],
                 "indirectly_reserved": []}
 
     plan = get_all_element_ids(conn)
-    before = _in_my_workspace(conn, plan)
+    before = _upper(_in_my_workspace(conn, plan))
     response = conn.tapir("ReserveElements", {"elements": element_payload(candidates)})
     if (err := _execution_error(response, "reserve elements")) is not None:
         return err
+    spelled = {g.upper(): g for g in candidates}
     conflicts = []
     blocked = set()
     for item in response.get("conflicts", []):
         guid = item.get("elementId", {}).get("guid", "")
-        blocked.add(guid)
-        conflicts.append({"guid": guid, "user": item.get("user", {}).get("userName"),
+        blocked.add(guid.upper())
+        conflicts.append({"guid": spelled.get(guid.upper(), guid),
+                          "user": item.get("user", {}).get("userName"),
                           "user_id": item.get("user", {}).get("userId")})
-    after = _in_my_workspace(conn, plan)
-    asked = set(candidates)
-    reserved = [g for g in candidates if g in after and g not in blocked]
-    indirect = sorted(g for g in after - before if g not in asked)
+    after = _upper(_in_my_workspace(conn, plan))
+    reserved = [g for g in candidates if g.upper() in after and g.upper() not in blocked]
+    newly_mine = after - before
+    indirect = sorted(g for g in plan if g.upper() in newly_mine and g.upper() not in spelled)
     return {"dry_run": False, **base, "reserved": reserved,
             "reserved_by_others": conflicts, "indirectly_reserved": indirect}
 
@@ -116,7 +134,7 @@ def release_elements(conn: ArchicadConnection, guids: list[str],
         return err
     known, not_found, mine = _partition(conn, guids)
     not_mine = [g for g in known if g not in set(mine)]
-    base = {"requested": len(dict.fromkeys(guids)), "not_found": not_found,
+    base = {"requested": len(_unique(guids)), "not_found": not_found,
             "not_mine": not_mine}
     if not confirm:
         return {"dry_run": True, **base, "would_release": mine,
@@ -127,7 +145,7 @@ def release_elements(conn: ArchicadConnection, guids: list[str],
     response = conn.tapir("ReleaseElements", {"elements": element_payload(mine)})
     if (err := _execution_error(response, "release elements")) is not None:
         return err
-    still = _in_my_workspace(conn, mine)
+    still = _upper(_in_my_workspace(conn, mine))
     return {"dry_run": False, **base,
-            "released": [g for g in mine if g not in still],
-            "still_mine": [g for g in mine if g in still]}
+            "released": [g for g in mine if g.upper() not in still],
+            "still_mine": [g for g in mine if g.upper() in still]}

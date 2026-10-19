@@ -185,3 +185,17 @@ def test_ifc_skipped_when_tapir_too_old_for_ifc_commands():
     snap = build_snapshot(conn, needs=frozenset({"elements", "ifc"}))
     assert snap.ifc_properties is None  # skipped, not crashed
     assert not any(c == "GetIFCPropertiesOfElements" for c, _ in conn._core.calls)
+
+
+def test_parse_ifc_response_matches_by_position_and_keeps_errors():
+    # Tapir answers GUIDs uppercase and an error entry for a missing element;
+    # matching by position keeps a lowercase request lined up.
+    response = {"elementIFCProperties": [
+        {"elementId": {"guid": "W-1"},
+         "ifcProperties": [{"propertySetName": "Pset_WallCommon", "name": "FireRating",
+                            "value": "EI60"}]},
+        {"error": {"code": 1, "message": "The given element was not found"}},
+    ]}
+    assert extract.parse_ifc_response(["w-1", "gone"], response) == {
+        "w-1": {"Pset_WallCommon.FireRating": "EI60"},
+        "gone": "The given element was not found"}

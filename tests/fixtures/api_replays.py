@@ -4,6 +4,7 @@ Shapes follow the official JSON API documentation
 (https://archicadapi.graphisoft.com/JSONInterfaceDocumentation/). If live
 verification finds a mismatch, fix it HERE and in extract.py only.
 """
+import copy
 
 E = [{"elementId": {"guid": g}} for g in ("w-1", "w-2", "z-1")]
 
@@ -119,13 +120,68 @@ GET_LAYER_ATTRIBUTES = {"attributes": [
     {"layerAttribute": {"attributeId": {"guid": "layer-2"}, "name": "A-ZONE"}},
 ]}
 
-TAPIR_IFC_PROPERTIES = {"elements": [
-    {"elementId": {"guid": "w-1"},
-     "properties": [{"propertySetName": "Pset_WallCommon",
-                     "name": "FireRating", "value": "EI60"}]},
-    {"elementId": {"guid": "w-2"}, "properties": []},
-    {"elementId": {"guid": "z-1"}, "properties": []},
-]}
+# The shape Tapir answers (1.5.1 to 1.7.1 source, and live on MCP-Test
+# 19.10.2026): one entry per requested element, in request order, GUIDs
+# uppercase, or an error entry.
+_IFC_PROPERTIES = {
+    "w-1": [{"propertySetName": "Pset_WallCommon", "name": "FireRating", "value": "EI60"}],
+    "w-2": [],
+    "z-1": [],
+}
+
+
+def tapir_ifc_properties(parameters):
+    entries = []
+    for el in parameters["elements"]:
+        guid = el["elementId"]["guid"]
+        if guid in _IFC_PROPERTIES:
+            entries.append({"elementId": {"guid": guid.upper()},
+                            "ifcProperties": _IFC_PROPERTIES[guid]})
+        else:
+            entries.append({"error": {"code": -2130313112,
+                                      "message": "The given element was not found"}})
+    return {"elementIFCProperties": entries}
+
+
+TAPIR_IFC_PROPERTIES = tapir_ifc_properties
+
+def with_stored_writes(official: dict) -> dict:
+    """`official` with property writes that read back.
+
+    set_element_data reads back what it wrote, so a fake that answers success
+    and keeps the old value reads as a write Archicad replaced. Each item the
+    SetPropertyValuesOfElements answer calls a success is what
+    GetPropertyValuesOfElements answers for that cell afterwards.
+    """
+    official = dict(official)
+    setter = official["API.SetPropertyValuesOfElements"]
+    getter = official["API.GetPropertyValuesOfElements"]
+    stored: dict[tuple[str, str], dict] = {}
+
+    def set_values(params):
+        response = setter(params) if callable(setter) else setter
+        results = (response or {}).get("executionResults", [])
+        for i, item in enumerate(params["elementPropertyValues"]):
+            outcome = results[i] if i < len(results) else {}
+            if outcome.get("success", True) and "propertyId" in item:
+                key = (item["elementId"]["guid"], item["propertyId"]["guid"])
+                stored[key] = item["propertyValue"]
+        return response
+
+    def get_values(params):
+        response = copy.deepcopy(getter(params) if callable(getter) else getter)
+        for el, row in zip(params["elements"], response.get("propertyValuesForElements", [])):
+            for prop, cell in zip(params["properties"], row.get("propertyValues", [])):
+                key = (el["elementId"]["guid"], prop["propertyId"]["guid"])
+                if key in stored:
+                    cell.clear()
+                    cell["propertyValue"] = dict(stored[key])
+        return response
+
+    official["API.SetPropertyValuesOfElements"] = set_values
+    official["API.GetPropertyValuesOfElements"] = get_values
+    return official
+
 
 OFFICIAL = {
     "API.GetProductInfo": {"version": 29, "buildNumber": 5003, "languageCode": "INT"},

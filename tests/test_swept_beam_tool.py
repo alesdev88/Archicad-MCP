@@ -327,3 +327,85 @@ async def test_the_tool_passes_the_reference_line(monkeypatch):
                                {"points": pts, "ref_line": "left face", "ref_offset": 0.4})
     params = _params(payload)
     assert (params["refLine"], params["refOffset"]) == ("Left face", 0.4)
+
+
+# ---------------------------------------------------------------- Tapir 1.7.2 item writes
+
+V172 = {"version": "1.7.2"}
+OK = {"executionResults": [{"success": True}]}
+
+
+def _gdl(**values):
+    return {"gdlParametersOfElements": [{"parameters": [{"name": k, "value": v}
+                                                         for k, v in values.items()]}]}
+
+
+def test_item_writes_park_y_send_arcs_in_degrees_and_skip_the_grip_pairs():
+    entry = {"type": "PolyLine", "floorIndex": 0, "details": {
+        "coordinates": [{"x": 0, "y": 0}, {"x": 2, "y": 2}, {"x": 5, "y": 2}],
+        "arcs": [{"begIndex": 0, "endIndex": 1, "arcAngle": math.pi / 2}], "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details(entry), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V172})
+    result = sb.create_swept_beam(conn, source_guid="p-1")
+    assert result["array_writes"] == "item by item"
+    names = [p["name"] for p in result["gdl_parameters"]]
+    assert names[:3] == ["nodeY", "nodeX", "nodeY"]
+    assert not {"extStart", "extStartDone", "extEnd", "extEndDone"} & set(names)
+    parked, real = result["gdl_parameters"][0]["value"], result["gdl_parameters"][2]["value"]
+    assert parked == [12.0, 13.0, 14.0] and real == pytest.approx([0.0, 2.0, 2.0])
+    assert _params(result)["segArc"] == pytest.approx([90.0, 0.0, 0.0])
+
+
+def test_whole_array_writes_stay_as_they_were_below_1_7_2():
+    conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": {"version": "1.7.1"}})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    result = sb.create_swept_beam(conn, points=pts)
+    assert result["array_writes"] == "whole arrays"
+    assert [p["name"] for p in result["gdl_parameters"]][:2] == ["nodeX", "nodeY"]
+
+
+def test_a_new_beam_is_reset_and_grown_to_the_node_count_before_the_items():
+    tapir = {"GetAvailableLibraryParts": LIB, "GetAddOnVersion": V172,
+             "CreateObjects": {"elements": [{"elementId": {"guid": "new-1"}}]},
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0], A=3.0, aDone=3.0, extEnd=0.0),
+             "SetGDLParametersOfElements": OK}
+    conn = _conn(tapir)
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 4, "z": 0},
+           {"x": 0, "y": 4, "z": 0}]
+    result = sb.create_swept_beam(conn, points=pts, dry_run=False)
+    assert result["created"] is True
+    commands = [cmd for cmd, _ in conn._core.calls]
+    assert commands.index("CreateObjects") < commands.index("GetGDLParametersOfElements")
+    written = [p for c, p in conn._core.calls if c == "SetGDLParametersOfElements"]
+    assert len(written) == 1
+    params = written[0]["elementsWithGDLParameters"][0]["gdlParameters"]
+    assert params[:4] == [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0},
+                          {"name": "extEnd", "value": 1.0}, {"name": "extEnd", "value": 2.0}]
+    # every cut is part of a new beam's write, so none is written twice
+    assert [p["name"] for p in params].count("cutStartPlan") == 1
+
+
+def test_an_update_writes_its_own_cuts_again_after_the_reset_squares_them():
+    beam = {"type": "Object", "floorIndex": 0, "details": {
+        "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+    current = _gdl(nodeX=[0.0, 3.0], extEnd=2.5, cutStartPlan=math.radians(20),
+                   cutStartTilt=0.0, cutEndPlan=math.radians(-15), cutEndTilt=math.radians(5))
+    conn = _conn({"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V172, "GetGDLParametersOfElements": current,
+                  "SetGDLParametersOfElements": OK})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 6, "y": 1, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", cut_end_tilt=10, dry_run=False)
+    call = [p for c, p in conn._core.calls if c == "SetGDLParametersOfElements"][0]
+    params = call["elementsWithGDLParameters"][0]["gdlParameters"]
+    assert params[2] == {"name": "extEnd", "value": 3.5}
+    cuts = [(p["name"], p["value"]) for p in params if p["name"].startswith("cut")]
+    assert cuts == [("cutEndTilt", 10.0), ("cutStartPlan", pytest.approx(20.0)),
+                    ("cutStartTilt", 0.0), ("cutEndPlan", pytest.approx(-15.0))]
+
+
+def test_a_vertical_piece_is_refused_before_anything_is_placed():
+    conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": V172})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 2}]
+    result = sb.create_swept_beam(conn, points=pts, dry_run=False)
+    assert "Nodes 2 and 3 are 0.0 mm apart in plan" in result["error"]
+    assert all(cmd != "CreateObjects" for cmd, _ in conn._core.calls)
