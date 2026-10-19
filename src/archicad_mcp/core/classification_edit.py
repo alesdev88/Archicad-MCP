@@ -87,7 +87,7 @@ def _plan_item(change: dict, index: ClassificationIndex) -> PlannedEdit:
 
 def edit_classifications(conn: ArchicadConnection, changes: list[dict],
                          dry_run: bool = True) -> dict:
-    gate = editing_unavailable(conn)
+    gate = editing_unavailable(conn, "edit_classifications")
     if gate:
         return gate
     index = ClassificationIndex.load(conn)
@@ -176,7 +176,7 @@ def import_definitions(conn: ArchicadConnection, kind: str, xml_path: str, confl
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         return {"error": f"cannot read {path}: {exc.strerror or exc}"}
-    gate = editing_unavailable(conn)
+    gate = editing_unavailable(conn, "import_definitions")
     if gate:
         return gate
 

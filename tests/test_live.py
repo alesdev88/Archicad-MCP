@@ -282,6 +282,32 @@ def test_teamwork_dry_runs_are_read_only(conn):
     assert set(reserve["would_attempt"]) | set(reserve["already_mine"]) == set(guids[:2])
 
 
+# ---------- modify_elements: dry run only, never a write ----------
+
+def test_modify_elements_dry_run_is_read_only(conn):
+    """A dry run plans the change, shows the current value, and sends nothing:
+    the slab reads back exactly as before. Verified on MCP-Test 19.10.2026
+    (Tapir 1.7.1)."""
+    from archicad_mcp.core.modify import modify_elements
+    from archicad_mcp.extract import get_element_ids_of_type
+    slabs = get_element_ids_of_type(conn, "Slab")
+    if not slabs:
+        pytest.skip("the test model has no slab")
+    payload = {"elements": [{"elementId": {"guid": slabs[0]}}],
+               "fields": ["floorIndex", "layerIndex", "drawIndex", "details"]}
+    before = conn.tapir("GetDetailsOfElements", payload)
+    current = before["detailsOfElements"][0]["details"].get("referencePlaneLocation")
+    other = "Bottom" if current != "Bottom" else "Top"
+    out = modify_elements(conn, [{"guid": slabs[0], "referencePlaneLocation": other,
+                                  "draw_order": 1}])
+    assert out["dry_run"] is True and out["planned_count"] == 1, out
+    [planned] = out["planned"]
+    assert planned["changes"]["referencePlaneLocation"] == {"current": current, "new": other}
+    assert planned["changes"]["draw_order"]["current"] == \
+        before["detailsOfElements"][0]["drawIndex"]
+    assert conn.tapir("GetDetailsOfElements", payload) == before
+
+
 # ---------- 0.7.0: definition editing (needs the property-classification-editing Tapir) ----------
 
 @pytest.fixture(scope="module")

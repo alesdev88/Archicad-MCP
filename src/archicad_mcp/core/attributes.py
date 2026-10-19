@@ -29,3 +29,30 @@ def list_attributes(conn: ArchicadConnection, attribute_type: str) -> dict:
         if isinstance(inner, dict) and "name" in inner:
             names.append(inner["name"])
     return {"attribute_type": attribute_type, "names": names}
+
+
+def tapir_attributes(conn: ArchicadConnection, attribute_type: str) -> list[dict]:
+    """[{index, name, guid}] of every attribute of the type, from Tapir.
+
+    The index is what element details hold (GetDetailsOfElements layerIndex,
+    a mesh's lineTypeIndex) and what SetDetailsOfElements takes.
+    """
+    response = conn.tapir("GetAttributesByType", {"attributeType": attribute_type})
+    return [{"index": a["index"], "name": a["name"], "guid": a["attributeId"]["guid"]}
+            for a in response.get("attributes", [])]
+
+
+def layer_table(conn: ArchicadConnection) -> dict[int, dict]:
+    """Layer index -> {name, guid, isHidden, isLocked}."""
+    layers = tapir_attributes(conn, "Layer")
+    if not layers:
+        return {}
+    response = conn.tapir("GetLayers", {
+        "attributeIds": [{"attributeId": {"guid": a["guid"]}} for a in layers],
+        "fields": ["isHidden", "isLocked"]})
+    flags = {item.get("index"): item for item in response.get("layers", [])
+             if isinstance(item, dict) and "index" in item}
+    return {a["index"]: {"name": a["name"], "guid": a["guid"],
+                         "isHidden": bool(flags.get(a["index"], {}).get("isHidden")),
+                         "isLocked": bool(flags.get(a["index"], {}).get("isLocked"))}
+            for a in layers}

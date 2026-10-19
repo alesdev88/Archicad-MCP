@@ -101,7 +101,11 @@ def selection_coverage_of(conn: ArchicadConnection) -> dict:
     """The coverage marker for a result built on get_selected_element_ids()."""
     if _tapir_reads_selection(conn):
         return {"coverage": COVERAGE_FULL}
-    return {"coverage": COVERAGE_PARTIAL, "coverage_note": SELECTION_PARTIAL_NOTE}
+    from archicad_mcp.tapir_install.hint import install_hint
+    note = SELECTION_PARTIAL_NOTE
+    if not conn.tapir_available():
+        note += " " + install_hint(conn.archicad_version())
+    return {"coverage": COVERAGE_PARTIAL, "coverage_note": note}
 
 
 class PropertyFetchTooWideError(ArchicadUnavailableError):

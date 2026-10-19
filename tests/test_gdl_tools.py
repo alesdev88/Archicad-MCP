@@ -500,6 +500,9 @@ class FakeConn:
         self.delete_works = delete_works
         self.placed = set()
 
+    def tapir_available(self):
+        return True
+
     def tapir_command_available(self, command):
         return True
 
@@ -549,7 +552,8 @@ def test_deploy_reloads_places_renders_and_deletes(ws):
                                             keep=False, embed=False)
     assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
                                "GetElementPreviewImage", "FilterElements",
-                               "DeleteElements", "GetDetailsOfElements"]
+                               "GetAllElements", "DeleteElements",
+                               "GetDetailsOfElements"]
     assert png == PNG
     assert payload["kept"] is False
     assert "cleanup_failed" not in payload

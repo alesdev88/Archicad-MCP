@@ -12,24 +12,49 @@ active window's database only, and DeleteElements answers success whatever it
 did. The official GetTypesOfElements answers 7203 "Element not supported" for
 a label, as it did live for every label on 28.09.2026, so it cannot say
 whether one exists; Tapir GetDetailsOfElements can.
+
+From the floor plan the reads reach every database. Live on MCP-Test,
+19.10.2026: IsEditable passed layout and section Texts, GetDetailsOfElements
+found them, MoveElements answered success for them and moved nothing, and
+DeleteElements left them. GetAllElements listed only the floor plan's. The fake
+does the same; from any other window it sees only the active database.
+
+Why a locked element is locked comes from reads IsEditable does not make: the
+details' hotlinkId and layerIndex, the layer table (recorded on MCP-Test) and
+the built-in property General_Locked.
 """
 import pytest
 from multiconn_archicad.errors import StandardAPIError
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.editability import (
+    ELEMENT_LOCK_REASON,
+    HOTLINK_REASON,
+    layer_locked_reason,
+)
 from archicad_mcp.core.mutate import delete_elements, move_elements
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
+from tests.fixtures.modify_elements import layers_answer, load
 
 BAD_ID = -2130313112
+LAYER = 33          # "Structural - Bearing" in the recorded layer list
+LOCKED_LAYER = 2    # "Interior - Partition", locked in this fake
 
 
 class Project:
-    def __init__(self, floor_plan=(), layout=(), window="FloorPlan", locked=(),
-                 teamwork=False, mine=None, hidden=(), details_take_fields=True):
-        self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout)}
+    def __init__(self, floor_plan=(), layout=(), section=(), window="FloorPlan",
+                 locked=(), teamwork=False, mine=None, hidden=(),
+                 details_take_fields=True, hotlinked=(), on_locked_layer=(),
+                 element_locked=()):
+        self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout),
+                          "Section": set(section)}
         self.window = window
-        self.locked = set(locked)
+        self.hotlinked = set(hotlinked)              # inside a hotlinked module
+        self.on_locked_layer = set(on_locked_layer)
+        self.element_locked = set(element_locked)    # Edit > Locking
+        # Not editable: for a reason the reads can name, or (`locked`) not.
+        self.locked = set(locked).union(hotlinked, on_locked_layer, element_locked)
         self.hidden = set(hidden)          # on a layer hidden in the active view
         self.details_take_fields = details_take_fields  # Tapir 1.5.9+
         self.teamwork = teamwork
@@ -49,7 +74,7 @@ class Project:
         return set().union(*self.databases.values())
 
     def _editable(self, guid):
-        return (guid in self.active and guid not in self.locked
+        return (guid in self.reach() and guid not in self.locked
                 and guid not in self.hidden
                 and (not self.teamwork or guid in self.mine))
 
@@ -66,13 +91,35 @@ class Project:
             {"error": {"code": 7203, "message": "Element not supported"}}
             for _ in p["elements"]]}
 
+    def reach(self) -> set[str]:
+        """What the reads find: from the floor plan, every database."""
+        return self.everywhere() if self.window == "FloorPlan" else self.active
+
+    def _detail(self, guid, fields):
+        item = {"type": "Label", "floorIndex": 0,
+                "layerIndex": LOCKED_LAYER if guid in self.on_locked_layer else LAYER}
+        if guid in self.hotlinked:
+            item["hotlinkId"] = {"guid": "HOTLINK-1"}
+        return item if fields is None else {k: v for k, v in item.items() if k in fields}
+
     def details(self, p):
         if "fields" in p and not self.details_take_fields:
             raise StandardAPIError(message="Invalid parameters", code=None)
         return {"detailsOfElements": [
-            {"type": "Label", "floorIndex": 0} if e["elementId"]["guid"] in self.active
+            self._detail(e["elementId"]["guid"], p.get("fields"))
+            if e["elementId"]["guid"] in self.reach()
             else {"error": {"code": BAD_ID,
                             "message": "Failed to get the details of element"}}
+            for e in p["elements"]]}
+
+    def property_values(self, p):
+        return {"propertyValuesForElements": [
+            {"propertyValues": [
+                {"propertyValue": {"type": "boolean", "status": "normal",
+                                   "value": e["elementId"]["guid"] in self.element_locked}}
+                if prop["propertyId"]["guid"] == "pid-General_Locked"
+                else {"error": {"code": 1, "message": "n/a"}}
+                for prop in p["properties"]]}
             for e in p["elements"]]}
 
     def delete(self, p):
@@ -90,6 +137,8 @@ class Project:
             guid = item["elementId"]["guid"]
             if guid in self.move_errors:
                 results.append({"success": False, "error": self.move_errors[guid]})
+            elif guid not in self.active:
+                results.append({"success": True})     # and nothing moves
             else:
                 self.moved.append(guid)
                 results.append({"success": True})
@@ -99,8 +148,13 @@ class Project:
     def connect(self) -> ArchicadConnection:
         official = dict(api_replays.OFFICIAL)
         official["API.GetTypesOfElements"] = self.types
+        official["API.GetPropertyValuesOfElements"] = self.property_values
         tapir = dict(api_replays.TAPIR)
         tapir.update({
+            "GetAllElements": lambda p: {"elements": [
+                {"elementId": {"guid": g}} for g in sorted(self.active)]},
+            "GetAttributesByType": load("layers_by_type.json"),
+            "GetLayers": layers_answer(locked={LOCKED_LAYER}),
             "FilterElements": self.filter_elements,
             "GetDetailsOfElements": self.details,
             "DeleteElements": self.delete,
@@ -182,11 +236,11 @@ def test_delete_skips_an_unreserved_teamwork_element():
 
 
 def test_delete_skips_an_element_inside_a_hotlink():
-    project = Project(floor_plan=["a", "b"], locked={"b"})
+    project = Project(floor_plan=["a", "b"], hotlinked={"b"})
     out = delete_elements(project.connect(), ["a", "b"], confirm=True)
     assert out["deleted"] == 1
     group = _only_group(out, "not_deleted")
-    assert group["guids"] == ["b"] and "hotlinked module" in group["reason"]
+    assert group["guids"] == ["b"] and group["reason"] == HOTLINK_REASON
     assert out["active_window"] == "FloorPlan"
 
 
@@ -231,6 +285,22 @@ def test_delete_lists_at_most_the_report_cap_per_reason():
     assert group["guids"] == guids[:50] and group["not_shown"] == 10
 
 
+def test_delete_passes_on_tapirs_per_element_refusal():
+    # Tapir 1.7.1 answers DeleteElements per element; live on 19.10.2026 an
+    # element it could not delete came back "Failed to delete the element."
+    project = Project(floor_plan=["a", "b"])
+    project.survivors = {"b"}
+    project.delete_result = {"executionResults": [
+        {"success": True},
+        {"success": False, "error": {"code": -2130313215,
+                                     "message": "Failed to delete the element."}}]}
+    out = delete_elements(project.connect(), ["a", "b"], confirm=True)
+    assert out["deleted"] == 1
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["b"]
+    assert group["reason"] == "Archicad refused the deletion: Failed to delete the element."
+
+
 def test_delete_still_reports_what_went_when_the_command_errors():
     # A transport error after Archicad acted: the read says what happened.
     project = Project(floor_plan=["a", "b"])
@@ -245,6 +315,21 @@ def test_delete_refuses_without_confirm_and_touches_nothing():
     out = delete_elements(project.connect(), ["a"])
     assert "confirm=true" in out["error"]
     assert project.core.calls == []
+
+
+def test_delete_from_the_floor_plan_does_not_send_a_layout_text():
+    # Live 19.10.2026: from the floor plan, IsEditable passed a layout Text
+    # and DeleteElements left it, answering "Failed to delete the element."
+    project = Project(floor_plan=["a"], layout=["text"])
+    out = delete_elements(project.connect(), ["a", "text"], confirm=True)
+    assert out["deleted"] == 1
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["text"]
+    assert group["reason"].startswith("in another view's database")
+    assert out["active_window"] == "FloorPlan"
+    [params] = project.sent("DeleteElements")
+    assert params == {"elements": [{"elementId": {"guid": "a"}}]}
+    assert project.databases["Layout"] == {"text"}
 
 
 # ---------- move ----------
@@ -287,11 +372,106 @@ def test_move_with_everything_editable():
     assert project.moved == ["a", "b"]
 
 
+def test_move_from_the_floor_plan_does_not_send_a_section_text():
+    # Live 19.10.2026: from the floor plan, MoveElements answered success for
+    # a layout Text and a section Text and moved neither, so counting its
+    # results reported them moved.
+    project = Project(floor_plan=["a"], section=["text"])
+    out = move_elements(project.connect(), ["a", "text"], VECTOR, confirm=True)
+    assert out["moved"] == 1
+    group = _only_group(out, "not_moved")
+    assert group["guids"] == ["text"]
+    assert group["reason"].startswith("in another view's database")
+    assert out["active_window"] == "FloorPlan"
+    assert project.moved == ["a"]
+
+
+def test_the_database_check_is_one_listing_of_the_active_database():
+    project = Project(floor_plan=["a", "b"], section=["text"])
+    move_elements(project.connect(), ["a", "b", "text"], VECTOR, confirm=True)
+    assert len(project.sent("GetAllElements")) == 1
+    assert project.sent("GetDetailsOfElements") == []
+
+
+def test_an_empty_listing_refuses_nothing():
+    # The active database holds the editable elements, so an empty answer is
+    # a failed read, not proof that every element is elsewhere.
+    project = Project(floor_plan=["a"])
+    conn = project.connect()
+    project.core.tapir_responses["GetAllElements"] = {"elements": []}
+    out = move_elements(conn, ["a"], VECTOR, confirm=True)
+    assert out == {"requested": 1, "moved": 1}
+
+
+def test_lowercase_guids_are_matched_against_the_listing():
+    project = Project(floor_plan=["A1"])
+    conn = project.connect()
+    project.core.tapir_responses["FilterElements"] = lambda p: {"elements": p["elements"]}
+    project.core.tapir_responses["MoveElements"] = lambda p: {"executionResults": [
+        {"success": True} for _ in p["elementsWithMoveVectors"]]}
+    out = move_elements(conn, ["a1"], VECTOR, confirm=True)
+    assert out == {"requested": 1, "moved": 1}
+
+
 def test_move_refuses_without_confirm_and_touches_nothing():
     project = Project(floor_plan=["a"])
     out = move_elements(project.connect(), ["a"], VECTOR)
     assert "confirm=true" in out["error"]
     assert project.core.calls == []
+
+
+# ---------- why a locked element is locked ----------
+
+def test_move_names_the_locked_layer():
+    project = Project(floor_plan=["a", "b"], on_locked_layer={"b"})
+    out = move_elements(project.connect(), ["a", "b"], VECTOR, confirm=True)
+    group = _only_group(out, "not_moved")
+    assert group["guids"] == ["b"]
+    assert group["reason"] == layer_locked_reason("Interior - Partition")
+
+
+def test_delete_names_an_element_lock():
+    project = Project(floor_plan=["a", "b"], element_locked={"b"})
+    out = delete_elements(project.connect(), ["a", "b"], confirm=True)
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["b"] and group["reason"] == ELEMENT_LOCK_REASON
+
+
+def _reasons(out: dict, key: str) -> dict[str, str]:
+    return {g: group["reason"] for group in out[key] for g in group["guids"]}
+
+
+def test_the_element_lock_is_read_only_where_nothing_else_explains_the_lock():
+    # General_Locked is a property read, the read class that has crashed
+    # Archicad: only the locked elements without a hotlink or a locked layer.
+    project = Project(floor_plan=["a", "h", "l", "e"], hotlinked={"h"},
+                      on_locked_layer={"l"}, element_locked={"e"})
+    out = move_elements(project.connect(), ["a", "h", "l", "e"], VECTOR, confirm=True)
+    assert _reasons(out, "not_moved") == {
+        "h": HOTLINK_REASON, "l": layer_locked_reason("Interior - Partition"),
+        "e": ELEMENT_LOCK_REASON}
+    [read] = project.sent("API.GetPropertyValuesOfElements")
+    assert read["elements"] == [{"elementId": {"guid": "e"}}]
+
+
+def test_no_lock_is_read_without_a_locked_element():
+    project = Project(floor_plan=["a", "b"], layout=["c"], hidden={"b"},
+                      teamwork=True, mine={"a", "b"})
+    delete_elements(project.connect(), ["a", "b", "c", "nope"], confirm=True)
+    for command in ("GetLayers", "API.GetPropertyValuesOfElements"):
+        assert project.sent(command) == []
+    assert all(p["fields"] == ["type"] for p in project.sent("GetDetailsOfElements"))
+
+
+def test_without_getlayers_the_other_locks_are_still_named():
+    project = Project(floor_plan=["h", "l", "e"], hotlinked={"h"},
+                      on_locked_layer={"l"}, element_locked={"e"})
+    conn = project.connect()
+    del project.core.tapir_responses["GetLayers"]
+    out = delete_elements(conn, ["h", "l", "e"], confirm=True)
+    reasons = _reasons(out, "not_deleted")
+    assert reasons["h"] == HOTLINK_REASON and reasons["e"] == ELEMENT_LOCK_REASON
+    assert reasons["l"].startswith("not editable: it is inside a hotlinked module")
 
 
 @pytest.mark.parametrize("window", ["FloorPlan", None])

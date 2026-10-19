@@ -1,0 +1,33 @@
+{
+ "_source": "Recorded on MCP-Test, 2026-10-19, Archicad 29/5101, Tapir 1.5.10 (read only). Tapir GetStories.",
+ "firstStory": 0,
+ "lastStory": 2,
+ "actStory": 0,
+ "skipNullFloor": false,
+ "stories": [
+  {
+   "index": 0,
+   "floorId": 1,
+   "dispOnSections": true,
+   "level": 0,
+   "height": 3,
+   "name": "Ground Floor"
+  },
+  {
+   "index": 1,
+   "floorId": 2,
+   "dispOnSections": true,
+   "level": 3,
+   "height": 3,
+   "name": ""
+  },
+  {
+   "index": 2,
+   "floorId": 3,
+   "dispOnSections": true,
+   "level": 6,
+   "height": 3,
+   "name": ""
+  }
+ ]
+}

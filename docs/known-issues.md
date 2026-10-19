@@ -18,9 +18,19 @@ property/element combination*, most likely a property that is not applicable to
 that element, which the API aborts on instead of returning a per-element error.
 
 This is an Archicad-side fault. The server can trigger it but **cannot prevent
-it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`, or
-`set_element_data` against a model you care about as capable of crashing it.
-**Save first.**
+it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`,
+`set_element_data`, or `modify_elements` (its dry run too) against a model you
+care about as capable of crashing it, and `move_elements` or `delete_elements`
+when an element is refused as locked (see below). **Save first.**
+
+`modify_elements` reads one built-in property, `General_Locked` (the element
+lock, which no Tapir command reads), on every element it plans that is not
+inside a hotlinked module or on a locked layer. `move_elements`,
+`delete_elements` and `set_element_data` read it only on the elements
+`IsEditable` refused that neither of those explains, to name the lock. Built-in
+properties are the read class that has not crashed Archicad, and it read cleanly
+on slabs, objects and meshes in MCP-Test on 19.10.2026, but it has not been read
+live on texts, labels, dimensions or other 2D elements yet.
 
 ### The element ceiling is blast-radius control, not a fix
 
@@ -178,7 +188,8 @@ Teamwork project. With Tapir, `set_element_data` and `run_script` detect these
 elements before writing (Tapir `FilterElements` with `IsEditable`) and list
 them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
 modules of a local copy of a large project. Edit them in the module's source
-file.
+file. The reason says "inside a hotlinked module" when the element's details
+carry a `hotlinkId` (Tapir 1.5.9 and newer).
 
 ## Archicad changes only the active window's database
 
@@ -193,19 +204,20 @@ call deleted all 12.
 Since then:
 
 - `delete_elements` and `move_elements` run the same `IsEditable` check as
-  `set_element_data` and send only the elements that pass. The rest come back
+  `set_element_data` and send only the elements that pass and that the active
+  window's database lists (see below). The rest come back
   under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
   (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
   plan names the window first, because from a Layout even a reserved element
   reads as not editable and "not reserved" alone is the wrong lead.
-- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`, which
-  per Tapir's source reads the current database, the one `DeleteElements`
-  acted on), never the requested count. `DeleteElements` answers one success
-  for the whole batch, so its answer alone proves nothing.
+- `deleted` is what a read no longer finds (Tapir `GetDetailsOfElements`),
+  never the requested count. `DeleteElements` answered one success for the
+  whole batch on Tapir 1.5.10, so its answer alone proved nothing. Tapir 1.7.1
+  answers per element, and a survivor carries Archicad's message.
 - `moved` counts Tapir's per-element `executionResults`, which `MoveElements`
   does report. Positions are not read back: there is no single position read
-  that covers every element type, and the pre-check removes the case that
-  failed silently.
+  that covers every element type, and the pre-checks remove the cases seen to
+  fail silently.
 - `set_element_data` already counted per-element results and still does; its
   values are not read back either, because that is the property read that has
   crashed Archicad (see above). `apply_changeset` does read back.
@@ -217,10 +229,50 @@ from further reads, in this order:
 
 | Reason | Read |
 |---|---|
-| not found | Tapir `GetDetailsOfElements` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| not found | Tapir `GetDetailsOfElements` with `fields: ["type"]` answers an error entry (a wrong GUID, deleted already, or, from a window other than the floor plan, in another window's database) |
+| in another view's database | `IsEditable` passed it, but Tapir `GetAllElements` (the active window's database) does not list it |
 | hidden layer | `FilterElements` with `IsVisibleByLayer` |
 | not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
-| locked | whatever is left: a hotlinked module, a locked layer, or another lock |
+| inside a hotlinked module | `GetDetailsOfElements` answers a `hotlinkId` |
+| on a locked layer (named) | the element's `layerIndex` is a layer Tapir `GetLayers` answers `isLocked` for |
+| locked with Edit > Locking | the built-in property `General_Locked` is true (a property read, see the crash above), read only when neither of the two above applies |
+| locked | whatever is left: none of the three reads above names the lock, or they could not be made (a Tapir older than 1.5.9, no `GetLayers`) |
+
+The lock reads are made only for the elements refused as locked, so a call
+where nothing is locked reads no layers and no properties.
+
+From the floor plan, the reads reach every database. Live on 19.10.2026, with
+the floor plan active, `IsEditable` passed a Text in a layout database and a
+Line in a section database as editable.
+
+**Write test (MCP-Test, AC 29/5101, Tapir 1.7.1, 19.10.2026, floor plan
+active)** with probe Texts the test created on the Sheet Index layout, in
+Building Section and on the floor plan, and deleted again afterwards:
+
+| Sent from the floor plan | Floor-plan Text | Layout and section Texts |
+|---|---|---|
+| `FilterElements` `IsEditable` | passed | passed |
+| `GetDetailsOfElements` | found | found, with their real positions |
+| Tapir `GetAllElements` (no `databases`) | listed | not listed |
+| `MoveElements` by 1 cm | success, moved | **success, not moved** (read in their own windows) |
+| `DeleteElements` | success, gone | "Failed to delete the element." per element, kept |
+| `SetPropertyValuesOfElements` `General_ElementID` | 7203 "Element not supported" | 7203 "Element not supported" |
+
+So `move_elements` counted the passed-over elements as moved. A delete of only
+the layout Text, and a batch of a floor-plan Text with a layout Text, gave the
+same answer: the floor-plan one deleted, the layout one kept. The same holds
+read-only for what was already in MCP-Test: `GetDetailsOfElements` found all
+8 layout Drawings and all 6 section-only Objects, and `GetAllElements` listed
+none of them. No `FilterElements` filter separates them: `IsVisibleIn3D` drops
+them, but it drops every floor-plan 2D element too.
+
+All three tools therefore refuse the elements `IsEditable` passed that Tapir
+`GetAllElements` of the active database does not list, as "in another view's
+database", with the advice to open that view. GUIDs are compared without
+case, and an empty or failed listing refuses nothing. Not known: whether a
+property write from the floor plan lands on another database's element of a
+type the official API supports. Texts are not supported at all, so the test
+could not say. `modify_elements` makes the same check before planning.
 
 The official `GetTypesOfElements` cannot answer "does it exist": live on
 28.09.2026 it answered 7203 "Element not supported" for every label, existing
@@ -231,8 +283,8 @@ report. By then 10 had been deleted from the floor plan and 2 kept and released
 from the workspace. The 10 came back "not found" and the 2 "not reserved in
 Teamwork", which is their actual state. `GetDetailsOfElements` with
 `fields: ["type"]` answered `{"type": "Label"}` for a kept one and an error
-entry for a deleted one. Not yet run live: the same check from a Layout, and a
-delete that goes through.
+entry for a deleted one. Not yet run live: the same check from a Layout. A
+delete that goes through ran in the write test above.
 
 ## Writing enum properties is not supported
 
