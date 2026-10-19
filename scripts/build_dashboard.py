@@ -36,7 +36,7 @@ TAPIR_REPO = "ENZYME-APD/tapir-archicad-automation"
 WRAPPED_BY: dict[str, list[str]] = {
     "API.GetAllElements": ["find_elements", "get_model_summary"],
     "API.GetSelectedElements": ["find_elements", "get_selection"],
-    "GetAllElements": ["find_elements", "get_model_summary"],
+    "GetAllElements": ["find_elements", "get_model_summary", "show_elements"],
     "GetElementsByType": ["find_elements"],
     "GetSelectedElements": ["find_elements"],
     "API.GetTypesOfElements": ["find_elements", "get_element_data"],
@@ -48,6 +48,7 @@ WRAPPED_BY: dict[str, list[str]] = {
     "API.GetAllClassificationsInSystem": ["find_elements"],
     "GetIFCPropertiesOfElements": ["get_element_data"],
     "GetDetailsOfElements": ["find_elements", "get_element_data", "create_swept_beam", "create_road_marking",
+                             "show_elements",
                              "modify_elements"],
     "GetAllProperties": ["search_definitions", "edit_property_definitions", "import_definitions"],
     "UpdatePropertyDefinitions": ["edit_property_definitions"],
@@ -83,7 +84,11 @@ WRAPPED_BY: dict[str, list[str]] = {
     "SetSuspendGroupsMode": ["modify_elements"],
     "GetLayers": ["modify_elements"],
     "DeleteElements": ["delete_elements"],
-    "ChangeSelectionOfElements": ["set_selection", "clear_selection"],
+    "ChangeSelectionOfElements": ["set_selection", "clear_selection", "show_elements"],
+    "ChangeWindow": ["show_elements"],
+    "FitInWindow": ["show_elements", "highlight_failures"],
+    "GetNavigatorItemTree": ["show_elements"],
+    "GetDatabaseIdFromNavigatorItemId": ["show_elements"],
     "CreateObjects": ["create_elements", "create_swept_beam", "create_road_marking"],
     "GetAvailableLibraryParts": ["create_swept_beam", "create_road_marking"],
     "GetAttributesByType": ["create_swept_beam", "create_road_marking", "modify_elements"],
@@ -97,7 +102,7 @@ WRAPPED_BY: dict[str, list[str]] = {
     "ImportIssuesFromBCF": ["import_issues_bcf"],
     "API.GetProductInfo": ["get_project_info"],
     "GetProjectInfo": ["get_project_info"],
-    "GetStories": ["get_project_info", "create_road_marking", "modify_elements"],
+    "GetStories": ["get_project_info", "create_road_marking", "modify_elements", "show_elements"],
     "GetHotlinks": ["get_project_info"],
     "GetGeoLocation": ["get_project_info"],
     "API.GetAttributesByType": ["list_attributes", "search_definitions"],
@@ -111,7 +116,10 @@ WRAPPED_BY: dict[str, list[str]] = {
     "ReserveElements": ["reserve_elements"],
     "ReleaseElements": ["release_elements"],
     "FilterElements": ["reserve_elements", "release_elements", "modify_elements"],
-    "HighlightElements": ["highlight_failures"],
+    "HighlightElements": ["highlight_failures", "show_elements"],
+    "SaveProject": ["save_project"],
+    "IFCFileOperation": ["export_ifc"],
+    "GetIFCExportTranslators": ["export_ifc"],
 }
 # Every element type create_elements covers, read from its table so the two
 # cannot drift; CreateObjects keeps its entry above, which names more tools.
@@ -163,6 +171,8 @@ TOOLS: list[dict] = [
      "desc": "Replace the current selection with the given element GUIDs."},
     {"name": "clear_selection", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Deselect everything in the Archicad window."},
+    {"name": "show_elements", "cat": "Elements", "mode": "full", "mutates": True,
+     "desc": "Show elements to the user: open the story or view (section, layout, ...) that holds them, select, highlight and zoom. Reads the selection back; guids=[] clears the highlight."},
     # Teamwork
     {"name": "reserve_elements", "cat": "Teamwork", "mode": "full", "mutates": True,
      "desc": "Reserve elements in a Teamwork project. Confirm-gated; reports reserved, reserved_by_others, already_mine, not_found and indirectly_reserved."},
@@ -194,8 +204,12 @@ TOOLS: list[dict] = [
      "desc": "Export every issue in the project to a BCF file (requires the Tapir add-on)."},
     {"name": "import_issues_bcf", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Import issues into the project from a BCF file (requires the Tapir add-on)."},
+    {"name": "export_ifc", "cat": "Issues & publishing", "mode": "full", "mutates": True,
+     "desc": "Save the project as IFC with a translator chosen by name and an element scope. Dry-run by default; never replaces a file unless asked; checks the file afterwards."},
     {"name": "publish", "cat": "Issues & publishing", "mode": "full", "mutates": True,
      "desc": "Fire an Archicad publisher set by name (Tapir)."},
+    {"name": "save_project", "cat": "Discovery & model", "mode": "both", "mutates": True,
+     "desc": "Save the open project to its own file, before the property reads that can crash Archicad 29. Confirm-gated; explains a refused save; never sends on Teamwork."},
     # Setup. Writes into Archicad's Add-Ons folder, not the project; no API
     # command wraps it.
     {"name": "install_tapir", "cat": "Discovery & model", "mode": "full", "mutates": True,
