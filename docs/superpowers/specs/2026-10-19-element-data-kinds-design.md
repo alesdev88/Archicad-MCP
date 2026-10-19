@@ -235,7 +235,7 @@ reads them itself as today.
   array given a single value or vice versa; string length.
 - Warnings, not skips: the parameter is locked in the object's settings (`isLocked`);
   the value is not one of the parameter's listed values while the list allows no custom
-  value; A or B on a door or window also change the opening size.
+  value.
 - **A and B on objects and lamps:** Tapir before 1.6.0 writes A and B in the wrong unit
   when the object's size is not fixed (`useXYFixSize` off), so the object comes out
   A x libA (memory: tapir-object-size-ratio; fixed upstream in #718, first released in
@@ -341,3 +341,33 @@ property read. Test elements near the origin, deleted afterwards.
 7. `include_classifications` keeps returning item GUIDs; `classification:<System>`
    addresses return item IDs.
 8. Wildcard reads are capped at 20 elements per call.
+
+## Live findings (19.10.2026, MCP-Test, Archicad 29 5101, Tapir 1.7.1)
+
+One mixed call on a test wall, door, window and object near the origin, then deleted;
+the project was saved first.
+
+1. **Single GDL Angle:** `gdl:gs_sill_angle` sent as 0.2617993878 rad went to Tapir as
+   15.0 and read back 0.261799388 rad. The degree conversion is right.
+2. **Tapir's classification read** answers the flat shape (system and item directly in
+   the list entry) and an all-zero item GUID for an unclassified element.
+3. **Attribute by name:** `gdl:gs_leaf_mat` "Paint - Ultramarine Violet" became index 20,
+   which the Surface table names so.
+4. **Object A and B** on two "Cube" objects, one with `useFixSize` false and one true:
+   1.25 x 0.75 read back from GDL and from GetDetailsOfElements alike. #718 holds through
+   this path on 1.7.1.
+5. **A Parameter Script that pins the size** ("Frezza Mediawalk"): Tapir answered success
+   for A 5.5 and B 0.6, the read showed 1.7 and 0.54, and the result listed both under
+   `not_applied`. The same write also replaced the stale size an API placement leaves in
+   GetDetailsOfElements (5.1 x 0.54 x 0.2 became 1.7 x 0.54 x 1.89).
+6. **Doors and windows created through Tapir have no marker,** even from the "Internal
+   Door" favorite: GetMarkerParametersOfElements answers "has no marker", which became the
+   skip reason. Marker writes are therefore unit-tested only. The marker read was checked
+   on a door placed by hand in MCP-Test_28 ("Door Stamp 27", 227 parameters), read only.
+7. **IFC on Archicad 29:** skipped with the Archicad 28 reason before anything was sent.
+8. **Lowercase GUIDs** planned and committed like uppercase ones.
+9. A door's `gdl:*`, `ifc:*` and `classification:*` together are 665 values for one
+   element: the wildcard limit is warranted.
+10. The reads also ran on MCP-Test_30 (Archicad 30): GDL, classifications, IFC, and the
+    marker reason for an object.
+
