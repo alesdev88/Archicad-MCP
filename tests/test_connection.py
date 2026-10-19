@@ -204,8 +204,8 @@ def test_probe_port_treats_a_timed_out_instance_as_absent():
     assert probe_port(19723, core=HungCore()) is None
 
 
-def test_tapir_missing_message_names_the_asset(monkeypatch):
-    monkeypatch.setattr("archicad_mcp.tapir_install.hint.sys.platform", "darwin")
+@pytest.mark.usefixtures("mac_host")
+def test_tapir_missing_message_names_the_asset():
     conn = ArchicadConnection(19723, core=FakeCore(official=TAPIR_OFF))
     with pytest.raises(ArchicadUnavailableError) as exc:
         conn.tapir("GetStories")
@@ -222,6 +222,7 @@ def test_archicad_version_is_cached_and_survives_errors():
     assert ArchicadConnection(19723, core=FakeCore(official={})).archicad_version() is None
 
 
+@pytest.mark.usefixtures("mac_host")
 def test_probe_port_fills_hint_when_tapir_missing():
     info = probe_port(19723, core=FakeCore(official=TAPIR_OFF))
     assert info.tapir_hint and "install-tapir --archicad 29" in info.tapir_hint

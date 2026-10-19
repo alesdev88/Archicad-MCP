@@ -4,10 +4,11 @@ from archicad_mcp.tapir_install.hint import install_hint
 
 
 def test_install_hint_mac():
-    text = install_hint(30, "darwin", add_ons=Path("/Applications/Graphisoft/Archicad 30/Add-Ons"))
+    add_ons = Path("/Applications/Graphisoft/Archicad 30/Add-Ons")
+    text = install_hint(30, "darwin", add_ons=add_ons)
     assert "TapirAddOn_AC30_Mac.zip" in text and "releases/tag/1.7.1" in text
     assert "archicad-mcp install-tapir --archicad 30" in text and "install_tapir" in text
-    assert "unzip it into /Applications/Graphisoft/Archicad 30/Add-Ons/Tapir" in text
+    assert f"unzip it into {add_ons / 'Tapir'}" in text
 
 
 def test_install_hint_windows():

@@ -19,6 +19,11 @@ from archicad_mcp.tapir_install.release import (
 )
 
 
+def _host() -> str:
+    """The platform the hint is written for; one place for tests to set it."""
+    return sys.platform
+
+
 def _detected_add_ons(version: int, platform: str) -> Path | None:
     if platform != sys.platform:
         return None  # another platform's folders are not on this disk
@@ -34,7 +39,7 @@ def install_hint(archicad_version: int | None, platform: str | None = None, *,
                  replace: bool = False) -> str:
     """replace=True words it for a Tapir that is there but too old: a plain
     install skips an existing Tapir, so the command needs --replace."""
-    platform = platform or sys.platform
+    platform = platform or _host()
     try:
         key = platform_key(platform)
     except ValueError:

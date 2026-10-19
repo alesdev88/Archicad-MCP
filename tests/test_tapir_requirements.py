@@ -12,6 +12,8 @@ from archicad_mcp.server import build_server
 from archicad_mcp.tapir_install.release import load_pinned
 from tests.conftest import FakeCore
 
+pytestmark = pytest.mark.usefixtures("mac_host")
+
 DEFS = Path(req.__file__).parent / "gateway" / "definitions"
 
 

@@ -124,9 +124,9 @@ def test_tapir_entries_reads_add_on_manager_plist(tmp_path):
                     "Disable Number": 1},
     })
     entries = tapir_entries(inst, prefs_dir=prefs)
-    assert sorted((e.kind, str(e.path)) for e in entries) == [
-        ("add-on-manager", "/Users/x/My Tapir/TapirAddOn_AC30_Mac.bundle"),
-        ("disabled", "/Applications/Other/TapirAddOn_AC30_Mac.bundle"),
+    assert sorted((e.kind, e.path) for e in entries) == [
+        ("add-on-manager", Path("/Users/x/My Tapir/TapirAddOn_AC30_Mac.bundle")),
+        ("disabled", Path("/Applications/Other/TapirAddOn_AC30_Mac.bundle")),
     ]
 
 
@@ -149,7 +149,7 @@ def test_default_location_reported_only_when_not_default(tmp_path):
     assert default_location(inst, prefs_dir=_prefs(tmp_path, 30, {"Default Location": "%DEFAULT%"})) is None
     prefs = _prefs(tmp_path, 30, {"Default Location": "lan.null2:///Volumes/Office/Add-Ons"},
                    name="com.graphisoft.AC 30.0.0 INT v1.plist")
-    assert default_location(inst, prefs_dir=prefs) == "/Volumes/Office/Add-Ons"
+    assert default_location(inst, prefs_dir=prefs) == str(Path("/Volumes/Office/Add-Ons"))
 
 
 def test_main_binary_of_bundle_and_apx(tmp_path):

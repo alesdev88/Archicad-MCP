@@ -67,6 +67,7 @@ def test_property_index_treats_dict_properties_as_empty():
     assert index == {}
 
 
+@pytest.mark.usefixtures("mac_host")
 def test_property_index_raises_a_clear_actionable_error_when_tapir_is_absent():
     with pytest.raises(ArchicadUnavailableError) as exc_info:
         property_index(conn_without_tapir())
