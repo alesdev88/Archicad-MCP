@@ -272,9 +272,7 @@ database", with the advice to open that view. GUIDs are compared without
 case, and an empty or failed listing refuses nothing. Not known: whether a
 property write from the floor plan lands on another database's element of a
 type the official API supports. Texts are not supported at all, so the test
-could not say. `modify_elements` still relies on its details read, which from
-the floor plan finds these elements, so it sends them (its readback then
-reports what did not change).
+could not say. `modify_elements` makes the same check before planning.
 
 The official `GetTypesOfElements` cannot answer "does it exist": live on
 28.09.2026 it answered 7203 "Element not supported" for every label, existing

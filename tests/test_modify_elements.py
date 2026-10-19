@@ -288,13 +288,27 @@ def test_large_objects_show_only_the_keys_that_change():
 
 def test_an_element_the_details_read_cannot_find_is_skipped():
     # An element IsEditable passes but GetDetailsOfElements does not find (as
-    # floor-plan labels from a Layout, 28.09.2026) is skipped as not found. This
-    # is NOT a general other-database guard: from the floor plan the details read
-    # found layout Drawings and section-only Objects (19.10.2026).
+    # floor-plan labels from a Layout, 28.09.2026) is skipped as not found. From
+    # the floor plan the details read finds other views' elements; the next
+    # test covers those.
     project = ModifyProject()
     project.other_database = {"TEXT-1"}
     out = _dry(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"}])
     assert "not found" in _reason(out, "TEXT-1")
+
+
+def test_an_element_of_another_database_seen_from_the_floor_plan_is_skipped():
+    # Write test on MCP-Test, 19.10.2026, floor plan active: IsEditable passed
+    # a layout Text, the details read found it, and MoveElements answered
+    # success and left it. Tapir GetAllElements did not list it.
+    project = ModifyProject()
+    project.elsewhere = {"TEXT-1"}
+    out = _dry(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"},
+                         {"guid": SLAB_B, "layer": "Finish - Floor"}])
+    assert _reason(out, "TEXT-1").startswith("in another view's database")
+    assert [p["guid"] for p in out["planned"]] == [SLAB_B]
+    for read in project.sent("API.GetPropertyValuesOfElements"):
+        assert {"elementId": {"guid": "TEXT-1"}} not in read["elements"]
 
 
 def test_thickness_on_a_composite_slab_is_refused():

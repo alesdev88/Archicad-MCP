@@ -178,6 +178,21 @@ def classify(conn: ArchicadConnection,
     return kinds, window
 
 
+def add_elsewhere(conn: ArchicadConnection, passed: list[str], kinds: dict[str, str],
+                  window: str | None) -> str | None:
+    """Key the elements of `passed` the active window's database lacks as
+    ELSEWHERE in `kinds`, and return the window type, read now if this is the
+    first refusal.
+
+    `passed` are elements classify() did not refuse.
+    """
+    found = _elsewhere(conn, passed)
+    if found and not kinds:
+        window = active_window(conn)
+    kinds.update(dict.fromkeys(found, ELSEWHERE))
+    return window
+
+
 def _elsewhere(conn: ArchicadConnection, passed: list[str]) -> set[str]:
     """The elements IsEditable passed that the active window's database lacks.
 
@@ -210,11 +225,7 @@ def refusals(conn: ArchicadConnection,
     read. Only refused elements are keyed.
     """
     kinds, window = classify(conn, guids)
-    elsewhere = _elsewhere(conn, [g for g in guids if g not in kinds])
-    if elsewhere:
-        if not kinds:
-            window = active_window(conn)
-        kinds.update(dict.fromkeys(elsewhere, ELSEWHERE))
+    window = add_elsewhere(conn, [g for g in guids if g not in kinds], kinds, window)
     texts = {g: reason_text(kinds[g], window) for g in guids if g in kinds}
     locked = [g for g in texts if kinds[g] == LOCKED]
     if locked:
