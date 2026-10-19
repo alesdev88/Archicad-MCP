@@ -654,7 +654,14 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _selection.get_selection(_conn(port))
 
     @mcp.tool(description="Replace the current selection with the given element GUIDs. "
-                          "Whatever the user had selected by hand is deselected.",
+                          "Whatever the user had selected by hand is deselected. "
+                          "The selection is read back afterwards. Returns "
+                          "requested; selected, the count Archicad really "
+                          "selected (it answers success and still leaves some "
+                          "unselected: section Objects, railing sub-elements, "
+                          "elevation marker parts, or GUIDs not in the plan); "
+                          "not_selected with those GUIDs when any; and the "
+                          "coverage of the read, as get_selection.",
               **_tool_meta("Replace current selection", read_only=False, destructive=False))
     @_guarded
     def set_selection(guids: list[str], port: int | None = None) -> dict:
