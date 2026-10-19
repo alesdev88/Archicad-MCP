@@ -186,6 +186,12 @@ def _cross_device(exc: OSError) -> bool:
     return exc.errno == errno.EXDEV or getattr(exc, "winerror", None) == 17
 
 
+def _locked(exc: OSError) -> bool:
+    # Windows sharing or lock violation: a file Archicad has open, which
+    # administrator rights would not unlock.
+    return getattr(exc, "winerror", None) in (32, 33)
+
+
 def _move_out(src: Path, dst: Path) -> None:
     """Move an existing Tapir aside: a rename or nothing.
 
@@ -273,7 +279,8 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
         copied = _place(staged, target)
         placed = target
     except (OSError, InstallError) as exc:
-        if isinstance(exc, PermissionError) and not done and not made_tapir_dir:
+        locked = isinstance(exc, OSError) and _locked(exc)
+        if isinstance(exc, PermissionError) and not locked and not done and not made_tapir_dir:
             # The folder refused before anything changed: the not-writable path.
             row.writable = False
             return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
@@ -281,7 +288,7 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
         out.restored = _roll_back(done, staged, placed, copied)
         if made_tapir_dir and tapir_dir.is_dir() and not any(tapir_dir.iterdir()):
             tapir_dir.rmdir()
-        if isinstance(exc, PermissionError) and platform == "win32":
+        if locked or (isinstance(exc, PermissionError) and platform == "win32"):
             out.error = f"close Archicad {row.inst.version} and retry"
         else:
             out.error = f"Installing into Archicad {row.inst.version} failed: {exc}"

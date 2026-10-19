@@ -352,3 +352,20 @@ def test_windows_admin_text_repeats_the_original_flags(tmp_path):
         "--replace", "--from-file", r"C:\My Files\TapirAddOn_AC29_Win.apx"])
     assert ('archicad-mcp install-tapir --archicad 29 --replace '
             r'--from-file "C:\My Files\TapirAddOn_AC29_Win.apx"') in text
+
+
+def test_a_locked_apx_on_the_first_move_says_close_archicad(tmp_path, monkeypatch):
+    # Windows sharing violation (winerror 32): the loaded add-on, not a
+    # protected folder, so administrator rights would not help.
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    before = listing(row.inst.add_ons)
+
+    def rename(src, dst):
+        exc = PermissionError(13, "The process cannot access the file")
+        exc.winerror = 32
+        raise exc
+
+    monkeypatch.setattr(install_mod.os, "rename", rename)
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.error == "close Archicad 29 and retry"
+    assert listing(row.inst.add_ons) == before and out.backup is None
