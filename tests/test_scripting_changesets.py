@@ -234,11 +234,12 @@ def test_apply_groups_long_failure_lists(world):
 
 
 def test_apply_readback_over_ceiling(world, monkeypatch):
-    model, _, _, run = world
-    # Monkeypatch both module constants to trigger slicing.
-    import archicad_mcp.scripting.apply
+    model, core, _, run = world
+    # Monkeypatch both module constants to trigger slicing. The readback
+    # slices in core.element_data, which apply_changeset shares.
+    import archicad_mcp.core.element_data
     import archicad_mcp.extract
-    monkeypatch.setattr(archicad_mcp.scripting.apply, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
+    monkeypatch.setattr(archicad_mcp.core.element_data, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
     monkeypatch.setattr(archicad_mcp.extract, "MAX_PROPERTY_FETCH_ELEMENTS", 2)
 
     store = ChangesetStore()
@@ -250,6 +251,9 @@ def test_apply_readback_over_ceiling(world, monkeypatch):
     assert out["failed"] == []
     assert out["mismatched"] == []
     assert out["commands"] == []
+    assert "stopped" not in out
+    reads = [p for c, p in core.calls if c == "API.GetPropertyValuesOfElements"]
+    assert [len(p["elements"]) for p in reads] == [2, 2, 1]
 
 
 def test_apply_command_dispatch_unavailable(world, monkeypatch):

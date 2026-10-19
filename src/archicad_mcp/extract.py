@@ -330,6 +330,27 @@ def _fetch_layer_names(conn) -> tuple[str, ...]:
     return tuple(a["layerAttribute"]["name"] for a in response.get("attributes", []))
 
 
+def parse_ifc_response(chunk: list[str], response: dict) -> dict[str, dict[str, str] | str]:
+    """guid -> {"Pset.Name": text}, or the error message for an error entry.
+
+    Tapir answers elementIFCProperties[i].ifcProperties, one entry per
+    requested element in request order (1.5.1 to 1.7.1 source; live on
+    MCP-Test 19.10.2026). This used to read elements[i].properties, which
+    Tapir never answers, so every element read as having no IFC properties
+    and every ifc-property-required rule failed every element. Matched by
+    position: Tapir answers GUIDs uppercase.
+    """
+    out: dict[str, dict[str, str] | str] = {}
+    for guid, item in zip(chunk, response.get("elementIFCProperties", [])):
+        if not isinstance(item, dict) or "error" in item:
+            error = item.get("error", {}) if isinstance(item, dict) else {}
+            out[guid] = error.get("message") or "Archicad did not read it"
+            continue
+        out[guid] = {f"{p.get('propertySetName')}.{p.get('name')}": p.get("value")
+                     for p in item.get("ifcProperties", [])}
+    return out
+
+
 def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
     # Tapir may be installed but predate the IFC commands (1.4.0 has no
     # GetIFCPropertiesOfElements), so ask before calling and let IFC rules skip
@@ -344,12 +365,8 @@ def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
                                   {"elements": element_payload(chunk)})
         except (ArchicadUnavailableError, APIErrorBase):
             return None
-        for item in response.get("elements", []):
-            guid = item.get("elementId", {}).get("guid", "")
-            props = {}
-            for p in item.get("properties", []):
-                props[f"{p.get('propertySetName')}.{p.get('name')}"] = p.get("value")
-            out[guid] = props
+        for guid, props in parse_ifc_response(chunk, response).items():
+            out[guid] = props if isinstance(props, dict) else {}
     return out
 
 
