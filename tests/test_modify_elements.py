@@ -286,9 +286,11 @@ def test_large_objects_show_only_the_keys_that_change():
         "current": {"height": 2.5}, "new": {"height": 3.5}}
 
 
-def test_an_element_of_another_database_is_not_found():
-    # Live 19.10.2026: from the floor plan, IsEditable passed a layout Text.
-    # The details read, which acts on the active database, does not find it.
+def test_an_element_the_details_read_cannot_find_is_skipped():
+    # An element IsEditable passes but GetDetailsOfElements does not find (as
+    # floor-plan labels from a Layout, 28.09.2026) is skipped as not found. This
+    # is NOT a general other-database guard: from the floor plan the details read
+    # found layout Drawings and section-only Objects (19.10.2026).
     project = ModifyProject()
     project.other_database = {"TEXT-1"}
     out = _dry(project, [{"guid": "TEXT-1", "layer": "Finish - Floor"}])

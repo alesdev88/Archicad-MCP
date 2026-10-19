@@ -59,8 +59,10 @@ class ModifyProject:
         self.dead_after: str | None = None          # this command, and every call after it, raises
         self._dead = False
         self.suspend_fail: set[bool] = set()        # SetSuspendGroupsMode answers failure for these
-        # Elements of another view's database that FilterElements IsEditable still
-        # passes (seen live 19.10.2026 from the floor plan); details do not find them.
+        # Elements FilterElements IsEditable passes but the details read does not
+        # find: floor-plan labels seen from a Layout (28.09.2026). Seen from the
+        # floor plan, layout Drawings and section-only Objects are found by the
+        # details read too (19.10.2026), so that case is not this one.
         self.other_database: set[str] = set()
         self.stories = load("stories.json")
         self.attributes: dict[str, list[dict]] = {

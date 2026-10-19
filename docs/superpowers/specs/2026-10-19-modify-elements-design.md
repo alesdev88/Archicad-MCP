@@ -130,6 +130,16 @@ see "Live writes" below). Tapir has no read of the element lock (`API_Elem_Head.
 read); the built-in `General_Locked` property is the read the tool uses. Layer
 locks read from `GetLayers` `isLocked`.
 
+**Other databases (known gap).** Seen from the floor plan, elements of another
+view's database (a layout Text, a section Line, layout Drawings, section-only
+Objects) pass IsEditable, and GetDetailsOfElements finds the Drawings and
+Objects too (read-only checks on MCP-Test, 19.10.2026, by the create_elements
+and lock-reasons sessions). So modify_elements plans changes to them. Whether
+Archicad then changes them or passes over them is untested; the readback reports
+whichever happens (`modified`, `not_applied` or `failed`). Only the opposite
+case is caught before sending: floor-plan elements seen from a Layout are not
+found by the details read and are skipped.
+
 **Object `dimensions`** before Tapir 1.6.0 are scaled wrongly when the object's
 `useFixSize` is false, both on write (#719) and on read (#720). 1.6.0 and later
 carry both fixes.
