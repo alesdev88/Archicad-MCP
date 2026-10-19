@@ -808,3 +808,15 @@ async def test_the_tool_is_registered_and_dry_runs_by_default(monkeypatch):
             {"modify": "Layer", "attribute": "Interior - Partition", "isLocked": True}]})
         payload = json.loads(result.content[0].text)
         assert payload["dry_run"] is True and writes(conn) == []
+
+
+def test_an_attribute_and_a_reference_take_a_guid_in_any_case():
+    """Tapir answers GUIDs uppercase; callers may send them lowercase."""
+    conn, store = make()
+    out = edit_attributes(conn, [
+        {"modify": "Layer", "attribute": G("lay-2").lower(), "isLocked": True},
+        {"modify": "Surface", "attribute": "Stucco - White Rough",
+         "fillId": G("fil-5").lower()}], dry_run=False)
+    assert "skipped" not in out, out
+    assert record(store, "Layer", "Interior - Partition")["isLocked"] is True
+    assert out["planned"][1]["changes"] == {"fillId": ["Face Brick", "Concrete Block"]}

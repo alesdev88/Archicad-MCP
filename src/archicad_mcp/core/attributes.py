@@ -100,7 +100,9 @@ class AttributeNames:
         self._headers.pop(attr_type, None)
 
     def by_guid(self, attr_type: str, guid: str) -> dict | None:
-        return next((h for h in self.headers(attr_type) if h["guid"] == guid), None)
+        # Tapir answers GUIDs uppercase; a caller may send them in any case.
+        key = guid.upper() if isinstance(guid, str) else guid
+        return next((h for h in self.headers(attr_type) if h["guid"].upper() == key), None)
 
     def by_index(self, attr_type: str, index: int) -> dict | None:
         return next((h for h in self.headers(attr_type) if h["index"] == index), None)
