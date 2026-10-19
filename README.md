@@ -487,7 +487,7 @@ rule with no failures removes the highlight.
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
-`modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
+`modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
 `show_elements`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
@@ -529,6 +529,20 @@ locked layer, hotlinked module, locked, not reserved) are named and skipped,
 never unlocked. A commit reads the elements back, so a field Archicad answered
 success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
 or newer.
+
+`apply_favorites` makes existing elements match an office favourite, the way
+the Favorites palette does: "make these 40 doors Internal Door". Without a
+favourite it lists the ones that fit the elements' types. The dry run lists what
+it would change and skips elements of another type or ones Archicad would
+refuse. It also warns what a favourite takes over besides materials and pens,
+because Tapir's "never geometry" is not what Archicad does: live, a wall took the
+favourite's height, top link, reference line and layer, and doors and windows
+their library part, size and sill; positions stayed. Each element keeps its own
+Element ID by default (`keep`, which can also keep the layer), since a
+favourite's ID is a template value. A commit reads the elements back and
+reports, per element, every field that changed. Classifications, categories and
+property values are applied but not read back. `to_defaults=true` sets a tool's
+defaults instead. Needs Tapir 1.5.4.
 
 `get_element_data` and `set_element_data` read and write more than property
 values, through one address syntax: `classification:<System>` for an element's

@@ -247,6 +247,43 @@ def test_to_defaults_dry_run():
     assert "error" in run(Project(), [WALL], "Partition Wall", to_defaults=True)
 
 
+# The tool
+
+async def _listed(mode):
+    from fastmcp import Client
+
+    from archicad_mcp.server import build_server
+    async with Client(build_server(mode=mode)) as client:
+        return {t.name: t for t in await client.list_tools()}
+
+
+async def test_apply_favorites_registered():
+    tool = (await _listed("full"))["apply_favorites"]
+    assert tool.annotations.readOnlyHint is False
+    assert tool.annotations.destructiveHint is True
+    assert "apply_favorites" not in await _listed("verdicts")
+
+
+def test_tool_needs_apply_command():
+    from archicad_mcp.tapir_requirements import TOOL_COMMANDS
+    assert TOOL_COMMANDS["apply_favorites"] == ("GetFavoritesByType",
+                                                "ApplyFavoritesToElements")
+
+
+async def test_tool_keeps_id_by_default(monkeypatch):
+    import json
+
+    from fastmcp import Client
+
+    import archicad_mcp.server as server_mod
+    p = Project()
+    monkeypatch.setattr(server_mod, "get_connection", lambda port: p.conn)
+    async with Client(server_mod.build_server(mode="full")) as client:
+        result = await client.call_tool("apply_favorites", {
+            "guids": [WALL], "favorite": "Partition Wall"})
+    assert json.loads(result.content[0].text)["keep"] == ["id"]
+
+
 # The commit
 
 def test_commit_reports_changes():

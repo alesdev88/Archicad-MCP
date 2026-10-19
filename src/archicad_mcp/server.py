@@ -634,6 +634,40 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                         port: int | None = None) -> dict:
         return _modify.modify_elements(_conn(port), changes, dry_run)
 
+    from archicad_mcp.core import favorites as _favorites
+
+    @mcp.tool(description=(
+        "Make existing elements match a favourite (Tapir), the office standard in one "
+        "step. Without favorite it changes nothing and lists the favourites that fit "
+        "the given elements' types (all types when no guids either). DRY-RUN BY "
+        "DEFAULT: lists the elements it would change, skips with the reason those of "
+        "another type than the favourite's or that Archicad would refuse (another "
+        "view's, hidden or locked layer, not reserved in Teamwork, inside a hotlinked "
+        "module, locked), and warns what the favourite takes over besides materials "
+        "and pens: a wall's height, top link, reference line and structure, a "
+        "column's height and top link, a door's or window's library part, size and "
+        "sill, and every element's layer. Positions stay. Stairs, railings and "
+        "curtain walls get only their own settings, not their parts'. keep (default "
+        "[\"id\"]) writes each element's own Element ID back after the favourite, "
+        "and \"layer\" its own layer; use modify_elements for heights and sizes. "
+        "settings, classifications, categories and properties choose what the "
+        "favourite applies; classifications are added per system and property values "
+        "overwrite. Pass dry_run=false to apply: returns applied, changed (per element "
+        "current and new of every field the favourite changed, read back), unchanged, "
+        "failed grouped by reason, and restored for keep. Classifications, categories "
+        "and properties are not read back. to_defaults=true with no guids sets the "
+        "favourite's tool defaults instead."),
+        **_tool_meta("Apply favorites", read_only=False, destructive=True))
+    @_guarded
+    def apply_favorites(guids: list[str] | None = None, favorite: str | None = None,
+                        settings: bool = True, classifications: bool = True,
+                        categories: bool = True, properties: bool = True,
+                        keep: list[str] | None = None, to_defaults: bool = False,
+                        dry_run: bool = True, port: int | None = None) -> dict:
+        return _favorites.apply_favorites(
+            _tapir_conn(port, "apply_favorites"), guids, favorite, settings,
+            classifications, categories, properties, keep, to_defaults, dry_run)
+
     @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true. "
                           "Archicad deletes only elements in the database of the "
                           "active window and still answers success for the rest "

@@ -199,6 +199,10 @@
       "description": "Open the story or view holding elements, select, highlight and zoom to them."
     },
     {
+      "name": "apply_favorites",
+      "description": "Make existing elements match a favourite, or list the favourites that fit. Dry-run by default."
+    },
+    {
       "name": "find_collisions",
       "description": "Find clashing elements between two groups (GUIDs or element types), as pairs with types and IDs."
     },
