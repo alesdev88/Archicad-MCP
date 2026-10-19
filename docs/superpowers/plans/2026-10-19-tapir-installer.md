@@ -303,7 +303,7 @@ def test_fetch_latest_reads_digests():  # MockTransport; asset digest "sha256:ab
 - [ ] **Step 1: Write the failing tests**: `test_install_tapir_registered_only_in_full_mode`; `test_install_tapir_without_confirm_is_a_dry_run` (patch `tapir_install.run.run` to capture kwargs: `dry_run is True`, `replace is False`); `test_install_tapir_confirm_passes_through` (`dry_run is False`, `versions == {30}`, `replace is True`).
 - [ ] **Step 2: Run**, FAIL. **Step 3: Implement** the tool, the manifest entry (`"Install the pinned Tapir add-on into Archicad's Add-Ons folder. Dry run by default."`), the dashboard entry, regenerate with `uv run python scripts/build_dashboard.py`.
 - [ ] **Step 4: README**: Requirements bullet (Tapir installed for you, pinned 1.7.1, exercised live version stated honestly); a new section `## Install Tapir` after the install sections: the command, `--dry-run`, the flags, existing copies and backups, the macOS password dialog, the Windows administrator terminal, the `.mcpb` route (ask for `install_tapir`), the manual route (`TapirAddOn_AC<version>_<Mac.zip|Win.apx>` into `Add-Ons/Tapir/`, restart); "Check it works" mentions `tapir_hint`.
-- [ ] **Step 5: Run** `uv run pytest -q`, PASS; `grep -rn $'—\|–'` over changed files finds nothing.
+- [ ] **Step 5: Run** `uv run pytest -q`, PASS; a search of the changed files for em and en dashes finds nothing.
 - [ ] **Step 6: Commit** `feat: install_tapir tool; README Install Tapir section`.
 
 ### Task 10: Acceptance dry runs on this Mac
