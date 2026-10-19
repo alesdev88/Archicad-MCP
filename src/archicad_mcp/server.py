@@ -674,6 +674,32 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
         return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
 
+    @mcp.tool(description=(
+        "Install the pinned Tapir add-on (1.7.1) into Archicad's Add-Ons folder. "
+        "Dry run by default: it finds every Archicad on this computer, downloads and "
+        "checks the file (sha256) and says what it would do. confirm=true writes. "
+        "Never replaces an existing Tapir unless replace_existing=true, and then "
+        "moves the old copy to a backup folder; a custom Tapir build loses its own "
+        "commands when replaced. archicad_version limits it to one version. On macOS "
+        "a protected Add-Ons folder brings up the system password dialog; on "
+        "Windows it returns the command to run from an administrator terminal. "
+        "Archicad must be restarted afterwards. Needs no running Archicad."),
+        **_tool_meta("Install the Tapir add-on", read_only=False, destructive=True))
+    def install_tapir(archicad_version: int | None = None, replace_existing: bool = False,
+                      confirm: bool = False) -> dict:
+        from archicad_mcp.tapir_install import InstallError
+        from archicad_mcp.tapir_install import run as _tapir_run
+        try:
+            report = _tapir_run.run(
+                versions={archicad_version} if archicad_version else None,
+                replace=replace_existing, dry_run=not confirm)
+        except InstallError as exc:
+            return {"error": str(exc)}
+        result = report.to_dict()
+        result["restart_required"] = [o.version for o in report.outcomes if o.installed]
+        result["backups"] = [str(o.backup) for o in report.outcomes if o.backup]
+        return result
+
     @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
                           "criteria and its ordered columns, with what each column "
                           "binds to. Schedules have no API, so export the scheme "
