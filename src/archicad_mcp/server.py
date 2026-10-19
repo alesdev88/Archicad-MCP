@@ -223,17 +223,25 @@ def build_server(
         return _verdict_for(ifc_rules, port).to_dict()
 
     @mcp.tool(description="Highlight the elements failing a rule in the Archicad window "
-                          "(requires Tapir add-on).",
+                          "and zoom to them (zoom=false to leave the view). Highlights "
+                          "every story at once; show_elements opens the right story or "
+                          "view and selects, and show_elements with guids=[] removes the "
+                          "highlight (requires Tapir add-on).",
               **_tool_meta("Highlight failing elements", read_only=False, destructive=False))
     @_guarded
-    def highlight_failures(rule_id: str, port: int | None = None) -> dict:
+    def highlight_failures(rule_id: str, zoom: bool = True, port: int | None = None) -> dict:
         require_tapir(get_connection(port if port is not None else default_port),
                       "highlight_failures")
         rules = _rules_subset(rule_id=rule_id)
         verdict = _verdict_for(rules, port)
         guids = [g for r in verdict.results for g in r.failing_guids]
         conn = get_connection(port if port is not None else default_port)
-        return actions.highlight_elements(conn, guids)
+        result = actions.highlight_elements(conn, guids)
+        result["zoomed"] = bool(zoom and guids) and actions.fit_in_window(conn, guids)
+        if zoom and guids and not result["zoomed"]:
+            result["note"] = ("Not zoomed: this Tapir has no FitInWindow (Tapir 1.3.1), "
+                              "or Archicad refused it.")
+        return result
 
     @mcp.tool(description=(
         "Save the open project to its own file, as File > Save (Tapir). CONFIRM-GATED: "
@@ -631,6 +639,26 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @_guarded
     def clear_selection(port: int | None = None) -> dict:
         return _selection.clear_selection(_conn(port))
+
+    from archicad_mcp.core import views as _views
+
+    @mcp.tool(description=(
+        "Show elements to the user in Archicad: open the story or view that holds them "
+        "(a section, elevation, detail, worksheet or layout when they are not on the "
+        "floor plan), select them, highlight them and zoom to them. When they span "
+        "several stories or views, the one holding the most is shown and the rest are "
+        "listed (on_other_stories, in_other_views) for another call; with the 3D window "
+        "in front, floor plan elements are shown there across every story. selected "
+        "counts what Archicad really selected (not_selectable lists the rest). "
+        "highlight=false removes any earlier highlight; guids=[] removes the highlight "
+        "and, with select, the selection, and changes nothing else. Changes only what "
+        "is on screen, never the project."),
+              **_tool_meta("Show elements in Archicad", read_only=False, destructive=False))
+    @_guarded
+    def show_elements(guids: list[str], select: bool = True, highlight: bool = True,
+                      zoom: bool = True, port: int | None = None) -> dict:
+        return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
+                                    highlight, zoom)
 
     from archicad_mcp.core import teamwork as _teamwork
 

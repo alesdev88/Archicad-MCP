@@ -195,6 +195,10 @@
       "description": "Deselect everything in the Archicad window."
     },
     {
+      "name": "show_elements",
+      "description": "Open the story or view holding elements, select, highlight and zoom to them."
+    },
+    {
       "name": "get_project_info",
       "description": "Project name, location, stories, and Teamwork state."
     },

@@ -22,9 +22,14 @@ from dataclasses import dataclass, field
 
 from multiconn_archicad.errors import APIErrorBase
 
+from archicad_mcp.actions import clear_highlight, fit_in_window, highlight_elements
 from archicad_mcp.connection import ArchicadConnection
-from archicad_mcp.core.editability import _details
-from archicad_mcp.extract import PROPERTY_FETCH_CHUNK
+from archicad_mcp.core.editability import _details, active_window
+from archicad_mcp.extract import (
+    PROPERTY_FETCH_CHUNK,
+    element_payload,
+    get_selected_element_ids,
+)
 
 # Tapir's fixed id for the floor plan database (CommandBase.cpp,
 # DatabaseIdResolver). Every story shares it.
@@ -211,3 +216,154 @@ def choose(located: Located, window: str | None,
     top = max(stories.values())
     leaders = [s for s, n in stories.items() if n == top]
     return FLOOR_PLAN, active_story if active_story in leaders else min(leaders)
+
+
+# The window a navigator view opens, as GetCurrentWindowType names it.
+WINDOW_OF = {"SectionItem": "Section", "ElevationItem": "Elevation",
+             "InteriorElevationItem": "InteriorElevation", "DetailDrawingItem": "Details",
+             "WorksheetDrawingItem": "Worksheet", "DocumentFrom3DItem": "3DDocument",
+             "LayoutItem": "Layout", "MasterLayoutItem": "MasterLayout"}
+
+
+def _story_names(stories: dict) -> dict[int, str]:
+    return {s["index"]: s.get("name") or f"Story {s['index']}"
+            for s in stories.get("stories", []) if "index" in s}
+
+
+def _label(window: str | None, story: int | None, names: dict[int, str],
+           view: View | None = None) -> str:
+    if view is not None and view.kind in WINDOW_OF:
+        return f"{WINDOW_OF[view.kind]} '{view.name}'"
+    if window == "FloorPlan" and story is not None:
+        return f"FloorPlan, story {story} ({names.get(story, f'Story {story}')})"
+    return window or "an unknown window"
+
+
+def _go_to_story(conn: ArchicadConnection, story: int) -> None:
+    try:
+        conn.tapir("ChangeWindow", {"windowType": "FloorPlan", "storyIndex": story})
+    except APIErrorBase:
+        # Tapir before 1.5.4 has no storyIndex: bring the floor plan forward at
+        # least, and let the story check below say what is left to do.
+        conn.tapir("ChangeWindow", {"windowType": "FloorPlan"})
+
+
+def _replace_selection(conn: ArchicadConnection, guids: list[str]) -> tuple[int, list[str]]:
+    """Select exactly `guids`; (how many Archicad really selected, the rest).
+
+    Tapir adds before it removes, so an element in both lists would end up
+    deselected: only what is not wanted is removed.
+    """
+    wanted = {g.upper() for g in guids}
+    current = get_selected_element_ids(conn)
+    conn.tapir("ChangeSelectionOfElements", {
+        "addElementsToSelection": element_payload(guids),
+        "removeElementsFromSelection": element_payload(
+            [g for g in current if g.upper() not in wanted])})
+    now = {g.upper() for g in get_selected_element_ids(conn)}
+    missed = [g for g in guids if g.upper() not in now]
+    return len(guids) - len(missed), missed
+
+
+def clear(conn: ArchicadConnection, select: bool) -> dict:
+    """Remove the highlight and, with select, the selection."""
+    clear_highlight(conn)
+    out: dict = {"cleared": True, "shown": 0}
+    if select:
+        current = get_selected_element_ids(conn)
+        if current:
+            conn.tapir("ChangeSelectionOfElements",
+                       {"removeElementsFromSelection": element_payload(current)})
+        out["deselected"] = len(current)
+    return out
+
+
+def show_elements(conn: ArchicadConnection, guids: list[str], select: bool = True,
+                  highlight: bool = True, zoom: bool = True) -> dict:
+    if not guids:
+        return clear(conn, select)
+    window = active_window(conn)
+    stories = conn.tapir("GetStories")
+    names = _story_names(stories)
+    act = stories.get("actStory", 0)
+    located = locate(conn, guids, window)
+    view, story = choose(located, window, act)
+    warnings: list[str] = []
+    out: dict = {"shown": 0, "view": None, "switched": False}
+
+    if view is None:
+        warnings.append("None of the elements was found in the floor plan or in any "
+                        "view; nothing was shown.")
+        shown: list[str] = []
+        marked: list[str] = []
+    elif view is MODEL_3D:
+        shown = marked = list(located.floor_plan)
+        out["view"] = {"type": "3DModel"}
+    elif view is FLOOR_PLAN:
+        marked = list(located.floor_plan)
+        shown = [g for g, s in located.floor_plan.items() if s in (story, None)]
+        out["view"] = {"type": "FloorPlan", "story_index": story,
+                       "story_name": names.get(story, f"Story {story}")}
+        if window != "FloorPlan" or act != story:
+            _go_to_story(conn, story)
+            now = conn.tapir("GetStories").get("actStory")
+            now_window = active_window(conn)
+            out["switched"] = {"from": _label(window, act, names),
+                               "to": _label(now_window, now, names)}
+            if now != story or now_window != "FloorPlan":
+                warnings.append(
+                    f"Archicad did not open FloorPlan, story {story} "
+                    f"({names.get(story, f'Story {story}')}): it shows "
+                    f"{_label(now_window, now, names)}. Open that story by hand; Tapir "
+                    "before 1.7.0 does not change the story (#748).")
+    else:
+        shown = marked = [g for g, v in located.elsewhere.items() if v == view]
+        expected = WINDOW_OF.get(view.kind)
+        out["view"] = {"type": expected, "name": view.name,
+                       "navigator_item_id": view.navigator_item_id}
+        conn.tapir("ChangeWindow", {"navigatorItemId": {"guid": view.navigator_item_id}})
+        now_window = active_window(conn)
+        out["switched"] = {"from": _label(window, act, names),
+                           "to": _label(now_window, None, names, view)}
+        if now_window != expected:
+            warnings.append(f"Archicad shows {now_window or 'an unknown window'}, not "
+                            f"{expected} '{view.name}'; open it from the Navigator.")
+
+    out["shown"] = len(shown)
+    if view is not None:
+        if select:
+            out["selected"], out["not_selectable"] = _replace_selection(conn, marked)
+        if highlight:
+            out["highlighted"] = highlight_elements(conn, marked)["highlighted"]
+        else:
+            # What is on screen should match this call, not an earlier one.
+            clear_highlight(conn)
+            out["highlighted"] = 0
+    out["zoomed"] = bool(zoom and shown) and fit_in_window(conn, shown)
+
+    other: dict[int, list[str]] = {}
+    if view is FLOOR_PLAN:
+        for g, s in located.floor_plan.items():
+            if s not in (story, None):
+                other.setdefault(s, []).append(g)
+    out["on_other_stories"] = [{"story_index": s, "story_name": names.get(s, f"Story {s}"),
+                                "guids": gs} for s, gs in sorted(other.items())]
+    if view not in (FLOOR_PLAN, MODEL_3D) and located.floor_plan:
+        out["in_other_views"] = [{"type": "FloorPlan", "name": "Floor Plan",
+                                  "guids": list(located.floor_plan)}]
+    else:
+        out["in_other_views"] = []
+    for v in located.views:
+        if v != view:
+            out["in_other_views"].append({"type": WINDOW_OF.get(v.kind, v.kind),
+                                          "name": v.name,
+                                          "guids": [g for g, w in located.elsewhere.items()
+                                                    if w == v]})
+    out["not_found"] = located.not_found
+    out["not_searched"] = located.not_searched
+    if located.not_searched:
+        warnings.append(f"{len(located.not_searched)} element(s) were not searched for: "
+                        f"the walk stops after {WALK_CAP} views, or a view could not be "
+                        "listed. Show them from the view that holds them.")
+    out["warnings"] = warnings
+    return out
