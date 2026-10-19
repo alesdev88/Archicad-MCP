@@ -12,7 +12,7 @@ from tests.fixtures import api_replays
 
 TIER1 = {"list_instances", "get_model_summary", "list_rules", "run_rule",
          "audit_delivery_readiness", "verify_ifc_export_readiness",
-         "highlight_failures", "create_issues_from_failures"}
+         "highlight_failures", "create_issues_from_failures", "save_project"}
 
 
 @pytest.fixture
@@ -149,6 +149,51 @@ async def test_highlight_failures_calls_tapir(fake_archicad, tmp_path):
     payload = await call(mcp, "highlight_failures", {"rule_id": "walls-fire-ifc"})
     assert payload["highlighted"] == 1
     assert any(c == "HighlightElements" for c, _ in fake_archicad.calls)
+
+
+async def test_highlight_failures_zooms(fake_archicad, tmp_path):
+    fake_archicad.tapir_responses["FitInWindow"] = {"success": True}
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "highlight_failures", {"rule_id": "walls-fire-ifc"})
+    assert payload["zoomed"] is True
+    zooms = [p for c, p in fake_archicad.calls if c == "FitInWindow"]
+    assert len(zooms) == 1 and len(zooms[0]["elements"]) == 1
+
+
+async def test_highlight_failures_without_fit_in_window_says_so(fake_archicad, tmp_path):
+    fake_archicad.official_responses["API.IsAddOnCommandAvailable"] = lambda p: {
+        "available": p["addOnCommandId"]["commandName"] != "FitInWindow"}
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "highlight_failures", {"rule_id": "walls-fire-ifc"})
+    assert payload["zoomed"] is False
+    assert "FitInWindow" in payload["note"]
+    assert not any(c == "FitInWindow" for c, _ in fake_archicad.calls)
+
+
+async def test_highlight_failures_zoom_false(fake_archicad, tmp_path):
+    fake_archicad.tapir_responses["FitInWindow"] = {"success": True}
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "highlight_failures",
+                         {"rule_id": "walls-fire-ifc", "zoom": False})
+    assert payload["zoomed"] is False
+    assert not any(c == "FitInWindow" for c, _ in fake_archicad.calls)
+
+
+async def test_highlight_failures_with_no_failures_clears_the_highlight(fake_archicad, tmp_path):
+    mcp = build_server(mode="verdicts", rules_dir=rules_dir(tmp_path))
+    payload = await call(mcp, "highlight_failures", {"rule_id": "zones-numbered"})
+    assert payload["highlighted"] == 0
+    sent = [p for c, p in fake_archicad.calls if c == "HighlightElements"]
+    assert sent == [{"elements": [], "highlightedColors": []}]
+
+
+async def test_highlight_failures_names_only_tools_the_mode_has(tmp_path):
+    for mode in ("verdicts", "full"):
+        async with Client(build_server(mode=mode, rules_dir=rules_dir(tmp_path))) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+        text = tools["highlight_failures"].description
+        assert ("show_elements" in text) is (mode == "full")
+        assert "no failures" in text
 
 
 async def test_create_issues_from_failures(fake_archicad, tmp_path):
