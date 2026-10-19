@@ -26,6 +26,7 @@ from archicad_mcp.core.project import scrub_credentials
 from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
 from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
+    collision_queries,
     data_needs,
     element_type_scope,
     filter_by_tag,
@@ -146,7 +147,8 @@ def build_server(
     def _verdict_for(rules, request_port: int | None) -> Verdict:
         conn = get_connection(request_port if request_port is not None else default_port)
         snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules),
-                                  element_types=element_type_scope(rules))
+                                  element_types=element_type_scope(rules),
+                                  collision_queries=collision_queries(rules))
         return run_rules(rules, snapshot)
 
     # ---------- Tier 1: verdict tools (both modes) ----------
@@ -632,6 +634,41 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                         port: int | None = None) -> dict:
         return _modify.modify_elements(_conn(port), changes, dry_run)
 
+    from archicad_mcp.core import favorites as _favorites
+
+    @mcp.tool(description=(
+        "Make existing elements match a favourite (Tapir), the office standard in one "
+        "step. Without favorite it changes nothing and lists the favourites that fit "
+        "the given elements' types (all types when no guids either). DRY-RUN BY "
+        "DEFAULT: lists the elements it would change, skips with the reason those of "
+        "another type than the favourite's or that Archicad would refuse (another "
+        "view's, hidden or locked layer, not reserved in Teamwork, inside a hotlinked "
+        "module, locked), and warns what the favourite takes over besides materials "
+        "and pens: a wall's height, top link, reference line and structure, a "
+        "column's height and top link, a door's or window's library part, size and "
+        "sill, and every element's layer; for other types it says what was not "
+        "checked live. Plan positions stay. Stairs, railings and "
+        "curtain walls get only their own settings, not their parts'. keep (default "
+        "[\"id\"]) writes each element's own Element ID back after the favourite, "
+        "and \"layer\" its own layer; use modify_elements for heights and sizes. "
+        "settings, classifications, categories and properties choose what the "
+        "favourite applies; classifications are added per system and property values "
+        "overwrite. Pass dry_run=false to apply: returns applied, changed (per element "
+        "current and new of every field the favourite changed, read back), unchanged, "
+        "failed grouped by reason, and restored for keep. Classifications, categories "
+        "and properties are not read back. to_defaults=true with no guids sets the "
+        "favourite's tool defaults instead."),
+        **_tool_meta("Apply favorites", read_only=False, destructive=True))
+    @_guarded
+    def apply_favorites(guids: list[str] | None = None, favorite: str | None = None,
+                        settings: bool = True, classifications: bool = True,
+                        categories: bool = True, properties: bool = True,
+                        keep: list[str] | None = None, to_defaults: bool = False,
+                        dry_run: bool = True, port: int | None = None) -> dict:
+        return _favorites.apply_favorites(
+            _tapir_conn(port, "apply_favorites"), guids, favorite, settings,
+            classifications, categories, properties, keep, to_defaults, dry_run)
+
     @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true. "
                           "Archicad deletes only elements in the database of the "
                           "active window and still answers success for the rest "
@@ -701,6 +738,38 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                       zoom: bool = True, port: int | None = None) -> dict:
         return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
                                     highlight, zoom)
+
+    from archicad_mcp.core import collisions as _collisions
+
+    @mcp.tool(description=(
+        "Find clashes: which elements of one group collide with which elements of "
+        "another (Tapir). The first group is guids plus every element of "
+        "element_types; the second is against_guids plus against_types, and without "
+        "it the first group is checked against itself. Element types are Archicad's "
+        "names (Wall, Beam, Column, Slab, Object, Morph, ...); for property criteria "
+        "call find_elements first and pass its GUIDs. volume_tolerance (m3, default "
+        "0.001) is the overlap volume below which a clash is ignored; "
+        "surface_tolerance (m2) also reports touching faces over that area. Returns "
+        "each pair with both elements' type and ID, the first one's story, and kind "
+        "(body, clearance for MEP clearance zones, or both), counts by type pair, and "
+        "'elements', every GUID in a pair, to pass to show_elements. Archicad does not "
+        "count elements its own junctions clean up (crossing walls); the volume check "
+        "sees only closed bodies, so an open surface (a Morph surface) clashes only "
+        "with surface_tolerance set; building materials set not to take part in "
+        "collision detection are left out. No pairs is not proof that nothing "
+        "overlaps. A whole-model check can take a while. Reads only."),
+              **_tool_meta("Find collisions", read_only=True, destructive=False))
+    @_guarded
+    def find_collisions(guids: list[str] | None = None,
+                        element_types: list[str] | None = None,
+                        against_guids: list[str] | None = None,
+                        against_types: list[str] | None = None,
+                        volume_tolerance: float = _collisions.DEFAULT_VOLUME_TOLERANCE,
+                        surface_tolerance: float | None = None,
+                        port: int | None = None) -> dict:
+        return _collisions.find_collisions(
+            _tapir_conn(port, "find_collisions"), guids, element_types, against_guids,
+            against_types, volume_tolerance, surface_tolerance)
 
     from archicad_mcp.core import teamwork as _teamwork
 

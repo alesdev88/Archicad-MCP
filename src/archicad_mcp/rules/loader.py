@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from archicad_mcp.rules.builtin.classification_required import ClassificationRequiredRule
+from archicad_mcp.rules.builtin.collisions import NoCollisionsRule
 from archicad_mcp.rules.builtin.ifc_readiness import IfcPropertyRequiredRule
 from archicad_mcp.rules.builtin.layer_compliance import LayerComplianceRule
 from archicad_mcp.rules.builtin.property_required import PropertyRequiredRule
@@ -20,6 +21,7 @@ RULE_TYPES: dict[str, type] = {
     "layer-compliance": LayerComplianceRule,
     "zone-number-required": ZoneNumberRequiredRule,
     "ifc-property-required": IfcPropertyRequiredRule,
+    "no-collisions": NoCollisionsRule,
 }
 
 EXAMPLES_DIR = Path(__file__).parent / "examples"

@@ -26,7 +26,7 @@ taking the server down.
 | Field | Required | Default | Notes |
 |---|---|---|---|
 | `id` | yes | n/a | String, unique. This is what `run_rule` and `highlight_failures` take. |
-| `type` | yes | n/a | One of the five below. |
+| `type` | yes | n/a | One of the six below. |
 | `severity` | no | `error` | `error` or `warning`. Only `error` rules can fail the audit. |
 | `tags` | no | `[]` | Free-form. `audit_delivery_readiness(ruleset="…")` filters on these. |
 | `applies_to` | no | all elements | `{ element_type: Wall, where: [...] }`. Omit it, or use `*`, to match everything. |
@@ -161,9 +161,37 @@ Needs the Tapir add-on with `GetIFCPropertiesOfElements`; **1.4.0 does not have
 it**. When IFC data is unavailable the rule reports `skipped` with a reason
 instead of a false failure, and skipped rules do not count toward the score.
 
+### `no-collisions`
+
+Fails when elements of some types clash with elements of other types, or with
+each other. The same check `find_collisions` makes, as a rule.
+
+```yaml
+- id: beams-vs-objects
+  type: no-collisions
+  element_types: [Beam, Column]
+  against_types: [Object]        # optional; omit it to check the first group against itself
+  volume_tolerance: 0.001        # optional, m3, the default
+  surface_tolerance: 0.01        # optional, m2; also reports touching faces over this area
+  severity: error
+  tags: [coordination]
+```
+
+`element_types` (list, required) and `against_types` (list) take Archicad's
+element type names; a misspelt one is a load error. `applies_to` is not used:
+the groups are the types, over the whole plan. A failure counts the colliding
+pairs, and the failing GUIDs are every element in a pair, so
+`highlight_failures` shows both sides.
+
+Archicad leaves out what its own junctions clean up (crossing walls). The volume
+check sees only closed bodies, so an open surface (a Morph surface, say) clashes
+only when `surface_tolerance` is set, and building materials set not to take part
+in collision detection are left out. A pass is not proof that nothing overlaps. Needs the Tapir add-on with
+`GetCollisions` (1.2.2); without it the rule reports `skipped`.
+
 ## Custom rules
 
-For anything the five types cannot express, drop a `custom_rules.py` into the
+For anything the six types cannot express, drop a `custom_rules.py` into the
 same directory and expose a module-level `RULES` list:
 
 ```python

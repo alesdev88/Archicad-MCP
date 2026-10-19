@@ -6,7 +6,7 @@ from archicad_mcp.rules.loader import RULE_TYPES, load_rules
 def test_rule_types_registry_complete():
     assert set(RULE_TYPES) == {
         "property-required", "classification-required", "layer-compliance",
-        "zone-number-required", "ifc-property-required",
+        "zone-number-required", "ifc-property-required", "no-collisions",
     }
 
 

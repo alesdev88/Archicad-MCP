@@ -347,8 +347,9 @@ A rule file is a YAML **list** of rules:
   tags: [ifc-delivery]
 ```
 
-Five rule types ship built in (`property-required`, `classification-required`,
-`layer-compliance`, `zone-number-required`, `ifc-property-required`), and custom
+Six rule types ship built in (`property-required`, `classification-required`,
+`layer-compliance`, `zone-number-required`, `ifc-property-required`,
+`no-collisions`), and custom
 checks go in a `custom_rules.py` beside the YAML. Without a rules directory, the
 bundled examples load so you have something to run.
 
@@ -486,8 +487,8 @@ rule with no failures removes the highlight.
 
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
-`modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
+`show_elements`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -529,6 +530,21 @@ never unlocked. A commit reads the elements back, so a field Archicad answered
 success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
 or newer.
 
+`apply_favorites` makes existing elements match an office favourite, the way
+the Favorites palette does: "make these 40 doors Internal Door". Without a
+favourite it lists the ones that fit the elements' types. The dry run lists what
+it would change and skips elements of another type or ones Archicad would
+refuse. It also warns what a favourite takes over besides materials and pens,
+because Tapir's "never geometry" is not what Archicad does: live, a wall took the
+favourite's height, top link, reference line and layer, and doors and windows
+their library part, size and sill; plan positions stayed. For the types not
+checked live the dry run says so. Each element keeps its own
+Element ID by default (`keep`, which can also keep the layer), since a
+favourite's ID is a template value. A commit reads the elements back and
+reports, per element, every field that changed. Classifications, categories and
+property values are applied but not read back. `to_defaults=true` sets a tool's
+defaults instead. Needs Tapir 1.5.7.
+
 `get_element_data` and `set_element_data` read and write more than property
 values, through one address syntax: `classification:<System>` for an element's
 classification item, `gdl:<name>` for a GDL parameter of an object, lamp, door
@@ -554,6 +570,17 @@ unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
 `guids=[]` removes the highlight and the selection. It changes only what is on
 screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
 older Tapir the result says which story to open by hand.
+
+`find_collisions` is a clash check between two groups of elements, or within
+one: each group is GUIDs (from `find_elements`, say) plus every element of the
+given types. It returns the colliding pairs with both elements' type and ID,
+counts by type pair, and every element involved, ready for `show_elements`. The
+volume tolerance (m3) ignores small overlaps; a surface tolerance (m2) also
+reports touching faces and open surfaces. Archicad leaves out what its own
+junctions clean up, such as crossing walls, and building materials set not to
+take part in collision detection, so an empty answer is not proof that nothing
+overlaps. Clashes can also be a QA rule, `no-collisions` (see Rules). Needs Tapir
+1.5.7; the rule needs only 1.2.2.
 
 `export_ifc` is the step after `verify_ifc_export_readiness`: it saves the
 project as `.ifc` or `.ifczip` with an export translator chosen by name (the

@@ -33,6 +33,11 @@ class ModelSnapshot:
     layers: tuple[str, ...] = ()
     zones: tuple[ZoneInfo, ...] = ()
     ifc_properties: dict[str, dict[str, object]] | None = None
+    # core.collisions.CollisionQuery -> tuple of core.collisions.Collision (or the
+    # text of why Archicad refused that query), for the queries of the
+    # no-collisions rules being run; None when Tapir cannot detect collisions.
+    # Typed loosely so this module imports nothing from core.
+    collisions: dict | None = None
 
 
 @dataclass(frozen=True)
