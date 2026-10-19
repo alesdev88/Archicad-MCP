@@ -210,6 +210,40 @@ dry_run=True, port=None)`, destructive hint (writes a file). Full mode only.
   (never his project folders), a refused overwrite, then the files removed. No test elements are
   created. MCP-Test_28 is read only (its Save As case is reproduced in unit tests, not live).
 
+## Live check (19.10.2026)
+
+Through the server tools, on MCP-Test (Archicad 29, Tapir 1.7.1, port 19723) and MCP-Test_30
+(Archicad 30, Tapir 1.7.1, port 19724). No elements were created; the floor plan, its story and
+the empty selection were restored; the IFC files went to a scratch folder and were deleted.
+
+- `save_project`: the dry run named the project and its .pln; the commit saved in 1.0 s with
+  `file_updated: true`. A second save seconds later, with nothing changed, also rewrote the file:
+  Archicad 29 writes the .pln on every save, so `file_updated: false` points at something odd, not at
+  "nothing to save". Archicad 30 saved the same way. The refused save (MCP-Test_28) was not repeated
+  live: it is reproduced in the unit tests.
+- `show_elements`, 1.6 to 2.9 s a call on MCP-Test:
+  - Two Objects on story 1 and one on story 0, story 0 active: it went to story 1, `GetStories`
+    confirmed it, the story-0 one was listed under `on_other_stories`, and a lower-case GUID matched.
+  - A section Object: the Building Section opened through its navigator item; the Object was
+    `not_selectable` (section Objects never select, see the facts above).
+  - A layout Drawing: the "Ground Floor" layout opened and the Drawing was selected.
+  - A floor plan Object and a section Object: the floor plan won the tie, the section was listed under
+    `in_other_views`.
+  - A made-up GUID: `not_found` in 0.7 s, without walking the navigator.
+  - `guids=[]` cleared.
+  - Objects on the layer "Marker - Elevation" (elevation marker parts) came back `not_selectable`:
+    they are not selectable on their own.
+  - Highlight and zoom answered success and cannot be read back; they were not checked on screen.
+- `export_ifc` on MCP-Test:
+  - Dry runs gave the default and a case-folded translator, and named the active story for
+    `VisibleElementsOnCurrentStory`. An unknown translator was refused with all 16 names.
+  - The commit wrote 6.97 MB with General Parametric Export in 0.8 s.
+  - A second commit without `overwrite` was refused. With it, IFC4 Reference View-based Export and
+    `EntireProject` rewrote the file (3.7 MB, header `ViewDefinition [ReferenceView...]`).
+  - From the Section window, `SelectedElementsOnly` was refused. The default scope switched to the
+    floor plan (`switched_window`) and wrote a 1.3 MB `.ifczip` (a zip holding the .ifc).
+- `export_ifc` on MCP-Test_30: 16.5 MB in 1.4 s.
+
 ## Left to the builder
 
 Result field order, helper names, how the navigator walk is shared, the wording of notes and errors.
