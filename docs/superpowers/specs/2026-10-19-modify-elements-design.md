@@ -1,7 +1,7 @@
 # modify_elements: Design
 
 **Date:** 2026-10-19
-**Status:** Builder check done; Aleš chose the story behaviour and said to go on to plan and build while he reads (2026-10-19).
+**Status:** Built on branch `feature/modify-elements` (2026-10-19): plan executed, final review fixes in, live dry run on MCP-Test. Not merged; the live commit and lock checks wait for Aleš.
 **Repo:** https://github.com/alesdev88/Archicad-MCP.git
 
 ## Purpose
@@ -488,6 +488,10 @@ day; an Archicad 30 with MCP-Test_30 ran beside it on 19724 and was not used).
 - A first run of the live test met `4001 "Invalid program status (ongoing user
   input)"`: Archicad refuses commands while a user is mid-input. That is the
   dialog-blocked text the gateway notes had been waiting to see.
+
+After the review fixes the same dry run ran again, still reads only. SLA - 002
+had been deleted from MCP-Test in the meantime (not by this tool) and came back
+skipped as "not found"; the other three planned as before.
 
 Still owed, with Aleš's go-ahead: a LockElements / `General_Locked` check and
 one commit with readback on a scratch element.
