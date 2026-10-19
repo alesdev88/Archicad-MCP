@@ -12,8 +12,22 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
+from multiconn_archicad.errors import ArchicadAPIError
+
+from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core import swept_path as sp
+
+# From Tapir 1.7.2 (#558) SetGDLParametersOfElements writes an array item by item through
+# ACAPI_LibraryPart_ChangeAParameter: it refuses a list of another size, runs the part's
+# Parameter Script after every item (so the parts' node merge reacts to each one) and takes
+# angle items in degrees. Up to 1.7.1 a list replaced the array as sent: any size, no
+# script, angles in radians (docs/superpowers/specs/2026-10-19-tapir-1.7.2-array-writes.md).
+ITEM_WRITES = (1, 7, 2)
+MERGE_GAP = 0.01  # both parts merge consecutive nodes closer than this in plan
+PARK_CLEARANCE = 10.0  # metres between a parked node and any real one across the path
+GROW_STEP = 1.0  # each add-node write slides the end grip this far past its marker
 
 
 class PlacedPathError(ValueError):
@@ -190,6 +204,69 @@ def place(conn, part: str, origin, floor_index) -> str:
     if not elements or "elementId" not in elements[0]:
         raise PlacedPathError(f"CreateObjects did not place '{part}': {result}")
     return elements[0]["elementId"]["guid"]
+
+
+def tapir_version(conn) -> tuple[int, int, int] | None:
+    """The Tapir add-on's version, or None when it does not say."""
+    try:
+        raw = str(conn.tapir("GetAddOnVersion").get("version", ""))
+    except (ArchicadAPIError, ArchicadUnavailableError):
+        return None
+    numbers = [int(n) for n in re.findall(r"\d+", raw)[:3]]
+    return tuple((numbers + [0, 0, 0])[:3]) if numbers else None
+
+
+def writes_items(conn) -> bool:
+    """Whether this Tapir writes arrays item by item (1.7.2 and newer)."""
+    version = tapir_version(conn)
+    return version is not None and version >= ITEM_WRITES
+
+
+def gdl_parameters(conn, guid: str) -> dict:
+    """A placed part's GDL parameters by name, as the API reads them (angles in radians)."""
+    res = conn.tapir("GetGDLParametersOfElements", {"elements": [{"elementId": {"guid": guid}}]})
+    entry = (res.get("gdlParametersOfElements") or [{}])[0]
+    params = entry.get("parameters")
+    if not params:
+        raise PlacedPathError(f"Could not read the parameters of element {guid}: {entry.get('error', entry)}")
+    return {p["name"]: p["value"] for p in params}
+
+
+def check_plan_gaps(local, part: str) -> None:
+    """With item writes the part's merge runs on every node written, so two consecutive
+    nodes closer than 1 cm in plan would lose one mid-write and fail it."""
+    for i in range(len(local) - 1):
+        gap = math.dist(local[i][:2], local[i + 1][:2])
+        if gap < MERGE_GAP:
+            raise PlacedPathError(
+                f"Nodes {i + 1} and {i + 2} are {gap * 1000:.1f} mm apart in plan. The {part} merges "
+                "nodes closer than 10 mm, and with Tapir 1.7.2 or newer it does so while they are "
+                "written, which fails the write. Remove the vertical piece or thin out the points.")
+
+
+def resize_writes(current: dict, count: int) -> list[dict]:
+    """Single value writes that turn a placed part's path into count nodes on a straight
+    line along x, 1 m and more apart, for a Tapir that cannot resize an array.
+
+    A = 1 then aDone = 2 is the parts' own fresh path (a changed A that was not typed): two
+    nodes 1 m apart, every helper array zeroed, the add-node grips balanced. The Swept Beam
+    also squares its end cuts there. Each extEnd write after it is an add-node grip drag
+    that appends one node 1.25 m on (EXT_PARK 0.25 plus the step)."""
+    start = float(current.get("extEnd", 0.0))
+    return ([{"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0}]
+            + [{"name": "extEnd", "value": start + k * GROW_STEP} for k in range(1, count - 1)])
+
+
+def parked_xy(xs: list[float], ys: list[float]) -> list[dict]:
+    """nodeY, nodeX and nodeY again, in an order the part's node merge never fires on.
+
+    Every item write runs the merge, which drops a node within 1 cm of its neighbour in
+    plan. The y values are parked first, 1 m apart and 10 m clear of every real y, then the
+    x values go in, then the real y values: at every step consecutive nodes stay at least
+    1 m apart, or both are real nodes (check_plan_gaps)."""
+    park = max(abs(y) for y in ys) + PARK_CLEARANCE
+    return [{"name": "nodeY", "value": [park + i for i in range(len(ys))]},
+            {"name": "nodeX", "value": xs}, {"name": "nodeY", "value": ys}]
 
 
 def write_parameters(conn, guid: str, params: list[dict], part: str) -> None:

@@ -252,8 +252,12 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     if not loaded:
         warnings.append(NOT_LOADED)
     origin, angle = frame if frame else (nodes[0], 0.0)
-    same_count = bool(update_guid) and len(nodes) == len(current["nodeX"])
-    params = node_params(pp.to_local(nodes, origin, angle), arcs, falls, path_tolerance, y_first=same_count)
+    local = pp.to_local(nodes, origin, angle)
+    items = pp.writes_items(conn)
+    if items:
+        pp.check_plan_gaps(local, LIBRARY_PART)
+    same_count = bool(update_guid) and len(nodes) == len(current["nodeX"]) and not items
+    params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items)
     if want["markingType"] != current["markingType"]:
         params.append({"name": "markingType", "value": want["markingType"]})
     params += [{"name": k, "value": want[k]} for k in TABLE["settings"] if not _same(want[k], state[k])]
@@ -263,13 +267,17 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
               "steepest_cross_fall_percent": round(max(abs(f) for f in falls), 2),
               "reach": {"u_lo": round(u_lo, 3), "u_hi": round(u_hi, 3)},
               "origin": {"x": origin[0], "y": origin[1], "z": origin[2]}, "story": floor_index,
-              "warnings": warnings}
+              "array_writes": "item by item" if items else "whole arrays", "warnings": warnings}
     if dry_run:
         report["gdl_parameters"] = params
         return report
     if not loaded:
         raise RoadMarkingError(NOT_LOADED)
     guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
+    if items:
+        # no resizing: reset the path, grow it to the node count, then write every item
+        placed = current if update_guid else pp.gdl_parameters(conn, guid)
+        params = pp.resize_writes(placed, len(nodes)) + params
     if same_count:
         # the same number of nodes: nodeX as 0, 1, 2 first, then nodeY before the real nodeX, so the
         # part's node merge never compares a new x with an old y (parent spec, "Through the API")
@@ -298,12 +306,7 @@ def _path(conn, source_guid, points, own_path, current, frame, tol):
 def read_parameters(conn, guid: str) -> dict:
     """A placed marking's parameters by name, single angles in degrees (the API reads them
     back in radians)."""
-    res = conn.tapir("GetGDLParametersOfElements", {"elements": [{"elementId": {"guid": guid}}]})
-    entry = (res.get("gdlParametersOfElements") or [{}])[0]
-    params = entry.get("parameters")
-    if not params:
-        raise RoadMarkingError(f"Could not read the parameters of element {guid}: {entry.get('error', entry)}")
-    values = {p["name"]: p["value"] for p in params}
+    values = pp.gdl_parameters(conn, guid)
     for k in (1, 2, 3):
         values[f"s{k}Angle"] = math.degrees(float(values[f"s{k}Angle"]))
     return values
@@ -327,25 +330,38 @@ def _same(a, b) -> bool:
     return a == b
 
 
-def node_params(local, arcs, falls, tol, y_first=False) -> list[dict]:
-    """The node arrays and grip helpers in write order: A and aDone at 1 m first (the part
-    returns A to 1 m), then nodeX so it sets the row count (nodeY first after a same count
-    rewrite has written nodeX as 0, 1, 2), the arc angles in radians, every grip helper
-    equal to its marker so the Parameter Script reads no pending drag."""
+def node_params(local, arcs, falls, tol, y_first=False, items=False) -> list[dict]:
+    """The node arrays and grip helpers in write order, every grip helper equal to its
+    marker so the Parameter Script reads no pending drag.
+
+    Whole arrays (Tapir up to 1.7.1): A and aDone at 1 m first (the part returns A to 1 m),
+    then nodeX so it sets the row count (nodeY first after a same count rewrite has written
+    nodeX as 0, 1, 2), the arc angles in radians.
+
+    Item writes (Tapir 1.7.2 and newer) follow pp.resize_writes, which sets A and aDone and
+    leaves the add-node grips balanced, so neither pair is written here (a lone extEnd write
+    would be a drag); x and y go in the order pp.parked_xy gives, the arc angles in degrees."""
     n = len(local)
 
     def r6(values):
         return [round(v, 6) + 0.0 for v in values]
 
-    xy = [{"name": "nodeX", "value": r6(p[0] for p in local)},
-          {"name": "nodeY", "value": r6(p[1] for p in local)}]
-    return ([{"name": "A", "value": 1.0}, {"name": "aDone", "value": 1.0}]
-            + (xy[::-1] if y_first else xy)
+    xs, ys = r6(p[0] for p in local), r6(p[1] for p in local)
+    if items:
+        head, xy = [], pp.parked_xy(xs, ys)
+        arc_values = [round(a, 9) + 0.0 for a in arcs]
+        ext = []
+    else:
+        head = [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 1.0}]
+        xy = [{"name": "nodeX", "value": xs}, {"name": "nodeY", "value": ys}]
+        xy = xy[::-1] if y_first else xy
+        arc_values = [round(math.radians(a), 9) + 0.0 for a in arcs]
+        ext = [{"name": "extStart", "value": 0.0}, {"name": "extStartDone", "value": 0.0},
+               {"name": "extEnd", "value": 0.0}, {"name": "extEndDone", "value": 0.0}]
+    return (head + xy
             + [{"name": "nodeZ", "value": r6(p[2] for p in local)},
                {"name": "nodeFall", "value": r6(falls)},
-               {"name": "segArc", "value": [round(math.radians(a), 9) + 0.0 for a in arcs]},
+               {"name": "segArc", "value": arc_values},
                {"name": "segSag", "value": [0.0] * n}, {"name": "sagDone", "value": [0.0] * n},
-               {"name": "insL", "value": [0.0] * n}, {"name": "insDone", "value": [0.0] * n},
-               {"name": "extStart", "value": 0.0}, {"name": "extStartDone", "value": 0.0},
-               {"name": "extEnd", "value": 0.0}, {"name": "extEndDone", "value": 0.0},
-               {"name": "pathTolerance", "value": tol}])
+               {"name": "insL", "value": [0.0] * n}, {"name": "insDone", "value": [0.0] * n}]
+            + ext + [{"name": "pathTolerance", "value": tol}])
