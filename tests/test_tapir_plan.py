@@ -167,3 +167,29 @@ def test_running_tapir_is_explained_by_another_copy_on_disk(tmp_path):
     fake_bundle(with_tapir.add_ons, "TapirAddOn_AC30_Mac.bundle", RELEASE_BINARY)
     rows = plan(tmp_path, [with_tapir, empty], zips, replace=False, running={30: "1.7.1"})
     assert [(r.state, r.action) for r in rows] == [(UP_TO_DATE, "nothing"), (NO_TAPIR, "install")]
+
+
+def _bundle_with_exe(where: Path, bundle: str, exe: str, binary: bytes) -> Path:
+    import plistlib
+    path = where / bundle
+    (path / "Contents" / "MacOS").mkdir(parents=True)
+    (path / "Contents" / "MacOS" / exe).write_bytes(binary)
+    with (path / "Contents" / "Info.plist").open("wb") as f:
+        plistlib.dump({"CFBundleExecutable": exe}, f)
+    return path
+
+
+def test_reference_hash_follows_the_executable_named_in_info_plist(tmp_path):
+    # A future release whose executable is not named after the bundle.
+    src = tmp_path / "src"
+    src.mkdir()
+    bundle = _bundle_with_exe(src, "TapirAddOn_AC30_Mac.bundle", "Tapir", RELEASE_BINARY)
+    zipped = tmp_path / "TapirAddOn_AC30_Mac.zip"
+    with zipfile.ZipFile(zipped, "w") as zf:
+        for p in sorted(bundle.rglob("*")):
+            if p.is_file():
+                zf.write(p, p.relative_to(src).as_posix())
+    i = inst(tmp_path, 30)
+    _bundle_with_exe(i.add_ons, "TapirAddOn_AC30_Mac.bundle", "Tapir", RELEASE_BINARY)
+    (row,) = plan(tmp_path, [i], {30: zipped}, replace=False)
+    assert row.state == UP_TO_DATE

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import plistlib
 import sys
 import zipfile
 from dataclasses import dataclass, field
@@ -62,11 +63,16 @@ def _reference_binary_hash(reference: Path, asset: Asset) -> str | None:
     if asset.name.endswith(".apx"):
         return asset.sha256
     bundle = asset.name.removesuffix(".zip") + ".bundle"
-    member = f"{bundle}/Contents/MacOS/{bundle.removesuffix('.bundle')}"
     try:
         with zipfile.ZipFile(reference) as zf:
-            return hashlib.sha256(zf.read(member)).hexdigest()
-    except (KeyError, OSError, zipfile.BadZipFile):
+            # The executable the bundle's own Info.plist names, as main_binary
+            # reads it from an installed copy.
+            info = plistlib.loads(zf.read(f"{bundle}/Contents/Info.plist"))
+            exe = info.get("CFBundleExecutable")
+            if not exe:
+                return None
+            return hashlib.sha256(zf.read(f"{bundle}/Contents/MacOS/{exe}")).hexdigest()
+    except (KeyError, OSError, ValueError, zipfile.BadZipFile, plistlib.InvalidFileException):
         return None
 
 
