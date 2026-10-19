@@ -386,14 +386,9 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
 
 def set_element_data(conn: ArchicadConnection, changes: list[dict],
                      dry_run: bool = True) -> dict:
+    from archicad_mcp.core import element_writes
     if dry_run:
-        prop_names = sorted({c["property"] for c in changes})
-        cells = fetch_property_cells(conn, [c["guid"] for c in changes], prop_names)
-        return {"dry_run": True, "planned_changes": [
-            {"guid": c["guid"], "property": c["property"],
-             "current": cells.get(c["guid"], {}).get(c["property"], {}).get("value"),
-             "new": c["value"]}
-            for c in changes]}
+        return element_writes.dry_run_result(element_writes.plan(conn, changes))
     planned, skipped = plan_property_writes(conn, changes)
     result: dict = {"dry_run": False, "applied": 0}
     if planned:

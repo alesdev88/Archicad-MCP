@@ -427,3 +427,17 @@ def test_read_back_properties_names_the_writes_that_did_not_land():
     assert read_back_properties(conn, writes, []) == [
         {"guid": "d-2", "property": "D/P", "sent": "002", "read": "0"}]
     assert read_back_properties(conn, writes, [{"guid": "d-2", "property": "D/P"}]) == []
+
+
+def test_the_property_dry_run_runs_the_full_plan():
+    # It used to echo every change unchecked; now it shows what the commit
+    # would send and names what it would skip.
+    conn, core = _conn_with_cells({
+        ("d-1", "D/Pozicija"): {"type": "integer", "status": "normal", "value": 0},
+        ("d-1", "D/Finish"): {"type": "singleEnum", "status": "normal"}})
+    out = set_element_data(conn, [{"guid": "d-1", "property": "D/Pozicija", "value": "12"},
+                                  {"guid": "d-1", "property": "D/Finish", "value": "Oak"}])
+    assert out["planned_changes"] == [
+        {"guid": "d-1", "property": "D/Pozicija", "current": 0, "new": 12}]
+    assert [s["property"] for s in out["skipped"]] == ["D/Finish"]
+    assert not any(c == "API.SetPropertyValuesOfElements" for c, _ in core.calls)
