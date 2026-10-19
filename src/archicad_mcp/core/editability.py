@@ -22,26 +22,46 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.teamwork import FILTER_CHUNK, _in_my_workspace, _is_teamwork
-from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
+from archicad_mcp.extract import (
+    PROPERTY_FETCH_CHUNK,
+    PropertyFetchTooWideError,
+    element_payload,
+    fetch_property_values,
+)
 
-_NOT_FOUND = "not_found"
-_HIDDEN = "hidden"
-_UNRESERVED = "unreserved"
-_LOCKED = "locked"
+NOT_FOUND = "not_found"
+HIDDEN = "hidden"
+UNRESERVED = "unreserved"
+LOCKED = "locked"
 
-_HEAD = {_NOT_FOUND: "not found", _HIDDEN: "not editable",
-         _UNRESERVED: "not editable", _LOCKED: "not editable"}
+_HEAD = {NOT_FOUND: "not found", HIDDEN: "not editable",
+         UNRESERVED: "not editable", LOCKED: "not editable"}
 _CAUSE = {
-    _NOT_FOUND: ("it does not exist (deleted already, or a wrong GUID) or belongs "
-                 "to another view"),
-    _HIDDEN: "it is on a hidden layer; turn the layer on in the active view and retry",
-    _UNRESERVED: "it is not reserved in Teamwork; reserve it (reserve_elements) and retry",
-    _LOCKED: ("it is inside a hotlinked module, on a locked layer, or otherwise "
-              "locked, so Archicad would refuse the change"),
+    NOT_FOUND: ("it does not exist (deleted already, or a wrong GUID) or belongs "
+                "to another view"),
+    HIDDEN: "it is on a hidden layer; turn the layer on in the active view and retry",
+    UNRESERVED: "it is not reserved in Teamwork; reserve it (reserve_elements) and retry",
+    LOCKED: ("it is inside a hotlinked module, on a locked layer, or otherwise "
+             "locked, so Archicad would refuse the change"),
 }
 
+# The element lock (Edit > Locking) as a built-in property. Tapir has no read
+# of it (API_Elem_Head.lockId is never read in its source, 1.5.9 to 1.7.1),
+# and the DevKit does not say whether FilterElements IsEditable covers it. Read
+# false on an unlocked slab, object and mesh on MCP-Test, 19.10.2026.
+ELEMENT_LOCK_PROPERTY = "General_Locked"
 
-def _reason(kind: str, window: str | None) -> str:
+HOTLINK_REASON = ("inside a hotlinked module; Archicad refuses changes to it. Change "
+                  "the module's source file, or break the hotlink")
+ELEMENT_LOCK_REASON = ("locked with Edit > Locking; unlock it there and retry (this "
+                       "tool does not unlock)")
+
+
+def layer_locked_reason(name: str) -> str:
+    return f"on the locked layer '{name}'; unlock the layer (Layer Settings) and retry"
+
+
+def reason_text(kind: str, window: str | None) -> str:
     """The reason text, leading with the active window when it is the likelier
     cause. From the floor plan, or when the window is unknown, the plain cause."""
     if window in (None, "FloorPlan"):
@@ -102,14 +122,15 @@ def active_window(conn: ArchicadConnection) -> str | None:
         return None
 
 
-def refusals(conn: ArchicadConnection,
+def classify(conn: ArchicadConnection,
              guids: list[str]) -> tuple[dict[str, str], str | None]:
-    """(guid -> why Archicad would refuse to change it, the active window type).
+    """(guid -> the kind of refusal, the active window type).
 
-    Only refused elements are keyed. The window is read only when something is
-    refused, so it is None both when nothing was and when it cannot be read.
-    Without Tapir's FilterElements nothing is checked, and Archicad's own
-    refusal is what the caller gets.
+    Kinds are NOT_FOUND, HIDDEN, UNRESERVED and LOCKED. Only refused elements
+    are keyed. The window is read only when something is refused, so it is
+    None both when nothing was and when it cannot be read. Without Tapir's
+    FilterElements nothing is checked, and Archicad's own refusal is what the
+    caller gets.
     """
     if not guids or not conn.tapir_command_available("FilterElements"):
         return {}, None
@@ -129,13 +150,50 @@ def refusals(conn: ArchicadConnection,
     else:
         # Outside Teamwork everything is "mine", so a refusal is a lock.
         mine = set(shown)
-    reasons = {}
+    kinds = {}
     for g in refused:
         if g not in found:
-            kind = _NOT_FOUND
+            kinds[g] = NOT_FOUND
         elif g not in visible:
-            kind = _HIDDEN
+            kinds[g] = HIDDEN
         else:
-            kind = _LOCKED if g in mine else _UNRESERVED
-        reasons[g] = _reason(kind, window)
-    return reasons, window
+            kinds[g] = LOCKED if g in mine else UNRESERVED
+    return kinds, window
+
+
+def refusals(conn: ArchicadConnection,
+             guids: list[str]) -> tuple[dict[str, str], str | None]:
+    """(guid -> why Archicad would refuse to change it, the active window type).
+
+    The text of classify(): only refused elements are keyed.
+    """
+    kinds, window = classify(conn, guids)
+    return {g: reason_text(kind, window) for g, kind in kinds.items()}, window
+
+
+def lock_reasons(conn: ArchicadConnection, entries: dict[str, dict],
+                 layers: dict[int, dict]) -> dict[str, str]:
+    """guid -> why a lock stops the change, for the locks IsEditable cannot name.
+
+    `entries` are GetDetailsOfElements items (hotlinkId, layerIndex), `layers`
+    is attributes.layer_table(). Checked in order, first match wins: inside a
+    hotlinked module, on a locked layer, locked with Edit > Locking. The
+    element lock is one property read for all of `entries`; when the property
+    does not resolve, or the read would span too many elements, that check is
+    left out rather than failing the caller.
+    """
+    guids = list(entries)
+    try:
+        values = fetch_property_values(conn, guids, [ELEMENT_LOCK_PROPERTY])
+    except PropertyFetchTooWideError:
+        values = {}
+    reasons = {}
+    for g, entry in entries.items():
+        layer = layers.get(entry.get("layerIndex"), {})
+        if entry.get("hotlinkId"):
+            reasons[g] = HOTLINK_REASON
+        elif layer.get("isLocked"):
+            reasons[g] = layer_locked_reason(layer.get("name", ""))
+        elif values.get(g, {}).get(ELEMENT_LOCK_PROPERTY) is True:
+            reasons[g] = ELEMENT_LOCK_REASON
+    return reasons
