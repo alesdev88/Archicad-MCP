@@ -46,9 +46,10 @@ _CAUSE = {
 }
 
 # The element lock (Edit > Locking) as a built-in property. Tapir has no read
-# of it (API_Elem_Head.lockId is never read in its source, 1.5.9 to 1.7.1),
-# and the DevKit does not say whether FilterElements IsEditable covers it. Read
-# false on an unlocked slab, object and mesh on MCP-Test, 19.10.2026.
+# of it (API_Elem_Head.lockId is never read in its source, 1.5.9 to 1.7.1).
+# Live on MCP-Test 19.10.2026: true after LockElements, false after
+# UnlockElements, and FilterElements IsEditable false while locked, so this
+# names the cause of a refusal IsEditable already makes.
 ELEMENT_LOCK_PROPERTY = "General_Locked"
 
 HOTLINK_REASON = ("inside a hotlinked module; Archicad refuses changes to it. Change "

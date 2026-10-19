@@ -125,8 +125,8 @@ mixes rows 0 and 1. Read in the source, not seen live.
 **Lock reads.** FilterElements `IsEditable` is `APIFilt_IsEditable`: "is not on
 a locked/deleted/invisible layer" in the DevKit header. Live it also rejected
 elements in hotlinked modules and unreserved Teamwork elements
-(`editability.py` docstring). Whether it rejects a manually locked element is
-unknown. Tapir has no read of the element lock (`API_Elem_Head.lockId` is never
+(`editability.py` docstring). It also rejects a manually locked element (live,
+see "Live writes" below). Tapir has no read of the element lock (`API_Elem_Head.lockId` is never
 read); the built-in `General_Locked` property is the read the tool uses. Layer
 locks read from `GetLayers` `isLocked`.
 
