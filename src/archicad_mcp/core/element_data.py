@@ -31,8 +31,11 @@ def cap_list(items: list, limit: int = REPORT_CAP) -> tuple[list, int]:
     return items[:limit], max(len(items) - limit, 0)
 
 
-def group_failures(failed: list[dict]) -> list[dict]:
+def group_failures(failed: list[dict], detail_key: str = "property") -> list[dict]:
     """Refusals grouped by (code, message), largest group first.
+
+    Each sample names the GUID and `detail_key` of the refused write: the
+    property for property writes, the command for modify_elements.
 
     Refusals come in bulk and alike: 113 doors in hotlinked modules came back
     as 113 identical "TeamWork permission denied" entries in the live run,
@@ -45,7 +48,7 @@ def group_failures(failed: list[dict]) -> list[dict]:
             "code": f["code"], "message": f["message"], "count": 0, "sample": []})
         group["count"] += 1
         if len(group["sample"]) < FAILURE_SAMPLE:
-            group["sample"].append({"guid": f["guid"], "property": f["property"]})
+            group["sample"].append({"guid": f["guid"], detail_key: f[detail_key]})
     return sorted(groups.values(), key=lambda g: -g["count"])
 
 

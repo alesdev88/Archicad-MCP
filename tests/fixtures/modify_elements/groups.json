@@ -1,0 +1,17 @@
+{
+ "_source": "Recorded on MCP-Test, 2026-10-19, Archicad 29/5101, Tapir 1.5.10 (read only). GetGroupsOfElements 'ungrouped' and GetSuspendGroupsMode are recorded; MCP-Test has no group, so 'grouped' is written from the GroupIdArrayItem schema.",
+ "ungrouped": {
+  "error": {
+   "code": -2130313215,
+   "message": "The element is not part of any group."
+  }
+ },
+ "grouped": {
+  "groupId": {
+   "guid": "GROUP-1"
+  }
+ },
+ "suspend_mode": {
+  "suspendGroups": false
+ }
+}

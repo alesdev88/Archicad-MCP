@@ -1,0 +1,538 @@
+{
+ "_source": "Written from the bundled Tapir 1.5.9 schemas (WallDetails, WindowDoorDetails, RoofDetails, TextDetails, MorphDetails, BeamDetails, CurtainWallDetails, HatchDetails), NOT recorded: MCP-Test has no walls, doors, windows, roofs, texts, morphs, beams, curtain walls or hatches. Attribute GUIDs like B0000000-0000-0000-0000-0000000C0C0E are placeholders. SLAB-B is the recorded SLA - 001 made Basic (buildingMaterialId, thickness 0.2): MCP-Test's slabs are all Composite, and thickness only applies to a Basic slab (seen live 19.10.2026).",
+ "elements": {
+  "WALL-1": {
+   "type": "Wall",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "WA - 001",
+   "details": {
+    "geometryType": "Straight",
+    "begCoordinate": {
+     "x": 0,
+     "y": 0
+    },
+    "endCoordinate": {
+     "x": 5,
+     "y": 0
+    },
+    "zCoordinate": 0,
+    "flipped": false,
+    "height": 3.0,
+    "bottomOffset": 0,
+    "offset": 0,
+    "arcAngle": 0,
+    "begThickness": 0.3,
+    "endThickness": 0.3,
+    "structureType": "Basic",
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    },
+    "referenceLineLocation": "Outside",
+    "profileType": "Normal",
+    "slantAlpha": 1.5707963267948966,
+    "slantBeta": 1.5707963267948966,
+    "topOffset": 0,
+    "relativeTopStory": 0,
+    "zoneRel": "Boundary",
+    "visibility": {
+     "showOnHome": true,
+     "showAllAbove": false,
+     "showAllBelow": false,
+     "showRelAbove": 0,
+     "showRelBelow": 0
+    },
+    "isAutoOnStoryVisibility": true,
+    "referenceMaterial": {
+     "overridden": false
+    },
+    "oppositeMaterial": {
+     "overridden": false
+    },
+    "sideMaterial": {
+     "overridden": false
+    },
+    "cutFillPen": {
+     "overridden": false
+    },
+    "cutFillBackgroundPen": {
+     "overridden": false
+    }
+   }
+  },
+  "WALL-2": {
+   "type": "Wall",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "WA - 002",
+   "details": {
+    "geometryType": "Trapezoid",
+    "begCoordinate": {
+     "x": 0,
+     "y": 0
+    },
+    "endCoordinate": {
+     "x": 5,
+     "y": 0
+    },
+    "zCoordinate": 0,
+    "flipped": false,
+    "height": 3.0,
+    "bottomOffset": 0,
+    "offset": 0,
+    "arcAngle": 0,
+    "begThickness": 0.3,
+    "endThickness": 0.2,
+    "structureType": "Basic",
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    },
+    "referenceLineLocation": "Outside",
+    "profileType": "Normal",
+    "slantAlpha": 1.5707963267948966,
+    "slantBeta": 1.5707963267948966,
+    "topOffset": 0,
+    "relativeTopStory": 0,
+    "zoneRel": "Boundary",
+    "visibility": {
+     "showOnHome": true,
+     "showAllAbove": false,
+     "showAllBelow": false,
+     "showRelAbove": 0,
+     "showRelBelow": 0
+    },
+    "isAutoOnStoryVisibility": true,
+    "referenceMaterial": {
+     "overridden": false
+    },
+    "oppositeMaterial": {
+     "overridden": false
+    },
+    "sideMaterial": {
+     "overridden": false
+    },
+    "cutFillPen": {
+     "overridden": false
+    },
+    "cutFillBackgroundPen": {
+     "overridden": false
+    }
+   }
+  },
+  "DOOR-1": {
+   "type": "Door",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "D - 001",
+   "details": {
+    "libPart": {
+     "name": "Door 29"
+    },
+    "ownerElementId": {
+     "guid": "WALL-1"
+    },
+    "ownerElementType": "Wall",
+    "width": 0.9,
+    "height": 2.1,
+    "sillHeight": 0,
+    "centerOffset": 0,
+    "reflected": false,
+    "refSide": true,
+    "oSide": true
+   }
+  },
+  "DOOR-2": {
+   "type": "Door",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "D - 002",
+   "details": {
+    "libPart": {
+     "name": "Door 29"
+    },
+    "ownerElementId": {
+     "guid": "WALL-1"
+    },
+    "ownerElementType": "Wall",
+    "width": 0.9,
+    "height": 2.1,
+    "sillHeight": 0,
+    "centerOffset": 0,
+    "reflected": false,
+    "refSide": true,
+    "oSide": true
+   }
+  },
+  "WINDOW-1": {
+   "type": "Window",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "W - 001",
+   "details": {
+    "libPart": {
+     "name": "Window 29"
+    },
+    "ownerElementId": {
+     "guid": "WALL-1"
+    },
+    "ownerElementType": "Wall",
+    "width": 0.9,
+    "height": 2.1,
+    "sillHeight": 0.9,
+    "centerOffset": 0,
+    "reflected": false,
+    "refSide": true,
+    "oSide": true
+   }
+  },
+  "ROOF-M": {
+   "type": "Roof",
+   "floorIndex": 1,
+   "layerIndex": 4,
+   "drawIndex": 7,
+   "id": "RO - 001",
+   "details": {
+    "roofClass": "MultiPlane",
+    "structureType": "Basic",
+    "thickness": 0.3,
+    "level": 0.5,
+    "zCoordinate": 3.5,
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    },
+    "eavesOverhang": 0.6,
+    "levels": [
+     {
+      "height": 0,
+      "angle": 0.5235987755982988
+     }
+    ],
+    "pivotPolygonOutline": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 10,
+      "y": 0
+     },
+     {
+      "x": 10,
+      "y": 8
+     },
+     {
+      "x": 0,
+      "y": 8
+     }
+    ],
+    "polygonOutline": [
+     {
+      "x": -0.6,
+      "y": -0.6
+     },
+     {
+      "x": 10.6,
+      "y": -0.6
+     },
+     {
+      "x": 10.6,
+      "y": 8.6
+     },
+     {
+      "x": -0.6,
+      "y": 8.6
+     }
+    ]
+   }
+  },
+  "ROOF-S": {
+   "type": "Roof",
+   "floorIndex": 1,
+   "layerIndex": 4,
+   "drawIndex": 7,
+   "id": "RO - 002",
+   "details": {
+    "roofClass": "SinglePlane",
+    "structureType": "Basic",
+    "thickness": 0.3,
+    "level": 0.5,
+    "zCoordinate": 3.5,
+    "angle": 0.5235987755982988,
+    "pivotLine": {
+     "begin": {
+      "x": 0,
+      "y": 0
+     },
+     "end": {
+      "x": 5,
+      "y": 0
+     }
+    },
+    "polygonOutline": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 5,
+      "y": 0
+     },
+     {
+      "x": 5,
+      "y": 4
+     },
+     {
+      "x": 0,
+      "y": 4
+     }
+    ]
+   }
+  },
+  "TEXT-1": {
+   "type": "Text",
+   "floorIndex": 0,
+   "layerIndex": 42,
+   "drawIndex": 10,
+   "id": "",
+   "details": {
+    "text": "Note",
+    "position": {
+     "x": 1.5,
+     "y": 2.5
+    },
+    "angle": 0,
+    "height": 2.5,
+    "pen": 1,
+    "justification": "Left",
+    "zCoordinate": 0,
+    "style": {
+     "penIndex": 1,
+     "fontIndex": 1,
+     "fontName": "Arial",
+     "bold": false,
+     "italic": false,
+     "underline": false,
+     "height": 2.5,
+     "angle": 0,
+     "widthFactor": 1,
+     "charSpacingFactor": 1,
+     "effects": [],
+     "justification": "Left",
+     "anchor": "BottomLeft",
+     "lineSpacingFactor": 1,
+     "nonBreaking": false,
+     "lineCount": 1,
+     "boxWidth": 10,
+     "boxHeight": 3
+    },
+    "paragraphCount": 1
+   }
+  },
+  "MORPH-1": {
+   "type": "Morph",
+   "floorIndex": 0,
+   "layerIndex": 60,
+   "drawIndex": 7,
+   "id": "MO - 001",
+   "details": {
+    "origin": {
+     "x": 1,
+     "y": 2,
+     "z": 0
+    },
+    "xAxis": {
+     "x": 1,
+     "y": 0,
+     "z": 0
+    },
+    "yAxis": {
+     "x": 0,
+     "y": 1,
+     "z": 0
+    },
+    "zAxis": {
+     "x": 0,
+     "y": 0,
+     "z": 1
+    },
+    "body": {
+     "vertices": [
+      {
+       "x": 0,
+       "y": 0,
+       "z": 0
+      },
+      {
+       "x": 1,
+       "y": 0,
+       "z": 0
+      },
+      {
+       "x": 0,
+       "y": 1,
+       "z": 0
+      },
+      {
+       "x": 0,
+       "y": 0,
+       "z": 1
+      }
+     ]
+    },
+    "castShadow": true,
+    "receiveShadow": true,
+    "isAutoOnStoryVisibility": true,
+    "level": 0
+   }
+  },
+  "BEAM-1": {
+   "type": "Beam",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 9,
+   "id": "BE - 001",
+   "details": {
+    "begCoordinate": {
+     "x": 0,
+     "y": 5
+    },
+    "endCoordinate": {
+     "x": 6,
+     "y": 5
+    },
+    "zCoordinate": 0.2,
+    "level": 0.2,
+    "offset": 0,
+    "slantAngle": 0,
+    "arcAngle": 0,
+    "verticalCurveHeight": 0,
+    "beamShape": "Straight",
+    "isSlanted": false,
+    "isFlipped": false,
+    "profileAngle": 0,
+    "anchorPoint": "TopCenter",
+    "width": 0.2,
+    "height": 0.4,
+    "isWidthAndHeightLinked": false,
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    },
+    "holes": []
+   }
+  },
+  "CW-1": {
+   "type": "CurtainWall",
+   "floorIndex": 0,
+   "layerIndex": 54,
+   "drawIndex": 7,
+   "id": "CW - 001",
+   "details": {}
+  },
+  "HATCH-1": {
+   "type": "Hatch",
+   "floorIndex": 0,
+   "layerIndex": 44,
+   "drawIndex": 6,
+   "id": "",
+   "details": {
+    "coordinates": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 1,
+      "y": 0
+     },
+     {
+      "x": 1,
+      "y": 1
+     }
+    ],
+    "zCoordinate": 0
+   }
+  },
+  "SLAB-B": {
+   "type": "Slab",
+   "floorIndex": 0,
+   "layerIndex": 33,
+   "drawIndex": 7,
+   "id": "SLA - 101",
+   "details": {
+    "structureType": "Basic",
+    "thickness": 0.2,
+    "level": 0,
+    "offsetFromTop": 0,
+    "zCoordinate": 0,
+    "referencePlaneLocation": "Top",
+    "topMaterial": {
+     "overridden": false
+    },
+    "sideMaterial": {
+     "overridden": false
+    },
+    "bottomMaterial": {
+     "overridden": false
+    },
+    "cutFillPen": {
+     "overridden": false
+    },
+    "cutFillBackgroundPen": {
+     "overridden": false
+    },
+    "floorFill": {
+     "use": false,
+     "foregroundPen": 89,
+     "backgroundPen": -1,
+     "fillId": {
+      "guid": "06F2E4EB-9150-43AE-93ED-618E14DE01BE"
+     },
+     "use3DHatching": false,
+     "orientation": {
+      "type": "Global",
+      "origin": {
+       "x": 0,
+       "y": 0
+      },
+      "matrix00": 1,
+      "matrix10": 0,
+      "matrix01": 0,
+      "matrix11": 1,
+      "innerRadius": 0
+     }
+    },
+    "polygonOutline": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 2,
+      "y": 0
+     },
+     {
+      "x": 2,
+      "y": 2
+     },
+     {
+      "x": 0,
+      "y": 2
+     },
+     {
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "holes": [],
+    "buildingMaterialId": {
+     "guid": "B0000000-0000-0000-0000-0000000C0C0E"
+    }
+   }
+  }
+ }
+}

@@ -528,6 +528,34 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                       port: int | None = None) -> dict:
         return _mutate.move_elements(_tapir_conn(port, "move_elements"), guids, vector, confirm)
 
+    from archicad_mcp.core import modify as _modify
+
+    @mcp.tool(description=(
+        "Change existing elements. DRY-RUN BY DEFAULT: returns per element the "
+        "current and new value of every field, plus skipped elements with the reason "
+        "and warnings; pass dry_run=false to commit. Each change is {\"guid\", "
+        "...fields}. Any element: story (index, ground floor 0, or a story name; the "
+        "element keeps its height above the story and moves with it unless "
+        "keep_elevation=true), layer (name), draw_order (1 to 14, 0 = the type's "
+        "default). Walls, beams, slabs, columns, windows, doors, morphs, multi-plane "
+        "roofs, meshes, objects, lamps, texts and labels also take the fields of "
+        "Tapir's Modify<Type> command by its own names (describe_api_command "
+        "ModifyWalls lists them), e.g. height, thickness, sillHeight, lightIsOn. "
+        "Attribute fields (buildingMaterialId, compositeId, profileId, surfaceId, "
+        "lineTypeId, sectionFillId, ...) take a name. Lengths in metres, angles in "
+        "radians, text sizes in mm. Partial coordinates, dimensions and visibility "
+        "are completed from the current values. Elements Archicad would refuse "
+        "(another view's, hidden or locked layer, not reserved in Teamwork, inside a "
+        "hotlinked module, locked) are skipped with the reason, never unlocked. A "
+        "commit reads the elements back: 'modified' counts what landed, 'failed' "
+        "groups Archicad's refusals, 'not_applied' lists fields Archicad answered "
+        "success for but did not change."),
+        **_tool_meta("Modify elements", read_only=False, destructive=True))
+    @_guarded
+    def modify_elements(changes: list[dict], dry_run: bool = True,
+                        port: int | None = None) -> dict:
+        return _modify.modify_elements(_conn(port), changes, dry_run)
+
     @mcp.tool(description="Delete elements. IRREVERSIBLE. Refuses without confirm=true. "
                           "Archicad deletes only elements in the database of the "
                           "active window and still answers success for the rest "

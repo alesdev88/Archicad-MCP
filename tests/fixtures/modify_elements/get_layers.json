@@ -1,0 +1,23 @@
+{
+ "_source": "Recorded on MCP-Test, 2026-10-19, Archicad 29/5101, Tapir 1.5.10 (read only). Tapir GetLayers for layers 33 and 56 with fields isHidden, isLocked. Other layers answer the same shape.",
+ "layers": [
+  {
+   "attributeId": {
+    "guid": "443DF8BE-A000-4B57-B783-02432B9BA268"
+   },
+   "index": 33,
+   "name": "Structural - Bearing",
+   "isHidden": false,
+   "isLocked": false
+  },
+  {
+   "attributeId": {
+    "guid": "F9FE11C7-D8E4-499D-98CA-CA9165B64FF7"
+   },
+   "index": 56,
+   "name": "- Hidden",
+   "isHidden": true,
+   "isLocked": false
+  }
+ ]
+}
