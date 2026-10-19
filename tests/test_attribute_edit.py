@@ -295,6 +295,17 @@ def test_a_rename_onto_an_existing_or_near_name_is_skipped():
     assert all("already" in s["errors"][0] for s in out["skipped"])
 
 
+def test_the_same_attribute_changed_twice_in_one_call_is_refused():
+    """Each payload is built from the state before the call, so a second modify
+    of the same composite would resend the old name and undo the first."""
+    conn, _ = make()
+    out = edit_attributes(conn, [
+        {"modify": "Composite", "attribute": "100 Block Plastered", "name": "MCP-Canary Wall"},
+        {"modify": "Composite", "attribute": "100 Block Plastered", "useWith": ["Slab"]}])
+    assert len(out["planned"]) == 1
+    assert "one change" in out["skipped"][0]["errors"][0]
+
+
 def test_an_unknown_attribute_names_the_near_match():
     conn, _ = make()
     out = edit_attributes(conn, [{"modify": "Layer", "attribute": "Interior - Furniture",
@@ -586,7 +597,7 @@ def test_teamwork_layer_flags_only_warn():
     conn, _ = make(teamwork={"LayerSettingsDialog": "Free"})
     out = edit_attributes(conn, [
         {"modify": "Layer", "attribute": "Interior - Partition", "isHidden": True},
-        {"modify": "Layer", "attribute": "Interior - Partition", "name": "MCP-Canary X"}])
+        {"modify": "Layer", "attribute": "Interior - Furniture ", "name": "MCP-Canary X"}])
     assert [p["target"] for p in out["planned"]] == ["Interior - Partition"]
     assert "reserve_elements" in out["planned"][0]["warnings"][0]
     assert "reserve_elements" in out["skipped"][0]["errors"][0]

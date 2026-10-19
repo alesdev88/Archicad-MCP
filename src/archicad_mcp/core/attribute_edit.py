@@ -721,6 +721,21 @@ def _schema_errors(attr: AttrType, item: dict) -> list[str]:
     return out
 
 
+def _one_change_per_attribute(plans: list[Plan]) -> None:
+    """Every payload is built from the state before the call, so a second change
+    of the same attribute would resend what the first one changed."""
+    seen: dict[tuple[str, str], int] = {}
+    for position, p in enumerate(plans):
+        if p.errors or p.guid is None:
+            continue
+        key = (p.type_name, p.guid)
+        if key in seen:
+            p.errors.append(f"{p.type_name} '{p.target}' is already changed by change "
+                            f"{seen[key]}; put everything for one attribute in one change")
+        else:
+            seen[key] = position
+
+
 def _check_payloads(ctx: _Context, plans: list[Plan]) -> None:
     """References to an attribute created in the same call count only while its
     create is still good, so creates are checked first, in write order (a type
@@ -868,6 +883,7 @@ def edit_attributes(conn: ArchicadConnection, changes: list[dict],
         return field_lists()
     ctx = _Context(conn)
     plans = [_plan(ctx, change, i) for i, change in enumerate(changes)]
+    _one_change_per_attribute(plans)
     _check_payloads(ctx, plans)
     result: dict = {"dry_run": dry_run}
     _teamwork(ctx, plans, result)
