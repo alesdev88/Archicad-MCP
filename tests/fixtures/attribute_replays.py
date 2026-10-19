@@ -261,7 +261,8 @@ class WritableStore(AttributeStore):
             # Tapir clears useWith and rebuilds skins and separators from the request.
             record["useWith"] = fields.pop("useWith", [])
         if attr_type == "BuildingMaterial" and not created:
-            # Unverified in Archicad; the worst case: omitted texts are wiped.
+            # Archicad 29 and 30 keep them (live 19.10.2026); the store wipes them
+            # anyway, so the tests show the tool does not depend on that.
             for text in ("id", "manufacturer", "description"):
                 record[text] = fields.pop(text, "")
         if attr_type == "Line" and "lineType" not in fields:
@@ -324,8 +325,9 @@ class WritableStore(AttributeStore):
                 if key in self.available:
                     values.append({"propertyValue": {"value": self.values.get(key, "")}})
                 else:
-                    values.append({"error": {"code": -1,
-                                             "message": "Failed to get property value"}})
+                    # Live on AC 29 and AC 30 (19.10.2026).
+                    values.append({"error": {"code": -2130312908,
+                                             "message": "Not available or not evaluated property"}})
             out.append({"propertyValues": values})
         return {"propertyValuesForAttributes": out}
 

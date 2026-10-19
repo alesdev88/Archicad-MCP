@@ -1,7 +1,7 @@
 # edit_attributes and Teamwork object sets: Design
 
 **Date:** 2026-10-19
-**Status:** Design. Items 7 and the Teamwork half of item 10 of the 2026-10-19 Tapir command triage (`docs/superpowers/specs/2026-10-19-tapir-command-triage.md`, untracked in the main checkout).
+**Status:** Built on branch `feature/edit-attributes`; unit-tested; live-checked on MCP-Test (AC 29) and MCP-Test_30 (AC 30) with canary attributes; Teamwork not verified live. Items 7 and the Teamwork half of item 10 of the 2026-10-19 Tapir command triage (`docs/superpowers/specs/2026-10-19-tapir-command-triage.md`, untracked in the main checkout).
 **Repo:** https://github.com/alesdev88/Archicad-MCP.git
 
 ## Purpose
@@ -572,6 +572,25 @@ no existing office attribute is modified or deleted:
 5. Delete the canaries; the canary layer delete with zero elements on it.
 6. `reserve_elements(object_sets=...)` in a solo project refuses as "not a
    Teamwork project"; the definition tools' results are unchanged.
+
+### Live check, 2026-10-19
+
+MCP-Test (AC 29/5101) and MCP-Test_30 (AC 30/3001), Tapir 1.7.1, floor plan
+active, both solo projects. Script: create, modify and delete `MCP-Canary`
+attributes through `core.attribute_edit`; the full attribute table (name and
+GUID of all ten types) compared before and after: identical on both.
+
+| Step | Result (both versions) |
+|---|---|
+| Dry run of a create named `Interior - Partition` | skipped, `would_change` `isLocked: [false, true]`, `GetLayers` unchanged |
+| Creates: composite naming a building material created in the same call, the material (fill by name), a dashed line, a layer, a layer combination naming that layer | dry run wrote nothing; commit applied all 5, no `not_applied`; the composite's skin resolved to the new material |
+| Modifies: layer rename + lock, composite skin thickness only, material density only, line dash items, layer combination flag on the renamed layer | all applied; composite kept `useWith: ["Wall"]` and its separators; material kept id, manufacturer, description |
+| First run (before the fixes) | the layer combination failed with "no Layer named 'MCP-Canary Layer'": the layer was renamed first and the reference was looked up by name at send time; a line `period` 3 read back as 2 (the sum of its dash items); a new material had cut surface index 0. All three fixed and covered by tests |
+| Raw `CreateBuildingMaterials` overwrite without the texts | id, manufacturer and description kept: the "possible wipe" in the source notes does not happen on AC 29 or 30 |
+| Refusals (dry run) | misspelt `lineType`, unknown building material in a skin: skipped with the reason |
+| `reserve_elements(object_sets=["Layers"])` | "not a Teamwork project" |
+| Property values (after `SaveProject`) | reads did not crash either version; unavailable property: per-item error "Not available or not evaluated property", turned into a skip; stock "Brick" GWP read as "113.000". Writes not tried live (a canary material has no available property until classified) |
+| Cleanup | every canary deleted through `edit_attributes`; the empty canary layer deleted with the floor plan active |
 
 **Teamwork, not verified.** Whether `ClassificationsAndProperties` is the set
 Archicad wants for definitions, which set attribute property values need, and

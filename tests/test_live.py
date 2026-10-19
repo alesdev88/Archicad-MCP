@@ -395,3 +395,45 @@ def test_live_enum_round_trip_and_default_clear(definition_model):
         assert Definitions.load(conn).by_address["MCP Test/Enum Canary"].default_enum == []
     finally:
         conn.tapir("DeletePropertyDefinitions", {"propertyIds": [{"propertyId": pid}]})
+
+
+# ---------- edit_attributes: MCP-Canary attributes only, removed afterwards ----------
+
+def test_live_edit_attributes_canary_round_trip(definition_model):
+    from archicad_mcp.core.attribute_edit import edit_attributes
+    conn = definition_model
+
+    def table():
+        return {t: sorted((a["name"], a["attributeId"]["guid"]) for a in conn.tapir(
+            "GetAttributesByType", {"attributeType": t})["attributes"])
+            for t in ("Layer", "BuildingMaterial", "Composite")}
+
+    before = table()
+    canaries = [("Composite", "MCP-Canary Wall"), ("BuildingMaterial", "MCP-Canary Material"),
+                ("Layer", "MCP-Canary Layer")]
+    try:
+        out = edit_attributes(conn, [
+            {"create": "Composite", "name": "MCP-Canary Wall", "useWith": ["Wall"],
+             "skins": [{"type": "Core", "framePen": 1, "thickness": 0.2,
+                        "buildingMaterialId": "MCP-Canary Material"}],
+             "separators": [{"linePen": 1, "lineTypeId": "Solid"},
+                            {"linePen": 1, "lineTypeId": "Solid"}]},
+            {"create": "BuildingMaterial", "name": "MCP-Canary Material",
+             "description": "keep me", "cutFillIndex": "Common Brick", "cutSurfaceIndex": 1},
+            {"create": "Layer", "name": "MCP-Canary Layer", "intersectionGroupNr": 1}],
+            dry_run=False)
+        assert len(out["applied"]) == 3 and "not_applied" not in out, out
+        out = edit_attributes(conn, [
+            {"modify": "Composite", "attribute": "MCP-Canary Wall", "skins": [{"thickness": 0.25}]},
+            {"modify": "BuildingMaterial", "attribute": "MCP-Canary Material", "density": 1500}],
+            dry_run=False)
+        assert "not_applied" not in out and "failed" not in out, out
+        [wall] = [a for a in conn.tapir("GetComposites", {"attributeIds": [
+            {"attributeId": {"guid": g}} for n, g in table()["Composite"]
+            if n == "MCP-Canary Wall"]})["composites"]]
+        assert wall["useWith"] == ["Wall"] and wall["skins"][0]["thickness"] == 0.25
+    finally:
+        present = {(t, n) for t, rows in table().items() for n, _ in rows}
+        edit_attributes(conn, [{"delete": t, "attribute": n} for t, n in canaries
+                               if (t, n) in present], dry_run=False)
+    assert table() == before

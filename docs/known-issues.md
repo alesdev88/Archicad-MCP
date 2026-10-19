@@ -339,9 +339,9 @@ Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
 - **What an overwrite drops.** Fields not sent keep their value, except: a
   composite's `useWith` is cleared and its skins and separators rebuilt from the
   request; a pen table or profile overwrite with `sourceAttributeId` replaces all
-  pens or the geometry; a building material's `id`, `manufacturer` and
-  `description` reach Archicad as null when not sent (keep or clear unverified).
-  A `modify` resends those from the current attribute and refuses the
+  pens or the geometry. A building material's `id`, `manufacturer` and
+  `description` reach Archicad as null when not sent; AC 29 and AC 30 keep them
+  (live 19.10.2026), and a `modify` resends them anyway. A `modify` refuses the
   source-copy fields.
 - **Silent defaults.** A misspelt `lineType` makes the line Solid, a misspelt
   `subType` makes the fill Vector, an unknown `cutFillOrientation` becomes
@@ -354,8 +354,19 @@ Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
   deletes a layer only with the floor plan active and no floor-plan element on
   it, and says that other views are not counted.
 - **Nothing is undoable** except `SetPropertyValuesOfAttributes`.
-- **Property values of attributes** answer `{}` (neither success nor error) for a
-  property not available for the attribute; counted as not written.
+- **Property values of attributes.** Reading them did not crash Archicad 29 or
+  30 (live 19.10.2026, a canary and a stock building material, available and
+  unavailable properties): an unavailable property answers "Not available or
+  not evaluated property" per item, which the dry run turns into a skip. Values
+  read as display strings ("113.000" for a Real), so only String properties are
+  compared. A write that answers `{}` (neither success nor error) is counted as
+  not written. Writing was not tried live: a canary material has no available
+  property until it is classified.
+- **Seen live (19.10.2026, AC 29 and AC 30):** a Dashed line's `period` follows
+  its dash items (period 3 read back as 2, their sum), so a period-only change
+  is refused; new building materials start with cut surface and fill index 0
+  (no attribute) and new layers with intersection group 0, so a create without
+  them warns.
 
 ## Teamwork reservation: what Tapir reports and what is derived
 
