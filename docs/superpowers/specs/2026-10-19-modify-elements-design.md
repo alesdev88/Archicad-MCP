@@ -1,7 +1,7 @@
 # modify_elements: Design
 
 **Date:** 2026-10-19
-**Status:** Built on branch `feature/modify-elements` (2026-10-19): plan executed, final review fixes in, live dry run on MCP-Test. Not merged; the live commit and lock checks wait for Aleš.
+**Status:** Built on branch `feature/modify-elements` (2026-10-19): plan executed, final review fixes in, live dry run on MCP-Test. Not merged; live lock and commit checks done on MCP-Test.
 **Repo:** https://github.com/alesdev88/Archicad-MCP.git
 
 ## Purpose
@@ -493,8 +493,33 @@ After the review fixes the same dry run ran again, still reads only. SLA - 002
 had been deleted from MCP-Test in the meantime (not by this tool) and came back
 skipped as "not found"; the other three planned as before.
 
-Still owed, with Aleš's go-ahead: a LockElements / `General_Locked` check and
-one commit with readback on a scratch element.
+### Live writes, 2026-10-19 (Aleš's go-ahead, MCP-Test, scratch slabs only)
+
+Each run created a 2 x 2 m scratch slab at x 700, checked port 19723 answered
+"MCP-Test" with the floor plan active, and deleted the slab at the end (confirmed
+gone). Another Archicad 29 with a real project ("LZV") was open on 19725 and was
+not touched.
+
+- **Lock.** Before: `General_Locked` false, IsEditable true. After LockElements:
+  `General_Locked` true, **IsEditable false** (so IsEditable does reject an
+  element lock), and the dry run skipped the slab with "locked with Edit >
+  Locking". After UnlockElements: false and true again.
+- **Commit, first run.** Layer, thickness 0.25, draw order 9, story 1 with
+  `keep_elevation`. Report: `modified` 0, `partly_applied` the slab,
+  `not_applied` thickness (sent 0.25, read 0.3). An independent read agreed: story
+  1, z still 0 (level -3), layer and draw order changed, thickness unchanged. The
+  slab was Composite (the slab tool's default), and Archicad keeps the
+  composite's thickness while ModifySlabs answers success. CreateSlabs had
+  ignored its own thickness 0.2 the same way. The readback caught it; the dry run
+  had not.
+- **Fix.** Thickness on a wall, slab or roof whose structure is not Basic (and is
+  not made Basic in the same change by `structureType` or a lone
+  `buildingMaterialId`) is now skipped with the reason.
+- **Commit, second run** (new scratch slab): the dry run refused thickness on
+  the Composite slab; the commit of story 1 with `keep_elevation`, layer, draw
+  order 9, `structureType: Basic`, `buildingMaterialId: "Brick"` and thickness
+  0.25 reported `modified: 1`, and the independent read agreed on every field
+  (z still 0, level -3).
 
 ## Out of scope
 
