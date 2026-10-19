@@ -99,3 +99,97 @@ def fetch_latest(client: httpx.Client) -> Release:
                              raw["browser_download_url"])
     tag = data.get("tag_name", "?")
     return Release(tag, tag, assets, pinned=False)
+
+
+# A Mac bundle unpacks to a few MB; anything near this is not Tapir.
+MAX_UNPACKED_BYTES = 200 * 1024 * 1024
+_CHUNK = 64 * 1024
+
+
+def _user_agent() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return f"archicad-mcp/{version('archicad-mcp-server')}"
+    except PackageNotFoundError:
+        return "archicad-mcp"
+
+
+def make_client() -> httpx.Client:
+    return httpx.Client(timeout=60.0, follow_redirects=True,
+                        headers={"User-Agent": _user_agent()})
+
+
+def download(asset: Asset, dest_dir: Path, client: httpx.Client) -> Path:
+    """Stream the asset into dest_dir; refuse more bytes than it should have.
+
+    The size and hash are checked by verify(), not here, so that a dry run
+    can report a mismatch with both hashes instead of a bare failure.
+    """
+    target = dest_dir / asset.name
+    received = 0
+    try:
+        with client.stream("GET", asset.url, follow_redirects=True) as response:
+            if response.status_code != 200:
+                raise InstallError(
+                    f"Downloading {asset.name} failed: GitHub answered "
+                    f"{response.status_code} for {asset.url}.")
+            with target.open("wb") as out:
+                for chunk in response.iter_bytes(_CHUNK):
+                    received += len(chunk)
+                    if received > asset.size:
+                        raise InstallError(
+                            f"Downloading {asset.name} failed: more than the "
+                            f"expected {asset.size} bytes arrived, so it is not "
+                            "the release file (a proxy page, or a changed release).")
+                    out.write(chunk)
+    except httpx.HTTPError as exc:
+        raise InstallError(f"Downloading {asset.name} failed: {exc}") from exc
+    return target
+
+
+def sha256_of(path: Path) -> str:
+    import hashlib
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify(path: Path, asset: Asset) -> None:
+    size = path.stat().st_size
+    actual = sha256_of(path)
+    if size != asset.size or actual != asset.sha256:
+        raise InstallError(
+            f"{asset.name} does not match the release: expected {asset.size} bytes "
+            f"with sha256 {asset.sha256}, got {size} bytes with sha256 {actual}. "
+            "A proxy may have changed the download, or the release file changed. "
+            "Nothing was installed.")
+
+
+def check_mac_zip(path: Path, archicad_version: int) -> str:
+    """The bundle folder name, after checking every member stays inside it."""
+    import zipfile
+    from pathlib import PurePosixPath
+
+    expected = f"TapirAddOn_AC{archicad_version}_Mac.bundle"
+    try:
+        with zipfile.ZipFile(path) as zf:
+            members = zf.infolist()
+    except zipfile.BadZipFile as exc:
+        raise InstallError(f"{path.name} is not a zip file.") from exc
+    total = 0
+    for info in members:
+        name = info.filename
+        parts = PurePosixPath(name).parts
+        if name.startswith(("/", "\\")) or ".." in parts or not parts \
+                or parts[0] != expected or "\\" in name:
+            raise InstallError(
+                f"{path.name} holds '{name}', which is not inside {expected}/. "
+                "Refusing to unpack it.")
+        total += info.file_size
+    if not members:
+        raise InstallError(f"{path.name} is empty.")
+    if total > MAX_UNPACKED_BYTES:
+        raise InstallError(f"{path.name} unpacks to {total} bytes, far more than Tapir.")
+    return expected
