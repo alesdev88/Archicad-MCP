@@ -114,7 +114,11 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
             if from_file.name != expected:
                 raise InstallError(f"--from-file for Archicad {v} must be the release "
                                    f"file {expected}, not {from_file.name}.")
-        if running is None:
+        if add_ons_folder is not None:
+            # A folder named by hand: a running Archicad of that version loads
+            # its Tapir from its own folder, which says nothing about this one.
+            running = {}
+        elif running is None:
             running = running_tapir_versions()
 
         wanted = sorted({i.version for i in installations

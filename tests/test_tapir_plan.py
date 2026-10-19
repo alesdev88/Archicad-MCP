@@ -158,3 +158,12 @@ def test_plan_windows_not_writable_note(tmp_path, monkeypatch):
                         reference={29: apx}, prefs_dir=tmp_path / "none", platform="win32")
     assert row.action == "install" and row.writable is False
     assert any("administrator terminal" in n for n in row.notes)
+
+
+def test_running_tapir_is_explained_by_another_copy_on_disk(tmp_path):
+    # Two Archicad 30 folders; the running one loads the bundle in the first.
+    zips = {30: release_zip(tmp_path / "r", 30)}
+    with_tapir, empty = inst(tmp_path, 30), inst(tmp_path, 30, "Archicad 30 GER")
+    fake_bundle(with_tapir.add_ons, "TapirAddOn_AC30_Mac.bundle", RELEASE_BINARY)
+    rows = plan(tmp_path, [with_tapir, empty], zips, replace=False, running={30: "1.7.1"})
+    assert [(r.state, r.action) for r in rows] == [(UP_TO_DATE, "nothing"), (NO_TAPIR, "install")]

@@ -187,3 +187,14 @@ def test_server_main_dispatches_install_tapir(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         server_mod.main()
     assert exc.value.code == 7 and seen["argv"] == ["--dry-run"]
+
+
+def test_add_ons_folder_ignores_the_running_archicad(tmp_path):
+    # The running Archicad 30 loads its Tapir from its own folder, not this one.
+    installs, release, files = win_setup(tmp_path)
+    folder = tmp_path / "Elsewhere" / "Add-Ons"
+    folder.mkdir(parents=True)
+    report = run(add_ons_folder=folder, versions={30}, release=release, running={30: "1.7.1"},
+                 platform="win32", client=serving(files), prefs_dir=tmp_path / "noprefs",
+                 backups=tmp_path / "backups")
+    assert [(r.state, r.action) for r in report.rows] == [("no Tapir", "install")]

@@ -120,14 +120,22 @@ def build_plan(installations: list[Installation], release: Release, *,
                platform: str | None = None) -> list[Row]:
     platform = platform or sys.platform
     reference = reference or {}
+    found = {id(i): tapir_entries(i, prefs_dir=prefs_dir) for i in installations
+             if not versions or i.version in versions}
+    # A running Archicad that reports Tapir is explained by any installation of
+    # that version with a Tapir this installer can see; only when none has one
+    # is the running Tapir somewhere unknown (and then possibly loaded by any
+    # of them, so each is treated as having it).
+    explained = {i.version for i in installations if id(i) in found
+                 and any(e.kind in _LOADED for e in found[id(i)])}
     rows = []
     for inst in installations:
-        if versions and inst.version not in versions:
+        if id(inst) not in found:
             continue
         asset = release.assets.get(asset_name(inst.version, platform))
-        entries = tapir_entries(inst, prefs_dir=prefs_dir)
+        entries = found[id(inst)]
         running_version = (running or {}).get(inst.version)
-        if running_version and not any(e.kind in _LOADED for e in entries):
+        if running_version and inst.version not in explained:
             entries.append(TapirEntry(
                 Path(f"(loaded by the running Archicad {inst.version}; "
                      "location unknown)"), "running"))
