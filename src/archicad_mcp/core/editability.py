@@ -176,8 +176,9 @@ def _elsewhere(conn: ArchicadConnection, passed: list[str]) -> set[str]:
 
     IsEditable is not a database check from the floor plan: live on
     19.10.2026 it passed a Text in a layout database and a Line in a section
-    database, which element commands then pass over (and which a delete,
-    reading afterwards, would count as gone).
+    database. This read catches only the ones GetDetailsOfElements misses;
+    from the floor plan it found layout Drawings and section Objects live, so
+    those still pass (docs/known-issues.md).
     """
     if not passed or not conn.tapir_command_available("FilterElements"):
         return set()

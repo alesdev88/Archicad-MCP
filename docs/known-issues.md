@@ -242,13 +242,22 @@ where nothing is locked reads no layers and no properties.
 
 `IsEditable` is not a database check from the floor plan. Live on 19.10.2026,
 with the floor plan active, it passed a Text in a layout database and a Line in
-a section database as editable, though element commands act only on the floor
-plan's. Sent, such an element is passed over, and `delete_elements`, which
-counts what the read afterwards no longer finds, would have counted it as
-deleted. So all three tools also read the elements `IsEditable` passed with
-`GetDetailsOfElements` (`fields: ["type"]`) and refuse the ones it does not find
-as not found. `modify_elements` reads every element's details before planning
-and skips those it does not find, so it had this guard already.
+a section database as editable. All three tools therefore also read the
+elements `IsEditable` passed with `GetDetailsOfElements` (`fields: ["type"]`)
+and refuse the ones it does not find as not found.
+
+**That read does not catch the case seen so far.** Read-only on MCP-Test the
+same day, floor plan active: `GetDetailsOfElements` answered for all 8 layout
+Drawings and all 6 section-only Objects, as `IsEditable` passed them, so they
+are still sent. Its "not found" is a database check only in the other
+direction (from a Layout, for floor-plan labels, 28.09.2026). No
+`FilterElements` filter separates them either: `IsVisibleIn3D` drops them, but
+it drops every floor-plan 2D element too. Tapir `GetAllElements` of the current
+database is the one read that left them out (0 of 8, 0 of 6). Not yet known:
+whether a floor-plan delete, move or property write acts on such an element.
+`delete_elements` reports one it passed over as still there (its read finds
+it), so its count stays honest; the same applies to `modify_elements`, whose
+details read finds these elements too.
 
 The official `GetTypesOfElements` cannot answer "does it exist": live on
 28.09.2026 it answered 7203 "Element not supported" for every label, existing

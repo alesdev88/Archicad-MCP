@@ -15,7 +15,11 @@ whether one exists; Tapir GetDetailsOfElements can.
 
 IsEditable is not a database check in one direction: live on 19.10.2026, from
 the floor plan, it passed a Text in a layout database and a Line in a section
-database. The fake passes every database's elements from the floor plan.
+database. The fake passes every database's elements from the floor plan. Its
+GetDetailsOfElements still finds only the active database's elements, which
+holds from a Layout (28.09.2026) but not from the floor plan: there, live on
+19.10.2026, it found layout Drawings and section Objects too
+(docs/known-issues.md). The other-database tests cover the elements it misses.
 
 Why a locked element is locked comes from reads IsEditable does not make: the
 details' hotlinkId and layerIndex, the layer table (recorded on MCP-Test) and
@@ -294,8 +298,8 @@ def test_delete_refuses_without_confirm_and_touches_nothing():
 
 def test_delete_from_the_floor_plan_does_not_send_a_layout_text():
     # Live 19.10.2026: from the floor plan, IsEditable passed a Text in a
-    # layout database. Sent, DeleteElements leaves it, and the read afterwards,
-    # which does not find it either, counted it as deleted.
+    # layout database. In this fake the reads do not find it, so a delete
+    # that passes over it would count it as gone.
     project = Project(floor_plan=["a"], layout=["text"])
     out = delete_elements(project.connect(), ["a", "text"], confirm=True)
     assert out["deleted"] == 1
