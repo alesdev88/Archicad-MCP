@@ -109,10 +109,12 @@ def test_empty_items_returns_the_item_schema():
 
 def test_an_invalid_item_is_reported_by_index_and_nothing_is_sent():
     plan = Plan()
-    bad = {k: v for k, v in WALL.items() if k != "height"}
+    # endCoordinate is required in every Tapir release; height stopped being
+    # required in 1.7 (the favourite or the tool default supplies it).
+    bad = {k: v for k, v in WALL.items() if k != "endCoordinate"}
     result = create_elements(plan.connection(), "wall", [WALL, bad], dry_run=False)
     assert result["problems"][0]["index"] == 1
-    assert "height" in result["problems"][0]["message"]
+    assert "endCoordinate" in result["problems"][0]["message"]
     assert result.get("created", 0) == 0
     assert plan.sent("CreateWalls") == []
 
