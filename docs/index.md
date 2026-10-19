@@ -19,6 +19,9 @@ reference documents it links to.
 - **[Finding elements](query.md)**: the `find_elements` criteria language,
   `search_definitions`, and what each one reads from Archicad.
 - **[Writing rules](rules.md)**: every rule type, field, and the scoring model.
+- **[Reading and writing element data](element-data.md)**: classifications,
+  GDL and marker parameters and IFC properties next to property values, the
+  addresses for each, units, and the readback.
 - **[Schedule criteria codes](scheme-criteria-codes.md)**: the empirical
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](gdl-pipeline.md)**: mesh models to library parts with finish

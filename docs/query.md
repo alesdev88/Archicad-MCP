@@ -65,7 +65,9 @@ A property match:
 ```
 
 `property` is the address `find_elements`, `get_element_data`,
-`set_element_data` and rules accept. For a user-defined property it is
+`set_element_data` and rules accept (the latter two also take
+`classification:`, `gdl:`, `marker:` and `ifc:` addresses; see
+[element data](element-data.md)). For a user-defined property it is
 `Group/Name`. For a built-in it is the API name (`ModelView_LayerName`) when the
 official API has one, and otherwise the definition's GUID, which every tool also
 accepts. `measure_type` says which SI unit a numeric value is in.

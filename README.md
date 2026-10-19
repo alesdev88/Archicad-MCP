@@ -517,6 +517,19 @@ never unlocked. A commit reads the elements back, so a field Archicad answered
 success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
 or newer.
 
+`get_element_data` and `set_element_data` read and write more than property
+values, through one address syntax: `classification:<System>` for an element's
+classification item, `gdl:<name>` for a GDL parameter of an object, lamp, door
+or window, `marker:<name>` for a door's or window's marker parameter (the door
+number on many office stamps), and `ifc:<Pset>.<Name>` for a local IFC property.
+One call can mix them with properties. The dry run shows current and new for
+every change and names the ones it would skip; a commit sends classifications
+first and reads everything back, so a GDL value a Parameter Script replaced
+shows up under `not_applied`. Lengths are in metres and angles in radians
+throughout; the tool converts where Tapir takes degrees. IFC writes work only in
+Archicad 27 and older, where Tapir supports them. See
+[Reading and writing element data](docs/element-data.md).
+
 **Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
 confirm-gated. A dry run reports what can be known without touching the
 server: unknown GUIDs and elements already in your workspace. Who holds the
@@ -670,6 +683,8 @@ uv run python scripts/make_icon.py
 - **[Known issues](docs/known-issues.md)**: the property-read crash, the element
   ceiling, verified property names, and what is validated end-to-end.
 - **[Writing rules](docs/rules.md)**: every rule type, field, and the scoring model.
+- **[Reading and writing element data](docs/element-data.md)**: the addresses
+  `get_element_data` and `set_element_data` take, units, and the readback.
 - **[Schedule criteria codes](docs/scheme-criteria-codes.md)**: the empirical
   `Param_Type` and `Relation_Index` table, and how to extend it.
 - **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with

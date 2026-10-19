@@ -322,9 +322,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _definitions.search_definitions(_conn(port), query, kind, alternatives,
                                                editable_only, limit, offset)
 
-    @mcp.tool(description="Read type, layer, requested properties (address user "
-                          "properties as 'Group/Name') and optionally classifications "
-                          "for the given element GUIDs.",
+    @mcp.tool(description=(
+        "Read type, layer and requested values of the given elements. properties "
+        "takes addresses: a property ('Group/Name', a built-in name or a property GUID, "
+        "as search_definitions gives it); 'classification:<System>' (the item ID); "
+        "'gdl:<name>' (a GDL parameter of an object, lamp, door, window or other "
+        "library part element); 'marker:<name>' (a door's or window's marker "
+        "parameter, Tapir 1.7.1); 'ifc:<Pset>.<Name>' (an IFC property). Lengths in "
+        "metres, angles in radians, attribute-typed GDL parameters as attribute "
+        "indexes. 'gdl:*', 'marker:*', 'ifc:*' and 'classification:*' read every "
+        "value, with display names in 'labels'; at most 20 elements per wildcard "
+        "call. A kind that cannot be read for an element is named in its "
+        "'unreadable'. include_classifications adds every system's item GUID."),
               **_tool_meta("Read element data", read_only=True, destructive=False))
     @_guarded
     def get_element_data(guids: list[str], properties: list[str] | None = None,
@@ -333,18 +342,28 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _element_data.get_element_data(_conn(port), guids, properties,
                                               include_classifications)
 
-    @mcp.tool(description="Write element property values. DRY-RUN BY DEFAULT: returns "
-                          "planned changes (current -> new) without touching the model. "
-                          "Pass dry_run=false to commit. A commit returns 'applied'; "
-                          "'failed', Archicad's refusals grouped by code and message "
-                          "with a count and sample GUIDs; 'skipped' for changes not "
-                          "sent, with the reason (property type, enum, or an element "
-                          "Archicad would refuse: in another view's database than "
-                          "the active window's, on a hidden or locked layer, inside "
-                          "a hotlinked module, locked with Edit > Locking, or not "
-                          "reserved in Teamwork); and 'stopped' if a batch was "
-                          "refused outright after earlier batches landed.",
-              **_tool_meta("Write element properties", read_only=False, destructive=True))
+    @mcp.tool(description=(
+        "Write element data. DRY-RUN BY DEFAULT: returns planned changes (current "
+        "-> new) without touching the model; pass dry_run=false to commit. A change "
+        "is {guid, property, value}; property takes the addresses get_element_data "
+        "reads (a property, 'classification:<System>', 'gdl:<name>', 'marker:<name>', "
+        "'ifc:<Pset>.<Name>'), so one call can mix kinds. Classification values are "
+        "an item ID or GUID, null unclassifies. GDL and marker values in metres and "
+        "radians, an array as the whole list (rows for two dimensions), an attribute "
+        "parameter by index or name. IFC values are text, a number or true/false, "
+        "with an optional ifc_type (IfcLabel for text by default); Tapir writes IFC "
+        "properties only in Archicad 27 and older. A commit sends classifications "
+        "first and reads every change back: 'applied' counts what reads as sent; "
+        "'not_applied', changes Archicad answered success for but kept or replaced "
+        "(a GDL Parameter Script can); 'failed', Archicad's refusals grouped by code "
+        "and message with a count and sample GUIDs; 'skipped', changes not sent, "
+        "with the reason (value type, enum, unknown parameter, or an element "
+        "Archicad would refuse: in another view's database than the active window's, "
+        "on a hidden or locked layer, inside a hotlinked module, locked with Edit > "
+        "Locking, or not reserved in Teamwork); 'not_sent' and 'stopped' if a batch "
+        "was refused outright after earlier batches landed; 'unconfirmed' if the "
+        "read after the write failed."),
+              **_tool_meta("Write element data", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,
                          port: int | None = None) -> dict:
