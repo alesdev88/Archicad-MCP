@@ -119,13 +119,30 @@ GET_LAYER_ATTRIBUTES = {"attributes": [
     {"layerAttribute": {"attributeId": {"guid": "layer-2"}, "name": "A-ZONE"}},
 ]}
 
-TAPIR_IFC_PROPERTIES = {"elements": [
-    {"elementId": {"guid": "w-1"},
-     "properties": [{"propertySetName": "Pset_WallCommon",
-                     "name": "FireRating", "value": "EI60"}]},
-    {"elementId": {"guid": "w-2"}, "properties": []},
-    {"elementId": {"guid": "z-1"}, "properties": []},
-]}
+# The shape Tapir answers (1.5.1 to 1.7.1 source, and live on MCP-Test
+# 19.10.2026): one entry per requested element, in request order, GUIDs
+# uppercase, or an error entry.
+_IFC_PROPERTIES = {
+    "w-1": [{"propertySetName": "Pset_WallCommon", "name": "FireRating", "value": "EI60"}],
+    "w-2": [],
+    "z-1": [],
+}
+
+
+def tapir_ifc_properties(parameters):
+    entries = []
+    for el in parameters["elements"]:
+        guid = el["elementId"]["guid"]
+        if guid in _IFC_PROPERTIES:
+            entries.append({"elementId": {"guid": guid.upper()},
+                            "ifcProperties": _IFC_PROPERTIES[guid]})
+        else:
+            entries.append({"error": {"code": -2130313112,
+                                      "message": "The given element was not found"}})
+    return {"elementIFCProperties": entries}
+
+
+TAPIR_IFC_PROPERTIES = tapir_ifc_properties
 
 OFFICIAL = {
     "API.GetProductInfo": {"version": 29, "buildNumber": 5003, "languageCode": "INT"},
