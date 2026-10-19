@@ -36,12 +36,17 @@ NOT_FOUND = "not_found"
 HIDDEN = "hidden"
 UNRESERVED = "unreserved"
 LOCKED = "locked"
+ELSEWHERE = "elsewhere"
 
 _HEAD = {NOT_FOUND: "not found", HIDDEN: "not editable",
-         UNRESERVED: "not editable", LOCKED: "not editable"}
+         UNRESERVED: "not editable", LOCKED: "not editable",
+         ELSEWHERE: "in another view's database"}
 _CAUSE = {
     NOT_FOUND: ("it does not exist (deleted already, or a wrong GUID) or belongs "
                 "to another view"),
+    ELSEWHERE: ("it belongs to a layout, section, elevation, detail or worksheet, "
+                "not to the active window, and Archicad changes only the active "
+                "window's elements; open its view and retry"),
     HIDDEN: "it is on a hidden layer; turn the layer on in the active view and retry",
     UNRESERVED: "it is not reserved in Teamwork; reserve it (reserve_elements) and retry",
     LOCKED: ("it is inside a hotlinked module, on a locked layer, or otherwise "
@@ -104,11 +109,13 @@ def _details(conn: ArchicadConnection, chunk: list[str],
 
 
 def present(conn: ArchicadConnection, guids: list[str]) -> set[str]:
-    """The elements a read of the active window's database finds.
+    """The elements a Tapir GetDetailsOfElements read finds.
 
-    Tapir GetDetailsOfElements reads the current database, the one element
-    commands act on, and answers an error entry for an element that is not
-    there. The official GetTypesOfElements cannot stand in: live on 28.09.2026
+    It answers an error entry for an element that does not exist. It is a
+    database check only from windows other than the floor plan: from a Layout
+    it did not find floor-plan labels (28.09.2026), but from the floor plan it
+    found layout and section Texts (19.10.2026); _elsewhere() covers that
+    side. The official GetTypesOfElements cannot stand in: live on 28.09.2026
     it answered 7203 "Element not supported" for every label, existing ones
     included. An element with no entry at all counts as present: unconfirmed
     is not gone.
@@ -174,15 +181,24 @@ def classify(conn: ArchicadConnection,
 def _elsewhere(conn: ArchicadConnection, passed: list[str]) -> set[str]:
     """The elements IsEditable passed that the active window's database lacks.
 
-    IsEditable is not a database check from the floor plan: live on
-    19.10.2026 it passed a Text in a layout database and a Line in a section
-    database. This read catches only the ones GetDetailsOfElements misses;
-    from the floor plan it found layout Drawings and section Objects live, so
-    those still pass (docs/known-issues.md).
+    From the floor plan every read reaches the other databases. Live on
+    MCP-Test, 19.10.2026: IsEditable passed a layout Text and a section Text,
+    GetDetailsOfElements found them, MoveElements answered success and moved
+    neither, DeleteElements left both. Tapir GetAllElements lists only the
+    active window's database, so membership in it is the check. An empty or
+    failed listing checks nothing: the active database holds the editable
+    elements, so it cannot be empty.
     """
     if not passed or not conn.tapir_command_available("FilterElements"):
         return set()
-    return set(passed) - present(conn, passed)
+    try:
+        listed = {e["elementId"]["guid"].upper()
+                  for e in conn.tapir("GetAllElements").get("elements", [])}
+    except APIErrorBase:
+        return set()
+    if not listed:
+        return set()
+    return {g for g in passed if g.upper() not in listed}
 
 
 def refusals(conn: ArchicadConnection,
@@ -190,14 +206,15 @@ def refusals(conn: ArchicadConnection,
     """(guid -> why Archicad would refuse to change it, the active window type).
 
     The text of classify(), plus the elements of another database that
-    IsEditable passed, as not found. Only refused elements are keyed.
+    IsEditable passed, and the lock a locked element is held by where it can be
+    read. Only refused elements are keyed.
     """
     kinds, window = classify(conn, guids)
-    absent = _elsewhere(conn, [g for g in guids if g not in kinds])
-    if absent:
+    elsewhere = _elsewhere(conn, [g for g in guids if g not in kinds])
+    if elsewhere:
         if not kinds:
             window = active_window(conn)
-        kinds.update(dict.fromkeys(absent, NOT_FOUND))
+        kinds.update(dict.fromkeys(elsewhere, ELSEWHERE))
     texts = {g: reason_text(kinds[g], window) for g in guids if g in kinds}
     locked = [g for g in texts if kinds[g] == LOCKED]
     if locked:

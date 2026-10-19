@@ -44,6 +44,8 @@ def _conn_with_cells(cells: dict, set_results=None):
     tapir = dict(api_replays.TAPIR)
     # The elements named in `cells` exist; any other GUID does not.
     known = {guid for guid, _ in cells}
+    tapir["GetAllElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": g}} for g in sorted(known)]}
     tapir["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
         {"type": "Door"} if el["elementId"]["guid"] in known
         else {"error": {"code": -2130313112, "message": "Failed to get the details"}}
@@ -239,15 +241,17 @@ def _conn_with_filters(cells, editable, mine=None, teamwork=False, window="Floor
     """Like _conn_with_cells, with FilterElements answering per filter.
 
     `elsewhere` are elements of another database than the active window's:
-    GetDetailsOfElements does not find them, whatever IsEditable says.
-    `hotlinked` are inside a hotlinked module: their details carry a hotlinkId.
+    found by every read (live from the floor plan, 19.10.2026) but not listed
+    by GetAllElements. `hotlinked` are inside a hotlinked module: their details
+    carry a hotlinkId.
     """
     conn, core = _conn_with_cells(cells)
     details = core.tapir_responses["GetDetailsOfElements"]
+    listing = core.tapir_responses["GetAllElements"]
+    core.tapir_responses["GetAllElements"] = lambda params: {"elements": [
+        e for e in listing(params)["elements"] if e["elementId"]["guid"] not in elsewhere]}
 
     def detail(guid, item):
-        if guid in elsewhere:
-            return {"error": {"code": -2130313112, "message": "Failed to get the details"}}
         return {**item, "hotlinkId": {"guid": "HOTLINK-1"}} if guid in hotlinked else item
 
     core.tapir_responses["GetDetailsOfElements"] = lambda params: {"detailsOfElements": [
@@ -342,7 +346,7 @@ def test_plan_skips_an_element_of_another_database_that_iseditable_passed():
     planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert [p["guid"] for p in planned] == ["d-1"]
     assert [s["guid"] for s in skipped] == ["d-2"]
-    assert skipped[0]["reason"].startswith("not found")
+    assert skipped[0]["reason"].startswith("in another view's database")
 
 
 def test_set_element_data_sends_nothing_to_another_database():

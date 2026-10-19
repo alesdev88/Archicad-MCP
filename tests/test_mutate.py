@@ -13,13 +13,11 @@ did. The official GetTypesOfElements answers 7203 "Element not supported" for
 a label, as it did live for every label on 28.09.2026, so it cannot say
 whether one exists; Tapir GetDetailsOfElements can.
 
-IsEditable is not a database check in one direction: live on 19.10.2026, from
-the floor plan, it passed a Text in a layout database and a Line in a section
-database. The fake passes every database's elements from the floor plan. Its
-GetDetailsOfElements still finds only the active database's elements, which
-holds from a Layout (28.09.2026) but not from the floor plan: there, live on
-19.10.2026, it found layout Drawings and section Objects too
-(docs/known-issues.md). The other-database tests cover the elements it misses.
+From the floor plan the reads reach every database. Live on MCP-Test,
+19.10.2026: IsEditable passed layout and section Texts, GetDetailsOfElements
+found them, MoveElements answered success for them and moved nothing, and
+DeleteElements left them. GetAllElements listed only the floor plan's. The fake
+does the same; from any other window it sees only the active database.
 
 Why a locked element is locked comes from reads IsEditable does not make: the
 details' hotlinkId and layerIndex, the layer table (recorded on MCP-Test) and
@@ -76,8 +74,7 @@ class Project:
         return set().union(*self.databases.values())
 
     def _editable(self, guid):
-        reach = self.everywhere() if self.window == "FloorPlan" else self.active
-        return (guid in reach and guid not in self.locked
+        return (guid in self.reach() and guid not in self.locked
                 and guid not in self.hidden
                 and (not self.teamwork or guid in self.mine))
 
@@ -94,6 +91,10 @@ class Project:
             {"error": {"code": 7203, "message": "Element not supported"}}
             for _ in p["elements"]]}
 
+    def reach(self) -> set[str]:
+        """What the reads find: from the floor plan, every database."""
+        return self.everywhere() if self.window == "FloorPlan" else self.active
+
     def _detail(self, guid, fields):
         item = {"type": "Label", "floorIndex": 0,
                 "layerIndex": LOCKED_LAYER if guid in self.on_locked_layer else LAYER}
@@ -106,7 +107,7 @@ class Project:
             raise StandardAPIError(message="Invalid parameters", code=None)
         return {"detailsOfElements": [
             self._detail(e["elementId"]["guid"], p.get("fields"))
-            if e["elementId"]["guid"] in self.active
+            if e["elementId"]["guid"] in self.reach()
             else {"error": {"code": BAD_ID,
                             "message": "Failed to get the details of element"}}
             for e in p["elements"]]}
@@ -136,6 +137,8 @@ class Project:
             guid = item["elementId"]["guid"]
             if guid in self.move_errors:
                 results.append({"success": False, "error": self.move_errors[guid]})
+            elif guid not in self.active:
+                results.append({"success": True})     # and nothing moves
             else:
                 self.moved.append(guid)
                 results.append({"success": True})
@@ -148,6 +151,8 @@ class Project:
         official["API.GetPropertyValuesOfElements"] = self.property_values
         tapir = dict(api_replays.TAPIR)
         tapir.update({
+            "GetAllElements": lambda p: {"elements": [
+                {"elementId": {"guid": g}} for g in sorted(self.active)]},
             "GetAttributesByType": load("layers_by_type.json"),
             "GetLayers": layers_answer(locked={LOCKED_LAYER}),
             "FilterElements": self.filter_elements,
@@ -297,14 +302,14 @@ def test_delete_refuses_without_confirm_and_touches_nothing():
 
 
 def test_delete_from_the_floor_plan_does_not_send_a_layout_text():
-    # Live 19.10.2026: from the floor plan, IsEditable passed a Text in a
-    # layout database. In this fake the reads do not find it, so a delete
-    # that passes over it would count it as gone.
+    # Live 19.10.2026: from the floor plan, IsEditable passed a layout Text
+    # and DeleteElements left it, answering "Failed to delete the element."
     project = Project(floor_plan=["a"], layout=["text"])
     out = delete_elements(project.connect(), ["a", "text"], confirm=True)
     assert out["deleted"] == 1
     group = _only_group(out, "not_deleted")
-    assert group["guids"] == ["text"] and group["reason"].startswith("not found")
+    assert group["guids"] == ["text"]
+    assert group["reason"].startswith("in another view's database")
     assert out["active_window"] == "FloorPlan"
     [params] = project.sent("DeleteElements")
     assert params == {"elements": [{"elementId": {"guid": "a"}}]}
@@ -351,25 +356,45 @@ def test_move_with_everything_editable():
     assert project.moved == ["a", "b"]
 
 
-def test_move_from_the_floor_plan_does_not_send_a_section_line():
-    # Live 19.10.2026: from the floor plan, IsEditable passed a Line in a
-    # section database.
-    project = Project(floor_plan=["a"], section=["line"])
-    out = move_elements(project.connect(), ["a", "line"], VECTOR, confirm=True)
+def test_move_from_the_floor_plan_does_not_send_a_section_text():
+    # Live 19.10.2026: from the floor plan, MoveElements answered success for
+    # a layout Text and a section Text and moved neither, so counting its
+    # results reported them moved.
+    project = Project(floor_plan=["a"], section=["text"])
+    out = move_elements(project.connect(), ["a", "text"], VECTOR, confirm=True)
     assert out["moved"] == 1
     group = _only_group(out, "not_moved")
-    assert group["guids"] == ["line"] and group["reason"].startswith("not found")
+    assert group["guids"] == ["text"]
+    assert group["reason"].startswith("in another view's database")
     assert out["active_window"] == "FloorPlan"
     assert project.moved == ["a"]
 
 
-def test_the_presence_check_reads_only_the_type():
-    # GetDetailsOfElements without `fields` builds every element's floor-plan
-    # polygons; the check needs only whether an entry comes back.
-    project = Project(floor_plan=["a", "b"], section=["line"])
-    move_elements(project.connect(), ["a", "b", "line"], VECTOR, confirm=True)
-    reads = project.sent("GetDetailsOfElements")
-    assert reads and all(p["fields"] == ["type"] for p in reads)
+def test_the_database_check_is_one_listing_of_the_active_database():
+    project = Project(floor_plan=["a", "b"], section=["text"])
+    move_elements(project.connect(), ["a", "b", "text"], VECTOR, confirm=True)
+    assert len(project.sent("GetAllElements")) == 1
+    assert project.sent("GetDetailsOfElements") == []
+
+
+def test_an_empty_listing_refuses_nothing():
+    # The active database holds the editable elements, so an empty answer is
+    # a failed read, not proof that every element is elsewhere.
+    project = Project(floor_plan=["a"])
+    conn = project.connect()
+    project.core.tapir_responses["GetAllElements"] = {"elements": []}
+    out = move_elements(conn, ["a"], VECTOR, confirm=True)
+    assert out == {"requested": 1, "moved": 1}
+
+
+def test_lowercase_guids_are_matched_against_the_listing():
+    project = Project(floor_plan=["A1"])
+    conn = project.connect()
+    project.core.tapir_responses["FilterElements"] = lambda p: {"elements": p["elements"]}
+    project.core.tapir_responses["MoveElements"] = lambda p: {"executionResults": [
+        {"success": True} for _ in p["elementsWithMoveVectors"]]}
+    out = move_elements(conn, ["a1"], VECTOR, confirm=True)
+    assert out == {"requested": 1, "moved": 1}
 
 
 def test_move_refuses_without_confirm_and_touches_nothing():
