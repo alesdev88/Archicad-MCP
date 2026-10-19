@@ -40,6 +40,9 @@ WRITERS = {
     "run_script", "apply_changeset",
     "edit_property_definitions", "edit_classifications", "import_definitions",
     "create_swept_beam", "create_road_marking",
+    # Writes into Archicad's Add-Ons folder: outside the project, still a file
+    # change a client must ask about.
+    "install_tapir",
 }
 
 # Writes that change only transient application state, never project data or a

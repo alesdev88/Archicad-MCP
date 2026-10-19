@@ -223,6 +223,10 @@
       "description": "Run a publisher set."
     },
     {
+      "name": "install_tapir",
+      "description": "Install the pinned Tapir add-on into Archicad's Add-Ons folder. Dry run by default."
+    },
+    {
       "name": "read_schedule_scheme",
       "description": "Read an exported Scheme Settings XML file and explain what it does."
     },
