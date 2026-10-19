@@ -9,6 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from archicad_mcp.tapir_install.install import backup_root
 from archicad_mcp.tapir_install.plan import Row
 from archicad_mcp.tapir_install.release import (
     InstallError,
@@ -61,9 +62,9 @@ def format_report(report: Report) -> str:
             lines.append(f"  {o.restart_note}")
         else:
             lines.append(f"Archicad {o.version}: not installed. {o.error}")
-            if o.restored is False:
-                lines.append("  Undoing the partial change failed too: check the "
-                             "Add-Ons folder and the backup folder by hand.")
+            if o.restored is False and o.backup is None:
+                lines.append(f"  Undoing the partial change failed too: check "
+                             f"{o.add_ons} by hand.")
     lines += report.notes
     return "\n".join(lines).rstrip() + "\n"
 
@@ -75,9 +76,10 @@ def _ask(question: str) -> bool:
         return False
 
 
-def _prompting(release: Release):
+def _prompting(release: Release, backups: Path, shown: list[bool]):
     def confirm(rows: list[Row]) -> list[Row]:
-        print(format_plan(release, rows))
+        print(format_plan(release, rows))  # every row, with any failed check in its notes
+        shown.append(True)
         chosen = []
         installs = [r for r in rows if r.action == "install"]
         if installs and _ask(f"Install Tapir {release.version} into "
@@ -85,8 +87,8 @@ def _prompting(release: Release):
             chosen += installs
         for r in rows:
             if r.action == "replace" and _ask(
-                    f"Archicad {r.inst.version} has the Tapir listed above. Move it to "
-                    f"a backup folder and install Tapir {release.version}?"):
+                    f"Archicad {r.inst.version} has the Tapir listed above. Move it to a "
+                    f"new backup folder in {backups} and install Tapir {release.version}?"):
                 chosen.append(r)
         return chosen
     return confirm
@@ -129,7 +131,8 @@ def _release(latest: bool, inject: dict) -> Release:
 
 def main(argv: list[str] | None = None, **inject) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
-    interactive = sys.stdin.isatty()
+    # A closed stdin (a script with fd 0 closed) leaves sys.stdin as None.
+    interactive = sys.stdin is not None and sys.stdin.isatty()
     try:
         release = _release(args.latest, inject)
         options = dict(versions=set(args.archicad) if args.archicad else None,
@@ -142,14 +145,17 @@ def main(argv: list[str] | None = None, **inject) -> int:
                 return 1 if report.errors else 0
             if any(r.action in ("install", "replace") for r in report.rows):
                 print("Nothing was written. Pass --yes to install.")
-                return 2
-            return 0
-        confirm = None if args.yes else _prompting(release)
+                return 1 if report.errors else 2
+            return 1 if report.errors else 0
+        shown: list[bool] = []
+        platform = inject.get("platform")
+        backups = inject.get("backups") or backup_root(platform)
+        confirm = None if args.yes else _prompting(release, backups, shown)
         report = run(dry_run=False, confirm_rows=confirm, **options)
     except InstallError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(format_report(report) if args.yes else _outcomes_only(report), end="")
+    print(_outcomes_only(report) if shown else format_report(report), end="")
     return 1 if report.errors or any(o.error for o in report.outcomes) else 0
 
 

@@ -76,11 +76,10 @@ class Report:
 
 
 def restore_hint(o: Outcome) -> str | None:
-    if o.backup is None:
+    if o.backup is None or o.installed is None:
         return None
-    return (f"to restore: quit Archicad {o.version}, move what is in {o.backup} "
-            f"(except backup.json) back to {o.add_ons}, and remove "
-            f"{o.installed}")
+    return (f"to restore: quit Archicad {o.version}, remove {o.installed}, then "
+            f"move what is in {o.backup} (except backup.json) back to {o.add_ons}")
 
 
 def _one_version(versions: set[int] | None, flag: str) -> int:
@@ -105,6 +104,8 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
             release = fetch_latest(client) if latest else load_pinned()
         if add_ons_folder is not None:
             v = _one_version(versions, "--add-ons-folder")
+            if not add_ons_folder.is_dir():
+                raise InstallError(f"--add-ons-folder {add_ons_folder} is not a folder.")
             installations = [Installation(v, add_ons_folder.parent, add_ons_folder)]
         elif installations is None:
             installations = find_installations(platform)
@@ -114,6 +115,8 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
             if from_file.name != expected:
                 raise InstallError(f"--from-file for Archicad {v} must be the release "
                                    f"file {expected}, not {from_file.name}.")
+            if not from_file.is_file():
+                raise InstallError(f"--from-file {from_file} does not exist.")
         if add_ons_folder is not None:
             # A folder named by hand: a running Archicad of that version loads
             # its Tapir from its own folder, which says nothing about this one.
@@ -140,28 +143,34 @@ def run(*, versions: set[int] | None = None, replace: bool = False, dry_run: boo
                 if asset.name.endswith(".zip"):
                     check_mac_zip(path, v)
                 reference[v] = path
-            except InstallError as exc:
+            except (InstallError, OSError) as exc:
                 errors[v] = str(exc)
 
         rows = build_plan(installations, release, versions=versions, replace=replace,
                           reference=reference, running=running, prefs_dir=prefs_dir,
                           platform=platform)
         for row in rows:
-            if row.inst.version in errors and row.action in ("install", "replace"):
-                row.action = "skip"
+            if row.inst.version in errors:
                 row.notes.append(errors[row.inst.version])
+                if row.action in ("install", "replace"):
+                    row.action = "skip"
         report = Report(release, rows, [], dry_run, errors, set(reference))
         if dry_run:
             report.notes.append("Dry run: the files were downloaded and checked, "
                                 "nothing was written.")
             return report
         todo = [r for r in rows if r.action in ("install", "replace")]
-        chosen = confirm_rows(todo) if confirm_rows is not None else todo
+        chosen = todo
+        if confirm_rows is not None and todo:
+            # The callback sees every row (to show the whole plan) and may
+            # only ever choose among the ones that have something to do.
+            picked = confirm_rows(rows)
+            chosen = [r for r in todo if any(r is p for p in picked)]
         for row in chosen:
             try:
                 staged = stage(reference[row.inst.version], row, work, platform=platform)
                 report.outcomes.append(apply_row(row, staged, platform=platform, backups=backups))
-            except InstallError as exc:
+            except (InstallError, OSError) as exc:
                 report.outcomes.append(Outcome(row.inst.version, row.inst.add_ons, error=str(exc)))
         return report
     finally:

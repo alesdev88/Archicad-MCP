@@ -8,7 +8,7 @@ import pytest
 
 from archicad_mcp.tapir_install import cli
 from archicad_mcp.tapir_install.detect import Installation
-from archicad_mcp.tapir_install.release import Asset, Release
+from archicad_mcp.tapir_install.release import Asset, InstallError, Release
 from archicad_mcp.tapir_install.run import run
 from tests.test_tapir_detect import fake_bundle
 from tests.test_tapir_plan import fake_release, inst, release_zip
@@ -198,3 +198,103 @@ def test_add_ons_folder_ignores_the_running_archicad(tmp_path):
                  platform="win32", client=serving(files), prefs_dir=tmp_path / "noprefs",
                  backups=tmp_path / "backups")
     assert [(r.state, r.action) for r in report.rows] == [("no Tapir", "install")]
+
+
+# ---------- final review fixes ----------
+
+def test_cli_interactive_shows_every_row_and_the_check_failures(tmp_path, monkeypatch, capsys):
+    installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork"})
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    code = cli.main([], installations=installs, release=release, running={}, platform="win32",
+                    backups=tmp_path / "backups", prefs_dir=tmp_path / "noprefs",
+                    client=serving(files))
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Archicad 29" in out and "different Tapir present" in out
+
+
+def test_cli_interactive_with_nothing_to_do_still_reports_hash_failures(tmp_path, monkeypatch, capsys):
+    installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork", 30: b"MZ fork"})
+    files = dict(files, **{"TapirAddOn_AC30_Win.apx": b"<html>prox</>"})  # same size
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    code = cli.main([], installations=installs, release=release, running={}, platform="win32",
+                    backups=tmp_path / "backups", prefs_dir=tmp_path / "noprefs",
+                    client=serving(files))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "No Archicad installation found" not in out
+    assert "sha256" in out and "Archicad 30" in out
+
+
+def test_cli_with_stdin_closed_writes_nothing(tmp_path, monkeypatch, capsys):
+    installs, release, files = win_setup(tmp_path)
+    monkeypatch.setattr(sys, "stdin", None)
+    code = cli.main([], installations=installs, release=release, running={}, platform="win32",
+                    backups=tmp_path / "backups", prefs_dir=tmp_path / "noprefs",
+                    client=serving(files))
+    assert code == 2 and not (installs[1].add_ons / "Tapir").exists()
+    assert "Pass --yes" in capsys.readouterr().out
+
+
+def test_cli_non_interactive_check_failure_exits_1(tmp_path, monkeypatch):
+    installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork", 30: b"MZ fork"})
+    files = dict(files, **{"TapirAddOn_AC30_Win.apx": b"<html>proxy</>"})
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    code = cli.main([], installations=installs, release=release, running={}, platform="win32",
+                    backups=tmp_path / "backups", prefs_dir=tmp_path / "noprefs",
+                    client=serving(files))
+    assert code == 1
+
+
+def test_from_file_that_does_not_exist_is_a_clean_error(tmp_path):
+    installs, release, files = win_setup(tmp_path)
+    with pytest.raises(InstallError, match="does not exist"):
+        win_run(tmp_path, installs, release, files, from_file=tmp_path / "TapirAddOn_AC29_Win.apx",
+                versions={29})
+
+
+def test_add_ons_folder_must_exist(tmp_path):
+    installs, release, files = win_setup(tmp_path)
+    with pytest.raises(InstallError, match="not a folder"):
+        win_run(tmp_path, None, release, files, add_ons_folder=tmp_path / "Typo" / "Add-Ons",
+                versions={30})
+
+
+def test_an_os_error_while_installing_one_row_does_not_lose_the_report(tmp_path, monkeypatch):
+    installs, release, files = win_setup(tmp_path)
+    import archicad_mcp.tapir_install.run as run_mod
+
+    def stage(downloaded, row, work, platform=None):
+        if row.inst.version == 29:
+            raise OSError("no space left")
+        return real_stage(downloaded, row, work, platform=platform)
+
+    real_stage = run_mod.stage
+    monkeypatch.setattr(run_mod, "stage", stage)
+    report = win_run(tmp_path, installs, release, files, dry_run=False)
+    assert [(o.version, bool(o.error)) for o in report.outcomes] == [(29, True), (30, False)]
+
+
+def test_replace_prompt_names_the_backup_folder(tmp_path, monkeypatch):
+    prompts = []
+    installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork"})
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": prompts.append(prompt) or "n")
+    cli.main(["--replace"], installations=installs, release=release, running={},
+             platform="win32", backups=tmp_path / "backups", prefs_dir=tmp_path / "noprefs",
+             client=serving(files))
+    assert any(str(tmp_path / "backups") in p for p in prompts)
+
+
+def test_restore_hint_removes_the_new_copy_first(tmp_path):
+    installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork"})
+    report = win_run(tmp_path, installs, release, files, dry_run=False, replace=True)
+    (o29,) = [o for o in report.outcomes if o.version == 29]
+    hint = run_mod_restore(o29)
+    assert hint.index("remove") < hint.index("move")
+
+
+def run_mod_restore(outcome):
+    from archicad_mcp.tapir_install.run import restore_hint
+    return restore_hint(outcome)

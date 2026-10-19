@@ -74,14 +74,14 @@ def test_replace_moves_old_copies_to_backup_with_manifest(tmp_path):
 def test_install_rolls_back_when_the_move_in_fails(tmp_path, monkeypatch):
     row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
     before = listing(row.inst.add_ons)
-    real_move = shutil.move
+    real = os.rename
 
     def move(src, dst):
         if Path(src) == apx:
             raise OSError("disk full")
-        return real_move(src, dst)
+        return real(src, dst)
 
-    monkeypatch.setattr(install_mod.shutil, "move", move)
+    monkeypatch.setattr(install_mod.os, "rename", move)
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.restored is True and "disk full" in out.error and out.installed is None
     assert listing(row.inst.add_ons) == before
@@ -90,14 +90,14 @@ def test_install_rolls_back_when_the_move_in_fails(tmp_path, monkeypatch):
 
 def test_windows_locked_apx_says_close_archicad(tmp_path, monkeypatch):
     row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
-    real_move = shutil.move
+    real = os.rename
 
     def move(src, dst):
         if Path(src) == apx:
             raise PermissionError("in use")
-        return real_move(src, dst)
+        return real(src, dst)
 
-    monkeypatch.setattr(install_mod.shutil, "move", move)
+    monkeypatch.setattr(install_mod.os, "rename", move)
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.error == "close Archicad 29 and retry" and out.restored is True
 
@@ -221,3 +221,126 @@ def test_install_never_overwrites_an_existing_target(tmp_path):
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.installed is None and out.error
     assert (row.inst.add_ons / "Tapir" / "TapirAddOn_AC29_Win.apx").read_bytes() == b"MZ surprise"
+
+
+# ---------- final review fixes ----------
+
+import errno
+
+
+def _two_win_rows(tmp_path):
+    """Two Archicad 29 folders, each with its own different Tapir, both to replace."""
+    rows = []
+    for name, old in (("Archicad 29", b"MZ fork INT"), ("Archicad 29 GER", b"MZ fork GER")):
+        sub = tmp_path / name.replace(" ", "_")
+        row, apx = win_row(sub, replace=True, existing=old)
+        rows.append((row, apx, old))
+    return rows
+
+
+def test_same_second_replaces_of_one_version_keep_both_backups(tmp_path):
+    backups = tmp_path / "b"
+    outs = []
+    for row, apx, _ in _two_win_rows(tmp_path):
+        outs.append(apply_row(row, apx, platform="win32", backups=backups, now=NOW))
+    assert all(o.error is None for o in outs)
+    assert outs[0].backup != outs[1].backup
+    kept = sorted((o.backup / "TapirAddOn_AC29_Win.apx").read_bytes() for o in outs)
+    assert kept == [b"MZ fork GER", b"MZ fork INT"]
+    for o in outs:
+        manifest = json.loads((o.backup / "backup.json").read_text())
+        assert [Path(e["from"]).parent for e in manifest["entries"]] == [o.add_ons]
+
+
+@pytest.mark.skipif(sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="POSIX permissions, not root")
+def test_permission_error_moving_out_never_guts_the_old_copy(tmp_path):
+    # Tapir/ not writable, the bundle inside writable: a rename is refused,
+    # and a copy-then-delete fallback would empty the bundle.
+    zipped = release_zip(tmp_path / "rel", 30)
+    i = inst(tmp_path, 30)
+    (i.add_ons / "Tapir").mkdir()
+    old = fake_bundle(i.add_ons / "Tapir", "TapirAddOn_AC30_Mac.bundle", b"a fork")
+    (row,) = build_plan([i], fake_release({30: zipped}), replace=True, reference={30: zipped},
+                        prefs_dir=tmp_path / "none", platform="darwin")
+    staged = fake_bundle(tmp_path / "stage", "TapirAddOn_AC30_Mac.bundle", RELEASE_BINARY)
+    (i.add_ons / "Tapir").chmod(0o555)
+
+    def elevate(commands):
+        raise install_mod.ElevationCancelled()
+
+    try:
+        out = apply_row(row, staged, platform="darwin", backups=tmp_path / "b", now=NOW,
+                        elevate=elevate)
+    finally:
+        (i.add_ons / "Tapir").chmod(0o755)
+    assert out.error == "cancelled at the administrator password dialog; nothing changed"
+    assert (old / "Contents" / "MacOS" / "TapirAddOn_AC30_Mac").read_bytes() == b"a fork"
+    assert not (tmp_path / "b").exists() or not any((tmp_path / "b").rglob("*.bundle"))
+
+
+def test_backup_on_another_drive_is_refused_without_changes(tmp_path, monkeypatch):
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    before = listing(row.inst.add_ons)
+
+    def rename(src, dst):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(install_mod.os, "rename", rename)
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.installed is None and "drive" in out.error
+    assert listing(row.inst.add_ons) == before
+
+
+def test_new_copy_from_another_drive_is_copied_in(tmp_path, monkeypatch):
+    row, apx = win_row(tmp_path)
+    real = os.rename
+
+    def rename(src, dst):
+        if Path(src) == apx:
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real(src, dst)
+
+    monkeypatch.setattr(install_mod.os, "rename", rename)
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.error is None and out.installed.read_bytes() == b"MZ release"
+
+
+def test_failed_rollback_still_says_where_the_old_copy_is(tmp_path, monkeypatch):
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    real = os.rename
+    backups = tmp_path / "b"
+
+    def rename(src, dst):
+        if Path(src) == apx or Path(src).is_relative_to(backups):
+            raise OSError("disk full")
+        return real(src, dst)
+
+    monkeypatch.setattr(install_mod.os, "rename", rename)
+    out = apply_row(row, apx, platform="win32", backups=backups, now=NOW)
+    assert out.restored is False and out.backup is not None
+    assert (out.backup / "TapirAddOn_AC29_Win.apx").read_bytes() == b"MZ old fork"
+    assert (out.backup / "backup.json").is_file()
+    assert str(out.backup) in out.error
+
+
+def test_successful_rollback_leaves_no_backup_folder(tmp_path, monkeypatch):
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    real = os.rename
+
+    def rename(src, dst):
+        if Path(src) == apx:
+            raise OSError("disk full")
+        return real(src, dst)
+
+    monkeypatch.setattr(install_mod.os, "rename", rename)
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.restored is True and out.backup is None
+    assert not any((tmp_path / "b").rglob("*")) if (tmp_path / "b").exists() else True
+
+
+def test_windows_admin_text_works_in_powershell(tmp_path):
+    row, _ = win_row(tmp_path)
+    text = windows_admin_text(row, executable=r"C:\Users\a\Claude\runtime\python.exe", uv_tool=False)
+    assert "PowerShell" in text
+    assert r'& "C:\Users\a\Claude\runtime\python.exe" -I -m archicad_mcp.tapir_install --archicad 29' in text

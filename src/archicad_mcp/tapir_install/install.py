@@ -6,6 +6,7 @@ after something moved is undone, so a failure leaves the folder as it was.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shlex
@@ -84,12 +85,14 @@ def windows_admin_text(row: Row, *, executable: str | None = None,
     executable = executable or sys.executable
     uv_tool = _uv_tool(executable) if uv_tool is None else uv_tool
     version = row.inst.version
+    # PowerShell (what Windows Terminal opens) needs the call operator in front
+    # of a quoted program path; without it the line is a parse error.
     command = (f"archicad-mcp install-tapir --archicad {version}" if uv_tool else
-               f'"{executable}" -I -m archicad_mcp.tapir_install --archicad {version}')
+               f'& "{executable}" -I -m archicad_mcp.tapir_install --archicad {version}')
     text = (f"Archicad {version}'s Add-Ons folder ({row.inst.add_ons}) needs "
-            "administrator rights, so nothing was changed. Open a terminal as "
-            "administrator (right-click Terminal or PowerShell, Run as administrator) "
-            f"and run: {command}")
+            "administrator rights, so nothing was changed. Open PowerShell as "
+            "administrator (right-click it, Run as administrator) and run: "
+            f"{command}")
     if row.asset is not None:
         text += (f". Or ask IT to download {row.asset.name} from {row.asset.url}, check "
                  f"that its sha256 is {row.asset.sha256}, copy it into "
@@ -147,6 +150,83 @@ def _write_manifest(backup: Path, row: Row, moves: list[tuple[Path, Path]], now:
     }, indent=2) + "\n")
 
 
+def _new_backup_folder(root: Path, version: int, now: datetime) -> Path:
+    """A folder no other run uses, even two installs of one version in one second."""
+    root.mkdir(parents=True, exist_ok=True)
+    base = f"AC{version}-{now:%Y%m%d-%H%M%S}"
+    for n in range(1, 1000):
+        folder = root / (base if n == 1 else f"{base}-{n}")
+        try:
+            folder.mkdir()
+            return folder
+        except FileExistsError:
+            continue
+    raise InstallError(f"Could not create a backup folder in {root}.")
+
+
+def _discard_backup(backup: Path | None) -> None:
+    """Remove a backup folder that holds nothing but its own backup.json."""
+    if backup is None or not backup.is_dir():
+        return
+    if any(p.is_file() and p.name != "backup.json" for p in backup.rglob("*")):
+        return
+    (backup / "backup.json").unlink(missing_ok=True)
+    _remove_empty_dirs(backup)
+
+
+def _cross_device(exc: OSError) -> bool:
+    # Windows reports ERROR_NOT_SAME_DEVICE (17); Python maps it to EXDEV.
+    return exc.errno == errno.EXDEV or getattr(exc, "winerror", None) == 17
+
+
+def _move_out(src: Path, dst: Path) -> None:
+    """Move an existing Tapir aside: a rename or nothing.
+
+    Never shutil.move: when a rename is refused it copies and then deletes,
+    and a delete that is refused halfway leaves the old Tapir gutted.
+    """
+    if os.path.lexists(dst):
+        raise InstallError(f"{dst} already exists; not moving {src} onto it.")
+    try:
+        os.rename(src, dst)
+    except OSError as exc:
+        if _cross_device(exc):
+            raise InstallError(
+                f"The backup folder {dst.parent} is on a different drive than {src}, so "
+                "the old Tapir cannot be moved there in one step. Nothing was changed. "
+                "Move it out of the Add-Ons folder by hand, then run again.") from exc
+        raise
+
+
+def _remove_new_copy(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _place(staged: Path, target: Path) -> bool:
+    """Move the new copy into place; True when it had to be copied instead."""
+    if os.path.lexists(target):
+        raise InstallError(f"{target} already exists; not overwriting it.")
+    try:
+        os.rename(staged, target)
+        return False
+    except OSError as exc:
+        if not _cross_device(exc):
+            raise
+    try:
+        if staged.is_dir():
+            shutil.copytree(staged, target, symlinks=True)
+        else:
+            shutil.copy2(staged, target)
+    except BaseException:
+        if os.path.lexists(target):
+            _remove_new_copy(target)  # only the partial new copy, never an old one
+        raise
+    return True
+
+
 def apply_row(row: Row, staged: Path, *, platform: str | None = None,
               backups: Path | None = None, now: datetime | None = None,
               elevate: Callable[[list[list[str]]], None] | None = None) -> Outcome:
@@ -156,69 +236,82 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
     tapir_dir = row.inst.add_ons / TAPIR_SUBFOLDER
     target = tapir_dir / staged.name
     entries = [e for e in row.entries if e.kind in MOVABLE] if row.action == "replace" else []
-    backup = ((backups or backup_root(platform))
-              / f"AC{row.inst.version}-{now:%Y%m%d-%H%M%S}") if entries else None
-    moves = [(e.path, backup / e.path.relative_to(row.inst.add_ons)) for e in entries]
+    if os.path.lexists(target) and target not in {e.path for e in entries}:
+        out.error = f"{target} already exists; not overwriting it."
+        return out
+    backup = None
+    moves: list[tuple[Path, Path]] = []
+    if entries:
+        backup = _new_backup_folder(backups or backup_root(platform), row.inst.version, now)
+        moves = [(e.path, backup / e.path.relative_to(row.inst.add_ons)) for e in entries]
+        # Written before anything moves, so a backup is never unlabelled.
+        _write_manifest(backup, row, moves, now)
+        out.backup = backup
 
     if not row.writable:
-        return _apply_elevated(row, out, staged, target, backup, moves, platform, now, elevate)
+        return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate)
 
     done: list[tuple[Path, Path]] = []
-    placed = False
-    made_tapir_dir = False
+    placed, copied, made_tapir_dir = None, False, False
     try:
         for src, dst in moves:
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(src, dst)
+            _move_out(src, dst)
             done.append((src, dst))
         if not tapir_dir.is_dir():
             tapir_dir.mkdir()
             made_tapir_dir = True
-        if target.exists():
-            raise InstallError(f"{target} already exists; not overwriting it.")
-        shutil.move(staged, target)
-        placed = True
+        copied = _place(staged, target)
+        placed = target
     except (OSError, InstallError) as exc:
-        if isinstance(exc, PermissionError) and not done:
+        if isinstance(exc, PermissionError) and not done and not made_tapir_dir:
             # The folder refused before anything changed: the not-writable path.
-            _remove_empty_dirs(backup)
             row.writable = False
-            return _apply_elevated(row, out, staged, target, backup, moves, platform, now, elevate)
-        out.restored = _roll_back(done, staged, target if placed else None)
-        if made_tapir_dir and not any(tapir_dir.iterdir()):
+            return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate)
+        out.restored = _roll_back(done, staged, placed, copied)
+        if made_tapir_dir and tapir_dir.is_dir() and not any(tapir_dir.iterdir()):
             tapir_dir.rmdir()
-        _remove_empty_dirs(backup)
         if isinstance(exc, PermissionError) and platform == "win32":
             out.error = f"close Archicad {row.inst.version} and retry"
         else:
             out.error = f"Installing into Archicad {row.inst.version} failed: {exc}"
+        if out.restored:
+            _discard_backup(backup)
+            out.backup = None
+        elif backup is not None:
+            out.error += (f". Putting the old Tapir back failed too: it is in {backup} "
+                          f"(backup.json lists where each piece came from); move it back "
+                          f"to {row.inst.add_ons} by hand.")
         return out
-    if backup is not None:
-        _write_manifest(backup, row, done, now)
-        out.backup = backup
     out.installed = target
     return out
 
 
-def _roll_back(done: list[tuple[Path, Path]], staged: Path, placed: Path | None) -> bool:
+def _roll_back(done: list[tuple[Path, Path]], staged: Path, placed: Path | None,
+               copied: bool) -> bool:
     ok = True
     if placed is not None:
         try:
-            shutil.move(placed, staged)
+            if copied:
+                _remove_new_copy(placed)  # the staged original is still there
+            else:
+                os.rename(placed, staged)
         except OSError:
             ok = False
     for src, dst in reversed(done):
         try:
-            shutil.move(dst, src)
+            os.rename(dst, src)
         except OSError:
             ok = False
     return ok
 
 
 def _apply_elevated(row: Row, out: Outcome, staged: Path, target: Path, backup: Path | None,
-                    moves: list[tuple[Path, Path]], platform: str, now: datetime,
+                    moves: list[tuple[Path, Path]], platform: str,
                     elevate: Callable[[list[list[str]]], None] | None) -> Outcome:
     if platform != "darwin":
+        _discard_backup(backup)
+        out.backup = None
         out.error = windows_admin_text(row)
         return out
     elevate = elevate or _osascript_elevate
@@ -226,6 +319,9 @@ def _apply_elevated(row: Row, out: Outcome, staged: Path, target: Path, backup: 
     # moves need administrator rights.
     for _, dst in moves:
         dst.parent.mkdir(parents=True, exist_ok=True)
+        if os.path.lexists(dst):
+            out.error = f"{dst} already exists; not moving onto it."
+            return out
     commands = [["mv", str(src), str(dst)] for src, dst in moves]
     commands += [["mkdir", "-p", str(target.parent)], ["mv", str(staged), str(target)]]
     if backup is not None:
@@ -233,29 +329,33 @@ def _apply_elevated(row: Row, out: Outcome, staged: Path, target: Path, backup: 
     try:
         elevate(commands)
     except ElevationCancelled:
-        _remove_empty_dirs(backup)
+        _discard_backup(backup)
+        out.backup = None
         out.error = "cancelled at the administrator password dialog; nothing changed"
         return out
     except InstallError as exc:
         moved = [(src, dst) for src, dst in moves if dst.exists() and not src.exists()]
-        if moved or target.exists():
-            undo = [["mv", str(dst), str(src)] for src, dst in reversed(moved)]
-            if target.exists() and not staged.exists():
-                undo.insert(0, ["mv", str(target), str(staged)])
+        undo = [["mv", str(dst), str(src)] for src, dst in reversed(moved)]
+        if target.exists() and not staged.exists():
+            undo.insert(0, ["mv", str(target), str(staged)])
+        out.restored = True
+        if undo:
             try:
                 elevate(undo)
-                out.restored = True
             except InstallError:
                 out.restored = False
-        _remove_empty_dirs(backup)
         out.error = f"Installing into Archicad {row.inst.version} failed: {exc}"
+        if out.restored:
+            _discard_backup(backup)
+            out.backup = None
+        elif backup is not None:
+            out.error += (f". Putting the old Tapir back failed too: it is in {backup}, "
+                          "owned by the administrator account until it is moved back "
+                          f"to {row.inst.add_ons} with administrator rights.")
         return out
     if not target.exists():
-        out.error = (f"The administrator step finished but {target} is missing. "
-                     + (f"The old copy is in {backup}." if backup else ""))
+        out.error = (f"The administrator step finished but {target} is missing."
+                     + (f" The old copy is in {backup}." if backup else ""))
         return out
-    if backup is not None:
-        _write_manifest(backup, row, moves, now)
-        out.backup = backup
     out.installed = target
     return out
