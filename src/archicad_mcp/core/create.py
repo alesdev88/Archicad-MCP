@@ -9,9 +9,7 @@ door, the element a dimension measures) that Archicad would accept.
 from __future__ import annotations
 
 import difflib
-import json
 from dataclasses import dataclass
-from functools import lru_cache
 
 import jsonschema
 from multiconn_archicad.errors import APIErrorBase
@@ -19,8 +17,8 @@ from multiconn_archicad.errors import APIErrorBase
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.editability import active_window, refusals
 from archicad_mcp.extract import _fetch_types
-from archicad_mcp.gateway.registry import (DEFINITIONS_DIR, LOCAL_DEFINITIONS,
-                                           _load_js_json, build_registry)
+from archicad_mcp.gateway.registry import build_registry
+from archicad_mcp.tapir_requirements import require_tapir_command
 
 FLOOR_PLAN = "FloorPlan"
 LAYOUT = "Layout"
@@ -120,32 +118,6 @@ def _lookup(element_type: str) -> tuple[str, CreateType] | None:
         if key in (name, f"{name}s", f"{name}es", spec.command.lower()):
             return name, spec
     return None
-
-
-@lru_cache(maxsize=1)
-def _released() -> frozenset[str]:
-    """Commands in the bundled release definitions."""
-    groups = _load_js_json(DEFINITIONS_DIR / "command_definitions.js", "gCommands")
-    return frozenset(c["name"] for g in groups for c in g.get("commands", []))
-
-
-@lru_cache(maxsize=1)
-def _fork_only() -> frozenset[str]:
-    """Commands that exist only in the local Tapir fork, not in any release."""
-    if not LOCAL_DEFINITIONS.exists():
-        return frozenset()
-    local = json.loads(LOCAL_DEFINITIONS.read_text(encoding="utf-8"))
-    return frozenset(c["name"] for g in local.get("groups", []) for c in g.get("commands", []))
-
-
-def _missing_command(name: str, spec: CreateType, version: str | None) -> dict:
-    if spec.command in _fork_only() and spec.command not in _released():
-        why = (f"{spec.command} exists only in the local Tapir fork build, and the "
-               "running add-on is not that build.")
-    else:
-        why = (f"The running Tapir add-on has no {spec.command} (it arrived in Tapir "
-               f"{version}). Update Tapir and restart Archicad.")
-    return {"error": why, "element_type": name}
 
 
 def _item_schema(spec: CreateType) -> dict:
@@ -282,10 +254,9 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     if not items:
         return {"element_type": name, "command": spec.command,
                 "since_tapir": info.version, "item_schema": schema}
-    if not conn.tapir_command_available(spec.command):
-        if not conn.tapir_available():
-            conn.tapir(spec.command)  # raises the install message
-        return _missing_command(name, spec, info.version)
+    refusal = require_tapir_command(conn, spec.command, "create_elements")
+    if refusal is not None:
+        return dict(refusal, element_type=name)
     problems = _problems(items, schema)
     if problems:
         return {"dry_run": dry_run, "element_type": name, "command": spec.command,

@@ -26,8 +26,9 @@ class Plan:
     """Element types by GUID, which elements Archicad would refuse, the favourites."""
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
-                 missing_commands=()):
+                 missing_commands=(), elsewhere=()):
         self.types = dict(types or {})
+        self.elsewhere = set(elsewhere)  # exist, but in another view's database
         self.refused = set(refused)
         self.favorites = dict(favorites or {})
         self.window = window
@@ -41,6 +42,10 @@ class Plan:
             "available": p["addOnCommandId"]["commandName"] not in self.missing_commands}
         tapir = dict(api_replays.TAPIR)
         tapir["GetCurrentWindowType"] = lambda p: {"currentWindowType": self.window}
+        # The active window's database: the other-database guard checks hosts
+        # against this list (core/editability.py _elsewhere).
+        tapir["GetAllElements"] = lambda p: {"elements": [
+            {"elementId": {"guid": g}} for g in self.types if g not in self.elsewhere]}
         tapir["FilterElements"] = lambda p: {"elements": [
             e for e in p["elements"]
             if e["elementId"]["guid"] in self.types
@@ -213,5 +218,14 @@ def test_a_fork_only_command_is_named_as_such_when_missing():
     result = create_elements(plan.connection(), "railing",
                              [{"referenceLinePoints": [{"x": 0, "y": 0, "z": 0},
                                                        {"x": 3, "y": 0, "z": 0}]}])
-    assert "local Tapir fork" in result["error"]
-    assert "Update Tapir" not in result["error"]
+    assert "no Tapir release has yet" in result["error"]
+    assert "install-tapir" not in result["error"]
+
+
+def test_a_host_in_another_views_database_is_skipped():
+    # IsEditable passes such a host from the floor plan, and Archicad then
+    # quietly does nothing to it (live 19.10.2026); the guard catches it.
+    plan = Plan(types={W1: "Wall", W2: "Wall"}, elsewhere={W2})
+    result = create_elements(plan.connection(), "door", [door(W1), door(W2)])
+    assert [s["index"] for s in result["skipped"]] == [1]
+    assert "another view's database" in result["skipped"][0]["reason"]

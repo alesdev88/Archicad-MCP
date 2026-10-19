@@ -16,8 +16,8 @@ from archicad_mcp.connection import ArchicadConnection, tapir_missing_message
 
 # The Tapir commands every call of each tool needs. A command only some
 # arguments use stays out (require_tapir_command covers those where they are
-# chosen), and so do tools that degrade without Tapir. create_elements is left
-# to feature/create-all-elements, which adds its own per-type check.
+# chosen), and so do tools that degrade without Tapir. create_elements checks
+# itself, per element type, in core/create.py.
 # modify_elements checks itself: Tapir 1.5.9 for the GetDetailsOfElements
 # `fields` filter and `hotlinkId` (a parameter, not a command, so no entry here
 # could express it), and each Modify command per element type it is sent.
@@ -47,11 +47,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
 
 # Commands the synced definitions do not carry yet. Remove an entry once a
 # definitions sync brings the command in (a test fails when they disagree).
-EXPLICIT_VERSIONS: dict[str, tuple[str, str]] = {
-    "UpdateClassificationItems": (
-        "1.6.0", "not in the synced 1.5.9 definitions; added in Tapir 1.6.0, the "
-                 "release that also brought the other definition-editing commands"),
-}
+EXPLICIT_VERSIONS: dict[str, tuple[str, str]] = {}
 
 _LOCAL = Path(__file__).parent / "gateway" / "definitions" / "local_commands.json"
 

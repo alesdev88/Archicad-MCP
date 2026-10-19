@@ -45,13 +45,13 @@ def test_every_command_has_a_version_or_is_fork_only():
             assert c in req.FORK_ONLY or req.command_version(c), f"{tool}: {c}"
 
 
-def test_explicit_versions_agree_with_the_registry_where_it_has_them():
+def test_explicit_versions_only_cover_commands_the_definitions_lack():
     registry = build_registry()
     for name, (version, reason) in req.EXPLICIT_VERSIONS.items():
         assert reason
-        if name in registry and registry[name].version:
-            assert registry[name].version == version, (
-                f"{name}: the synced definitions now carry it; drop the explicit entry")
+        assert not (name in registry and registry[name].version), (
+            f"{name}: the synced definitions now carry it (since "
+            f"{registry[name].version}); drop the explicit entry")
 
 
 def test_fork_only_comes_from_the_local_overlay():

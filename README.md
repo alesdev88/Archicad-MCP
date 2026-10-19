@@ -32,10 +32,10 @@ does two jobs:
   `archicad-mcp install-tapir`, or ask the client to run the `install_tapir`
   tool (see [Install Tapir](#install-tapir)). Required for element creation,
   issues, IFC checks, highlighting, and publishing. The installer puts the
-  pinned Tapir **1.7.1** in place, checked by sha256; the server's tools have
-  been exercised live against **1.5.9** so far. The bundled command definitions
-  are synced from Tapir **1.5.8**, so a newer add-on than the definitions is
-  fine. Without the add-on, the tools that need it say which file to install,
+  pinned Tapir **1.7.1** in place, checked by sha256. The bundled command
+  definitions are synced from Tapir **1.7.1**; `create_elements` has been
+  exercised live against 1.7.1 on Archicad 29 and 30, the other tools against
+  1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
   and the rest degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
@@ -545,7 +545,7 @@ is already there.
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
-Tapir command surface (309 commands on the verified setup), for anything the
+Tapir command surface (343 commands with the 1.7.1 definitions), for anything the
 curated tools don't cover.
 
 **Library parts (full mode):** `list_gdl_sources`, `inspect_gdl_source`,
@@ -565,7 +565,7 @@ scripts** in the extension settings. There is no sandbox. See
 Reads and writes are separate tools throughout, and every tool declares whether
 it is read-only or destructive. Clients use those declarations to decide what to
 run without asking you: a read never prompts, a write always does. The gateway
-splits the command catalog the same way, 138 reads and 171 writes, classified by
+splits the command catalog the same way, 149 reads and 194 writes, classified by
 command name with anything unrecognised treated as a write. The write half also
 refuses to run without `confirm=true`, because it can reach `DeleteElements` and
 `QuitArchicad`.
@@ -677,7 +677,7 @@ uv run python scripts/make_icon.py
 - **[Scripting](docs/scripting.md)**: `run_script` and `apply_changeset`, the
   `ac` object a script sees, and the trust model behind the opt-in switch.
 - **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
-  every one of the 309 reachable commands, grouped, showing which have a
+  every one of the 343 reachable commands, grouped, showing which have a
   dedicated tool and which are gateway-only. Generated rather than written;
   refresh it with `uv run python scripts/build_dashboard.py` after a Tapir
   definitions sync, and the push publishes it.
