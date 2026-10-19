@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
@@ -117,13 +119,15 @@ def value_fit(value_type: str, value) -> tuple[object, str | None]:
     return value, None
 
 
-def plan_property_writes(conn: ArchicadConnection,
-                         changes: list[dict]) -> tuple[list[dict], list[dict]]:
+def plan_property_writes(conn: ArchicadConnection, changes: list[dict],
+                         refusals: dict[str, str] | None = None,
+                         ) -> tuple[list[dict], list[dict]]:
     """Check each change against the element's current cell and build its payload.
 
     Returns (planned, skipped). Planned items carry the finished
     SetPropertyValuesOfElements entry, so sending needs no further reads.
-    Nothing is written here.
+    Nothing is written here. `refusals` is editability.refusals() when the
+    caller has read it already; without it, it is read here.
     """
     prop_names = sorted({c["property"] for c in changes})
     guids = list(dict.fromkeys(c["guid"] for c in changes))
@@ -133,7 +137,8 @@ def plan_property_writes(conn: ArchicadConnection,
     ids = resolve_property_ids(conn, prop_names)
     # Archicad would refuse these one by one after the batch is sent;
     # core.editability finds them first (hotlinks, reservations, active window).
-    refusals, _ = editability.refusals(conn, guids)
+    if refusals is None:
+        refusals, _ = editability.refusals(conn, guids)
     planned: list[dict] = []
     skipped: list[dict] = []
     for c in changes:
@@ -163,6 +168,47 @@ def plan_property_writes(conn: ArchicadConnection,
                         "propertyValue": {"type": value_type, "status": "normal",
                                           "value": send}}})
     return planned, skipped
+
+
+def same_property_value(read, sent) -> bool:
+    if isinstance(sent, float) or isinstance(read, float):
+        try:
+            return math.isclose(float(read), float(sent), rel_tol=1e-9, abs_tol=1e-9)
+        except (TypeError, ValueError):
+            return False
+    return read == sent
+
+
+def read_back_properties(conn: ArchicadConnection, writes: list[dict],
+                         failed: list[dict]) -> list[dict]:
+    """Writes Archicad accepted that do not read back as sent:
+    [{guid, property, sent, read}].
+
+    Sliced by MAX_PROPERTY_FETCH_ELEMENTS to stay under the ceiling on wide
+    property reads.
+    """
+    refused = {(f["guid"], f["property"]) for f in failed}
+    # Only the last write to a cell can read back: an earlier value for the
+    # same element and property was overwritten on purpose, not lost.
+    last = {(w["guid"], w["property"]): w for w in writes}
+    done = [w for key, w in last.items() if key not in refused]
+    if not done:
+        return []
+    out = []
+    guids = list(dict.fromkeys(w["guid"] for w in done))
+    properties = sorted({w["property"] for w in done})
+    for i in range(0, len(guids), MAX_PROPERTY_FETCH_ELEMENTS):
+        in_slice = set(guids[i:i + MAX_PROPERTY_FETCH_ELEMENTS])
+        cells = fetch_property_cells(conn, guids[i:i + MAX_PROPERTY_FETCH_ELEMENTS],
+                                     properties)
+        for w in done:
+            if w["guid"] not in in_slice:
+                continue
+            read = cells.get(w["guid"], {}).get(w["property"], {}).get("value")
+            if not same_property_value(read, w["new"]):
+                out.append({"guid": w["guid"], "property": w["property"],
+                            "sent": w["new"], "read": read})
+    return out
 
 
 def send_property_writes(

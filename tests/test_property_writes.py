@@ -406,3 +406,24 @@ def test_lowercase_guids_in_teamwork_still_tell_reserved_from_unreserved():
         for e in passing(params)["elements"]]}
     _, skipped = plan_property_writes(conn, _TWO_CHANGES)
     assert skipped[0]["reason"] == HOTLINK_REASON
+
+
+def test_plan_uses_given_refusals_without_reading_them():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"})
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES,
+                                            refusals={"d-2": "not editable: test"})
+    assert [p["guid"] for p in planned] == ["d-1"]
+    assert skipped == [{"guid": "d-2", "property": "D/P", "reason": "not editable: test"}]
+    assert not any(c == "FilterElements" for c, _ in core.calls)
+
+
+def test_read_back_properties_names_the_writes_that_did_not_land():
+    from archicad_mcp.core.element_data import read_back_properties
+    conn, _ = _conn_with_cells({
+        ("d-1", "D/P"): {"type": "string", "status": "normal", "value": "001"},
+        ("d-2", "D/P"): {"type": "string", "status": "normal", "value": "0"}})
+    writes = [{"guid": "d-1", "property": "D/P", "new": "001"},
+              {"guid": "d-2", "property": "D/P", "new": "002"}]
+    assert read_back_properties(conn, writes, []) == [
+        {"guid": "d-2", "property": "D/P", "sent": "002", "read": "0"}]
+    assert read_back_properties(conn, writes, [{"guid": "d-2", "property": "D/P"}]) == []

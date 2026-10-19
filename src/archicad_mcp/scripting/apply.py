@@ -1,7 +1,6 @@
 """Send a stored changeset, exactly as it was previewed, and check the result."""
 from __future__ import annotations
 
-import math
 
 from multiconn_archicad.errors import APIErrorBase
 
@@ -9,57 +8,17 @@ from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core.element_data import (
     REPORT_CAP,
     cap_list,
-    group_failures,
     error_fields,
+    group_failures,
+    read_back_properties,
     send_property_writes,
 )
 from archicad_mcp.core.project import project_identity
-from archicad_mcp.extract import MAX_PROPERTY_FETCH_ELEMENTS, fetch_property_cells
 from archicad_mcp.gateway.execute import _dispatch
 from archicad_mcp.scripting.changesets import ChangesetError, ChangesetStore, summarize
 
 # Failed elements shown per recorded command; the count covers the rest.
 COMMAND_SAMPLE = 5
-
-
-def _same(read, sent) -> bool:
-    if isinstance(sent, float) or isinstance(read, float):
-        try:
-            return math.isclose(float(read), float(sent), rel_tol=1e-9, abs_tol=1e-9)
-        except (TypeError, ValueError):
-            return False
-    return read == sent
-
-
-def _read_back(conn, writes: list[dict], failed: list[dict]) -> list[dict]:
-    """Writes Archicad accepted but that do not read back as sent.
-
-    Slices large batches by MAX_PROPERTY_FETCH_ELEMENTS to avoid hitting
-    the ceiling on wide property queries.
-    """
-    refused = {(f["guid"], f["property"]) for f in failed}
-    # Only the last write to a cell can read back: an earlier value for the
-    # same element and property was overwritten on purpose, not lost.
-    last = {(w["guid"], w["property"]): w for w in writes}
-    done = [w for key, w in last.items() if key not in refused]
-    if not done:
-        return []
-    out = []
-    guids_list = list(dict.fromkeys(w["guid"] for w in done))
-    properties = sorted({w["property"] for w in done})
-    # Slice by MAX_PROPERTY_FETCH_ELEMENTS to avoid ceiling.
-    for i in range(0, len(guids_list), MAX_PROPERTY_FETCH_ELEMENTS):
-        slice_guids = guids_list[i:i + MAX_PROPERTY_FETCH_ELEMENTS]
-        in_slice = set(slice_guids)
-        cells = fetch_property_cells(conn, slice_guids, properties)
-        for w in done:
-            if w["guid"] not in in_slice:
-                continue
-            read = cells.get(w["guid"], {}).get(w["property"], {}).get("value")
-            if not _same(read, w["new"]):
-                out.append({"guid": w["guid"], "property": w["property"],
-                            "sent": w["new"], "read": read})
-    return out
 
 
 def _command_outcome(name: str, response) -> dict:
@@ -156,7 +115,7 @@ def apply_changeset(store: ChangesetStore, changeset_id: str, confirm: bool,
             sent = op["writes"][:count + len(refused)]
             stopped_at = "property writes"
             try:
-                mismatched.extend(_read_back(conn, sent, refused))
+                mismatched.extend(read_back_properties(conn, sent, refused))
             except (APIErrorBase, ArchicadUnavailableError) as exc:
                 if error is None:
                     error, stopped_at = exc, "readback"
