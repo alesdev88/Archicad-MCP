@@ -118,6 +118,31 @@ def read_classifications(conn: ArchicadConnection, guids: list[str],
     return out
 
 
+def find_system(index, label: str):
+    """The classification system an address names (a ClassificationIndex
+    system), or why there is none. `label` is the name, or "name version"
+    when two systems share a name."""
+    if label in index.systems:
+        return index.systems[label]
+    if label in index.ambiguous:
+        return (f"'{label}' names {len(index.ambiguous[label])} classification systems "
+                f"({', '.join(index.ambiguous[label])}); write the version too")
+    loose = [s for name, s in index.systems.items() if name.casefold() == label.casefold()]
+    if len(loose) == 1:
+        return loose[0]
+    known = ", ".join(sorted(index.systems)) or "none"
+    return f"no classification system '{label}'; the systems here: {known}"
+
+
+def item_code(index, guid: str | None) -> str | None:
+    """An item GUID as its ID (code); the GUID itself when the index lacks it."""
+    if guid is None:
+        return None
+    item = index.items.get(guid) or next(
+        (i for g, i in index.items.items() if g.upper() == guid.upper()), None)
+    return item.code if item else guid
+
+
 def read_ifc(conn: ArchicadConnection, guids: list[str]) -> dict[str, dict[str, str] | str]:
     """guid -> {"Pset.Name": text}, or the error message for the element."""
     out: dict[str, dict[str, str] | str] = {}

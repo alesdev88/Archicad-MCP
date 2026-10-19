@@ -4,10 +4,31 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core import editability
-from archicad_mcp.core.element_kinds import send_items
+from archicad_mcp.core.element_address import (
+    CLASSIFICATION,
+    GDL,
+    IFC,
+    MARKER,
+    PROPERTY,
+    Address,
+    parse_address,
+)
+from archicad_mcp.core.element_kinds import (
+    find_parameter,
+    find_system,
+    item_code,
+    read_classifications,
+    read_ifc,
+    read_parameters,
+    send_items,
+    tapir_requirement,
+)
+from archicad_mcp.core.element_values import read_value
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
+    MAX_PROPERTY_FETCH_ELEMENTS,
     PROPERTY_FETCH_CHUNK,
+    PropertyFetchTooWideError,
     _fetch_classifications,
     _fetch_types,
     fetch_property_cells,
@@ -179,20 +200,140 @@ def error_fields(exc: APIErrorBase | ArchicadUnavailableError) -> dict:
     return {"code": None, "message": str(exc)}
 
 
+# A wildcard reads every parameter of every element: hundreds of values per
+# door. It is for finding names on a few elements.
+WILDCARD_ELEMENT_LIMIT = 20
+
+_PREFIX = {CLASSIFICATION: "classification:", GDL: "gdl:", MARKER: "marker:", IFC: "ifc:"}
+_READ_COMMANDS = {GDL: "GetGDLParametersOfElements", MARKER: "GetMarkerParametersOfElements",
+                  IFC: "GetIFCPropertiesOfElements"}
+
+
+def check_width(guids: list[str]) -> None:
+    """Refuse a read across more elements than the property ceiling allows."""
+    if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
+        raise PropertyFetchTooWideError(
+            f"Refusing to read element data across {len(guids)} elements (limit "
+            f"{MAX_PROPERTY_FETCH_ELEMENTS}). Scope the query first, or raise "
+            "ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS if you accept the risk.")
+
+
+def parse_addresses(texts: list[str]) -> list[Address] | str:
+    out = []
+    for text in texts:
+        address = parse_address(text)
+        if isinstance(address, str):
+            return address
+        out.append(address)
+    return out
+
+
+def _parameter_values(item: dict, address: Address, reads: dict, requirement: str | None,
+                      unreadable: dict, labels: dict) -> None:
+    """Put a gdl:, marker: or ifc: address's values into item["properties"]."""
+    kind, guid, out = address.kind, item["guid"], item["properties"]
+    entry = None if requirement else reads.get(guid, {})
+    if requirement:
+        problem = requirement
+    elif kind == IFC:
+        problem = entry if isinstance(entry, str) else None
+    else:
+        problem = entry.get("error")
+    if problem:
+        unreadable[kind] = problem
+        if not address.wildcard:
+            out[address.text] = None
+        return
+    if kind == IFC:
+        if address.wildcard:
+            out.update({f"{_PREFIX[IFC]}{k}": v for k, v in entry.items()})
+        else:
+            out[address.text] = entry.get(address.key)
+        return
+    params = entry["params"]
+    if not address.wildcard:
+        param = find_parameter(params, address.key)
+        out[address.text] = read_value(param) if param else None
+        return
+    for name, param in params.items():
+        if "Hidden" in (param.get("flags") or []):
+            continue
+        key = f"{_PREFIX[kind]}{name}"
+        out[key] = read_value(param)
+        label = param.get("displayName")
+        if label and label != name:
+            labels[key] = label
+
+
 def get_element_data(conn: ArchicadConnection, guids: list[str],
                      properties: list[str] | None = None,
                      include_classifications: bool = False) -> dict:
-    properties = properties or []
+    addresses = parse_addresses(properties or [])
+    if isinstance(addresses, str):
+        return {"error": addresses}
+    if any(a.wildcard for a in addresses) and len(guids) > WILDCARD_ELEMENT_LIMIT:
+        return {"error": (f"a wildcard address reads every value of every element, so it "
+                          f"takes at most {WILDCARD_ELEMENT_LIMIT} elements per call "
+                          f"({len(guids)} given). Read one element with the wildcard, "
+                          "then name what you need for the rest.")}
+    kinds = {a.kind for a in addresses}
+    if kinds - {PROPERTY}:
+        check_width(guids)
+    names = [a.key for a in addresses if a.kind == PROPERTY]
     types = _fetch_types(conn, guids)
-    values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *properties])
+    values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *names])
     classif = _fetch_classifications(conn, guids) if include_classifications else {}
+
+    systems: dict[str, str] = {}
+    index = None
+    if CLASSIFICATION in kinds:
+        from archicad_mcp.core.definition_edit import ClassificationIndex
+        index = ClassificationIndex.load(conn)
+        for a in addresses:
+            if a.kind != CLASSIFICATION:
+                continue
+            found = list(index.systems.values()) if a.wildcard else [find_system(index, a.key)]
+            for system in found:
+                if isinstance(system, str):
+                    return {"error": system}
+                systems[system.guid] = system.label
+    classes = read_classifications(conn, guids, systems) if systems else {}
+    requirements = {k: tapir_requirement(conn, _READ_COMMANDS[k])
+                    for k in kinds & set(_READ_COMMANDS)}
+    reads: dict[str, dict] = {}
+    for kind in (GDL, MARKER):
+        if kind in requirements and requirements[kind] is None:
+            reads[kind] = read_parameters(conn, guids, kind)
+    if IFC in requirements and requirements[IFC] is None:
+        reads[IFC] = read_ifc(conn, guids)
+
     elements = []
     for g in guids:
         item = {"guid": g, "type": types.get(g, ""),
-                "layer": values.get(g, {}).get(BUILTIN_LAYER),
-                "properties": {p: values.get(g, {}).get(p) for p in properties}}
+                "layer": values.get(g, {}).get(BUILTIN_LAYER), "properties": {}}
+        labels: dict[str, str] = {}
+        unreadable: dict[str, str] = {}
+        for a in addresses:
+            if a.kind == PROPERTY:
+                item["properties"][a.text] = values.get(g, {}).get(a.key)
+            elif a.kind == CLASSIFICATION:
+                read = classes.get(g, {})
+                if a.wildcard:
+                    item["properties"].update(
+                        {f"{_PREFIX[CLASSIFICATION]}{label}": item_code(index, read.get(label))
+                         for label in systems.values()})
+                else:
+                    label = find_system(index, a.key).label
+                    item["properties"][a.text] = item_code(index, read.get(label))
+            else:
+                _parameter_values(item, a, reads.get(a.kind, {}), requirements[a.kind],
+                                  unreadable, labels)
         if include_classifications:
             item["classifications"] = classif.get(g, {})
+        if labels:
+            item["labels"] = labels
+        if unreadable:
+            item["unreadable"] = unreadable
         elements.append(item)
     return {"elements": elements}
 
