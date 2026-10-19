@@ -132,11 +132,11 @@
     },
     {
       "name": "get_element_data",
-      "description": "Read properties and classifications for specific elements."
+      "description": "Read properties, classifications, GDL and marker parameters and IFC properties of elements."
     },
     {
       "name": "set_element_data",
-      "description": "Write property values to elements. Dry-run by default."
+      "description": "Write properties, classifications, GDL and marker parameters and IFC properties. Dry-run by default."
     },
     {
       "name": "edit_property_definitions",

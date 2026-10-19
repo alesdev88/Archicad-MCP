@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+import math
+
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core import editability
+from archicad_mcp.core.element_address import (
+    CLASSIFICATION,
+    GDL,
+    IFC,
+    MARKER,
+    PROPERTY,
+    Address,
+    parse_address,
+)
+from archicad_mcp.core.element_kinds import (
+    find_parameter,
+    find_system,
+    item_code,
+    read_classifications,
+    read_ifc,
+    read_parameters,
+    send_items,
+    tapir_requirement,
+)
+from archicad_mcp.core.element_values import read_value
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
+    MAX_PROPERTY_FETCH_ELEMENTS,
     PROPERTY_FETCH_CHUNK,
+    PropertyFetchTooWideError,
     _fetch_classifications,
     _fetch_types,
     fetch_property_cells,
@@ -95,13 +119,15 @@ def value_fit(value_type: str, value) -> tuple[object, str | None]:
     return value, None
 
 
-def plan_property_writes(conn: ArchicadConnection,
-                         changes: list[dict]) -> tuple[list[dict], list[dict]]:
+def plan_property_writes(conn: ArchicadConnection, changes: list[dict],
+                         refusals: dict[str, str] | None = None,
+                         ) -> tuple[list[dict], list[dict]]:
     """Check each change against the element's current cell and build its payload.
 
     Returns (planned, skipped). Planned items carry the finished
     SetPropertyValuesOfElements entry, so sending needs no further reads.
-    Nothing is written here.
+    Nothing is written here. `refusals` is editability.refusals() when the
+    caller has read it already; without it, it is read here.
     """
     prop_names = sorted({c["property"] for c in changes})
     guids = list(dict.fromkeys(c["guid"] for c in changes))
@@ -111,7 +137,8 @@ def plan_property_writes(conn: ArchicadConnection,
     ids = resolve_property_ids(conn, prop_names)
     # Archicad would refuse these one by one after the batch is sent;
     # core.editability finds them first (hotlinks, reservations, active window).
-    refusals, _ = editability.refusals(conn, guids)
+    if refusals is None:
+        refusals, _ = editability.refusals(conn, guids)
     planned: list[dict] = []
     skipped: list[dict] = []
     for c in changes:
@@ -143,6 +170,47 @@ def plan_property_writes(conn: ArchicadConnection,
     return planned, skipped
 
 
+def same_property_value(read, sent) -> bool:
+    if isinstance(sent, float) or isinstance(read, float):
+        try:
+            return math.isclose(float(read), float(sent), rel_tol=1e-9, abs_tol=1e-9)
+        except (TypeError, ValueError):
+            return False
+    return read == sent
+
+
+def read_back_properties(conn: ArchicadConnection, writes: list[dict],
+                         failed: list[dict]) -> list[dict]:
+    """Writes Archicad accepted that do not read back as sent:
+    [{guid, property, sent, read}].
+
+    Sliced by MAX_PROPERTY_FETCH_ELEMENTS to stay under the ceiling on wide
+    property reads.
+    """
+    refused = {(f["guid"], f["property"]) for f in failed}
+    # Only the last write to a cell can read back: an earlier value for the
+    # same element and property was overwritten on purpose, not lost.
+    last = {(w["guid"], w["property"]): w for w in writes}
+    done = [w for key, w in last.items() if key not in refused]
+    if not done:
+        return []
+    out = []
+    guids = list(dict.fromkeys(w["guid"] for w in done))
+    properties = sorted({w["property"] for w in done})
+    for i in range(0, len(guids), MAX_PROPERTY_FETCH_ELEMENTS):
+        in_slice = set(guids[i:i + MAX_PROPERTY_FETCH_ELEMENTS])
+        cells = fetch_property_cells(conn, guids[i:i + MAX_PROPERTY_FETCH_ELEMENTS],
+                                     properties)
+        for w in done:
+            if w["guid"] not in in_slice:
+                continue
+            read = cells.get(w["guid"], {}).get(w["property"], {}).get("value")
+            if not same_property_value(read, w["new"]):
+                out.append({"guid": w["guid"], "property": w["property"],
+                            "sent": w["new"], "read": read})
+    return out
+
+
 def send_property_writes(
         conn: ArchicadConnection, planned: list[dict],
 ) -> tuple[int, list[dict], APIErrorBase | ArchicadUnavailableError | None]:
@@ -154,32 +222,21 @@ def send_property_writes(
     error rather than being lost to an exception. The error is None when every
     batch was sent; applied plus the failed count is then how many were sent.
     """
+    sent = send_items(conn.official, "API.SetPropertyValuesOfElements",
+                      "elementPropertyValues", [p["payload"] for p in planned],
+                      PROPERTY_FETCH_CHUNK)
     applied = 0
     failed: list[dict] = []
-    for start in range(0, len(planned), PROPERTY_FETCH_CHUNK):
-        chunk = planned[start:start + PROPERTY_FETCH_CHUNK]
-        try:
-            response = conn.official(
-                "API.SetPropertyValuesOfElements",
-                {"elementPropertyValues": [p["payload"] for p in chunk]})
-        except (APIErrorBase, ArchicadUnavailableError) as exc:
-            return applied, failed, exc
-        results = (response or {}).get("executionResults", [])
-        for i, p in enumerate(chunk):
-            # Lenient: missing/short executionResults (or a missing "success" key)
-            # are treated as success rather than crashing.
-            outcome = results[i] if i < len(results) else {}
-            if outcome.get("success", True):
-                applied += 1
-                continue
+    for p, outcome in zip(planned, sent.outcomes):
+        if outcome == "ok":
+            applied += 1
+        elif isinstance(outcome, dict):
             # Each failure names its element and Archicad's reason (6001 is a
             # Teamwork reservation, including elements inside a hotlink), so
             # the caller can act on it without a second query pass. Callers
             # group them with group_failures before reporting.
-            error = outcome.get("error") or {}
-            failed.append({"guid": p["guid"], "property": p["property"],
-                           "code": error.get("code"), "message": error.get("message")})
-    return applied, failed, None
+            failed.append({"guid": p["guid"], "property": p["property"], **outcome})
+    return applied, failed, sent.stopped
 
 
 def error_fields(exc: APIErrorBase | ArchicadUnavailableError) -> dict:
@@ -189,44 +246,148 @@ def error_fields(exc: APIErrorBase | ArchicadUnavailableError) -> dict:
     return {"code": None, "message": str(exc)}
 
 
+# A wildcard reads every parameter of every element: hundreds of values per
+# door. It is for finding names on a few elements.
+WILDCARD_ELEMENT_LIMIT = 20
+
+_PREFIX = {CLASSIFICATION: "classification:", GDL: "gdl:", MARKER: "marker:", IFC: "ifc:"}
+_READ_COMMANDS = {GDL: "GetGDLParametersOfElements", MARKER: "GetMarkerParametersOfElements",
+                  IFC: "GetIFCPropertiesOfElements"}
+
+
+def check_width(guids: list[str]) -> None:
+    """Refuse a read across more elements than the property ceiling allows."""
+    if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
+        raise PropertyFetchTooWideError(
+            f"Refusing to read element data across {len(guids)} elements (limit "
+            f"{MAX_PROPERTY_FETCH_ELEMENTS}). Scope the query first, or raise "
+            "ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS if you accept the risk.")
+
+
+def parse_addresses(texts: list[str]) -> list[Address] | str:
+    out = []
+    for text in texts:
+        address = parse_address(text)
+        if isinstance(address, str):
+            return address
+        out.append(address)
+    return out
+
+
+def _parameter_values(item: dict, address: Address, reads: dict, requirement: str | None,
+                      unreadable: dict, labels: dict) -> None:
+    """Put a gdl:, marker: or ifc: address's values into item["properties"]."""
+    kind, guid, out = address.kind, item["guid"], item["properties"]
+    entry = None if requirement else reads.get(guid, {})
+    if requirement:
+        problem = requirement
+    elif kind == IFC:
+        problem = entry if isinstance(entry, str) else None
+    else:
+        problem = entry.get("error")
+    if problem:
+        unreadable[kind] = problem
+        if not address.wildcard:
+            out[address.text] = None
+        return
+    if kind == IFC:
+        if address.wildcard:
+            out.update({f"{_PREFIX[IFC]}{k}": v for k, v in entry.items()})
+        else:
+            out[address.text] = entry.get(address.key)
+        return
+    params = entry["params"]
+    if not address.wildcard:
+        param = find_parameter(params, address.key)
+        out[address.text] = read_value(param) if param else None
+        return
+    for name, param in params.items():
+        if "Hidden" in (param.get("flags") or []):
+            continue
+        key = f"{_PREFIX[kind]}{name}"
+        out[key] = read_value(param)
+        label = param.get("displayName")
+        if label and label != name:
+            labels[key] = label
+
+
 def get_element_data(conn: ArchicadConnection, guids: list[str],
                      properties: list[str] | None = None,
                      include_classifications: bool = False) -> dict:
-    properties = properties or []
+    addresses = parse_addresses(properties or [])
+    if isinstance(addresses, str):
+        return {"error": addresses}
+    if any(a.wildcard for a in addresses) and len(guids) > WILDCARD_ELEMENT_LIMIT:
+        return {"error": (f"a wildcard address reads every value of every element, so it "
+                          f"takes at most {WILDCARD_ELEMENT_LIMIT} elements per call "
+                          f"({len(guids)} given). Read one element with the wildcard, "
+                          "then name what you need for the rest.")}
+    kinds = {a.kind for a in addresses}
+    if kinds - {PROPERTY}:
+        check_width(guids)
+    names = [a.key for a in addresses if a.kind == PROPERTY]
     types = _fetch_types(conn, guids)
-    values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *properties])
+    values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *names])
     classif = _fetch_classifications(conn, guids) if include_classifications else {}
+
+    systems: dict[str, str] = {}
+    index = None
+    if CLASSIFICATION in kinds:
+        from archicad_mcp.core.definition_edit import ClassificationIndex
+        index = ClassificationIndex.load(conn)
+        for a in addresses:
+            if a.kind != CLASSIFICATION:
+                continue
+            found = list(index.systems.values()) if a.wildcard else [find_system(index, a.key)]
+            for system in found:
+                if isinstance(system, str):
+                    return {"error": system}
+                systems[system.guid] = system.label
+    classes = read_classifications(conn, guids, systems) if systems else {}
+    requirements = {k: tapir_requirement(conn, _READ_COMMANDS[k])
+                    for k in kinds & set(_READ_COMMANDS)}
+    reads: dict[str, dict] = {}
+    for kind in (GDL, MARKER):
+        if kind in requirements and requirements[kind] is None:
+            reads[kind] = read_parameters(conn, guids, kind)
+    if IFC in requirements and requirements[IFC] is None:
+        reads[IFC] = read_ifc(conn, guids)
+
     elements = []
     for g in guids:
         item = {"guid": g, "type": types.get(g, ""),
-                "layer": values.get(g, {}).get(BUILTIN_LAYER),
-                "properties": {p: values.get(g, {}).get(p) for p in properties}}
+                "layer": values.get(g, {}).get(BUILTIN_LAYER), "properties": {}}
+        labels: dict[str, str] = {}
+        unreadable: dict[str, str] = {}
+        for a in addresses:
+            if a.kind == PROPERTY:
+                item["properties"][a.text] = values.get(g, {}).get(a.key)
+            elif a.kind == CLASSIFICATION:
+                read = classes.get(g, {})
+                if a.wildcard:
+                    item["properties"].update(
+                        {f"{_PREFIX[CLASSIFICATION]}{label}": item_code(index, read.get(label))
+                         for label in systems.values()})
+                else:
+                    label = find_system(index, a.key).label
+                    item["properties"][a.text] = item_code(index, read.get(label))
+            else:
+                _parameter_values(item, a, reads.get(a.kind, {}), requirements[a.kind],
+                                  unreadable, labels)
         if include_classifications:
             item["classifications"] = classif.get(g, {})
+        if labels:
+            item["labels"] = labels
+        if unreadable:
+            item["unreadable"] = unreadable
         elements.append(item)
     return {"elements": elements}
 
 
 def set_element_data(conn: ArchicadConnection, changes: list[dict],
                      dry_run: bool = True) -> dict:
+    from archicad_mcp.core import element_writes  # imports this module
+    plan = element_writes.plan(conn, changes)
     if dry_run:
-        prop_names = sorted({c["property"] for c in changes})
-        cells = fetch_property_cells(conn, [c["guid"] for c in changes], prop_names)
-        return {"dry_run": True, "planned_changes": [
-            {"guid": c["guid"], "property": c["property"],
-             "current": cells.get(c["guid"], {}).get(c["property"], {}).get("value"),
-             "new": c["value"]}
-            for c in changes]}
-    planned, skipped = plan_property_writes(conn, changes)
-    result: dict = {"dry_run": False, "applied": 0}
-    if planned:
-        applied, failed, error = send_property_writes(conn, planned)
-        result["applied"] = applied
-        if failed:
-            result["failed"] = group_failures(failed)
-        if error is not None:
-            # Earlier batches landed; an {"error"} alone would hide them.
-            result["stopped"] = error_fields(error)
-    if skipped:
-        result["skipped"] = skipped
-    return result
+        return element_writes.dry_run_result(plan)
+    return element_writes.commit(conn, plan)

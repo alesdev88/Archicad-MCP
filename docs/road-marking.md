@@ -87,3 +87,11 @@ The tool writes everything in one `SetGDLParametersOfElements` call: `A` and `aD
 as 0, 1, 2 in a call of its own first, then `nodeY` before the real `nodeX`), then
 `markingType`, then only the values that differ from the preset. Single angles go in
 degrees and read back in radians; `segArc` items go in radians; `nodeFall` is in percent.
+
+That is the write up to Tapir 1.7.1. Tapir 1.7.2 writes array items one by one, runs
+the part's Parameter Script after each and refuses an array of another size, so from
+1.7.2 the tool first resets the marking's path (`A = 1`, `aDone = 2`) and grows it to the
+node count with add-node grip writes (`extEnd`), then writes `nodeY` parked far off the
+path, `nodeX`, the real `nodeY` (so the node merge never fires) and `segArc` in degrees,
+all in one call. The dry run says which write it will use (`array_writes`). Details:
+`docs/superpowers/specs/2026-10-19-tapir-1.7.2-array-writes.md`.

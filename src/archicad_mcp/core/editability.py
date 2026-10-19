@@ -86,13 +86,17 @@ def reason_text(kind: str, window: str | None) -> str:
 
 
 def _passing(conn: ArchicadConnection, guids: list[str], name: str) -> set[str]:
-    """The elements that pass one Tapir FilterElements filter."""
+    """The elements that pass one Tapir FilterElements filter, uppercase.
+
+    Tapir answers every GUID uppercase whatever case it was sent in (live
+    19.10.2026), so callers compare with g.upper().
+    """
     passed: set[str] = set()
     for start in range(0, len(guids), FILTER_CHUNK):
         chunk = guids[start:start + FILTER_CHUNK]
         response = conn.tapir("FilterElements", {"elements": element_payload(chunk),
                                                  "filters": [name]})
-        passed.update(e["elementId"]["guid"] for e in response.get("elements", []))
+        passed.update(e["elementId"]["guid"].upper() for e in response.get("elements", []))
     return passed
 
 
@@ -152,29 +156,29 @@ def classify(conn: ArchicadConnection,
     if not guids or not conn.tapir_command_available("FilterElements"):
         return {}, None
     editable = _passing(conn, guids, "IsEditable")
-    refused = [g for g in guids if g not in editable]
+    refused = [g for g in guids if g.upper() not in editable]
     if not refused:
         return {}, None
     window = active_window(conn)
     found = present(conn, refused)
     existing = [g for g in refused if g in found]
     visible = _passing(conn, existing, "IsVisibleByLayer") if existing else set()
-    shown = [g for g in existing if g in visible]
+    shown = [g for g in existing if g.upper() in visible]
     if not shown:
         mine: set[str] = set()
     elif _is_teamwork(conn):
-        mine = _in_my_workspace(conn, shown)
+        mine = {g.upper() for g in _in_my_workspace(conn, shown)}
     else:
         # Outside Teamwork everything is "mine", so a refusal is a lock.
-        mine = set(shown)
+        mine = {g.upper() for g in shown}
     kinds = {}
     for g in refused:
         if g not in found:
             kinds[g] = NOT_FOUND
-        elif g not in visible:
+        elif g.upper() not in visible:
             kinds[g] = HIDDEN
         else:
-            kinds[g] = LOCKED if g in mine else UNRESERVED
+            kinds[g] = LOCKED if g.upper() in mine else UNRESERVED
     return kinds, window
 
 

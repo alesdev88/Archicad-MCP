@@ -41,6 +41,7 @@ def _conn_with_cells(cells: dict, set_results=None):
     official["API.SetPropertyValuesOfElements"] = set_results or (
         lambda p: {"executionResults": [{"success": True}
                                         for _ in p["elementPropertyValues"]]})
+    official = api_replays.with_stored_writes(official)
     tapir = dict(api_replays.TAPIR)
     # The elements named in `cells` exist; any other GUID does not.
     known = {guid for guid, _ in cells}
@@ -194,7 +195,11 @@ def test_set_element_data_keeps_the_count_when_a_batch_fails():
     conn, _ = _conn_with_cells(_string_cells(guids), set_results=set_results)
     out = set_element_data(conn, [{"guid": g, "property": "D/P", "value": "new"}
                                   for g in guids], dry_run=False)
+    # The second batch raised before Archicad acted, so the read shows its
+    # 500 writes did not land: they are named, not silently dropped.
     assert out == {"dry_run": False, "applied": 500,
+                   "not_sent": {"count": 500, "guids": guids[500:550],
+                                "not_shown": 450},
                    "stopped": {"code": 4001, "message": "Invalid program status"}}
 
 
@@ -370,3 +375,74 @@ def test_group_failures_takes_a_detail_key():
     failed = [{"guid": "A", "command": "ModifyWalls", "code": 1, "message": "m"}]
     assert group_failures(failed, detail_key="command")[0]["sample"] == \
         [{"guid": "A", "command": "ModifyWalls"}]
+
+
+def test_plan_accepts_lowercase_guids_when_tapir_answers_uppercase():
+    # Live 19.10.2026: Tapir FilterElements answers every GUID uppercase,
+    # whatever case it was sent in. Compared as given, every element of a
+    # lowercase call read as not editable (on a hidden layer).
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert skipped == []
+    assert [p["guid"] for p in planned] == ["d-1", "d-2"]
+
+
+def test_lowercase_guids_still_name_the_refused_element():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"}, hotlinked={"d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert [s["guid"] for s in skipped] == ["d-2"]
+    assert skipped[0]["reason"] == HOTLINK_REASON
+
+
+def test_lowercase_guids_in_teamwork_still_tell_reserved_from_unreserved():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1"},
+                                    mine={"d-1", "d-2"}, teamwork=True, hotlinked={"d-2"})
+    passing = core.tapir_responses["FilterElements"]
+    core.tapir_responses["FilterElements"] = lambda params: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}}
+        for e in passing(params)["elements"]]}
+    _, skipped = plan_property_writes(conn, _TWO_CHANGES)
+    assert skipped[0]["reason"] == HOTLINK_REASON
+
+
+def test_plan_uses_given_refusals_without_reading_them():
+    conn, core = _conn_with_filters(_TWO_STRING_CELLS, editable={"d-1", "d-2"})
+    planned, skipped = plan_property_writes(conn, _TWO_CHANGES,
+                                            refusals={"d-2": "not editable: test"})
+    assert [p["guid"] for p in planned] == ["d-1"]
+    assert skipped == [{"guid": "d-2", "property": "D/P", "reason": "not editable: test"}]
+    assert not any(c == "FilterElements" for c, _ in core.calls)
+
+
+def test_read_back_properties_names_the_writes_that_did_not_land():
+    from archicad_mcp.core.element_data import read_back_properties
+    conn, _ = _conn_with_cells({
+        ("d-1", "D/P"): {"type": "string", "status": "normal", "value": "001"},
+        ("d-2", "D/P"): {"type": "string", "status": "normal", "value": "0"}})
+    writes = [{"guid": "d-1", "property": "D/P", "new": "001"},
+              {"guid": "d-2", "property": "D/P", "new": "002"}]
+    assert read_back_properties(conn, writes, []) == [
+        {"guid": "d-2", "property": "D/P", "sent": "002", "read": "0"}]
+    assert read_back_properties(conn, writes, [{"guid": "d-2", "property": "D/P"}]) == []
+
+
+def test_the_property_dry_run_runs_the_full_plan():
+    # It used to echo every change unchecked; now it shows what the commit
+    # would send and names what it would skip.
+    conn, core = _conn_with_cells({
+        ("d-1", "D/Pozicija"): {"type": "integer", "status": "normal", "value": 0},
+        ("d-1", "D/Finish"): {"type": "singleEnum", "status": "normal"}})
+    out = set_element_data(conn, [{"guid": "d-1", "property": "D/Pozicija", "value": "12"},
+                                  {"guid": "d-1", "property": "D/Finish", "value": "Oak"}])
+    assert out["planned_changes"] == [
+        {"guid": "d-1", "property": "D/Pozicija", "current": 0, "new": 12}]
+    assert [s["property"] for s in out["skipped"]] == ["D/Finish"]
+    assert not any(c == "API.SetPropertyValuesOfElements" for c, _ in core.calls)

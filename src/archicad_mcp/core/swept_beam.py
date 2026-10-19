@@ -103,7 +103,10 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     else:
         origin, angle = path.nodes[0], 0.0
     local = pp.to_local(path.nodes, origin, angle)
-    params = _node_params(local, path.arcs, path_tolerance) + profile_params + cut_params
+    items = pp.writes_items(conn)
+    if items:
+        pp.check_plan_gaps(local, LIBRARY_PART)
+    params = _node_params(local, path.arcs, path_tolerance, items) + profile_params + cut_params
     report = {
         "dry_run": dry_run,
         "nodes": len(path.nodes),
@@ -113,6 +116,7 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         "steepest_slope_deg": round(steepest, 1),
         "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
         "story": floor_index,
+        "array_writes": "item by item" if items else "whole arrays",
         "warnings": warnings,
     }
     if dry_run:
@@ -121,6 +125,11 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     if not loaded:
         raise SweptBeamError(NOT_LOADED)
     guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
+    if items:
+        # no resizing: reset the path, grow it to the node count, then write every item
+        current = pp.gdl_parameters(conn, guid)
+        params = (pp.resize_writes(current, len(local)) + params
+                  + _kept_cuts(current, {p["name"] for p in params}))
     pp.write_parameters(conn, guid, params, LIBRARY_PART)
     report["element"] = guid
     report["updated" if update_guid else "created"] = True
@@ -180,6 +189,13 @@ def _cut_params(cuts: dict, keep_unset: bool) -> list[dict]:
     return out
 
 
+def _kept_cuts(current: dict, written: set[str]) -> list[dict]:
+    """The beam's own end cuts, written again after the path reset that squares them.
+    They read back in radians and are written in degrees."""
+    return [{"name": name, "value": round(math.degrees(float(current.get(name, 0.0))), 9) + 0.0}
+            for name, _ in CUT_LIMITS.values() if name not in written]
+
+
 def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
     """Reference line placement. On an update, a value left as None is kept."""
     out = []
@@ -200,12 +216,18 @@ def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
     return out
 
 
-def _node_params(local, arcs, tol: float) -> list[dict]:
+def _node_params(local, arcs, tol: float, items: bool = False) -> list[dict]:
     """Node arrays and grip helpers for SetGDLParametersOfElements.
 
-    Angle arrays go in radians (single angles would go in degrees; gate A).
-    Every grip helper and its marker are written equal, and A equal to aDone,
-    so the Parameter Script reads no pending grip drag or length edit (gate C).
+    Whole arrays (Tapir up to 1.7.1) take angle items in radians (single angles
+    go in degrees; gate A). Every grip helper and its marker are written equal,
+    and A equal to aDone, so the Parameter Script reads no pending grip drag or
+    length edit (gate C).
+
+    Item writes (Tapir 1.7.2 and newer) take angle items in degrees and follow
+    pp.resize_writes, which leaves the add-node grips balanced, so the extension
+    pairs are not written (a lone extEnd write would be a drag); x and y go in
+    the order pp.parked_xy gives.
     """
     n = len(local)
 
@@ -214,20 +236,25 @@ def _node_params(local, arcs, tol: float) -> list[dict]:
 
     length = round(sum(sp.segment_plan_length(local[i], local[i + 1], arcs[i])
                        for i in range(n - 1)), 6)
-    return [
-        {"name": "nodeX", "value": r6(p[0] for p in local)},
-        {"name": "nodeY", "value": r6(p[1] for p in local)},
+    xs, ys = r6(p[0] for p in local), r6(p[1] for p in local)
+    if items:
+        xy = pp.parked_xy(xs, ys)
+        arc_values = [round(a, 9) + 0.0 for a in arcs]
+        ext = []
+    else:
+        xy = [{"name": "nodeX", "value": xs}, {"name": "nodeY", "value": ys}]
+        arc_values = [round(math.radians(a), 9) + 0.0 for a in arcs]
+        ext = [{"name": name, "value": 0.0}
+               for name in ("extStart", "extStartDone", "extEnd", "extEndDone")]
+    return xy + [
         {"name": "nodeZ", "value": r6(p[2] for p in local)},
         {"name": "nodeRoll", "value": [0.0] * n},
-        {"name": "segArc", "value": [round(math.radians(a), 9) + 0.0 for a in arcs]},
+        {"name": "segArc", "value": arc_values},
         {"name": "segSag", "value": [0.0] * n},
         {"name": "sagDone", "value": [0.0] * n},
         {"name": "insL", "value": [0.0] * n},
         {"name": "insDone", "value": [0.0] * n},
-        {"name": "extStart", "value": 0.0},
-        {"name": "extStartDone", "value": 0.0},
-        {"name": "extEnd", "value": 0.0},
-        {"name": "extEndDone", "value": 0.0},
+    ] + ext + [
         {"name": "pathTolerance", "value": tol},
         {"name": "A", "value": length},
         {"name": "aDone", "value": length},

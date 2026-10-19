@@ -85,6 +85,13 @@ end cuts in degrees, and `ref_line` ("left face", "centre", "right face") with
 `update_guid` keeps its profile, end cuts and reference line unless the call
 sets them.
 
+With Tapir 1.7.2 or newer, which cannot resize an array parameter, the tool
+resets the beam's path, grows it to the node count with the add-node grip and
+then writes every node; the dry run says so (`array_writes`). Two nodes closer
+than 1 cm in plan (a vertical piece) are refused there, because the beam would
+merge them in the middle of the write. Details:
+`docs/superpowers/specs/2026-10-19-tapir-1.7.2-array-writes.md`.
+
 Points are read as a line running straight from one point to the next. A
 curve becomes an arc only where its points are close enough together that the
 arc stays within the tolerance of those straight pieces (2 mm by default);

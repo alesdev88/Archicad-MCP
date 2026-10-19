@@ -4,6 +4,9 @@ Tapir's ReserveElements reports only reserved-by-other conflicts (read from
 TeamworkCommands.cpp); not-found, already-mine and indirectly-reserved are
 derived. The fake below keeps a workspace so the derivation can be tested:
 reserving w-1 also pulls in d-1 (its door), and w-2 belongs to Someone Else.
+
+Like Tapir, the fake answers every GUID uppercase whatever case it was sent
+in (live 19.10.2026) and matches GUIDs case-insensitively, as Archicad does.
 """
 import json
 
@@ -26,20 +29,25 @@ class Workspace:
     def __init__(self, mine=()):
         self.mine = set(mine)
 
+    def holds(self, guid):
+        return guid.upper() in {m.upper() for m in self.mine}
+
     def filter_elements(self, p):
         assert p["filters"] == ["InMyWorkspace"]
-        return {"elements": [e for e in p["elements"] if e["elementId"]["guid"] in self.mine]}
+        return {"elements": [{"elementId": {"guid": e["elementId"]["guid"].upper()}}
+                             for e in p["elements"] if self.holds(e["elementId"]["guid"])]}
 
     def reserve(self, p):
         conflicts = []
         for e in p["elements"]:
             g = e["elementId"]["guid"]
-            if g in HELD_BY_OTHER:
-                uid, name = HELD_BY_OTHER[g]
-                conflicts.append({"elementId": {"guid": g}, "user": {"userId": uid, "userName": name}})
+            if g.lower() in HELD_BY_OTHER:
+                uid, name = HELD_BY_OTHER[g.lower()]
+                conflicts.append({"elementId": {"guid": g.upper()},
+                                  "user": {"userId": uid, "userName": name}})
                 continue
             self.mine.add(g)
-            self.mine.update(INDIRECT.get(g, []))
+            self.mine.update(INDIRECT.get(g.lower(), []))
         out = {"executionResult": {"success": True}}
         if conflicts:
             out["conflicts"] = conflicts
@@ -47,7 +55,7 @@ class Workspace:
 
     def release(self, p):
         for e in p["elements"]:
-            self.mine.discard(e["elementId"]["guid"])
+            self.mine = {m for m in self.mine if m.upper() != e["elementId"]["guid"].upper()}
         return {"executionResult": {"success": True}}
 
 
@@ -55,8 +63,9 @@ def make(mine=(), teamwork=True):
     ws = Workspace(mine)
     official = dict(api_replays.OFFICIAL)
     official["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
-        {"typeOfElement": {"elementId": e["elementId"], "elementType": TYPES[e["elementId"]["guid"]]}}
-        if e["elementId"]["guid"] in TYPES
+        {"typeOfElement": {"elementId": e["elementId"],
+                           "elementType": TYPES[e["elementId"]["guid"].lower()]}}
+        if e["elementId"]["guid"].lower() in TYPES
         else {"error": {"code": 7204, "message": "Element not found"}}
         for e in p["elements"]]}
     tapir = dict(api_replays.TAPIR)
@@ -123,6 +132,27 @@ def test_reserve_reports_an_archicad_refusal():
     assert "offline" in payload["error"]
 
 
+def test_reserve_takes_guids_in_any_case():
+    # find_elements gives GUIDs uppercase; a caller may type them lowercase.
+    conn, ws = make(mine=["z-1"])
+    payload = reserve_elements(conn, ["W-1", "W-2", "Z-1"], confirm=True)
+    assert payload["already_mine"] == ["Z-1"]
+    assert payload["reserved"] == ["W-1"]
+    assert payload["reserved_by_others"] == [{"guid": "W-2", "user": "Someone Else", "user_id": 7}]
+    assert payload["indirectly_reserved"] == ["d-1"]
+    sent = [p for c, p in conn._core.calls if c == "ReserveElements"][0]["elements"]
+    assert [e["elementId"]["guid"] for e in sent] == ["W-1", "W-2"]
+
+
+def test_reserve_counts_a_guid_given_in_two_cases_once():
+    conn, _ = make()
+    payload = reserve_elements(conn, ["w-1", "W-1"], confirm=True)
+    assert payload["requested"] == 1
+    assert payload["reserved"] == ["w-1"]
+    sent = [p for c, p in conn._core.calls if c == "ReserveElements"][0]["elements"]
+    assert [e["elementId"]["guid"] for e in sent] == ["w-1"]
+
+
 # ---------- release ----------
 
 def test_release_dry_run_lists_only_what_is_mine():
@@ -146,6 +176,14 @@ def test_release_commit_releases_mine_and_verifies():
 def test_release_refuses_outside_teamwork():
     conn, _ = make(teamwork=False)
     assert "error" in release_elements(conn, ["w-1"], confirm=True)
+
+
+def test_release_takes_guids_in_any_case():
+    conn, ws = make(mine=["w-1", "d-1"])
+    payload = release_elements(conn, ["W-1", "W-2"], confirm=True)
+    assert payload["released"] == ["W-1"] and payload["still_mine"] == []
+    assert payload["not_mine"] == ["W-2"]
+    assert ws.mine == {"d-1"}
 
 
 # ---------- tools ----------

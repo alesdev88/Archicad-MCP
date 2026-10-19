@@ -26,6 +26,36 @@ class FakeCore:
         return self._lookup(self.tapir_responses, command, parameters, TapirCommandError)
 
 
+def track_selection(core: FakeCore, selected=(), unselectable=()) -> set[str]:
+    """Give `core` a selection that ChangeSelectionOfElements really changes.
+
+    As Tapir 1.7.1 runs it (ElementCommands.cpp,
+    ChangeSelectionOfElementsCommand::Execute): every add first, every remove
+    second, so an element in both lists ends up deselected. GUIDs compare
+    without case and read back in upper case. An `unselectable` GUID is
+    answered with success and left unselected, as Archicad does for section
+    Objects and railing sub-elements. Returns the live set.
+    """
+    state = {g.upper() for g in selected}
+    blocked = {g.upper() for g in unselectable}
+
+    def change(params):
+        added = params.get("addElementsToSelection") or []
+        removed = params.get("removeElementsFromSelection") or []
+        for e in added:
+            if e["elementId"]["guid"].upper() not in blocked:
+                state.add(e["elementId"]["guid"].upper())
+        for e in removed:
+            state.discard(e["elementId"]["guid"].upper())
+        return {"executionResultsOfAddToSelection": [{"success": True} for _ in added],
+                "executionResultsOfRemoveFromSelection": [{"success": True} for _ in removed]}
+
+    core.tapir_responses["ChangeSelectionOfElements"] = change
+    core.tapir_responses["GetSelectedElements"] = lambda p: {
+        "elements": [{"elementId": {"guid": g}} for g in sorted(state)]}
+    return state
+
+
 @pytest.fixture
 def mac_host(monkeypatch):
     """Write Tapir install hints as on macOS, whatever the test runner is.
