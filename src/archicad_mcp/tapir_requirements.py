@@ -18,6 +18,9 @@ from archicad_mcp.connection import ArchicadConnection, tapir_missing_message
 # arguments use stays out (require_tapir_command covers those where they are
 # chosen), and so do tools that degrade without Tapir. create_elements is left
 # to feature/create-all-elements, which adds its own per-type check.
+# modify_elements checks itself: Tapir 1.5.9 for the GetDetailsOfElements
+# `fields` filter and `hotlinkId` (a parameter, not a command, so no entry here
+# could express it), and each Modify command per element type it is sent.
 TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     "move_elements": ("MoveElements",),
     "delete_elements": ("DeleteElements",),
