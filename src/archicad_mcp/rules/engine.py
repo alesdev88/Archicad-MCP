@@ -35,6 +35,12 @@ def property_needs(rules: Sequence[Rule]) -> frozenset[str]:
     return frozenset().union(*(r.needed_properties for r in rules)) if rules else frozenset()
 
 
+def collision_queries(rules: Sequence[Rule]) -> frozenset:
+    """The collision queries of the rules that declare one (no-collisions)."""
+    return frozenset(q for r in rules
+                     if (q := getattr(r, "collision_query", None)) is not None)
+
+
 def filter_by_tag(rules: Sequence[Rule], tag: str | None) -> list[Rule]:
     if tag is None:
         return list(rules)

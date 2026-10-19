@@ -347,8 +347,9 @@ A rule file is a YAML **list** of rules:
   tags: [ifc-delivery]
 ```
 
-Five rule types ship built in (`property-required`, `classification-required`,
-`layer-compliance`, `zone-number-required`, `ifc-property-required`), and custom
+Six rule types ship built in (`property-required`, `classification-required`,
+`layer-compliance`, `zone-number-required`, `ifc-property-required`,
+`no-collisions`), and custom
 checks go in a `custom_rules.py` beside the YAML. Without a rules directory, the
 bundled examples load so you have something to run.
 

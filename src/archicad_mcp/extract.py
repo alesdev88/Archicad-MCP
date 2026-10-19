@@ -397,7 +397,8 @@ def _fetch_floor_indices(conn, guids: list[str]) -> dict[str, int | None]:
 
 def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                    property_names: frozenset[str] = frozenset(),
-                   element_types: frozenset[str] | None = None) -> ModelSnapshot:
+                   element_types: frozenset[str] | None = None,
+                   collision_queries: frozenset = frozenset()) -> ModelSnapshot:
     """Build a ModelSnapshot fetching only what `needs` demands.
 
     When `element_types` is given, the per-element data (types, properties,
@@ -405,7 +406,8 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
     The extractor still lists all element ids and their types once (cheap), then
     narrows before the expensive/crash-prone property sweep. `None` means no
     narrowing (fetch every element). Zones and the layer name list are
-    independent of this filter.
+    independent of this filter. `collision_queries` (core.collisions
+    CollisionQuery) are answered when `needs` has "collisions", once each.
     """
     elements: tuple[ElementInfo, ...] = ()
     layers: tuple[str, ...] = ()
@@ -462,4 +464,12 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
     if "ifc" in needs:
         ifc = _fetch_ifc(conn, guids)
 
-    return ModelSnapshot(elements=elements, layers=layers, zones=zones, ifc_properties=ifc)
+    collisions = None
+    if "collisions" in needs and collision_queries \
+            and conn.tapir_command_available("GetCollisions"):
+        # Imported here: core.collisions imports this module.
+        from archicad_mcp.core.collisions import answer
+        collisions = {q: tuple(answer(conn, q)) for q in collision_queries}
+
+    return ModelSnapshot(elements=elements, layers=layers, zones=zones, ifc_properties=ifc,
+                         collisions=collisions)

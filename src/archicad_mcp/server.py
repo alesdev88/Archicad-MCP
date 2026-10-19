@@ -26,6 +26,7 @@ from archicad_mcp.core.project import scrub_credentials
 from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
 from archicad_mcp.extract import build_snapshot, coverage_of
 from archicad_mcp.rules.engine import (
+    collision_queries,
     data_needs,
     element_type_scope,
     filter_by_tag,
@@ -146,7 +147,8 @@ def build_server(
     def _verdict_for(rules, request_port: int | None) -> Verdict:
         conn = get_connection(request_port if request_port is not None else default_port)
         snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules),
-                                  element_types=element_type_scope(rules))
+                                  element_types=element_type_scope(rules),
+                                  collision_queries=collision_queries(rules))
         return run_rules(rules, snapshot)
 
     # ---------- Tier 1: verdict tools (both modes) ----------
