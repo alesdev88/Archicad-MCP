@@ -147,8 +147,11 @@ def tapir_missing_message(conn: ArchicadConnection, what: str) -> str:
             + install_hint(version))
 
 
-def probe_port(port: int, core=None,
-               timeout: float | None = PROBE_TIMEOUT) -> InstanceInfo | None:
+def probe_port(port: int, core=None, timeout: float | None = PROBE_TIMEOUT,
+               diagnose: bool = True) -> InstanceInfo | None:
+    """The instance on port, or None. diagnose=False skips tapir_hint and
+    tools_needing_newer_tapir: a tool call connecting needs neither, and the
+    hint costs a scan of the Archicad folders."""
     conn = ArchicadConnection(port, core=core, timeout=timeout)
     try:
         product = conn.official("API.GetProductInfo")
@@ -178,9 +181,9 @@ def probe_port(port: int, core=None,
     from archicad_mcp.tapir_install.hint import install_hint
     hint = None
     needing: list[str] = []
-    if not tapir:
+    if diagnose and not tapir:
         hint = install_hint(version or None)
-    else:
+    elif diagnose:
         from archicad_mcp.tapir_requirements import unavailable_tools
         try:
             needing = unavailable_tools(conn, tapir_version)
@@ -203,10 +206,10 @@ def probe_port(port: int, core=None,
     )
 
 
-def discover_instances() -> list[InstanceInfo]:
+def discover_instances(diagnose: bool = True) -> list[InstanceInfo]:
     found = []
     for port in PORT_RANGE:
-        info = probe_port(port)
+        info = probe_port(port, diagnose=diagnose)
         if info is not None:
             found.append(info)
     return found
@@ -229,13 +232,13 @@ def _require_open_project(info: InstanceInfo) -> None:
 
 def get_connection(port: int | None) -> ArchicadConnection:
     if port is not None:
-        info = probe_port(port)
+        info = probe_port(port, diagnose=False)
         if info is None:
             raise ArchicadUnavailableError(
                 f"No Archicad answering on port {port}. Is it running with a project open?")
         _require_open_project(info)
         return ArchicadConnection(port)
-    instances = discover_instances()
+    instances = discover_instances(diagnose=False)
     if not instances:
         raise ArchicadUnavailableError(
             "No running Archicad found. Start Archicad 29 and open a project.")

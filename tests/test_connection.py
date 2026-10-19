@@ -57,7 +57,7 @@ def test_tapir_call_without_addon_gives_actionable_error():
 
 
 def test_get_connection_no_instances(monkeypatch):
-    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda: [])
+    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda **kw: [])
     with pytest.raises(ArchicadUnavailableError, match="Start Archicad"):
         get_connection(None)
 
@@ -66,7 +66,7 @@ def test_get_connection_multiple_instances(monkeypatch):
     from archicad_mcp.connection import InstanceInfo
     two = [InstanceInfo(19723, 29, 1, None, False, None),
            InstanceInfo(19724, 29, 1, None, False, None)]
-    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda: two)
+    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda **kw: two)
     with pytest.raises(ArchicadUnavailableError, match="19723"):
         get_connection(None)
 
@@ -108,7 +108,7 @@ def test_discovery_survives_a_project_less_instance(monkeypatch):
     """One project-less instance must not break discovery of the healthy ones."""
     from archicad_mcp.connection import InstanceInfo, discover_instances
 
-    def fake_probe(port, core=None):
+    def fake_probe(port, core=None, diagnose=True):
         if port == 19723:
             return InstanceInfo(19723, 0, 0, None, False, None, project_open=False)
         if port == 19724:
@@ -124,7 +124,7 @@ def test_get_connection_prefers_the_instance_with_a_project(monkeypatch):
     from archicad_mcp.connection import InstanceInfo, get_connection
     two = [InstanceInfo(19723, 0, 0, None, False, None, project_open=False),
            InstanceInfo(19724, 29, 4006, "Test", True, "1.5.3")]
-    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda: two)
+    monkeypatch.setattr("archicad_mcp.connection.discover_instances", lambda **kw: two)
     monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None: two[1])
     assert get_connection(None).port == 19724  # not an ambiguous-port error
 
@@ -132,7 +132,7 @@ def test_get_connection_prefers_the_instance_with_a_project(monkeypatch):
 def test_get_connection_on_project_less_port_is_actionable(monkeypatch):
     from archicad_mcp.connection import InstanceInfo, get_connection
     info = InstanceInfo(19723, 0, 0, None, False, None, project_open=False)
-    monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None: info)
+    monkeypatch.setattr("archicad_mcp.connection.probe_port", lambda p, core=None, diagnose=True: info)
     with pytest.raises(ArchicadUnavailableError, match="no project is open"):
         get_connection(19723)
 
@@ -153,7 +153,7 @@ def test_refused_probe_error_names_the_modal_dialog_cause(monkeypatch):
     info = probe_port(19723, core=DialogBlockedCore())
     assert info is not None and info.project_open is False
     monkeypatch.setattr("archicad_mcp.connection.probe_port",
-                        lambda p, core=None: info)
+                        lambda p, core=None, diagnose=True: info)
     with pytest.raises(ArchicadUnavailableError) as excinfo:
         get_connection(19723)
     message = str(excinfo.value)
@@ -232,3 +232,17 @@ def test_probe_port_gives_no_hint_when_tapir_is_there():
     core = FakeCore(official=TAPIR_ON,
                     tapir={"GetProjectInfo": {"projectName": "P"}, "GetAddOnVersion": {"version": "1.7.1"}})
     assert probe_port(19723, core=core).tapir_hint is None
+
+
+def test_get_connection_does_not_build_diagnostics(monkeypatch):
+    # Connecting for a tool call needs no install hint (a folder scan) and no
+    # extra command probes; only list_instances and the banner want them.
+    monkeypatch.setattr("archicad_mcp.connection.CoreCommands",
+                        lambda port: FakeCore(official=TAPIR_OFF))
+
+    def no_hint(*a, **k):
+        raise AssertionError("install_hint called while connecting")
+
+    monkeypatch.setattr("archicad_mcp.tapir_install.hint.install_hint", no_hint)
+    conn = get_connection(19723)
+    assert conn.port == 19723
