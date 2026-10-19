@@ -20,10 +20,14 @@ that element, which the API aborts on instead of returning a per-element error.
 This is an Archicad-side fault. The server can trigger it but **cannot prevent
 it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`,
 `set_element_data`, or `modify_elements` (its dry run too) against a model you
-care about as capable of crashing it. **Save first.**
+care about as capable of crashing it, and `move_elements` or `delete_elements`
+when an element is refused as locked (see below). **Save first.**
 
 `modify_elements` reads one built-in property, `General_Locked` (the element
-lock, which no Tapir command reads), on every element it plans. Built-in
+lock, which no Tapir command reads), on every element it plans that is not
+inside a hotlinked module or on a locked layer. `move_elements`,
+`delete_elements` and `set_element_data` read it only on the elements
+`IsEditable` refused that neither of those explains, to name the lock. Built-in
 properties are the read class that has not crashed Archicad, and it read cleanly
 on slabs, objects and meshes in MCP-Test on 19.10.2026, but it has not been read
 live on texts, labels, dimensions or other 2D elements yet.
@@ -184,7 +188,8 @@ Teamwork project. With Tapir, `set_element_data` and `run_script` detect these
 elements before writing (Tapir `FilterElements` with `IsEditable`) and list
 them under `skipped`. Seen live on 23.09.2026: 113 doors in two hotlinked
 modules of a local copy of a large project. Edit them in the module's source
-file.
+file. The reason says "inside a hotlinked module" when the element's details
+carry a `hotlinkId` (Tapir 1.5.9 and newer).
 
 ## Archicad changes only the active window's database
 
@@ -199,7 +204,8 @@ call deleted all 12.
 Since then:
 
 - `delete_elements` and `move_elements` run the same `IsEditable` check as
-  `set_element_data` and send only the elements that pass. The rest come back
+  `set_element_data` and send only the elements that pass (and that a read
+  finds, see below). The rest come back
   under `not_deleted` / `not_moved`, grouped by reason, with `active_window`
   (Tapir `GetCurrentWindowType`). A reason from a window other than the floor
   plan names the window first, because from a Layout even a reserved element
@@ -223,10 +229,26 @@ from further reads, in this order:
 
 | Reason | Read |
 |---|---|
-| not found | Tapir `GetDetailsOfElements` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
+| not found | Tapir `GetDetailsOfElements` with `fields: ["type"]` answers an error entry (a wrong GUID, deleted already, or in another window's database) |
 | hidden layer | `FilterElements` with `IsVisibleByLayer` |
 | not reserved | a Teamwork project, and `FilterElements` with `InMyWorkspace` |
-| locked | whatever is left: a hotlinked module, a locked layer, or another lock |
+| inside a hotlinked module | `GetDetailsOfElements` answers a `hotlinkId` |
+| on a locked layer (named) | the element's `layerIndex` is a layer Tapir `GetLayers` answers `isLocked` for |
+| locked with Edit > Locking | the built-in property `General_Locked` is true (a property read, see the crash above), read only when neither of the two above applies |
+| locked | whatever is left: none of the three reads above names the lock, or they could not be made (a Tapir older than 1.5.9, no `GetLayers`) |
+
+The lock reads are made only for the elements refused as locked, so a call
+where nothing is locked reads no layers and no properties.
+
+`IsEditable` is not a database check from the floor plan. Live on 19.10.2026,
+with the floor plan active, it passed a Text in a layout database and a Line in
+a section database as editable, though element commands act only on the floor
+plan's. Sent, such an element is passed over, and `delete_elements`, which
+counts what the read afterwards no longer finds, would have counted it as
+deleted. So all three tools also read the elements `IsEditable` passed with
+`GetDetailsOfElements` (`fields: ["type"]`) and refuse the ones it does not find
+as not found. `modify_elements` reads every element's details before planning
+and skips those it does not find, so it had this guard already.
 
 The official `GetTypesOfElements` cannot answer "does it exist": live on
 28.09.2026 it answered 7203 "Element not supported" for every label, existing

@@ -338,11 +338,12 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "Pass dry_run=false to commit. A commit returns 'applied'; "
                           "'failed', Archicad's refusals grouped by code and message "
                           "with a count and sample GUIDs; 'skipped' for changes not "
-                          "sent (property type, enum, or an element that is not "
-                          "editable: in another view's database than the active "
-                          "window's, inside a hotlinked module, or not reserved in "
-                          "Teamwork); and 'stopped' if a batch was refused outright "
-                          "after earlier batches landed.",
+                          "sent, with the reason (property type, enum, or an element "
+                          "Archicad would refuse: in another view's database than "
+                          "the active window's, on a hidden or locked layer, inside "
+                          "a hotlinked module, locked with Edit > Locking, or not "
+                          "reserved in Teamwork); and 'stopped' if a batch was "
+                          "refused outright after earlier batches landed.",
               **_tool_meta("Write element properties", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,
@@ -515,9 +516,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
                           "confirm=true. Archicad changes only elements in the "
                           "database of the active window, so elements it would "
-                          "refuse (another view's, on a hidden layer, not "
-                          "reserved in Teamwork, locked, in a hotlinked module, "
-                          "or not found) are not "
+                          "refuse (another view's, on a hidden or locked layer, "
+                          "not reserved in Teamwork, inside a hotlinked module, "
+                          "locked, or not found) are not "
                           "sent. Returns requested; moved, counted from "
                           "Archicad's per-element results; not_moved grouped by "
                           "reason with the GUIDs; and active_window when "
@@ -561,9 +562,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                           "active window and still answers success for the rest "
                           "(a floor-plan label cannot be deleted while a Layout "
                           "is active), so elements it would refuse (another "
-                          "view's, on a hidden layer, not reserved in Teamwork, "
-                          "locked, in a hotlinked module, or not found) are not "
-                          "sent, and the "
+                          "view's, on a hidden or locked layer, not reserved in "
+                          "Teamwork, inside a hotlinked module, locked, or not "
+                          "found) are not sent, and the "
                           "rest are read back afterwards. Returns requested; "
                           "deleted, the count that is really gone; not_deleted "
                           "grouped by reason with the GUIDs; active_window when "
