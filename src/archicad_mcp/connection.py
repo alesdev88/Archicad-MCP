@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from multiconn_archicad.basic_types import Port
 from multiconn_archicad.core.core_commands import CoreCommands
@@ -54,6 +54,11 @@ class InstanceInfo:
     # The raw refusal ("code 4001: Invalid program status") when project_open
     # is False, so the real reason survives into errors and list_instances.
     status_error: str | None = None
+    # How to install or update Tapir for this Archicad, when it needs that.
+    tapir_hint: str | None = None
+    # Gated tools whose Tapir command this add-on lacks (probed, not guessed
+    # from the version number, so a custom build is judged by what it has).
+    tools_needing_newer_tapir: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -68,6 +73,8 @@ class ArchicadConnection:
         self.timeout = timeout
         self._tapir_available: bool | None = None
         self._command_availability: dict[str, bool] = {}
+        self._archicad_version: int | None = None
+        self._version_known = False
 
     def official(self, command: str, parameters: dict | None = None) -> dict:
         return self._core.post_command(command, parameters, timeout=self.timeout)
@@ -114,15 +121,30 @@ class ArchicadConnection:
             self._command_availability[command] = cached
         return cached
 
+    def archicad_version(self) -> int | None:
+        """The Archicad major version on this port, or None if it will not say."""
+        if not self._version_known:
+            try:
+                version = int(self.official("API.GetProductInfo").get("version", 0))
+                self._archicad_version = version or None
+            except (APIErrorBase, ValueError, TypeError):
+                self._archicad_version = None
+            self._version_known = True
+        return self._archicad_version
+
     def tapir(self, command: str, parameters: dict | None = None) -> dict:
         if not self.tapir_available():
-            raise ArchicadUnavailableError(
-                f"'{command}' requires the Tapir add-on, which is not installed in "
-                f"the Archicad instance on port {self.port}. Install it from "
-                "https://github.com/ENZYME-APD/tapir-archicad-automation/releases "
-                "(Options > Add-On Manager), then retry."
-            )
+            raise ArchicadUnavailableError(tapir_missing_message(self, f"'{command}'"))
         return self._core.post_tapir_command(command, parameters, timeout=self.timeout)
+
+
+def tapir_missing_message(conn: ArchicadConnection, what: str) -> str:
+    from archicad_mcp.tapir_install.hint import install_hint
+    version = conn.archicad_version()
+    where = (f"Archicad {version} on port {conn.port}" if version else
+             f"the Archicad instance on port {conn.port}")
+    return (f"{what} requires the Tapir add-on, which is not installed in {where}. "
+            + install_hint(version))
 
 
 def probe_port(port: int, core=None,
@@ -152,13 +174,19 @@ def probe_port(port: int, core=None,
             tapir_version = conn.tapir("GetAddOnVersion").get("version")
         except (APIErrorBase, TapirCommandError, ArchicadUnavailableError):
             pass
+    version = int(product.get("version", 0))
+    hint = None
+    if not tapir:
+        from archicad_mcp.tapir_install.hint import install_hint
+        hint = install_hint(version or None)
     return InstanceInfo(
         port=port,
-        version=int(product.get("version", 0)),
+        version=version,
         build=int(product.get("buildNumber", 0)),
         project_name=project_name,
         tapir_available=tapir,
         tapir_version=tapir_version,
+        tapir_hint=hint,
     )
 
 

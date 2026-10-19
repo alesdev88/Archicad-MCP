@@ -142,8 +142,10 @@ def score(query: str, haystack: Iterable[str]) -> float:
 def _property_definitions(conn: ArchicadConnection, notes: list[str]) -> list[Definition]:
     if conn.tapir_available():
         return _properties_via_tapir(conn)
+    from archicad_mcp.tapir_install.hint import install_hint
     notes.append("Tapir add-on absent: property results come from the official "
-                 "API and lack measure type, collection type and enum values.")
+                 "API and lack measure type, collection type and enum values. "
+                 + install_hint(conn.archicad_version()))
     return _properties_via_official(conn)
 
 

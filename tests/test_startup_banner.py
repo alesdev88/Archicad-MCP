@@ -243,3 +243,8 @@ def test_banner_thread_still_writes_the_banner(capsys, monkeypatch):
     err = capsys.readouterr().err
     assert "1 rule loaded from /office/rules" in err
     assert "Test House" in err
+
+
+def test_banner_names_install_command_when_tapir_missing():
+    banner = format_startup_banner("full", 3, instances=[NO_TAPIR])
+    assert "install with: archicad-mcp install-tapir --archicad 29" in banner

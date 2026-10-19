@@ -774,7 +774,10 @@ def _instance_line(info: InstanceInfo, mode: str) -> str:
     if info.tapir_available:
         parts.append(f"Tapir {info.tapir_version or 'version unknown'}")
     else:
-        parts.append(f"Tapir add-on not installed ({_NO_TAPIR_NOTE})")
+        install = ("archicad-mcp install-tapir"
+                   + (f" --archicad {info.version}" if info.version else ""))
+        parts.append(f"Tapir add-on not installed ({_NO_TAPIR_NOTE}); "
+                     f"install with: {install}")
     return f"{_BANNER_PREFIX} " + ", ".join(parts)
 
 

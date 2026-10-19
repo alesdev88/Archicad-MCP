@@ -202,3 +202,33 @@ def test_probe_port_treats_a_timed_out_instance_as_absent():
             raise CommandTimeoutError("timed out")
 
     assert probe_port(19723, core=HungCore()) is None
+
+
+def test_tapir_missing_message_names_the_asset(monkeypatch):
+    monkeypatch.setattr("archicad_mcp.tapir_install.hint.sys.platform", "darwin")
+    conn = ArchicadConnection(19723, core=FakeCore(official=TAPIR_OFF))
+    with pytest.raises(ArchicadUnavailableError) as exc:
+        conn.tapir("GetStories")
+    text = str(exc.value)
+    assert "Archicad 29 on port 19723" in text
+    assert "TapirAddOn_AC29_Mac.zip" in text and "install-tapir --archicad 29" in text
+
+
+def test_archicad_version_is_cached_and_survives_errors():
+    core = FakeCore(official=TAPIR_ON)
+    conn = ArchicadConnection(19723, core=core)
+    assert conn.archicad_version() == 29 and conn.archicad_version() == 29
+    assert [c for c, _ in core.calls].count("API.GetProductInfo") == 1
+    assert ArchicadConnection(19723, core=FakeCore(official={})).archicad_version() is None
+
+
+def test_probe_port_fills_hint_when_tapir_missing():
+    info = probe_port(19723, core=FakeCore(official=TAPIR_OFF))
+    assert info.tapir_hint and "install-tapir --archicad 29" in info.tapir_hint
+    assert info.tools_needing_newer_tapir == []
+
+
+def test_probe_port_gives_no_hint_when_tapir_is_there():
+    core = FakeCore(official=TAPIR_ON,
+                    tapir={"GetProjectInfo": {"projectName": "P"}, "GetAddOnVersion": {"version": "1.7.1"}})
+    assert probe_port(19723, core=core).tapir_hint is None
