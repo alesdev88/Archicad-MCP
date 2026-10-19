@@ -205,7 +205,9 @@ def find_installations(platform: str | None = None, *, root: Path | None = None
             _scan_program_files(found, root, platform)
         else:
             for folder in _windows_registry_folders():
-                _candidate(found, folder, platform)
+                # A relative value would resolve against the working directory.
+                if folder.is_absolute():
+                    _candidate(found, folder, platform)
             for var in ("ProgramW6432", "ProgramFiles"):
                 if os.environ.get(var):
                     _scan_program_files(found, Path(os.environ[var]), platform)

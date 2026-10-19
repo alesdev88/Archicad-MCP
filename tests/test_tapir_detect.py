@@ -159,3 +159,19 @@ def test_main_binary_of_bundle_and_apx(tmp_path):
     apx.write_bytes(b"MZ")
     assert main_binary(apx) == apx
     assert main_binary(tmp_path / "missing.bundle") is None
+
+
+def test_windows_registry_values_must_be_absolute(tmp_path, monkeypatch):
+    import archicad_mcp.tapir_install.detect as detect_mod
+    real = tmp_path / "Programs" / "GRAPHISOFT" / "Archicad 29"
+    (real / "Add-Ons").mkdir(parents=True)
+    # A relative value would resolve against the working directory.
+    cwd = tmp_path / "cwd"
+    (cwd / "Archicad 28" / "Add-Ons").mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(detect_mod, "_windows_registry_folders",
+                        lambda: [Path("Archicad 28"), real])
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    found = find_installations("win32")
+    assert [(i.version, i.folder) for i in found] == [(29, real)]
