@@ -175,10 +175,22 @@ def probe_port(port: int, core=None,
         except (APIErrorBase, TapirCommandError, ArchicadUnavailableError):
             pass
     version = int(product.get("version", 0))
+    from archicad_mcp.tapir_install.hint import install_hint
     hint = None
+    needing: list[str] = []
     if not tapir:
-        from archicad_mcp.tapir_install.hint import install_hint
         hint = install_hint(version or None)
+    else:
+        from archicad_mcp.tapir_requirements import unavailable_tools
+        try:
+            needing = unavailable_tools(conn, tapir_version)
+        except (APIErrorBase, ArchicadUnavailableError):
+            needing = []
+        if needing:
+            hint = (f"Tapir {tapir_version or '(version unknown)'} here lacks commands "
+                    f"that {', '.join(needing)} need. " + install_hint(version or None)
+                    + " Replacing a custom Tapir build with the release loses that "
+                    "build's own commands.")
     return InstanceInfo(
         port=port,
         version=version,
@@ -187,6 +199,7 @@ def probe_port(port: int, core=None,
         tapir_available=tapir,
         tapir_version=tapir_version,
         tapir_hint=hint,
+        tools_needing_newer_tapir=needing,
     )
 
 

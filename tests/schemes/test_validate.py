@@ -73,7 +73,7 @@ def test_property_index_raises_a_clear_actionable_error_when_tapir_is_absent():
     message = str(exc_info.value)
     assert "GetAllProperties" in message
     assert "Tapir add-on" in message
-    assert "Install it from" in message
+    assert "install-tapir" in message and "TapirAddOn_AC" in message
 
 
 def test_validate_scheme_raises_a_clear_actionable_error_when_tapir_is_absent():

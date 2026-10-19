@@ -500,6 +500,9 @@ class FakeConn:
         self.delete_works = delete_works
         self.placed = set()
 
+    def tapir_available(self):
+        return True
+
     def tapir_command_available(self, command):
         return True
 
