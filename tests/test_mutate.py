@@ -285,6 +285,22 @@ def test_delete_lists_at_most_the_report_cap_per_reason():
     assert group["guids"] == guids[:50] and group["not_shown"] == 10
 
 
+def test_delete_passes_on_tapirs_per_element_refusal():
+    # Tapir 1.7.1 answers DeleteElements per element; live on 19.10.2026 an
+    # element it could not delete came back "Failed to delete the element."
+    project = Project(floor_plan=["a", "b"])
+    project.survivors = {"b"}
+    project.delete_result = {"executionResults": [
+        {"success": True},
+        {"success": False, "error": {"code": -2130313215,
+                                     "message": "Failed to delete the element."}}]}
+    out = delete_elements(project.connect(), ["a", "b"], confirm=True)
+    assert out["deleted"] == 1
+    group = _only_group(out, "not_deleted")
+    assert group["guids"] == ["b"]
+    assert group["reason"] == "Archicad refused the deletion: Failed to delete the element."
+
+
 def test_delete_still_reports_what_went_when_the_command_errors():
     # A transport error after Archicad acted: the read says what happened.
     project = Project(floor_plan=["a", "b"])
