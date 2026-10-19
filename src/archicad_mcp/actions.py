@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from multiconn_archicad.errors import APIErrorBase
+
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import element_payload
 
@@ -17,6 +19,24 @@ def highlight_elements(conn: ArchicadConnection, guids: list[str]) -> dict:
         "nonHighlightedColor": _OTHER_COLOR,
     })
     return {"highlighted": len(guids)}
+
+
+def clear_highlight(conn: ArchicadConnection) -> None:
+    """Remove every highlight, with the tint and 3D wireframe that came with it."""
+    conn.tapir("HighlightElements", {"elements": [], "highlightedColors": []})
+
+
+def fit_in_window(conn: ArchicadConnection, guids: list[str]) -> bool:
+    """Zoom the front window to the elements. False when this Tapir has no
+    FitInWindow (1.3.1) or Archicad refuses; True says only that Archicad
+    accepted it, since it also answers success for elements it cannot show."""
+    if not guids or not conn.tapir_command_available("FitInWindow"):
+        return False
+    try:
+        conn.tapir("FitInWindow", {"elements": element_payload(guids)})
+    except APIErrorBase:
+        return False
+    return True
 
 
 def create_issues(conn: ArchicadConnection, rule_id: str, message: str,

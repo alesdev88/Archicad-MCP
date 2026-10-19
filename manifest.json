@@ -49,7 +49,7 @@
     "mode": {
       "type": "string",
       "title": "Mode",
-      "description": "'full' exposes everything: QA, element tools, and the API gateway. 'verdicts' exposes only the 8 QA tools and keeps the project name out of what the model sees.",
+      "description": "'full' exposes everything: QA, element tools, and the API gateway. 'verdicts' exposes only the 9 QA tools and keeps the project name out of what the model sees.",
       "default": "full",
       "required": false
     },
@@ -117,6 +117,10 @@
     {
       "name": "create_issues_from_failures",
       "description": "Turn rule failures into Archicad issues."
+    },
+    {
+      "name": "save_project",
+      "description": "Save the open project to its own file before risky reads. Confirm-gated; never sends on Teamwork."
     },
     {
       "name": "find_elements",
@@ -191,6 +195,10 @@
       "description": "Deselect everything in the Archicad window."
     },
     {
+      "name": "show_elements",
+      "description": "Open the story or view holding elements, select, highlight and zoom to them."
+    },
+    {
       "name": "get_project_info",
       "description": "Project name, location, stories, and Teamwork state."
     },
@@ -225,6 +233,10 @@
     {
       "name": "import_issues_bcf",
       "description": "Import issues into the project from a BCF file."
+    },
+    {
+      "name": "export_ifc",
+      "description": "Save the project as IFC with a named translator and scope. Dry-run by default."
     },
     {
       "name": "publish",

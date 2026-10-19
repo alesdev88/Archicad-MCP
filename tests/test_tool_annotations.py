@@ -41,6 +41,8 @@ WRITERS = {
     "edit_property_definitions", "edit_classifications", "import_definitions",
     "edit_attributes",
     "create_swept_beam", "create_road_marking", "modify_elements",
+    # Writes the .pln: File > Revert can no longer go back past it.
+    "save_project", "show_elements", "export_ifc",
     # Writes into Archicad's Add-Ons folder: outside the project, still a file
     # change a client must ask about.
     "install_tapir",
@@ -51,7 +53,7 @@ WRITERS = {
 # reservation is team-visible state, not project data, and is undone by a
 # release; it is confirm-gated in the tool instead.
 NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection",
-                           "reserve_elements", "release_elements"}
+                           "reserve_elements", "release_elements", "show_elements"}
 
 
 async def _tools(mode: str):

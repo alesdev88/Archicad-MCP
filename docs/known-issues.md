@@ -21,7 +21,9 @@ This is an Archicad-side fault. The server can trigger it but **cannot prevent
 it**. Treat any `audit_delivery_readiness`, `run_rule`, `get_element_data`,
 `set_element_data`, or `modify_elements` (its dry run too) against a model you
 care about as capable of crashing it, and `move_elements` or `delete_elements`
-when an element is refused as locked (see below). **Save first.**
+when an element is refused as locked (see below). **Save first:** ask the
+client to run `save_project` (it is confirm-gated, and on Teamwork it saves the
+local copy without sending).
 
 `modify_elements` reads one built-in property, `General_Locked` (the element
 lock, which no Tapir command reads), on every element it plans that is not
