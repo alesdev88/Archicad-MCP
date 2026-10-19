@@ -22,7 +22,12 @@ from archicad_mcp.core.attribute_edit import (
     _to_tapir,
     renamed_references,
 )
-from archicad_mcp.core.attribute_types import WRITE_ORDER
+from archicad_mcp.core.attribute_types import (
+    FILL_TEXTURE_READ,
+    WRITE_ONLY,
+    WRITE_ONLY_IN_SKIN_OVERRIDES,
+    WRITE_ORDER,
+)
 from archicad_mcp.core.attributes import named_references, read_records
 from archicad_mcp.core.definition_edit import group_by_error
 from archicad_mcp.core.element_data import error_fields
@@ -83,13 +88,18 @@ class _Run:
     def _send_fields(self, batch: list[Plan], overwrite: bool) -> None:
         attr = batch[0].attr
         items, ready = [], []
-        for p in batch:
-            item, errors = _to_tapir(self.ctx, p, pending_ok=False)
-            if errors:
-                self.failed.append({"target": _label(p), "message": errors[0]})
-                continue
-            items.append(_integers(item, _item_schema(attr)))
-            ready.append(p)
+        try:
+            for p in batch:
+                item, errors = _to_tapir(self.ctx, p, pending_ok=False)
+                if errors:
+                    self.failed.append({"target": _label(p), "message": errors[0]})
+                    continue
+                items.append(_integers(item, _item_schema(attr)))
+                ready.append(p)
+        except (APIErrorBase, ArchicadUnavailableError) as exc:
+            # Resolving names reads the attributes again; a refusal there stops the run.
+            self.refused([p for p in batch if p not in ready] + ready, exc)
+            return
         if not items:
             return
         try:
@@ -156,8 +166,15 @@ def _verify_shape(p: Plan, rename_to: dict) -> dict:
     for (a create also its name), a profile's skinOverrides as asked, references
     to attributes renamed in this call by their new name."""
     shape = {"name": p.target, **p.expected} if p.action == "create" else dict(p.expected)
+    for key in WRITE_ONLY.get(p.type_name, ()):
+        shape.pop(key, None)
     if "skinOverrides" in p.asked:
-        shape["skinOverrides"] = p.asked["skinOverrides"]
+        shape["skinOverrides"] = [
+            {k: v for k, v in o.items() if k not in WRITE_ONLY_IN_SKIN_OVERRIDES}
+            if isinstance(o, dict) else o for o in p.asked["skinOverrides"]]
+    if p.type_name == "Fill" and isinstance(shape.get("texture"), dict):
+        shape["texture"] = {k: v for k, v in shape["texture"].items()
+                            if k in FILL_TEXTURE_READ}
     return renamed_references(shape, p.type_name, rename_to)
 
 
@@ -181,13 +198,13 @@ def _read_back(run: _Run) -> tuple[list[dict], list[dict]]:
     for p in run.fields_ok:
         header = (ctx.names.by_name(p.type_name, p.target) if p.action == "create"
                   else ctx.names.by_guid(p.type_name, p.guid))
-        entry = applied.setdefault(id(p), {**p.head(), "now": {}})
         shape = _verify_shape(p, ctx.rename_to)
         record = read_records(ctx.conn, p.attr, [header["guid"]])[0] if header else None
         if record is None:
             not_applied.append({"type": p.type_name, "target": p.target, "field": "(read)",
                                 "sent": "written", "read": "not found afterwards"})
             continue
+        entry = applied.setdefault(id(p), {**p.head(), "now": {}})
         now = _now_shape(named_references(record, p.type_name, ctx.names), shape)
         entry["now"].update(now)
         for path, (read, sent) in _diff(now, shape).items():
@@ -224,7 +241,16 @@ def commit(ctx: _Context, plans: list[Plan], result: dict) -> None:
     run = _Run(ctx, plans)
     for kind, batch, overwrite in _batches(plans):
         run.send(kind, batch, overwrite)
-    applied, not_applied = _read_back(run)
+    read_back_error = None
+    try:
+        applied, not_applied = _read_back(run)
+    except (APIErrorBase, ArchicadUnavailableError) as exc:
+        # Written already: say what was sent, and that it could not be confirmed.
+        read_back_error = exc
+        written = run.fields_ok + [p for p in run.plans if id(p) in run.props_ok] \
+            + run.deletes_ok
+        applied = list({id(p): p.head() for p in written}.values())
+        not_applied = []
     result["applied"] = applied
     if not_applied:
         result["not_applied"] = not_applied
@@ -237,5 +263,10 @@ def commit(ctx: _Context, plans: list[Plan], result: dict) -> None:
         result["failed"] = groups
     if run.error is not None:
         result["error"] = error_fields(run.error)
+    if read_back_error is not None:
+        fields = error_fields(read_back_error)
+        fields["message"] = ("written, but the read-back failed, so nothing in applied is "
+                             f"confirmed: {fields['message']}")
+        result["read_back_error" if "error" in result else "error"] = fields
     if run.stopped:
         result["stopped"] = run.stopped

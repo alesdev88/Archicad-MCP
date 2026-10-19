@@ -115,3 +115,12 @@ ENUMS: dict[tuple[str, str], tuple[str, ...]] = {
     ("Composite", "useWith[]"): ("Wall", "Slab", "Roof", "Shell"),
     ("Composite", "skins[].type"): ("Core", "Finish", "Other"),
 }
+
+# Inputs no Get* answer carries, so a read-back cannot confirm them.
+WRITE_ONLY: dict[str, frozenset[str]] = {
+    "Profile": frozenset({"sourceAttributeId", "newSkins", "replaceSkins"}),
+    "PenTable": frozenset({"sourceAttributeId"}),
+}
+WRITE_ONLY_IN_SKIN_OVERRIDES = frozenset({"edgeOverrides"})
+# The texture keys GetFills answers (Tapir 1.7.1).
+FILL_TEXTURE_READ = frozenset({"name", "rotationAngle", "xSize", "ySize", "mirrorX", "mirrorY"})

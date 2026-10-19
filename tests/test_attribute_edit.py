@@ -510,6 +510,183 @@ def test_deletes_go_last():
     assert writes(conn) == ["CreateLayers", "DeleteAttributes"]
 
 
+# ---------- found by review, 19.10.2026 ----------
+
+def test_a_layer_delete_with_unreadable_elements_is_refused():
+    conn, _ = make(elements={G("w-1"): 2, G("w-3"): 3})
+    real = conn._core.tapir_responses["GetDetailsOfElements"]
+
+    def one_unreadable(params):
+        answer = real(params)
+        for i, e in enumerate(params["elements"]):
+            if e["elementId"]["guid"] == G("w-3"):
+                answer["detailsOfElements"][i] = {"error": {"code": -1, "message": "x"}}
+        return answer
+    conn._core.tapir_responses["GetDetailsOfElements"] = one_unreadable
+    out = edit_attributes(conn, [{"delete": "Layer", "attribute": "Interior - Furniture "}])
+    assert "could not be read" in out["skipped"][0]["errors"][0]
+
+
+def test_a_layer_delete_on_a_tapir_that_refuses_the_read_is_refused():
+    from multiconn_archicad.errors import TapirCommandError
+    conn, _ = make()
+
+    def refuse(params):
+        raise TapirCommandError(message="unknown field", code=-1)
+    conn._core.tapir_responses["GetDetailsOfElements"] = refuse
+    out = edit_attributes(conn, [{"delete": "Layer", "attribute": "Interior - Furniture "}])
+    assert "could not be read" in out["skipped"][0]["errors"][0]
+
+
+def test_a_combination_layer_given_by_guid_patches_that_layer():
+    conn, store = make()
+    out = edit_attributes(conn, [{"modify": "LayerCombination", "attribute": "02 Drafting",
+                                  "layers": [{"attributeId": G("lay-2"), "isLocked": True}]}],
+                          dry_run=False)
+    assert out["planned"][0]["changes"] == {"layers[Interior - Partition].isLocked":
+                                            [False, True]}
+    [payload] = sent(conn, "CreateLayerCombinations")
+    assert len(payload["layerCombinationDataArray"][0]["layers"]) == 2
+    assert "not_applied" not in out
+
+
+def test_a_reference_given_as_a_guid_string_is_shown_by_name():
+    conn, _ = make()
+    out = edit_attributes(conn, [
+        {"modify": "Surface", "attribute": "Stucco - White Rough", "fillId": G("fil-2")}])
+    assert "nothing to change" in out["planned"][0]["warnings"]
+    out = edit_attributes(conn, [
+        {"modify": "Surface", "attribute": "Stucco - White Rough", "fillId": G("fil-5")}],
+        dry_run=False)
+    assert out["planned"][0]["changes"] == {"fillId": ["Face Brick", "Concrete Block"]}
+    assert "not_applied" not in out
+
+
+def test_stale_layer_entries_are_left_out_of_a_combination_modify():
+    conn, store = make()
+    store.records["LayerCombination"][0]["layers"].append(
+        {"attributeId": {"guid": "00000000-0000-0000-0000-000000000000"}, "isHidden": False,
+         "isLocked": False, "isWireframe": False, "intersectionGroupNr": 1})
+    out = edit_attributes(conn, [{"modify": "LayerCombination", "attribute": "02 Drafting",
+                                  "name": "MCP-Canary Drafting"}], dry_run=False)
+    assert "no longer exist" in out["planned"][0]["warnings"][0]
+    [payload] = sent(conn, "CreateLayerCombinations")
+    assert len(payload["layerCombinationDataArray"][0]["layers"]) == 2
+
+
+def test_write_only_inputs_are_not_reported_as_not_applied():
+    conn, _ = make()
+    out = edit_attributes(conn, [
+        {"create": "Profile", "name": "MCP-Canary Profile",
+         "sourceAttributeId": "Brick Veneer Block Wall"},
+        {"create": "Fill", "name": "MCP-Canary Fill", "subType": "Vector",
+         "texture": {"name": "x", "FillRectangle": True}},
+        {"modify": "Profile", "attribute": "Brick Veneer Block Wall",
+         "skinOverrides": [{"skinId": "F3B62A00", "contourPen": 5,
+                            "edgeOverrides": [{"edgeIndex": 1, "pen": 3}]}]}],
+        dry_run=False)
+    assert "failed" not in out and "skipped" not in out, out
+    assert len(out["applied"]) == 3
+    assert "not_applied" not in out, out["not_applied"]
+
+
+def test_two_renames_to_one_name_are_refused():
+    conn, _ = make()
+    out = edit_attributes(conn, [
+        {"modify": "Layer", "attribute": "Interior - Partition", "name": "MCP-Canary Same"},
+        {"modify": "Layer", "attribute": "Interior - Furniture ", "name": "mcp-canary same"},
+        {"create": "Layer", "name": "MCP-Canary Same"}])
+    assert len(out["planned"]) == 1
+    assert all("this call" in s["errors"][0] for s in out["skipped"])
+
+
+def test_an_empty_rename_is_refused():
+    conn, _ = make()
+    out = edit_attributes(conn, [{"modify": "Layer", "attribute": "Interior - Partition",
+                                  "name": "  "}])
+    assert "name" in out["skipped"][0]["errors"][0]
+
+
+def test_a_source_created_in_the_same_call_is_refused():
+    conn, _ = make()
+    out = edit_attributes(conn, [
+        {"create": "PenTable", "name": "MCP-Canary Pens"},
+        {"create": "PenTable", "name": "MCP-Canary Pens 2", "sourceAttributeId": "MCP-Canary Pens"}])
+    assert "same call" in out["skipped"][0]["errors"][0]
+
+
+def test_a_read_back_failure_keeps_the_report():
+    from multiconn_archicad.errors import TapirCommandError
+    conn, _ = make()
+    real = conn._core.tapir_responses["GetLayers"]
+    calls = []
+
+    def fails_on_read_back(params):
+        calls.append(1)
+        if len(calls) > 1:
+            raise TapirCommandError(message="Invalid program status", code=4001)
+        return real(params)
+    conn._core.tapir_responses["GetLayers"] = fails_on_read_back
+    out = edit_attributes(conn, [{"modify": "Layer", "attribute": "Interior - Partition",
+                                  "isLocked": True}], dry_run=False)
+    assert out["applied"] == [{"action": "modify", "type": "Layer",
+                               "target": "Interior - Partition"}]
+    assert "read-back" in out["error"]["message"]
+
+
+def test_a_failure_resolving_a_later_batch_keeps_the_report():
+    from multiconn_archicad.errors import TapirCommandError
+    conn, store = make()
+    real = conn._core.tapir_responses["GetAttributesByType"]
+    calls = {"n": 0}
+
+    def flaky(params):
+        calls["n"] += 1
+        if params["attributeType"] == "BuildingMaterial" and calls["n"] > 3:
+            raise TapirCommandError(message="Invalid program status", code=4001)
+        return real(params)
+    conn._core.tapir_responses["GetAttributesByType"] = flaky
+    out = edit_attributes(conn, [
+        {"create": "BuildingMaterial", "name": "MCP-Canary Material", "cutFillIndex": 2,
+         "cutSurfaceIndex": 132},
+        {"create": "Composite", "name": "MCP-Canary Wall", "useWith": ["Wall"],
+         "skins": [{"type": "Core", "framePen": 1, "thickness": 0.2,
+                    "buildingMaterialId": "MCP-Canary Material"}],
+         "separators": [{"linePen": 1, "lineTypeId": "Solid Line"},
+                        {"linePen": 1, "lineTypeId": "Solid Line"}]}], dry_run=False)
+    assert "error" in out
+    assert record(store, "BuildingMaterial", "MCP-Canary Material") is not None
+    failed_targets = [t for g in out.get("failed", []) for t in g["sample"]]
+    assert "Composite/MCP-Canary Wall" in failed_targets
+
+
+def test_an_empty_pen_list_changes_nothing_and_float_pen_indices_match():
+    conn, _ = make()
+    out = edit_attributes(conn, [{"modify": "PenTable", "attribute": "07 Mechanical",
+                                  "pens": []}])
+    assert "nothing to change" in out["planned"][0]["warnings"]
+    out = edit_attributes(conn, [{"modify": "PenTable", "attribute": "07 Mechanical",
+                                  "pens": [{"index": 5.0, "width": 0.5}]}], dry_run=False)
+    assert out["planned"][0]["changes"] == {"pens[5].width": [0.13, 0.5]}
+    assert "not_applied" not in out
+
+
+def test_a_composite_skin_without_a_material_says_so():
+    conn, store = make()
+    del store.records["Composite"][0]["skins"][0]["buildingMaterialId"]
+    out = edit_attributes(conn, [{"modify": "Composite", "attribute": "100 Block Plastered",
+                                  "useWith": ["Wall", "Slab"]}])
+    assert "building material" in out["skipped"][0]["errors"][0]
+
+
+def test_read_records_answers_none_for_a_missing_answer():
+    from archicad_mcp.core.attribute_types import TYPES
+    from archicad_mcp.core.attributes import read_records
+    conn, _ = make()
+    conn._core.tapir_responses["GetLayers"] = {"layers": []}
+    assert read_records(conn, TYPES["Layer"], [G("lay-2")]) == [None]
+
+
 # ---------- property values ----------
 
 def test_property_values_show_current_and_new():

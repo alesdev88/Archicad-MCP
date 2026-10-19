@@ -58,31 +58,31 @@
 - Consumes: Task 1 `object_set_states`, `set_problem`, `teamwork_entries`; Task 3 tables and `AttributeNames`, `read_records`, `named_references`; `definition_edit.Definitions`, `group_by_error`; `element_data.error_fields`; `editability.active_window`; `tapir_requirements.require_tapir_command`.
 - Produces: `edit_attributes(conn, changes: list[dict], dry_run: bool = True) -> dict`; `field_lists() -> dict` (the `changes=[]` answer).
 
-- [ ] **Step 1:** Run `uv run pytest tests/test_attribute_edit.py -q`; expected: ImportError (red).
-- [ ] **Step 2:** Implement planning per the spec's "Dry run" steps 1 to 11, in this order per change: shape, Tapir commands for the action, address or collision (exact, GUID, near name by `" ".join(name.split()).casefold()`), built-ins (index 1 of Layer/Line/Fill, Solid/Empty fills, last composite), refused modify fields, merge (`skins`/`separators` by position, `layers` by layer name, `pens` by index, dict fields shallow-merged, `texture` whole), per-type extras from the spec table, enums from `ENUMS`, references to Tapir form (pending names of same-call creates get placeholder `00000000-0000-0000-0000-000000000000` / index 0), whole-float to int by schema, `jsonschema` item validation, layer delete (floor plan active, count by `layerIndex`), properties (String compared only), nothing to change; then Teamwork across all plans (layer flag-only modifies and property-only modifies advisory).
-- [ ] **Step 3:** Diff paths: `a.b`, positional `skins[1].thickness`, keyed `pens[5].width`, `layers[<layer name>].isLocked`.
-- [ ] **Step 4:** Run the dry-run tests; expected: pass.
+- [x] **Step 1:** Run `uv run pytest tests/test_attribute_edit.py -q`; expected: ImportError (red).
+- [x] **Step 2:** Implement planning per the spec's "Dry run" steps 1 to 11, in this order per change: shape, Tapir commands for the action, address or collision (exact, GUID, near name by `" ".join(name.split()).casefold()`), built-ins (index 1 of Layer/Line/Fill, Solid/Empty fills, last composite), refused modify fields, merge (`skins`/`separators` by position, `layers` by layer name, `pens` by index, dict fields shallow-merged, `texture` whole), per-type extras from the spec table, enums from `ENUMS`, references to Tapir form (pending names of same-call creates get placeholder `00000000-0000-0000-0000-000000000000` / index 0), whole-float to int by schema, `jsonschema` item validation, layer delete (floor plan active, count by `layerIndex`), properties (String compared only), nothing to change; then Teamwork across all plans (layer flag-only modifies and property-only modifies advisory).
+- [x] **Step 3:** Diff paths: `a.b`, positional `skins[1].thickness`, keyed `pens[5].width`, `layers[<layer name>].isLocked`.
+- [x] **Step 4:** Run the dry-run tests; expected: pass.
 
 ### Task 5: edit_attributes commit and read-back
 
 **Files:** `core/attribute_edit.py`, `tests/test_attribute_edit.py` (commit tests)
 
-- [ ] **Step 1:** Batches in `WRITE_ORDER`, creates (`overwriteExisting: false`) then modifies (`true`) per type; payloads re-resolved by name before each batch (`AttributeNames.forget` for types written); then `SetPropertyValuesOfAttributes`; then `DeleteAttributes` (`{"attributeType", "attributeId": {"attributeId": {"guid"}}}`).
-- [ ] **Step 2:** Per-item answers to `applied` / `failed` (grouped with `group_by_error`, `{}` property answer = "not written: ..."); an `APIErrorBase` on a command sets `error` (via `error_fields`), lists that batch under `failed`, later plans under `stopped` as `{action, type, target}`.
-- [ ] **Step 3:** Read back: creates by name, modifies by GUID; `now` = asked keys (creates also `name`); `not_applied` entries `{type, target, field, sent, read}` from the same diff; deletes verified gone.
-- [ ] **Step 4:** Run `uv run pytest tests/test_attribute_edit.py -q`; expected: all pass. Commit.
+- [x] **Step 1:** Batches in `WRITE_ORDER`, creates (`overwriteExisting: false`) then modifies (`true`) per type; payloads re-resolved by name before each batch (`AttributeNames.forget` for types written); then `SetPropertyValuesOfAttributes`; then `DeleteAttributes` (`{"attributeType", "attributeId": {"attributeId": {"guid"}}}`).
+- [x] **Step 2:** Per-item answers to `applied` / `failed` (grouped with `group_by_error`, `{}` property answer = "not written: ..."); an `APIErrorBase` on a command sets `error` (via `error_fields`), lists that batch under `failed`, later plans under `stopped` as `{action, type, target}`.
+- [x] **Step 3:** Read back: creates by name, modifies by GUID; `now` = asked keys (creates also `name`); `not_applied` entries `{type, target, field, sent, read}` from the same diff; deletes verified gone.
+- [x] **Step 4:** Run `uv run pytest tests/test_attribute_edit.py -q`; expected: all pass. Commit.
 
 ### Task 6: Tool wiring and docs
 
 **Files:** `server.py` (tool `edit_attributes`, destructive, uses `_tapir_conn(port, "edit_attributes")`), `tapir_requirements.py` (`"edit_attributes": ("GetAttributesByType",)`), `tests/test_tool_annotations.py` (`WRITERS`), `manifest.json`, `scripts/build_dashboard.py` (`WRAPPED_BY` for the attribute and lockable set commands) and regenerated `docs/api-dashboard.html`, `README.md`, `docs/known-issues.md`.
 
-- [ ] **Step 1:** Add the tool test already in `tests/test_attribute_edit.py`; run full suite red then green: `uv run pytest -q`.
-- [ ] **Step 2:** Docs; `uv run python scripts/build_dashboard.py`; full suite green; commit.
+- [x] **Step 1:** Add the tool test already in `tests/test_attribute_edit.py`; run full suite red then green: `uv run pytest -q`.
+- [x] **Step 2:** Docs; `uv run python scripts/build_dashboard.py`; full suite green; commit.
 
 ### Task 7: Live verification (MCP-Test)
 
-- [ ] Follow the spec's Verification list with a script in the scratchpad that imports the worktree's `core` functions, checks `projectName == "MCP-Test"`, uses `MCP-Canary` names and deletes them in a `finally`. Record results in the spec's Verification section and commit.
+- [x] Follow the spec's Verification list with a script in the scratchpad that imports the worktree's `core` functions, checks `projectName == "MCP-Test"`, uses `MCP-Canary` names and deletes them in a `finally`. Record results in the spec's Verification section and commit.
 
 ### Task 8: PR
 
-- [ ] Push `feature/edit-attributes`, open the PR against `main` (no auto-merge), wait for CI green.
+- [x] Push `feature/edit-attributes`, open the PR against `main` (no auto-merge), wait for CI green.

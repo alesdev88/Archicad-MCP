@@ -290,11 +290,25 @@ class WritableStore(AttributeStore):
             for k, v in texture.items():
                 # Flags can only be switched on.
                 current[k] = (current.get(k, False) or v) if isinstance(v, bool) else v
+        if attr_type in ("Profile", "PenTable") and "sourceAttributeId" in fields:
+            # Copied from the source; Get never returns sourceAttributeId.
+            source = self.by_guid(attr_type, fields.pop("sourceAttributeId")["attributeId"]["guid"])
+            for key in ("skins", "pens", "wallType", "useWith"):
+                if source and key in source and key not in record:
+                    record[key] = copy.deepcopy(source[key])
+        for write_only in ("newSkins", "replaceSkins"):
+            fields.pop(write_only, None)
         if attr_type == "Profile" and "skinOverrides" in fields:
             for override in fields.pop("skinOverrides"):
                 for skin in record.get("skins", []):
                     if skin["skinId"] == override["skinId"]:
-                        skin.update({k: v for k, v in override.items() if k != "skinId"})
+                        skin.update({k: v for k, v in override.items()
+                                     if k not in ("skinId", "edgeOverrides")})
+        if attr_type == "Fill" and "texture" in fields:
+            # GetFills answers only these texture keys.
+            fields["texture"] = {k: v for k, v in fields["texture"].items()
+                                 if k in ("name", "rotationAngle", "xSize", "ySize",
+                                          "mirrorX", "mirrorY")}
         record.update(fields)
 
     def delete(self, params):

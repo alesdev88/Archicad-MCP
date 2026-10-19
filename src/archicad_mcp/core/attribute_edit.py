@@ -164,6 +164,9 @@ class _Context:
         self._available: dict[str, str | None] = {}
         self._defs: Definitions | None = None
         self._layer_counts: dict[int, int] | None = None
+        self.unreadable = 0
+        # (type, normalised name) -> what claims it in this call (a create or a rename)
+        self.claimed: dict[tuple[str, str], str] = {}
         self._window: str | None = None
         self._window_read = False
 
@@ -202,26 +205,32 @@ class _Context:
                 for item in self._layer_details(guids[start:start + DETAIL_CHUNK],
                                                 element_payload):
                     index = item.get("layerIndex") if isinstance(item, dict) else None
-                    if isinstance(index, int):
+                    if isinstance(index, int) and not isinstance(index, bool):
                         counts[index] = counts.get(index, 0) + 1
+                    else:
+                        # Its layer is unknown, so it could be on the layer to delete.
+                        self.unreadable += 1
             self._layer_counts = counts
         return self._layer_counts
 
     def _layer_details(self, chunk: list[str], payload) -> list:
-        """One element that fails Tapir's answer schema sinks its whole batch, so a
-        failing chunk is retried in pieces of 25 and then one by one."""
+        """One answer per element, None where it could not be read. One element
+        that fails Tapir's answer schema sinks its whole batch, so a failing chunk
+        is retried in pieces of 25 and then one by one."""
         try:
-            return self.conn.tapir("GetDetailsOfElements", {
+            items = self.conn.tapir("GetDetailsOfElements", {
                 "elements": payload(chunk), "fields": ["layerIndex"]}).get(
                 "detailsOfElements", [])
         except APIErrorBase:
             if len(chunk) == 1:
-                return []
+                return [None]
             size = 25 if len(chunk) > 25 else 1
             out: list = []
             for start in range(0, len(chunk), size):
                 out += self._layer_details(chunk[start:start + size], payload)
             return out
+        items = [i if isinstance(i, dict) and "error" not in i else None for i in items]
+        return items + [None] * (len(chunk) - len(items))
 
 
 def _norm(name: str) -> str:
@@ -305,6 +314,16 @@ def _zero_starts(type_name: str, fields: dict) -> list[str]:
     return []
 
 
+def _claimed(ctx: _Context, type_name: str, name: str, plan: Plan) -> bool:
+    """True (with the error) when another change in this call already creates or
+    renames to this name, ignoring case and spaces: Tapir does not check."""
+    other = ctx.claimed.get((type_name, _norm(name)))
+    if other:
+        plan.errors.append(f"{type_name} '{name}' clashes with {other} in this call")
+        return True
+    return False
+
+
 def _plan_create(ctx: _Context, plan: Plan, change: dict) -> None:
     attr = plan.attr
     name = change.get("name")
@@ -327,8 +346,7 @@ def _plan_create(ctx: _Context, plan: Plan, change: dict) -> None:
                 plan.would_change = _diff(named_references(current, attr.name, ctx.names),
                                           plan.asked)
         return
-    if name in ctx.creating.get(attr.name, set()):
-        plan.errors.append(f"{attr.name} '{name}' is created twice in this call")
+    if _claimed(ctx, attr.name, name, plan):
         return
     near = _near(ctx, attr.name, name)
     if near:
@@ -347,6 +365,7 @@ def _plan_create(ctx: _Context, plan: Plan, change: dict) -> None:
     plan.named = {"name": name, **copy.deepcopy(plan.asked)}
     plan.send_fields = True
     ctx.creating.setdefault(attr.name, set()).add(name)
+    ctx.claimed[(attr.name, _norm(name))] = f"the create of '{name}'"
 
 
 # ---------- modify ----------
@@ -406,8 +425,21 @@ def _plan_modify_fields(ctx: _Context, plan: Plan, fields: dict) -> None:
         return
     current = {k: v for k, v in named_references(record, attr.name, ctx.names).items()
                if k not in ("attributeId", "index")}
+    if attr.name == "LayerCombination" and isinstance(current.get(LAYER_LIST), list):
+        layers = current[LAYER_LIST]
+        current[LAYER_LIST] = [e for e in layers
+                               if not str(e.get("attributeId", "")).startswith("<missing")]
+        stale = len(layers) - len(current[LAYER_LIST])
+        if stale:
+            plan.warnings.append(f"{stale} layer entries point at layers that no longer exist "
+                                 "and are left out (Tapir drops them anyway)")
     asked = named_references(fields, attr.name, ctx.names)
+    if "name" in asked and (not isinstance(asked["name"], str) or not asked["name"].strip()):
+        plan.errors.append("name must be a non-empty text")
+        return
     if "name" in asked and asked["name"] != plan.target:
+        if _claimed(ctx, attr.name, asked["name"], plan):
+            return
         clash = ctx.names.by_name(attr.name, asked["name"]) or (
             [n for n in _near(ctx, attr.name, asked["name"]) if n != plan.target] or None)
         if clash:
@@ -442,12 +474,21 @@ def _plan_modify_fields(ctx: _Context, plan: Plan, fields: dict) -> None:
         for key in _STAMP:
             if key not in named and key in current:
                 named[key] = current[key]
+    if attr.name == "Composite":
+        bare = [i for i, skin in enumerate(named.get("skins", []))
+                if isinstance(skin, dict) and "buildingMaterialId" not in skin]
+        if bare:
+            plan.errors.append(f"skin(s) {bare} of this composite have no building material "
+                               "Archicad can resolve (deleted?); send skins with a "
+                               "buildingMaterialId for them")
+            return
     plan.named = named
     plan.send_fields = bool(plan.changes)
     if "name" in plan.changes:
         ctx.renamed[(attr.name, plan.target)] = plan.guid
         ctx.renamed[(attr.name, asked["name"])] = plan.guid
         ctx.rename_to[(attr.name, plan.target)] = asked["name"]
+        ctx.claimed[(attr.name, _norm(asked["name"]))] = f"the rename of '{plan.target}'"
     plan.advisory_set = attr.name == "Layer" and set(asked) <= _LAYER_FLAGS
 
 
@@ -465,6 +506,10 @@ def _skin_override_changes(current: dict, overrides, changes: dict) -> str | Non
         _diff(skins[skin_id], {k: v for k, v in override.items() if k != "skinId"},
               f"skins[{skin_id}]", changes)
     return None
+
+
+def _whole(value):
+    return int(value) if isinstance(value, float) and value.is_integer() else value
 
 
 def _merge(attr: AttrType, current: dict, asked: dict) -> tuple[dict, str | None]:
@@ -486,7 +531,11 @@ def _merge(attr: AttrType, current: dict, asked: dict) -> tuple[dict, str | None
                 layers[item["attributeId"]] = {**base, **item}
             merged[key] = list(layers.values())
         elif attr.name == "PenTable" and key == "pens" and isinstance(value, list):
+            if not value:
+                continue
             pens = {p.get("index"): p for p in now or []}
+            value = [{**p, "index": _whole(p.get("index"))} if isinstance(p, dict) else p
+                     for p in value]
             merged[key] = [{**pens.get(p.get("index"), {}), **p} if isinstance(p, dict) else p
                            for p in value]
         elif attr.name == "Surface" and key == "texture" and isinstance(value, dict):
@@ -598,6 +647,11 @@ def _plan_delete(ctx: _Context, plan: Plan, change: dict) -> None:
                 f"{count} elements are on layer '{plan.target}' and would be deleted with "
                 "it; move them (modify_elements) or delete them (delete_elements) first")
             return
+        if ctx.unreadable:
+            plan.errors.append(
+                f"{ctx.unreadable} elements could not be read, so their layer is unknown and "
+                f"they could be on layer '{plan.target}'; nothing is deleted")
+            return
         plan.warnings.append(_LAYER_DELETE_WARNING)
     else:
         plan.warnings.append(_DELETE_WARNING)
@@ -623,7 +677,10 @@ def _tapir_value(ctx, value, type_name, errors, pending_ok, in_layer_list):
     for key, item in value.items():
         if key in REFERENCE_FIELDS:
             ref_type, form = REFERENCE_FIELDS[key]
-            out[key] = _reference(ctx, ref_type or type_name, form, item, errors, pending_ok)
+            # A source is copied when its own type's batch is sent: one created in
+            # the same batch is not there yet.
+            out[key] = _reference(ctx, ref_type or type_name, form, item, errors,
+                                  pending_ok and ref_type is not None)
         elif in_layer_list and key == "attributeId":
             out[key] = _reference(ctx, "Layer", "layer", item, errors, pending_ok)
         else:
@@ -641,6 +698,10 @@ def _reference(ctx: _Context, ref_type: str, form: str, value, errors: list[str]
             header = ctx.names.by_guid(ref_type, ctx.renamed[(ref_type, value)])
         if header is None and pending_ok and value in ctx.creating.get(ref_type, set()):
             header = {"guid": PENDING, "index": 0}
+        if header is None and value in ctx.creating.get(ref_type, set()):
+            errors.append(f"'{value}' is created in this same call, and a {ref_type} named "
+                          "here must exist before the call; create it first")
+            return value
         if header is None:
             near = _near(ctx, ref_type, value)
             hint = f" (did you mean {', '.join(repr(n) for n in near)}?)" if near else ""
@@ -783,7 +844,7 @@ def _same(a, b) -> bool:
 def _keyed(path: str, items: list) -> dict | None:
     """Pens by index and a layer combination's layers by name diff by key."""
     if path.endswith("pens") and all(isinstance(i, dict) and "index" in i for i in items):
-        return {f"[{i['index']}]": i for i in items}
+        return {f"[{_whole(i['index'])}]": i for i in items}
     if path.endswith(LAYER_LIST) and all(isinstance(i, dict) and "attributeId" in i
                                          for i in items):
         return {f"[{i['attributeId']}]": i for i in items}
@@ -887,6 +948,13 @@ def edit_attributes(conn: ArchicadConnection, changes: list[dict],
     _check_payloads(ctx, plans)
     result: dict = {"dry_run": dry_run}
     _teamwork(ctx, plans, result)
+    # Only renames that will be sent count when the read-back compares names.
+    ctx.renamed, ctx.rename_to = {}, {}
+    for p in plans:
+        if not p.errors and p.action == "modify" and "name" in p.changes:
+            old, new = p.changes["name"]
+            ctx.renamed[(p.type_name, old)] = ctx.renamed[(p.type_name, new)] = p.guid
+            ctx.rename_to[(p.type_name, old)] = new
     result["planned"] = [p.entry() for p in plans if not p.errors]
     skipped = [p.entry() for p in plans if p.errors]
     if skipped:

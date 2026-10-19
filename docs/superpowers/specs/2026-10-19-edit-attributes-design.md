@@ -592,6 +592,30 @@ GUID of all ten types) compared before and after: identical on both.
 | Property values (after `SaveProject`) | reads did not crash either version; unavailable property: per-item error "Not available or not evaluated property", turned into a skip; stock "Brick" GWP read as "113.000". Writes not tried live (a canary material has no available property until classified) |
 | Cleanup | every canary deleted through `edit_attributes`; the empty canary layer deleted with the floor plan active |
 
+### Review, 2026-10-19
+
+A fresh read-only review of the branch reproduced these with the fake store; all
+fixed test first and the live check rerun clean on MCP-Test:
+
+- A layer delete counted elements whose details read failed as "not on the
+  layer". Unreadable elements now block the delete.
+- A layer combination layer, or any reference, given as a GUID string was not
+  matched to the current entry by name: the layer's other flags were reset and
+  diffs showed GUIDs. GUID strings are now shown as names before merging.
+- The same attribute changed twice in one call: the second payload undid the
+  first. Refused.
+- Layer combination entries with a null GUID blocked every modify. Left out,
+  with a warning.
+- Write-only inputs (`sourceAttributeId`, `newSkins`, `replaceSkins`,
+  `edgeOverrides`, fill texture keys GetFills does not answer) were reported as
+  `not_applied`. Left out of the read-back comparison.
+- Two renames (or a create and a rename) to the same name in one call, an empty
+  rename, a source created in the same call: refused.
+- An API error while resolving a later batch or during the read-back lost the
+  report. The report now keeps what was sent, with the error.
+- Smaller: a missing Get answer, an empty `pens` list, float pen indices, a
+  composite skin whose material no longer resolves (now says so).
+
 **Teamwork, not verified.** Whether `ClassificationsAndProperties` is the set
 Archicad wants for definitions, which set attribute property values need, and
 the exact refusal Archicad gives without a reservation can only be seen on a

@@ -81,7 +81,7 @@ def read_records(conn: ArchicadConnection, attr: AttrType,
             item = dict(item["layerCombination"])
             item["index"] = item.pop("attributeIndex", None)
         out.append(item)
-    return out
+    return out + [None] * (len(guids) - len(out))
 
 
 class AttributeNames:
@@ -113,6 +113,10 @@ class AttributeNames:
         if form == "index" and isinstance(value, int) and not isinstance(value, bool):
             header = self.by_index(attr_type, value)
             return header["name"] if header else f"<missing {attr_type} {value}>"
+        if isinstance(value, str):
+            # A name stays a name; a GUID string becomes the name it points at.
+            header = self.by_guid(attr_type, value)
+            return header["name"] if header else value
         guid = _guid_of(value)
         if guid is None:
             return value
