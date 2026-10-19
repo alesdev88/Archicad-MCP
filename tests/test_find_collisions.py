@@ -162,3 +162,22 @@ def test_pairs_capped():
     assert result["collisions"] == 60
     assert len(result["pairs"]) == 50
     assert result["not_shown"] == 10
+
+
+async def _listed(mode):
+    from fastmcp import Client
+
+    from archicad_mcp.server import build_server
+    async with Client(build_server(mode=mode)) as client:
+        return {t.name: t for t in await client.list_tools()}
+
+
+async def test_tool_registered_full_mode_only():
+    full = await _listed("full")
+    assert full["find_collisions"].annotations.readOnlyHint is True
+    assert "find_collisions" not in await _listed("verdicts")
+
+
+def test_tool_needs_getcollisions():
+    from archicad_mcp.tapir_requirements import TOOL_COMMANDS
+    assert TOOL_COMMANDS["find_collisions"] == ("GetCollisions", "GetElementsByType")

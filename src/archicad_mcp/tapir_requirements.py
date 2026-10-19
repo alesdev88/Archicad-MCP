@@ -40,6 +40,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
                       "HighlightElements", "GetNavigatorItemTree",
                       "GetDatabaseIdFromNavigatorItemId"),
     "create_issues_from_failures": ("CreateIssue", "AttachElementsToIssue"),
+    "find_collisions": ("GetCollisions", "GetElementsByType"),
     "create_swept_beam": ("CreateObjects", "GetAvailableLibraryParts",
                           "SetGDLParametersOfElements"),
     "create_road_marking": ("CreateObjects", "GetAvailableLibraryParts",

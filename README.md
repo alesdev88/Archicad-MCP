@@ -487,7 +487,7 @@ rule with no failures removes the highlight.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`show_elements`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -554,6 +554,17 @@ unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
 `guids=[]` removes the highlight and the selection. It changes only what is on
 screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
 older Tapir the result says which story to open by hand.
+
+`find_collisions` is a clash check between two groups of elements, or within
+one: each group is GUIDs (from `find_elements`, say) plus every element of the
+given types. It returns the colliding pairs with both elements' type and ID,
+counts by type pair, and every element involved, ready for `show_elements`. The
+volume tolerance (m3) ignores small overlaps; a surface tolerance (m2) also
+reports touching faces. Archicad leaves out what its own junctions clean up,
+such as crossing walls, and checks only closed solids whose building material
+takes part in collision detection, so an empty answer is not proof that nothing
+overlaps. Clashes can also be a QA rule, `no-collisions` (see Rules). Needs Tapir
+1.2.2.
 
 `export_ifc` is the step after `verify_ifc_export_readiness`: it saves the
 project as `.ifc` or `.ifczip` with an export translator chosen by name (the

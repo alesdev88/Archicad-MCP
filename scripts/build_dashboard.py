@@ -37,7 +37,8 @@ WRAPPED_BY: dict[str, list[str]] = {
     "API.GetAllElements": ["find_elements", "get_model_summary"],
     "API.GetSelectedElements": ["find_elements", "get_selection"],
     "GetAllElements": ["find_elements", "get_model_summary", "show_elements"],
-    "GetElementsByType": ["find_elements"],
+    "GetElementsByType": ["find_elements", "find_collisions"],
+    "GetCollisions": ["find_collisions"],
     "GetSelectedElements": ["find_elements"],
     "API.GetTypesOfElements": ["find_elements", "get_element_data"],
     "API.GetPropertyIds": ["find_elements", "get_element_data", "search_definitions"],
@@ -196,6 +197,8 @@ TOOLS: list[dict] = [
      "desc": "Deselect everything in the Archicad window."},
     {"name": "show_elements", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Show elements to the user: open the story or view (section, layout, ...) that holds them, select, highlight and zoom. Reads the selection back; guids=[] clears the highlight."},
+    {"name": "find_collisions", "cat": "Elements", "mode": "full",
+     "desc": "Find clashes between two groups of elements (GUIDs or element types) or within one, with volume and surface tolerances. Returns pairs with types, IDs and story, and counts by type pair."},
     # Teamwork
     {"name": "reserve_elements", "cat": "Teamwork", "mode": "full", "mutates": True,
      "desc": "Reserve elements, and attribute, property and classification sets, in a Teamwork project. Confirm-gated; reports reserved, reserved_by_others, already_mine, not_found and indirectly_reserved."},

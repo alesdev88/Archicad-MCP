@@ -702,6 +702,37 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
                                     highlight, zoom)
 
+    from archicad_mcp.core import collisions as _collisions
+
+    @mcp.tool(description=(
+        "Find clashes: which elements of one group collide with which elements of "
+        "another (Tapir). The first group is guids plus every element of "
+        "element_types; the second is against_guids plus against_types, and without "
+        "it the first group is checked against itself. Element types are Archicad's "
+        "names (Wall, Beam, Column, Slab, Object, Morph, ...); for property criteria "
+        "call find_elements first and pass its GUIDs. volume_tolerance (m3, default "
+        "0.001) is the overlap volume below which a clash is ignored; "
+        "surface_tolerance (m2) also reports touching faces over that area. Returns "
+        "each pair with both elements' type and ID, the first one's story, and kind "
+        "(body, clearance for MEP clearance zones, or both), counts by type pair, and "
+        "'elements', every GUID in a pair, to pass to show_elements. Archicad does not "
+        "count elements its own junctions clean up (crossing walls), and checks only "
+        "closed solids whose building material takes part in collision detection, so "
+        "no pairs is not proof that nothing overlaps. A whole-model check can take a "
+        "while. Reads only."),
+              **_tool_meta("Find collisions", read_only=True, destructive=False))
+    @_guarded
+    def find_collisions(guids: list[str] | None = None,
+                        element_types: list[str] | None = None,
+                        against_guids: list[str] | None = None,
+                        against_types: list[str] | None = None,
+                        volume_tolerance: float = _collisions.DEFAULT_VOLUME_TOLERANCE,
+                        surface_tolerance: float | None = None,
+                        port: int | None = None) -> dict:
+        return _collisions.find_collisions(
+            _tapir_conn(port, "find_collisions"), guids, element_types, against_guids,
+            against_types, volume_tolerance, surface_tolerance)
+
     from archicad_mcp.core import teamwork as _teamwork
 
     @mcp.tool(description=(
