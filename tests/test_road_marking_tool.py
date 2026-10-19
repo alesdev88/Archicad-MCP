@@ -208,3 +208,49 @@ async def test_the_registered_tool_takes_its_lists_and_objects_as_json_text(monk
 async def test_the_registered_tool_explains_text_that_is_not_json(monkeypatch):
     payload = await _call_tool(monkeypatch, {"GetAvailableLibraryParts": LIB}, {"points": "0,0 3,0"})
     assert "points" in payload["error"] and "JSON" in payload["error"]
+
+
+# ---------------------------------------------------------------- Tapir 1.7.2 item writes
+
+V172 = {"version": "1.7.2"}
+
+
+def test_item_writes_reset_and_grow_the_marking_in_one_write():
+    conn = _conn({"GetDetailsOfElements": _details({"m-1": _marking((5.0, 5.0, 3.0), math.pi / 2), "mesh": MESH}),
+                  "GetStories": STORIES, "GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,
+                  "GetAddOnVersion": V172,
+                  "GetGDLParametersOfElements": _sequence(_gdl(extEnd=4.0), _gdl(markingType="Custom"))})
+    r = rm.create_road_marking(conn, update_guid="m-1", drape_on=["mesh"], stripes={"1": {"width": 0.12}},
+                               dry_run=False)
+    assert r["updated"] is True and r["array_writes"] == "item by item"
+    (main,) = _writes(conn)                       # no nodeX 0, 1, 2 write first
+    names = [p["name"] for p in main]
+    assert main[:2] == [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0}]
+    assert r["nodes"] == 2 and "extEnd" not in names and "extEndDone" not in names
+    lists = [n for n in names if n.startswith("node")]
+    assert lists[:3] == ["nodeY", "nodeX", "nodeY"]
+
+
+def test_item_writes_send_arcs_in_degrees():
+    arc = {"type": "Arc", "floorIndex": 0, "details": {"origin": {"x": 0, "y": 0}, "radius": 10.0,
+                                                       "begAngle": 0.0, "endAngle": math.pi / 3,
+                                                       "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details({"a-1": arc}), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V172})
+    r = rm.create_road_marking(conn, source_guid="a-1")
+    assert _params(r)["segArc"][0] == pytest.approx(60.0)
+    assert "A" not in _params(r) and "extStart" not in _params(r)
+
+
+def test_a_new_marking_is_read_after_placing_for_its_grip_state():
+    conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": V172,
+                  "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
+                  "SetGDLParametersOfElements": OK, "GetGDLParametersOfElements": _gdl()})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 5, "y": 0, "z": 0}, {"x": 10, "y": 2, "z": 0}]
+    r = rm.create_road_marking(conn, points=pts, dry_run=False)
+    assert r["created"] is True
+    commands = [c for c, _ in conn._core.calls]
+    assert commands.index("CreateObjects") < commands.index("GetGDLParametersOfElements")
+    (main,) = _writes(conn)
+    assert main[:3] == [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0},
+                        {"name": "extEnd", "value": 1.0}]
