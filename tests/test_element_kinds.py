@@ -48,7 +48,7 @@ def test_read_parameters_reads_50_elements_per_request():
 
 
 def test_read_parameters_reads_markers_with_their_own_command():
-    conn, core = _conn(tapir={"GetMarkerParametersOfElements": {
+    conn, _ = _conn(tapir={"GetMarkerParametersOfElements": {
         "markerParametersOfElements": [{"libPart": {"name": "Door Marker"}, "parameters": [
             {"name": "iNumber", "displayName": "Number", "index": 3, "type": "String",
              "value": "001", "flags": []}]}]}})

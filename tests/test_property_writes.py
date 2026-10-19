@@ -41,6 +41,7 @@ def _conn_with_cells(cells: dict, set_results=None):
     official["API.SetPropertyValuesOfElements"] = set_results or (
         lambda p: {"executionResults": [{"success": True}
                                         for _ in p["elementPropertyValues"]]})
+    official = api_replays.with_stored_writes(official)
     tapir = dict(api_replays.TAPIR)
     # The elements named in `cells` exist; any other GUID does not.
     known = {guid for guid, _ in cells}
@@ -194,7 +195,11 @@ def test_set_element_data_keeps_the_count_when_a_batch_fails():
     conn, _ = _conn_with_cells(_string_cells(guids), set_results=set_results)
     out = set_element_data(conn, [{"guid": g, "property": "D/P", "value": "new"}
                                   for g in guids], dry_run=False)
+    # The second batch raised before Archicad acted, so the read shows its
+    # 500 writes did not land: they are named, not silently dropped.
     assert out == {"dry_run": False, "applied": 500,
+                   "not_sent": {"count": 500, "guids": guids[500:550],
+                                "not_shown": 450},
                    "stopped": {"code": 4001, "message": "Invalid program status"}}
 
 

@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from archicad_mcp.connection import ArchicadConnection
+from multiconn_archicad.errors import APIErrorBase
+
+from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core import editability
 from archicad_mcp.core import element_values as ev
 from archicad_mcp.core.attributes import tapir_attributes
@@ -28,7 +30,16 @@ from archicad_mcp.core.element_address import (
     ifc_parts,
     parse_address,
 )
+from archicad_mcp.core.element_data import (
+    FAILURE_SAMPLE,
+    cap_list,
+    error_fields,
+    group_failures,
+    plan_property_writes,
+    read_back_properties,
+)
 from archicad_mcp.core.element_kinds import (
+    PARAMETER_CHUNK,
     PARAMETER_COMMANDS,
     find_parameter,
     find_system,
@@ -36,10 +47,11 @@ from archicad_mcp.core.element_kinds import (
     read_classifications,
     read_ifc,
     read_parameters,
+    send_items,
     tapir_requirement,
     tapir_version,
 )
-from archicad_mcp.extract import _fetch_types
+from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, _fetch_types
 
 # The types whose GDL parameters Tapir writes back with the element: its
 # SetGDLParametersOfElements patches the size of these and no others.
@@ -175,7 +187,6 @@ def _attribute_resolver(conn: ArchicadConnection):
 
 def _plan_properties(conn: ArchicadConnection, changes: list[Change], plan: Plan,
                      classified: set[str]) -> None:
-    from archicad_mcp.core.element_data import plan_property_writes
     planned, skipped = plan_property_writes(
         conn, [{"guid": c.guid, "property": c.address.key, "value": c.value}
                for c in changes], refusals={})
@@ -365,4 +376,152 @@ def dry_run_result(p: Plan) -> dict:
     result = {"dry_run": True, "planned_changes": [planned_entry(c) for c in p.changes]}
     if p.skipped:
         result["skipped"] = skipped_entries(p)
+    return result
+
+
+# ---------- the commit ----------
+
+SEND_ORDER = (CLASSIFICATION, PROPERTY, GDL, MARKER, IFC)
+_ERRORS = (APIErrorBase, ArchicadUnavailableError)
+UNCONFIRMED_NOTE = ("the read after the write failed, so whether these landed is unknown; "
+                    "run a dry run to see the current values before retrying")
+
+
+def _sends(conn: ArchicadConnection, kind: str, changes: list[Change]):
+    """(call, command, list key, items, chunk, item index per change) for one kind.
+
+    GDL and marker parameters go one entry per element, all its changes in
+    it: Tapir applies an element's parameters together and stops at the first
+    bad one, so its answer is for every change of that element.
+    """
+    if kind in (GDL, MARKER):
+        write, list_key, param_key = PARAMETER_COMMANDS[kind][2:]
+        entries: dict[str, dict] = {}
+        for c in changes:
+            entries.setdefault(c.guid, {"elementId": {"guid": c.guid}, param_key: []})
+            entries[c.guid][param_key].append({"name": c.name, "value": c.send})
+        position = {g: i for i, g in enumerate(entries)}
+        return (conn.tapir, write, list_key, list(entries.values()), PARAMETER_CHUNK,
+                [position[c.guid] for c in changes])
+    items = [c.payload for c in changes]
+    at = list(range(len(changes)))
+    if kind == PROPERTY:
+        return (conn.official, "API.SetPropertyValuesOfElements", "elementPropertyValues",
+                items, PROPERTY_FETCH_CHUNK, at)
+    if kind == CLASSIFICATION:
+        if conn.tapir_command_available("SetClassificationsOfElements"):
+            return (conn.tapir, "SetClassificationsOfElements", "elementClassifications",
+                    items, PROPERTY_FETCH_CHUNK, at)
+        return (conn.official, "API.SetClassificationsOfElements", "elementClassifications",
+                items, PROPERTY_FETCH_CHUNK, at)
+    return (conn.tapir, "SetIFCPropertiesOfElements", "elementIFCPropertyValues", items,
+            PROPERTY_FETCH_CHUNK, at)
+
+
+def _read_back(conn: ArchicadConnection, kind: str, changes: list[Change],
+               p: Plan) -> dict[int, tuple[bool, object]]:
+    """change order -> (it reads as sent, what was read, shown as the caller sees it)."""
+    guids = list(dict.fromkeys(c.guid for c in changes))
+    out: dict[int, tuple[bool, object]] = {}
+    if kind == PROPERTY:
+        writes = [{"guid": c.guid, "property": c.address.key, "new": c.target} for c in changes]
+        wrong = {(m["guid"], m["property"]): m["read"]
+                 for m in read_back_properties(conn, writes, [])}
+        for c in changes:
+            key = (c.guid, c.address.key)
+            out[c.order] = (key not in wrong, wrong.get(key, c.target))
+    elif kind == CLASSIFICATION:
+        read = read_classifications(conn, guids, p.systems)
+        for c in changes:
+            item = read.get(c.guid, {}).get(c.name)
+            landed = (item or "").upper() == (c.target or "").upper()
+            out[c.order] = (landed, item_code(p.index, item))
+    elif kind in (GDL, MARKER):
+        reads = read_parameters(conn, guids, kind)
+        for c in changes:
+            entry = find_parameter(reads.get(c.guid, {}).get("params", {}), c.name)
+            value = ev.read_value(entry) if entry else None
+            out[c.order] = (entry is not None and ev.same(c.target, value), value)
+    else:
+        reads = read_ifc(conn, guids)
+        for c in changes:
+            read = reads.get(c.guid)
+            value = read.get(c.address.key) if isinstance(read, dict) else None
+            out[c.order] = (ev.ifc_same(c.target, c.ifc_type, value), value)
+    return out
+
+
+def _shown_sent(c: Change):
+    return c.new if c.address.kind == CLASSIFICATION else c.target
+
+
+def commit(conn: ArchicadConnection, p: Plan) -> dict:
+    outcomes: dict[int, object] = {}
+    stopped = None
+    for kind in SEND_ORDER:
+        changes = [c for c in p.changes if c.address.kind == kind]
+        if not changes:
+            continue
+        if stopped is not None:
+            outcomes.update(dict.fromkeys((c.order for c in changes), "not_sent"))
+            continue
+        call, command, list_key, items, chunk, at = _sends(conn, kind, changes)
+        sent = send_items(call, command, list_key, items, chunk)
+        for c, i in zip(changes, at):
+            outcomes[c.order] = sent.outcomes[i]
+        stopped = sent.stopped
+
+    applied = 0
+    not_applied: dict[str, list[dict]] = {}
+    failed: list[dict] = []
+    not_sent: list[str] = []
+    unconfirmed: list[str] = []
+    for kind in SEND_ORDER:
+        changes = [c for c in p.changes if c.address.kind == kind]
+        reached = [c for c in changes if outcomes.get(c.order) in ("ok", "unanswered")]
+        verdicts: dict[int, tuple[bool, object]] | None = {}
+        if reached:
+            try:
+                verdicts = _read_back(conn, kind, reached, p)
+            except _ERRORS as exc:
+                stopped = stopped or exc
+                verdicts = None
+        for c in changes:
+            outcome = outcomes.get(c.order, "not_sent")
+            if isinstance(outcome, dict):
+                failed.append({"guid": c.guid, "property": c.address.text, **outcome})
+            elif outcome == "not_sent":
+                not_sent.append(c.guid)
+            elif verdicts is None:
+                unconfirmed.append(c.guid)
+            elif verdicts[c.order][0]:
+                applied += 1
+            elif outcome == "unanswered":
+                not_sent.append(c.guid)
+            else:
+                not_applied.setdefault(c.address.text, []).append(
+                    {"guid": c.guid, "sent": _shown_sent(c), "read": verdicts[c.order][1]})
+
+    result: dict = {"dry_run": False, "applied": applied}
+    if not_applied:
+        result["not_applied"] = [
+            {"property": address, "count": len(rows), "sample": rows[:FAILURE_SAMPLE]}
+            for address, rows in sorted(not_applied.items(), key=lambda item: -len(item[1]))]
+    if failed:
+        result["failed"] = group_failures(failed)
+    if p.skipped:
+        result["skipped"] = skipped_entries(p)
+    if not_sent:
+        shown, rest = cap_list(list(dict.fromkeys(not_sent)))
+        result["not_sent"] = {"count": len(not_sent), "guids": shown}
+        if rest:
+            result["not_sent"]["not_shown"] = rest
+    if unconfirmed:
+        shown, rest = cap_list(list(dict.fromkeys(unconfirmed)))
+        result["unconfirmed"] = {"count": len(unconfirmed), "guids": shown,
+                                 "note": UNCONFIRMED_NOTE}
+        if rest:
+            result["unconfirmed"]["not_shown"] = rest
+    if stopped is not None:
+        result["stopped"] = error_fields(stopped)
     return result

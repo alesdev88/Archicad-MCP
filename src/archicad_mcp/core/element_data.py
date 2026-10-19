@@ -386,19 +386,8 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
 
 def set_element_data(conn: ArchicadConnection, changes: list[dict],
                      dry_run: bool = True) -> dict:
-    from archicad_mcp.core import element_writes
+    from archicad_mcp.core import element_writes  # imports this module
+    plan = element_writes.plan(conn, changes)
     if dry_run:
-        return element_writes.dry_run_result(element_writes.plan(conn, changes))
-    planned, skipped = plan_property_writes(conn, changes)
-    result: dict = {"dry_run": False, "applied": 0}
-    if planned:
-        applied, failed, error = send_property_writes(conn, planned)
-        result["applied"] = applied
-        if failed:
-            result["failed"] = group_failures(failed)
-        if error is not None:
-            # Earlier batches landed; an {"error"} alone would hide them.
-            result["stopped"] = error_fields(error)
-    if skipped:
-        result["skipped"] = skipped
-    return result
+        return element_writes.dry_run_result(plan)
+    return element_writes.commit(conn, plan)

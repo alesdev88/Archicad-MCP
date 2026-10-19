@@ -1,7 +1,6 @@
 """Send a stored changeset, exactly as it was previewed, and check the result."""
 from __future__ import annotations
 
-
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadUnavailableError

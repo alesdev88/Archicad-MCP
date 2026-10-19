@@ -18,7 +18,7 @@ def core(monkeypatch):
     official["API.SetPropertyValuesOfElements"] = {"executionResults": [{"success": True}]}
     tapir = dict(api_replays.TAPIR)
     tapir["GetSelectedElements"] = selection  # the source once Tapir is present
-    core = FakeCore(official=official, tapir=tapir)
+    core = FakeCore(official=api_replays.with_stored_writes(official), tapir=tapir)
     monkeypatch.setattr(server_mod, "get_connection",
                         lambda port: ArchicadConnection(19723, core=core))
     return core
@@ -113,7 +113,8 @@ async def test_set_element_data_commit_reports_partial_failure(monkeypatch):
                              {"success": False,
                               "error": {"code": 6001,
                                         "message": "TeamWork permission denied"}}]}
-    fake_core = FakeCore(official=official, tapir=dict(api_replays.TAPIR))
+    fake_core = FakeCore(official=api_replays.with_stored_writes(official),
+                         tapir=dict(api_replays.TAPIR))
     monkeypatch.setattr(server_mod, "get_connection",
                         lambda port: ArchicadConnection(19723, core=fake_core))
     payload = await call("set_element_data", {"changes": [

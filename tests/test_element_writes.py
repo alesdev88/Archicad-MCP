@@ -249,3 +249,175 @@ def test_an_ifc_value_that_does_not_fit_its_type_is_skipped():
     out = _dry(FakeModel(archicad=27), [
         {"guid": OBJ, "property": "ifc:Pset_X.N", "value": "3", "ifc_type": "IfcInteger"}])
     assert "whole number" in _skips(out)[(OBJ, "ifc:Pset_X.N")]
+
+
+# ---------- the commit ----------
+
+def _commit(model, changes):
+    return set_element_data(model.conn(), changes, dry_run=False)
+
+
+_EVERY_KIND = [
+    {"guid": OBJ, "property": "Office/Status", "value": "new"},
+    {"guid": WALL, "property": "classification:Uniclass", "value": "Ss_25"},
+    {"guid": OBJ, "property": "classification:ARCHICAD Classification", "value": None},
+    {"guid": OBJ, "property": "gdl:A", "value": 1.2},
+    {"guid": OBJ, "property": "gdl:gs_angle", "value": math.pi / 2},
+    {"guid": OBJ, "property": "gdl:gs_arr", "value": [0.3, 0.4, 0.5]},
+    {"guid": OBJ, "property": "gdl:gs_mat", "value": "Wood - Oak"},
+    {"guid": DOOR, "property": "marker:iNumber", "value": "002"},
+    {"guid": DOOR, "property": "marker:mAngle", "value": math.pi},
+]
+
+
+def test_every_kind_lands_and_reads_back():
+    model = FakeModel()
+    out = _commit(model, _EVERY_KIND)
+    assert out == {"dry_run": False, "applied": len(_EVERY_KIND)}
+    assert model.cells[(OBJ, "Office/Status")]["value"] == "new"
+    assert model.classified[WALL]["SYS-2"] == "ITEM-SS25"
+    assert "SYS-1" not in model.classified[OBJ]
+    params = {p["name"]: p["value"] for p in model.gdl[OBJ]}
+    assert params["A"] == 1.2 and params["gs_mat"] == 14
+    assert params["gs_angle"] == pytest.approx(math.pi / 2)
+
+
+def test_angles_reach_tapir_in_the_unit_each_write_path_takes():
+    model = FakeModel()
+    _commit(model, _EVERY_KIND)
+    [gdl] = model.calls("SetGDLParametersOfElements")
+    sent = {p["name"]: p["value"] for p in gdl["elementsWithGDLParameters"][0]["gdlParameters"]}
+    assert sent["gs_angle"] == pytest.approx(90.0)          # single Angle: degrees
+    assert sent["gs_arr"] == [0.3, 0.4, 0.5]                 # Angle array: radians
+    [marker] = model.calls("SetMarkerParametersOfElements")
+    sent = {p["name"]: p["value"]
+            for p in marker["elementsWithMarkerParameters"][0]["markerParameters"]}
+    assert sent["mAngle"] == pytest.approx(math.pi)          # marker: radians
+
+
+def test_kinds_are_sent_classifications_first():
+    model = FakeModel()
+    _commit(model, list(reversed(_EVERY_KIND)))
+    assert _sent(model) == ["SetClassificationsOfElements", "API.SetPropertyValuesOfElements",
+                            "SetGDLParametersOfElements", "SetMarkerParametersOfElements"]
+
+
+def test_one_element_sends_all_its_parameters_in_one_entry():
+    model = FakeModel()
+    _commit(model, _EVERY_KIND)
+    [gdl] = model.calls("SetGDLParametersOfElements")
+    assert len(gdl["elementsWithGDLParameters"]) == 1
+
+
+def test_classifications_go_through_the_official_api_without_tapirs_command():
+    model = FakeModel(unavailable={"SetClassificationsOfElements",
+                                   "GetClassificationsOfElements"})
+    out = _commit(model, [{"guid": WALL, "property": "classification:Uniclass",
+                           "value": "Ss_25"}])
+    assert out["applied"] == 1
+    assert model.calls("API.SetClassificationsOfElements")
+
+
+def test_a_value_the_parameter_script_replaces_is_not_applied():
+    model = FakeModel()
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:gs_capped", "value": 2.0},
+                          {"guid": OBJ, "property": "gdl:A", "value": 1.2}])
+    assert out["applied"] == 1
+    assert out["not_applied"] == [{"property": "gdl:gs_capped", "count": 1,
+                                   "sample": [{"guid": OBJ, "sent": 2.0, "read": 1.0}]}]
+
+
+def test_a_refused_element_fails_each_of_its_parameter_changes():
+    model = FakeModel()
+    model.refuse_gdl = {OBJ}
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:A", "value": 1.2},
+                          {"guid": OBJ, "property": "gdl:B", "value": 0.7},
+                          {"guid": DOOR, "property": "gdl:A", "value": 1.0}])
+    assert out["applied"] == 1
+    [group] = out["failed"]
+    assert group["count"] == 2 and "bad parameter" in group["message"]
+    assert [s["property"] for s in group["sample"]] == ["gdl:A", "gdl:B"]
+
+
+def test_a_stop_keeps_what_landed_and_counts_the_rest_as_not_sent():
+    model = FakeModel()
+    model.raise_on = {"SetGDLParametersOfElements": 1}
+    out = _commit(model, _EVERY_KIND)
+    assert out["stopped"] == {"code": 4001, "message": "Invalid program status"}
+    # classifications and the property landed; GDL raised before acting, and
+    # the markers after it were never sent
+    assert out["applied"] == 3
+    assert out["not_sent"]["count"] == len(_EVERY_KIND) - 3
+    assert out["not_sent"]["guids"] == [OBJ, DOOR]
+    assert not model.calls("SetMarkerParametersOfElements")
+
+
+def test_a_batch_that_raised_after_acting_counts_what_the_read_shows():
+    model = FakeModel()
+    real = model.core.tapir_responses["SetGDLParametersOfElements"]
+
+    def acts_then_raises(params):
+        real(params)
+        from multiconn_archicad.errors import StandardAPIError
+        raise StandardAPIError(message="timed out", code=None)
+
+    model.core.tapir_responses["SetGDLParametersOfElements"] = acts_then_raises
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:A", "value": 1.2},
+                          {"guid": DOOR, "property": "marker:iNumber", "value": "002"}])
+    assert out["applied"] == 1
+    assert out["not_sent"]["count"] == 1
+    assert out["stopped"]["message"] == "timed out"
+
+
+def test_a_failed_readback_leaves_the_changes_unconfirmed():
+    model = FakeModel()
+    reads = {"n": 0}
+    real = model.core.tapir_responses["GetMarkerParametersOfElements"]
+
+    def second_read_fails(params):
+        reads["n"] += 1
+        if reads["n"] == 2:
+            from multiconn_archicad.errors import StandardAPIError
+            raise StandardAPIError(message="Invalid program status", code=4001)
+        return real(params)
+
+    model.core.tapir_responses["GetMarkerParametersOfElements"] = second_read_fails
+    out = _commit(model, [{"guid": DOOR, "property": "marker:iNumber", "value": "002"},
+                          {"guid": OBJ, "property": "gdl:A", "value": 1.2}])
+    assert out["applied"] == 1
+    assert out["unconfirmed"]["count"] == 1 and out["unconfirmed"]["guids"] == [DOOR]
+    assert out["stopped"]["code"] == 4001
+
+
+def test_a_property_that_does_not_read_back_is_not_applied():
+    model = FakeModel()
+    real = model.core.official_responses["API.SetPropertyValuesOfElements"]
+
+    def answers_but_keeps(params):
+        real({"elementPropertyValues": []})
+        return {"executionResults": [{"success": True} for _ in params["elementPropertyValues"]]}
+
+    model.core.official_responses["API.SetPropertyValuesOfElements"] = answers_but_keeps
+    out = _commit(model, [{"guid": OBJ, "property": "Office/Status", "value": "new"}])
+    assert out["applied"] == 0
+    assert out["not_applied"][0]["sample"] == [{"guid": OBJ, "sent": "new", "read": "old"}]
+
+
+def test_ifc_writes_land_on_archicad_27():
+    model = FakeModel(archicad=27)
+    out = _commit(model, [
+        {"guid": OBJ, "property": "ifc:Pset_FurnitureCommon.Style", "value": "y"},
+        {"guid": OBJ, "property": "ifc:Pset_FurnitureCommon.IsExternal", "value": True},
+        {"guid": OBJ, "property": "ifc:Pset_X.N", "value": 3}])
+    assert out == {"dry_run": False, "applied": 3}
+    [sent] = model.calls("SetIFCPropertiesOfElements")
+    assert sent["elementIFCPropertyValues"][1] == {
+        "elementId": {"guid": OBJ}, "propertySetName": "Pset_FurnitureCommon",
+        "propertyName": "IsExternal", "type": "IfcBoolean", "value": True}
+
+
+def test_a_commit_with_only_skips_sends_nothing():
+    model = FakeModel()
+    out = _commit(model, [{"guid": WALL, "property": "gdl:A", "value": 1.0}])
+    assert out["applied"] == 0 and len(out["skipped"]) == 1
+    assert _sent(model) == []

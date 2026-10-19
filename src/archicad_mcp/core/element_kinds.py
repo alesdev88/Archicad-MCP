@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload, parse_ifc_response
+from archicad_mcp.extract import (
+    PROPERTY_FETCH_CHUNK,
+    element_payload,
+    parse_ifc_response,
+)
 
 # kind -> (read command, its list key, write command, its list key, the
 # per-element parameter key)
