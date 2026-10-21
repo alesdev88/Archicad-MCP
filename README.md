@@ -503,11 +503,16 @@ lamps, doors and windows in walls, openings, MEP routes and elements, sections,
 interior elevations, hotlink instances, 2D lines to texts and labels, keynote
 labels, dimensions (associative, wall thickness, on a section) and drawings on
 a layout. Items use Tapir's own fields; `items=[]` returns a type's item
-schema. The dry run validates every item, checks that a named favourite
-exists, and checks hosts (a door's wall, the elements a dimension measures)
-for existence, type and editability, so an item that would fail is skipped
-with its reason instead of sent. Model elements are placed from the floor plan
-or the 3D window; 2D elements go into whichever drawing window is active.
+schema. The dry run validates every item, checks that a named favourite and a
+named library part exist (with the closest names when they do not), and checks
+hosts (a door's wall, the elements a dimension measures) for existence, type
+and editability, so an item that would fail is skipped with its reason instead
+of sent. Tapir starts every object from the Object tool's current settings, so
+the dry run warns about an object or lamp without `dimensions` (it would take
+the size the tool is set to, not the library part's own) and about `offset`
+and `useFixedAngle`, which Archicad discards. Model elements are placed from
+the floor plan or the 3D window; 2D elements go into whichever drawing window
+is active.
 
 `find_elements` is a criteria query in the shape of Archicad's Find & Select:
 groups of property comparisons, AND or OR within a group, OR between groups,

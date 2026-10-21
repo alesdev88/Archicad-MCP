@@ -3,8 +3,9 @@
 Items keep Tapir's own field names and units (metres, radians), so the tool
 follows Tapir's schema as it grows instead of keeping a parallel one. What the
 tool adds is the checking an agent needs before a write: the item schema on
-request, validation per item, favourites that exist, and hosts (the wall of a
-door, the element a dimension measures) that Archicad would accept.
+request, validation per item, favourites and library parts that exist, and
+hosts (the wall of a door, the element a dimension measures) that Archicad
+would accept.
 """
 from __future__ import annotations
 
@@ -34,6 +35,25 @@ _WORKS_FROM = {FLOOR_PLAN: frozenset({FLOOR_PLAN, "3DModel"}),
 # At most this many schema problems are reported per item: the first few say
 # what is wrong, a long list of consequences of the same mistake does not.
 PROBLEMS_PER_ITEM = 3
+
+# At most this many item indices are named in one warning.
+INDICES_NAMED = 10
+
+# Types placed from a library part through a tool. Tapir starts every item from
+# the tool's current settings (ACAPI_Element_GetDefaults) and only swaps in the
+# named part, so a size the item leaves out is the tool's (live 29.09.2026,
+# AC 27, Tapir 1.5.9: the Object tool's A, B and height, not the part's own).
+_TOOL_SIZED = {"object": "Object tool", "lamp": "Lamp tool"}
+
+# Fields Archicad drops when it creates an object or lamp.
+_DISCARDED = {
+    # Live 16.09.2026 (CVP shading panels): in a batch each object took the
+    # previous one's offset, so the panels could not be stretched.
+    "offset": ("Archicad discards it (Tapir's own definition says so), and in a "
+               "batch each object took the previous one's offset, which puts the "
+               "stretch hotspots off the object. Leave it out."),
+    "useFixedAngle": "Archicad discards it (Tapir's own definition says so). Leave it out.",
+}
 
 
 @dataclass(frozen=True)
@@ -172,6 +192,87 @@ def _favorite_skips(conn: ArchicadConnection, name: str, spec: CreateType,
     return skips
 
 
+def _named(indices: list[int]) -> str:
+    """'item 3' or 'items 0, 1, 2', and how many more past the first few."""
+    shown = ", ".join(str(i) for i in indices[:INDICES_NAMED])
+    more = len(indices) - INDICES_NAMED
+    word = "item" if len(indices) == 1 else "items"
+    return f"{word} {shown}" + (f" and {more} more" if more > 0 else "")
+
+
+def _library_part_checks(conn: ArchicadConnection, items: list[dict],
+                         skipped: dict[int, str]) -> tuple[dict[int, str], list[str]]:
+    """Items whose libraryPartName no loaded part has, and warnings for names the
+    library spells another way."""
+    wanted: dict[str, list[int]] = {}
+    for index, item in enumerate(items):
+        if index not in skipped and isinstance(item.get("libraryPartName"), str):
+            wanted.setdefault(item["libraryPartName"], []).append(index)
+    if not wanted:
+        return {}, []
+    try:
+        response = conn.tapir("GetAvailableLibraryParts", {})
+    except APIErrorBase:
+        return {}, []  # unreadable: let Archicad judge the names
+    entries = response.get("libraryParts")
+    if not isinstance(entries, list):
+        return {}, []
+    # Pictures are image files in the library, not parts an element can use.
+    parts = [e for e in entries if e.get("typeId") != "Picture"]
+    names = {str(e.get("documentName")) for e in parts}
+    ordered = sorted(names)
+    spellings = {}
+    for e in parts:
+        file_name = str(e.get("fileName"))
+        for spelling in (str(e.get("documentName")), file_name,
+                         file_name.removesuffix(".gsm")):
+            spellings.setdefault(spelling.casefold(), str(e.get("documentName")))
+    # Entries Archicad could not read past the last listed one are not parts (live
+    # 21.10.2026, MCP-Test: 123 indices after 7402 parts); one among them could be.
+    unread = response.get("skippedCount") or 0
+    listed = sorted(e.get("index") for e in entries if isinstance(e.get("index"), int))
+    complete = not unread or listed == list(range(1, len(entries) + 1))
+    skips, warnings = {}, []
+    for name, indices in wanted.items():
+        if name in names:
+            continue
+        spelt = spellings.get(name.casefold())
+        if spelt is not None:
+            warnings.append(f"The library spells '{name}' ({_named(indices)}) as "
+                            f"'{spelt}': send that name, as Archicad may not match "
+                            "another spelling.")
+            continue
+        close = difflib.get_close_matches(name, ordered, n=3, cutoff=0.6)
+        hint = f"; closest: {', '.join(close)}" if close else ""
+        reason = f"no loaded library part named '{name}'{hint}"
+        if complete:
+            skips.update(dict.fromkeys(indices, reason))
+        else:
+            warnings.append(f"There is {reason} ({_named(indices)}), but {unread} "
+                            "library entries could not be read, so it is sent for "
+                            "Archicad to judge.")
+    return skips, warnings
+
+
+def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str]:
+    tool = _TOOL_SIZED.get(name)
+    if tool is None:
+        return []
+    warnings = []
+    unsized = [i for i in ready
+               if "dimensions" not in items[i] and "favoriteName" not in items[i]]
+    if unsized:
+        warnings.append(f"No dimensions on {_named(unsized)}: Tapir starts each {name} "
+                        f"from the {tool}'s current settings, so without dimensions it "
+                        f"takes the size (A, B and height) the {tool} is set to now, "
+                        "not the library part's own. Send dimensions in metres.")
+    for field, why in _DISCARDED.items():
+        sending = [i for i in ready if field in items[i]]
+        if sending:
+            warnings.append(f"{field} on {_named(sending)}: {why}")
+    return warnings
+
+
 def _host_skips(conn: ArchicadConnection, name: str, spec: CreateType,
                 items: list[dict], skipped: dict[int, str]) -> dict[int, str]:
     hosts = {i: [g for field in spec.hosts for g in _host_guids(item, field)]
@@ -265,9 +366,12 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                         "this type's item schema."}
     skipped = _favorite_skips(conn, name, spec, items)
     skipped.update(_host_skips(conn, name, spec, items, skipped))
+    library_skips, library_warnings = _library_part_checks(conn, items, skipped)
+    skipped.update(library_skips)
     window = active_window(conn)
-    warnings = _window_warnings(name, spec, items, window)
     ready = [i for i in range(len(items)) if i not in skipped]
+    warnings = (_window_warnings(name, spec, items, window) + library_warnings
+                + _object_warnings(name, items, ready))
     if not dry_run:
         if not ready:
             return {"dry_run": False, "created": 0, "elements": [],
