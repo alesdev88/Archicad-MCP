@@ -36,6 +36,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     "highlight_failures": ("HighlightElements",),
     "save_project": ("SaveProject",),
     "export_ifc": ("IFCFileOperation", "GetIFCExportTranslators"),
+    "capture_window": ("SaveCurrentWindowAsImage", "GetCurrentWindowType"),
     "show_elements": ("ChangeWindow", "FitInWindow", "ChangeSelectionOfElements",
                       "HighlightElements", "GetNavigatorItemTree",
                       "GetDatabaseIdFromNavigatorItemId"),

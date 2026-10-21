@@ -105,7 +105,7 @@ def test_unavailable_tools_lists_editing_tools_on_old_tapir():
 
 
 def test_unavailable_tools_probes_only_what_the_version_cannot_promise():
-    conn, core = fake_conn(version="1.7.1")
+    conn, core = fake_conn(version=load_pinned().version)
     assert req.unavailable_tools(conn) == []
     assert [c for c, _ in core.calls].count("API.IsAddOnCommandAvailable") == 1  # the Tapir probe
 

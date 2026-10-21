@@ -488,7 +488,7 @@ rule with no failures removes the highlight.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`show_elements`, `capture_window`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -576,6 +576,13 @@ unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
 `guids=[]` removes the highlight and the selection. It changes only what is on
 screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
 older Tapir the result says which story to open by hand.
+
+`capture_window` is how an agent looks. It saves what the current window shows
+(floor plan, section, 3D, layout) as a PNG and returns it as an image, so a
+placement can be checked by eye: which way a bed faces, which way a door opens.
+Call `show_elements` first to bring the elements into view; `entire_drawing`
+covers a 2D window's whole drawing instead of its current zoom. Images over
+1600 pixels are scaled down. Needs Tapir 1.7.2.
 
 `find_collisions` is a clash check between two groups of elements, or within
 one: each group is GUIDs (from `find_elements`, say) plus every element of the

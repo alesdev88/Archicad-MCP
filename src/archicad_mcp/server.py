@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp import actions
@@ -744,6 +745,25 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
                       zoom: bool = True, port: int | None = None) -> dict:
         return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
                                     highlight, zoom)
+
+    from archicad_mcp.core import window_image as _window_image
+
+    @mcp.tool(description=(
+        "See what the current Archicad window shows (floor plan, section, 3D, layout "
+        "...) as an image, to check a result by eye: which way a placed object faces, "
+        "which way a door opens, whether walls meet. Call show_elements first to bring "
+        "the elements into view. entire_drawing=true covers the whole drawing of a 2D "
+        "window instead of the current zoom. Images larger than 1600 pixels are scaled "
+        "down (scaled_from gives the original size). Needs Tapir 1.7.2. Reads only."),
+              **_tool_meta("Capture the Archicad window", read_only=True))
+    @_guarded
+    def capture_window(entire_drawing: bool = False, port: int | None = None):
+        result = _window_image.capture_window(_tapir_conn(port, "capture_window"),
+                                              entire_drawing)
+        png = result.pop("png", None)
+        if png is None:
+            return result
+        return [Image(data=png, format="png"), result]
 
     from archicad_mcp.core import collisions as _collisions
 

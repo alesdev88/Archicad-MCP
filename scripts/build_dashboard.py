@@ -93,6 +93,7 @@ WRAPPED_BY: dict[str, list[str]] = {
     "DeleteElements": ["delete_elements"],
     "ChangeSelectionOfElements": ["set_selection", "clear_selection", "show_elements"],
     "ChangeWindow": ["show_elements"],
+    "SaveCurrentWindowAsImage": ["capture_window"],
     "FitInWindow": ["show_elements", "highlight_failures"],
     "GetNavigatorItemTree": ["show_elements"],
     "GetDatabaseIdFromNavigatorItemId": ["show_elements"],
@@ -202,6 +203,8 @@ TOOLS: list[dict] = [
      "desc": "Deselect everything in the Archicad window."},
     {"name": "show_elements", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Show elements to the user: open the story or view (section, layout, ...) that holds them, select, highlight and zoom. Reads the selection back; guids=[] clears the highlight."},
+    {"name": "capture_window", "cat": "Elements", "mode": "full",
+     "desc": "See what the current window shows (floor plan, section, 3D, layout) as an image, to check placements by eye. Needs Tapir 1.7.2."},
     {"name": "find_collisions", "cat": "Elements", "mode": "full",
      "desc": "Find clashes between two groups of elements (GUIDs or element types) or within one, with volume and surface tolerances. Returns pairs with types, IDs and story, and counts by type pair."},
     # Teamwork
