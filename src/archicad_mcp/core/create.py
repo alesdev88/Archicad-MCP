@@ -392,8 +392,9 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                 "since_tapir": info.version, "item_schema": schema}
     archicad = conn.archicad_version()
     if spec.archicad and archicad and archicad < spec.archicad:
-        return {"error": f"A {name} needs Archicad {spec.archicad} or later, and this is "
-                         f"Archicad {archicad}. Nothing was sent.", "element_type": name}
+        return {"error": f"'{name}' elements need Archicad {spec.archicad} or later, and "
+                         f"this is Archicad {archicad}. Nothing was sent.",
+                "element_type": name}
     refusal = require_tapir_command(conn, spec.command, "create_elements")
     if refusal is not None:
         return dict(refusal, element_type=name)
