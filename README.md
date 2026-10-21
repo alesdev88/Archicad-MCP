@@ -37,8 +37,9 @@ does two jobs:
   definitions are synced from Tapir **1.7.2**. On 1.7.2 and Archicad 29 the
   live suite, `create_elements` (doors and windows by part name and the new
   types), `modify_elements`, `capture_window`, `create_swept_beam` and
-  `create_road_marking` have been exercised live; `create_elements` also ran
-  against 1.7.1 on Archicad 30, the other tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
+  `create_road_marking` have been exercised live, and on Archicad 30
+  `create_elements` (the electrical types too) and `capture_window`; the other
+  tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
   and the rest degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
