@@ -152,6 +152,23 @@ def test_a_command_a_new_enough_tapir_lacks_is_not_called_outdated():
     assert "Archicad 29" in error
 
 
+def test_a_command_first_released_in_1_7_2_is_outdated_on_1_7_1():
+    # The 1.7.2 definitions label SaveCurrentWindowAsImage 1.7.1, but the 1.7.1
+    # release has no such command (live 21.10.2026, MCP-Test on Tapir 1.7.1).
+    conn, _ = fake_conn({"SaveCurrentWindowAsImage"}, version="1.7.1")
+    error = req.require_tapir_command(conn, "SaveCurrentWindowAsImage", "x")["error"]
+    assert "1.7.2 or newer" in error and "install-tapir" in error
+
+
+def test_version_corrections_still_correct_the_definitions():
+    registry = build_registry()
+    for name, (version, reason) in req.CORRECTED_VERSIONS.items():
+        assert reason
+        labelled = registry[name].version
+        assert _v(labelled) < _v(version), (
+            f"{name}: the definitions now say {labelled}; drop the correction")
+
+
 def test_outdated_refusal_and_instance_hint_say_replace():
     conn, core = fake_conn({"UpdateClassificationItems"})
     assert "--replace" in req.tapir_refusal(conn, "edit_classifications")["error"]
