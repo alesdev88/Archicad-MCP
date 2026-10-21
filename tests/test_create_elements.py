@@ -3,9 +3,11 @@
 The fake below answers like Tapir 1.5.x: Create* commands return one entry per
 item, either {"elementId": {"guid"}} or {"error": {"code", "message"}}.
 """
+import pytest
+
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.create import CREATE_TYPES, create_elements
-from archicad_mcp.gateway.registry import DEFINITIONS_DIR, _load_js_json
+from archicad_mcp.gateway.registry import DEFINITIONS_DIR, _load_js_json, build_registry
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
 
@@ -22,19 +24,45 @@ def door(host: str, **extra) -> dict:
     return {"ownerWallId": {"guid": host}, "centerOffset": 1.0, **extra}
 
 
+def chair(name="Chair 01", **extra) -> dict:
+    return {"libraryPartName": name, "coordinates": {"x": 0, "y": 0, "z": 0}, **extra}
+
+
+SIZE = {"dimensions": {"x": 0.5, "y": 0.5, "z": 0.9}}
+
+
 class Plan:
-    """Element types by GUID, which elements Archicad would refuse, the favourites."""
+    """Element types by GUID, which elements Archicad would refuse, the favourites,
+    the loaded library parts."""
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
-                 missing_commands=(), elsewhere=()):
+                 missing_commands=(), elsewhere=(), library=None, pictures=(),
+                 unread=()):
         self.types = dict(types or {})
         self.elsewhere = set(elsewhere)  # exist, but in another view's database
         self.refused = set(refused)
         self.favorites = dict(favorites or {})
         self.window = window
         self.missing_commands = set(missing_commands)
+        # Document names of the loaded parts; None leaves GetAvailableLibraryParts
+        # unanswered. `unread` are the library indices ACAPI_LibraryPart_Get fails on.
+        self.library = library
+        self.pictures = list(pictures)
+        self.unread = set(unread)
         self.created: list[tuple[str, dict]] = []
         self.create_errors: dict[int, dict] = {}
+
+    def _library_parts(self, p):
+        entries = [(n, "Object") for n in self.library] + [(n, "Picture") for n in self.pictures]
+        indices = (i for i in range(1, len(entries) + len(self.unread) + 1)
+                   if i not in self.unread)
+        return {"libraryParts": [{"guid": f"lib-{index}", "index": index,
+                                  "documentName": name, "fileName": f"{name}.gsm",
+                                  "typeId": type_id}
+                                 for (name, type_id), index in zip(entries, indices)],
+                "skippedCount": len(self.unread),
+                "skippedSample": [{"index": i, "code": -2130313112}
+                                  for i in sorted(self.unread)[:5]]}
 
     def connection(self) -> ArchicadConnection:
         official = dict(api_replays.OFFICIAL)
@@ -57,6 +85,8 @@ class Plan:
             for e in p["elements"]]}
         tapir["GetFavoritesByType"] = lambda p: {
             "favorites": self.favorites.get(p["elementType"], [])}
+        if self.library is not None:
+            tapir["GetAvailableLibraryParts"] = self._library_parts
         official["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
             {"typeOfElement": {"elementId": e["elementId"],
                                "elementType": self.types[e["elementId"]["guid"]]}}
@@ -229,3 +259,138 @@ def test_a_host_in_another_views_database_is_skipped():
     result = create_elements(plan.connection(), "door", [door(W1), door(W2)])
     assert [s["index"] for s in result["skipped"]] == [1]
     assert "another view's database" in result["skipped"][0]["reason"]
+
+
+# Library parts. Tapir finds the part by document name only when the item is
+# created (ElementCreationCommands.cpp, ResolveLibraryPartName), so a misspelt
+# name used to surface as "Not found library part" after commit.
+
+def test_an_unknown_library_part_is_skipped_with_close_matches():
+    plan = Plan(library=["Chair 01", "Chair 02", "Table 01"])
+    result = create_elements(plan.connection(), "object",
+                             [chair("Chiar 01", **SIZE), chair("Table 01", **SIZE)])
+    assert [s["index"] for s in result["skipped"]] == [0]
+    assert "Chair 01" in result["skipped"][0]["reason"]
+    assert result["ready"] == 1
+
+
+def test_an_unknown_library_part_is_not_sent_on_commit():
+    plan = Plan(library=["Chair 01"])
+    result = create_elements(plan.connection(), "object",
+                             [chair("Chiar 01", **SIZE), chair(**SIZE)], dry_run=False)
+    assert plan.sent("CreateObjects") == [{"objectsData": [chair(**SIZE)]}]
+    assert [s["index"] for s in result["skipped"]] == [0]
+
+
+def test_a_lamp_part_name_is_checked_too():
+    plan = Plan(library=["Light"])
+    result = create_elements(plan.connection(), "lamp", [chair("Lihgt", **SIZE)])
+    assert [s["index"] for s in result["skipped"]] == [0]
+    assert "Light" in result["skipped"][0]["reason"]
+
+
+@pytest.mark.parametrize("spelling", ["chair 01", "Chair 01.gsm"])
+def test_a_library_part_spelt_another_way_is_sent_with_a_warning(spelling):
+    # Whether Archicad's name lookup ignores case is unverified, so the item
+    # goes ahead and the warning gives the library's own spelling.
+    plan = Plan(library=["Chair 01"])
+    result = create_elements(plan.connection(), "object", [chair(spelling, **SIZE)])
+    assert result["ready"] == 1
+    assert any("'Chair 01'" in w for w in result["warnings"])
+
+
+def test_a_picture_file_is_not_a_library_part():
+    plan = Plan(library=["Chair 01"], pictures=["Oak bark"])
+    result = create_elements(plan.connection(), "object", [chair("Oak bark", **SIZE)])
+    assert [s["index"] for s in result["skipped"]] == [0]
+
+
+def test_unread_entries_after_the_last_part_do_not_stop_the_check():
+    # Live 21.10.2026 (AC 29, Tapir 1.7.1, MCP-Test): 7402 parts listed, and the
+    # 123 entries ACAPI_LibraryPart_Get failed on were the indices after them.
+    plan = Plan(library=["Chair 01", "Table 01"], unread=(3, 4))
+    result = create_elements(plan.connection(), "object", [chair("Chiar 01", **SIZE)])
+    assert [s["index"] for s in result["skipped"]] == [0]
+
+
+def test_an_unread_entry_among_the_parts_turns_the_skip_into_a_warning():
+    plan = Plan(library=["Chair 01", "Table 01"], unread=(2,))
+    result = create_elements(plan.connection(), "object", [chair("Chiar 01", **SIZE)])
+    assert result["skipped"] == []
+    assert result["ready"] == 1
+    assert any("Chiar 01" in w for w in result["warnings"])
+
+
+def test_an_unreadable_library_lets_archicad_judge_the_name():
+    plan = Plan()  # GetAvailableLibraryParts goes unanswered
+    result = create_elements(plan.connection(), "object", [chair("Chiar 01", **SIZE)])
+    assert result["skipped"] == []
+    assert result["ready"] == 1
+
+
+def test_items_without_a_library_part_do_not_list_the_library():
+    # The listing is about 1.2 MB on MCP-Test.
+    plan = Plan(library=["Chair 01"])
+    create_elements(plan.connection(), "wall", [WALL])
+    assert "GetAvailableLibraryParts" not in [command for command, _ in plan.core.calls]
+
+
+def _door_fields() -> dict:
+    schema = build_registry()["CreateDoors"].input_schema
+    return schema["properties"]["doorsData"]["items"]["properties"]
+
+
+@pytest.mark.skipif("libraryPartName" not in _door_fields(),
+                    reason="doors take a libraryPartName from Tapir 1.7.2")
+def test_a_door_part_name_is_checked_once_doors_take_one():
+    plan = Plan(types={W1: "Wall"}, library=["Door 26"])
+    result = create_elements(plan.connection(), "door",
+                             [door(W1, libraryPartName="Dor 26")])
+    assert [s["index"] for s in result["skipped"]] == [0]
+    assert "Door 26" in result["skipped"][0]["reason"]
+
+
+# Sizes and fields Archicad drops. CreateObjects starts every item from the tool's
+# current settings (ACAPI_Element_GetDefaults) and swaps in the library part.
+
+@pytest.mark.parametrize("element_type, tool", [("object", "Object tool"),
+                                                ("lamp", "Lamp tool")])
+def test_items_without_dimensions_warn_that_they_take_the_tool_size(element_type, tool):
+    # Live 29.09.2026 (AC 27, Tapir 1.5.9): an object placed without dimensions
+    # took the Object tool's A, B and height, not the library part's own.
+    plan = Plan(library=["Chair 01"])
+    result = create_elements(plan.connection(), element_type,
+                             [chair(**SIZE), chair(), chair()])
+    [warning] = result["warnings"]
+    assert tool in warning
+    assert "1, 2" in warning
+    assert result["ready"] == 3
+
+
+def test_an_item_from_a_favourite_takes_its_size_from_the_favourite():
+    plan = Plan(library=["Chair 01"], favorites={"Object": ["Office chair"]})
+    result = create_elements(plan.connection(), "object",
+                             [chair(favoriteName="Office chair")])
+    assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("field, value", [("offset", {"x": -1.2, "y": 0.0}),
+                                          ("useFixedAngle", True)])
+def test_fields_archicad_discards_are_warned_about(field, value):
+    plan = Plan(library=["Chair 01"])
+    result = create_elements(plan.connection(), "object",
+                             [chair(**SIZE, **{field: value}), chair(**SIZE),
+                              chair(**SIZE, **{field: value})])
+    [warning] = result["warnings"]
+    assert field in warning
+    assert "0, 2" in warning
+    assert result["ready"] == 3
+
+
+def test_a_long_run_of_items_is_named_by_its_first_indices():
+    plan = Plan(library=["Chair 01"])
+    result = create_elements(plan.connection(), "object", [chair() for _ in range(25)])
+    [warning] = result["warnings"]
+    assert "0, 1, 2" in warning
+    assert "15 more" in warning
+    assert "24" not in warning
