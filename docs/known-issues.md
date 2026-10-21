@@ -354,6 +354,40 @@ The server probes availability per command, so an older add-on degrades to
 `tapir_version` in `list_instances` come from Tapir too. Without the add-on they
 are `null` even though the instance is otherwise fine.
 
+### Tapir 1.7.2 (live 21.10.2026, MCP-Test on Archicad 29 build 5101, MCP-Test_30 on Archicad 30)
+
+- **Version labels.** Nine commands new in the 1.7.2 definitions are labelled
+  1.7.1 (`SaveCurrentWindowAsImage`, `Get3DProjectionSettings`,
+  `Set3DProjectionSettings` and six design option commands), but the 1.7.1
+  release has none of them. `CORRECTED_VERSIONS` in `tapir_requirements.py`
+  gates them on 1.7.2.
+- **Electrical commands on Archicad 29.** `CreateElectricalPanels` and the other
+  electrical commands are registered (`IsAddOnCommandAvailable` says true) but
+  answer "This command requires Archicad 30 or newer." On Archicad 30
+  (MCP-Test_30, build 3001) a panel, a circuit on it and a device on the
+  circuit were created and deleted.
+- **A circuit is not a placed element.** `GetAllElements` does not list it, so
+  `delete_elements` refused the test circuit as "in another view's database",
+  which is wrong. Deleting its panel removed it.
+- **Doors take the Door tool's settings.** A door created by `libraryPartName`
+  without `sillHeight` came in with the Door tool's 0.1 m sill. Send every size
+  that matters, as with objects.
+- **Referenced elements are checked as if they were changed.** A level
+  dimension's, a label's or a dimension's parent element is skipped when
+  Archicad would refuse to change it (not reserved in Teamwork, in a hotlinked
+  module, on a locked or hidden layer), although the new element only refers to
+  it. Whether Archicad accepts such a parent is unverified; a hotlinked site mesh
+  is the case to try.
+- **A part's insertion point is its own.** `Bed Double 01` at angle 0 is placed
+  by its foot-left corner, with the pillows towards +Y. "Placed against the
+  wall" by its insertion point, the bed ran through the wall; `capture_window`
+  showed it, and a move of the bed's length fixed it.
+- Verified on 1.7.2: doors and windows by `libraryPartName`, door and window
+  width and sill changes through `modify_elements`, a Swept Beam grown from 3 to
+  5 nodes (its arrays read back at 5), a Road Marking, a curtain wall, a grid
+  element, a level dimension, `capture_window`, and the live suite (16 passed);
+  on Archicad 30 also doors and windows by part name and `capture_window`.
+
 ## Attribute writes: what Tapir's create-or-overwrite commands do
 
 Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason

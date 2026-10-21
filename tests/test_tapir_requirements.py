@@ -105,7 +105,7 @@ def test_unavailable_tools_lists_editing_tools_on_old_tapir():
 
 
 def test_unavailable_tools_probes_only_what_the_version_cannot_promise():
-    conn, core = fake_conn(version="1.7.1")
+    conn, core = fake_conn(version=load_pinned().version)
     assert req.unavailable_tools(conn) == []
     assert [c for c, _ in core.calls].count("API.IsAddOnCommandAvailable") == 1  # the Tapir probe
 
@@ -141,6 +141,29 @@ def test_editing_gate_uses_the_shared_refusal(tool):
     conn, _ = fake_conn({"UpdateClassificationItems"})
     error = editing_unavailable(conn, tool)["error"]
     assert f"'{tool}' needs Tapir 1.6.0" in error
+
+
+def test_a_command_first_released_in_1_7_2_is_outdated_on_1_7_1():
+    # The 1.7.2 definitions label SaveCurrentWindowAsImage 1.7.1, but the 1.7.1
+    # release has no such command (live 21.10.2026, MCP-Test on Tapir 1.7.1).
+    conn, _ = fake_conn({"SaveCurrentWindowAsImage"}, version="1.7.1")
+    error = req.require_tapir_command(conn, "SaveCurrentWindowAsImage", "x")["error"]
+    assert "1.7.2 or newer" in error and "install-tapir" in error
+
+
+def test_version_corrections_still_correct_the_definitions():
+    from archicad_mcp.gateway.registry import CORRECTED_VERSIONS, DEFINITIONS_DIR, _load_js_json
+    groups = _load_js_json(DEFINITIONS_DIR / "command_definitions.js", "gCommands")
+    labels = {c["name"]: c.get("version") for g in groups for c in g["commands"]}
+    for name, (version, reason) in CORRECTED_VERSIONS.items():
+        assert reason
+        assert _v(labels[name]) < _v(version), (
+            f"{name}: the definitions now say {labels[name]}; drop the correction")
+
+
+def test_every_reader_of_the_registry_sees_the_corrected_version():
+    # describe_api_command and the dashboard read the registry, as the gates do.
+    assert build_registry()["SaveCurrentWindowAsImage"].version == "1.7.2"
 
 
 def test_outdated_refusal_and_instance_hint_say_replace():

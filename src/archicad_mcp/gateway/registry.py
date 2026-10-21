@@ -88,6 +88,21 @@ def _resolve_refs(schema, definitions, seen=None):
     return schema
 
 
+# Commands whose definition names an older release than the one that first
+# shipped them. build_registry reports the corrected version, so the tool
+# gates, describe_api_command and the dashboard agree. A test fails once the
+# definitions agree, so the entry can go.
+_FIRST_IN_1_7_2 = ("new in the 1.7.2 definitions, labelled 1.7.1, absent from the 1.7.1 "
+                   "release and from Tapir 1.7.1 on MCP-Test (21.10.2026)")
+CORRECTED_VERSIONS: dict[str, tuple[str, str]] = {
+    name: ("1.7.2", _FIRST_IN_1_7_2) for name in (
+        "DeleteDesignOptionCombinations", "DeleteDesignOptionSets", "DeleteDesignOptions",
+        "Get3DProjectionSettings", "RenameDesignOptionCombinations",
+        "RenameDesignOptionSets", "RenameDesignOptions", "SaveCurrentWindowAsImage",
+        "Set3DProjectionSettings")
+}
+
+
 @lru_cache(maxsize=1)
 def build_registry() -> dict[str, CommandInfo]:
     registry: dict[str, CommandInfo] = {}
@@ -102,7 +117,8 @@ def build_registry() -> dict[str, CommandInfo]:
             registry[cmd["name"]] = CommandInfo(
                 name=cmd["name"], kind="tapir", group=group["name"],
                 description=cmd.get("description", ""), input_schema=resolved,
-                version=cmd.get("version"), access=classify_access(cmd["name"]))
+                version=CORRECTED_VERSIONS.get(cmd["name"], (cmd.get("version"),))[0],
+                access=classify_access(cmd["name"]))
 
     # Commands that exist only in the local Tapir fork. They are merged here so
     # that every route into the add-on consults one registry: without this,

@@ -33,10 +33,13 @@ does two jobs:
   `archicad-mcp install-tapir`, or ask the client to run the `install_tapir`
   tool (see [Install Tapir](#install-tapir)). Required for element creation,
   issues, IFC checks, highlighting, and publishing. The installer puts the
-  pinned Tapir **1.7.1** in place, checked by sha256. The bundled command
-  definitions are synced from Tapir **1.7.1**; `create_elements` has been
-  exercised live against 1.7.1 on Archicad 29 and 30, the other tools against
-  1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
+  pinned Tapir **1.7.2** in place, checked by sha256. The bundled command
+  definitions are synced from Tapir **1.7.2**. On 1.7.2 and Archicad 29 the
+  live suite, `create_elements` (doors and windows by part name and the new
+  types), `modify_elements`, `capture_window`, `create_swept_beam` and
+  `create_road_marking` have been exercised live, and on Archicad 30
+  `create_elements` (the electrical types too) and `capture_window`; the other
+  tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
   and the rest degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
@@ -256,7 +259,7 @@ is covered by unit tests only so far.
 
 **By hand:** download `TapirAddOn_AC<version>_Mac.zip` or
 `TapirAddOn_AC<version>_Win.apx` for your Archicad version from the
-[Tapir 1.7.1 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.1),
+[Tapir 1.7.2 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.2),
 unzip it (macOS) or copy it (Windows) into `Add-Ons/Tapir/` inside the Archicad
 folder, and restart Archicad.
 
@@ -488,7 +491,7 @@ rule with no failures removes the highlight.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`show_elements`, `capture_window`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -497,12 +500,13 @@ anything, naming the version it needs and the one it found.
 No other Archicad MCP server does this: Graphisoft's own writes on the first
 call, so an agent pointed at a live project has no rehearsal step there.
 
-`create_elements` places any of the 34 element types Tapir can create: walls,
-beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, objects,
-lamps, doors and windows in walls, openings, MEP routes and elements, sections,
-interior elevations, hotlink instances, 2D lines to texts and labels, keynote
-labels, dimensions (associative, wall thickness, on a section) and drawings on
-a layout. Items use Tapir's own fields; `items=[]` returns a type's item
+`create_elements` places any of the 40 element types Tapir can create: walls,
+beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
+walls, grid elements, objects, lamps, doors and windows in walls, openings, MEP
+routes and elements, electrical panels, devices and circuits (Archicad 30),
+sections, interior elevations, hotlink instances, 2D lines to texts and labels,
+keynote labels, dimensions (associative, level, wall thickness, on a section)
+and drawings on a layout. Items use Tapir's own fields; `items=[]` returns a type's item
 schema. The dry run validates every item, checks that a named favourite and a
 named library part exist (with the closest names when they do not), and checks
 hosts (a door's wall, the elements a dimension measures) for existence, type
@@ -575,6 +579,13 @@ unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
 `guids=[]` removes the highlight and the selection. It changes only what is on
 screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
 older Tapir the result says which story to open by hand.
+
+`capture_window` is how an agent looks. It saves what the current window shows
+(floor plan, section, 3D, layout) as a PNG and returns it as an image, so a
+placement can be checked by eye: which way a bed faces, which way a door opens.
+Call `show_elements` first to bring the elements into view; `entire_drawing`
+covers a 2D window's whole drawing instead of its current zoom. Images over
+1568 pixels are scaled down, and windows over 40 megapixels are refused. Needs Tapir 1.7.2.
 
 `find_collisions` is a clash check between two groups of elements, or within
 one: each group is GUIDs (from `find_elements`, say) plus every element of the
@@ -650,7 +661,7 @@ is already there.
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
-Tapir command surface (343 commands with the 1.7.1 definitions), for anything the
+Tapir command surface (389 commands with the 1.7.2 definitions), for anything the
 curated tools don't cover.
 
 **Library parts (full mode):** `list_gdl_sources`, `inspect_gdl_source`,
@@ -708,7 +719,7 @@ and sha256 hashes GitHub publishes for every add-on asset), review the diff, and
 check the new version live before releasing:
 
 ```bash
-uv run python scripts/pin_tapir_release.py 1.7.1
+uv run python scripts/pin_tapir_release.py 1.7.2
 ```
 
 Build the Claude Desktop extensions. One bundle per platform, both from this
@@ -784,7 +795,7 @@ uv run python scripts/make_icon.py
 - **[Scripting](docs/scripting.md)**: `run_script` and `apply_changeset`, the
   `ac` object a script sees, and the trust model behind the opt-in switch.
 - **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
-  every one of the 343 reachable commands, grouped, showing which have a
+  every one of the 389 reachable commands, grouped, showing which have a
   dedicated tool and which are gateway-only. Generated rather than written;
   refresh it with `uv run python scripts/build_dashboard.py` after a Tapir
   definitions sync, and the push publishes it.

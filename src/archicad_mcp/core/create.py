@@ -19,7 +19,11 @@ from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.editability import active_window, refusals
 from archicad_mcp.extract import _fetch_types
 from archicad_mcp.gateway.registry import build_registry
-from archicad_mcp.tapir_requirements import require_tapir_command
+from archicad_mcp.tapir_requirements import (
+    definitions_version,
+    older_than_definitions,
+    require_tapir_command,
+)
 
 FLOOR_PLAN = "FloorPlan"
 LAYOUT = "Layout"
@@ -70,6 +74,9 @@ class CreateType:
     hosts: tuple[str, ...] = ()
     # The element types a host must be, when only some are accepted.
     host_types: frozenset[str] = frozenset()
+    # The oldest Archicad that creates the type. Tapir registers some of these
+    # commands on older versions too and refuses them only once they are sent.
+    archicad: int | None = None
 
 
 _WALL = frozenset({"Wall"})
@@ -86,6 +93,9 @@ CREATE_TYPES: dict[str, CreateType] = {
     "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair"),
     "railing": CreateType("CreateRailings", "railingsData"),
     "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone"),
+    "curtain_wall": CreateType("CreateCurtainWalls", "curtainWallsData",
+                               favorite_type="CurtainWall"),
+    "grid_element": CreateType("CreateGridElements", "gridElements"),
     "object": CreateType("CreateObjects", "objectsData", favorite_type="Object"),
     "lamp": CreateType("CreateLamps", "lampsData", favorite_type="Lamp"),
     # Hosted in another element
@@ -95,8 +105,20 @@ CREATE_TYPES: dict[str, CreateType] = {
                          hosts=("ownerWallId",), host_types=_WALL),
     "opening": CreateType("CreateOpenings", "openingsData", hosts=("ownerElementId",)),
     # MEP (Archicad 28 and later)
-    "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData"),
-    "mep_element": CreateType("CreateMEPElements", "elementsData"),
+    "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData", archicad=28),
+    "mep_element": CreateType("CreateMEPElements", "elementsData", archicad=28),
+    # Electrical. Live 21.10.2026 (Tapir 1.7.2): registered on Archicad 29 as
+    # well, where each answers "This command requires Archicad 30 or newer."
+    "electrical_panel": CreateType("CreateElectricalPanels", "electricalPanelsData",
+                                   archicad=30),
+    # circuitId is no host: a circuit is not a placed element, GetAllElements
+    # does not list it, and the other-database guard would skip every one.
+    "electrical_device": CreateType("CreateElectricalDevices", "electricalDevicesData",
+                                    archicad=30),
+    # A circuit is not placed, so no window applies; its panel is.
+    "electrical_circuit": CreateType("CreateElectricalCircuits", "electricalCircuitsData",
+                                     window=None, hosts=("electricalPanelId",),
+                                     archicad=30),
     # Markers placed on the floor plan
     "section": CreateType("CreateSections", "sectionsData"),
     "interior_elevation": CreateType("CreateInteriorElevations", "interiorElevationsData"),
@@ -118,6 +140,9 @@ CREATE_TYPES: dict[str, CreateType] = {
     # Dimensions
     "dimension": CreateType("CreateAssociativeDimensions", "dimensionsData", window=None,
                             hosts=("witnessPoints[].elementId",)),
+    "level_dimension": CreateType("CreateLevelDimensions", "levelDimensionsData",
+                                  window=None, favorite_type="LevelDimension",
+                                  hosts=("parentElementId",)),
     "wall_thickness_dimension": CreateType("CreateWallThicknessDimensions",
                                            "dimensionsData", window=None,
                                            hosts=("wallId",), host_types=_WALL),
@@ -273,6 +298,16 @@ def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str
     return warnings
 
 
+def _stale_tapir_warnings(conn: ArchicadConnection) -> list[str]:
+    old = older_than_definitions(conn)
+    if old is None:
+        return []
+    return [f"This Archicad runs Tapir {old}, older than the Tapir {definitions_version()} "
+            "definitions these items are checked against: a field Tapir added since "
+            "(libraryPartName on doors and windows came in 1.7.2) passes the dry run and "
+            "is refused when sent. install_tapir updates it."]
+
+
 def _host_skips(conn: ArchicadConnection, name: str, spec: CreateType,
                 items: list[dict], skipped: dict[int, str]) -> dict[int, str]:
     hosts = {i: [g for field in spec.hosts for g in _host_guids(item, field)]
@@ -355,6 +390,11 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     if not items:
         return {"element_type": name, "command": spec.command,
                 "since_tapir": info.version, "item_schema": schema}
+    archicad = conn.archicad_version()
+    if spec.archicad and archicad and archicad < spec.archicad:
+        return {"error": f"'{name}' elements need Archicad {spec.archicad} or later, and "
+                         f"this is Archicad {archicad}. Nothing was sent.",
+                "element_type": name}
     refusal = require_tapir_command(conn, spec.command, "create_elements")
     if refusal is not None:
         return dict(refusal, element_type=name)
@@ -371,7 +411,7 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     window = active_window(conn)
     ready = [i for i in range(len(items)) if i not in skipped]
     warnings = (_window_warnings(name, spec, items, window) + library_warnings
-                + _object_warnings(name, items, ready))
+                + _object_warnings(name, items, ready) + _stale_tapir_warnings(conn))
     if not dry_run:
         if not ready:
             return {"dry_run": False, "created": 0, "elements": [],
