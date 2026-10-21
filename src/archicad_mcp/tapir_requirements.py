@@ -115,15 +115,11 @@ def tool_minimum(tool: str) -> tuple[str | None, str]:
     return command_version(newest), newest
 
 
-def _installed_version(conn: ArchicadConnection) -> str | None:
-    try:
-        return conn.tapir("GetAddOnVersion").get("version")
-    except Exception:
-        return None
-
-
 def _installed(conn: ArchicadConnection) -> str:
-    version = _installed_version(conn)
+    try:
+        version = conn.tapir("GetAddOnVersion").get("version")
+    except Exception:
+        version = None
     return f"Tapir {version}" if version else "a Tapir of unknown version"
 
 
@@ -137,14 +133,6 @@ def require_tapir_command(conn: ArchicadConnection, command: str, tool: str) -> 
     if version is None:
         return {"error": f"'{tool}' needs a Tapir build with {command}, which no Tapir "
                          f"release has yet; this Archicad's Tapir does not have it."}
-    installed = _installed_version(conn)
-    if installed and _key(installed) >= _key(version):
-        # Tapir registers some commands only on some Archicad versions (the
-        # electrical ones of 1.7.2 on Archicad 30 alone): a newer Tapir won't help.
-        return {"error": f"'{tool}' needs {command}, which Tapir {installed} does not "
-                         f"offer on Archicad {conn.archicad_version()}, although Tapir "
-                         f"{version} introduced it: Tapir has it only on some Archicad "
-                         "versions (its description says which). Nothing was sent."}
     from archicad_mcp.tapir_install.hint import install_hint
     return {"error": f"'{tool}' needs Tapir {version} or newer (this Archicad has "
                      f"{_installed(conn)}): it lacks {command}. Nothing was sent. "
