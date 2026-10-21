@@ -476,3 +476,21 @@ def test_the_tapir_the_definitions_come_from_is_not_warned_about():
     result = create_elements(Plan(tapir_version=definitions_version()).connection(),
                              "wall", [WALL])
     assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
+def test_an_opening_without_a_sill_height_warns_that_it_takes_the_tool_sill(element_type, tool):
+    # Live 21.10.2026 (Tapir 1.7.2): a door placed by libraryPartName without
+    # sillHeight came in with the Door tool's 0.1 m sill.
+    plan = Plan(types={W1: "Wall"})
+    result = create_elements(plan.connection(), element_type,
+                             [door(W1), door(W1, sillHeight=0.0)])
+    [warning] = [w for w in result["warnings"] if "sillHeight" in w]
+    assert "item 0" in warning and tool in warning
+
+
+def test_an_opening_from_a_favourite_takes_its_sill_from_the_favourite():
+    plan = Plan(types={W1: "Wall"}, favorites={"Door": ["Entrance 1000"]})
+    result = create_elements(plan.connection(), "door",
+                             [door(W1, favoriteName="Entrance 1000")])
+    assert result["warnings"] == []
