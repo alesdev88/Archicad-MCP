@@ -143,6 +143,15 @@ def test_editing_gate_uses_the_shared_refusal(tool):
     assert f"'{tool}' needs Tapir 1.6.0" in error
 
 
+def test_a_command_a_new_enough_tapir_lacks_is_not_called_outdated():
+    # Tapir 1.7.2 defines CreateElectricalDevices but registers it on Archicad 30
+    # only, so "update Tapir" would send an Archicad 29 user on a useless errand.
+    conn, _ = fake_conn({"CreateElectricalDevices"}, version="1.7.2")
+    error = req.require_tapir_command(conn, "CreateElectricalDevices", "create_elements")["error"]
+    assert "install-tapir" not in error
+    assert "Archicad 29" in error
+
+
 def test_outdated_refusal_and_instance_hint_say_replace():
     conn, core = fake_conn({"UpdateClassificationItems"})
     assert "--replace" in req.tapir_refusal(conn, "edit_classifications")["error"]
