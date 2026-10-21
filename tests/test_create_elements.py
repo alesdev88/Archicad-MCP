@@ -394,3 +394,31 @@ def test_a_long_run_of_items_is_named_by_its_first_indices():
     assert "0, 1, 2" in warning
     assert "15 more" in warning
     assert "24" not in warning
+
+
+# Tapir 1.7.2 types.
+
+CURTAIN_WALL = {"coordinates": [{"x": 0, "y": 0}, {"x": 4, "y": 0}]}
+
+
+def test_a_curtain_wall_from_an_unknown_favourite_is_skipped():
+    plan = Plan(favorites={"CurtainWall": ["CW Office 1200"]})
+    result = create_elements(plan.connection(), "curtain_wall",
+                             [dict(CURTAIN_WALL, favoriteName="CW Ofice 1200")])
+    assert [s["index"] for s in result["skipped"]] == [0]
+    assert "CW Office 1200" in result["skipped"][0]["reason"]
+
+
+def test_a_curtain_wall_warns_when_the_floor_plan_is_not_active():
+    result = create_elements(Plan(window="Section").connection(), "curtain_wall",
+                             [CURTAIN_WALL])
+    assert any("floor plan" in w for w in result["warnings"])
+
+
+def test_a_level_dimension_on_a_missing_element_is_skipped():
+    plan = Plan(types={S1: "Slab"})
+    result = create_elements(plan.connection(), "level_dimension",
+                             [{"position": {"x": 0, "y": 0}, "parentElementId": {"guid": S1}},
+                              {"position": {"x": 1, "y": 0}, "parentElementId": {"guid": GONE}}])
+    assert [s["index"] for s in result["skipped"]] == [1]
+    assert result["ready"] == 1

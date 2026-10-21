@@ -86,6 +86,9 @@ CREATE_TYPES: dict[str, CreateType] = {
     "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair"),
     "railing": CreateType("CreateRailings", "railingsData"),
     "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone"),
+    "curtain_wall": CreateType("CreateCurtainWalls", "curtainWallsData",
+                               favorite_type="CurtainWall"),
+    "grid_element": CreateType("CreateGridElements", "gridElements"),
     "object": CreateType("CreateObjects", "objectsData", favorite_type="Object"),
     "lamp": CreateType("CreateLamps", "lampsData", favorite_type="Lamp"),
     # Hosted in another element
@@ -97,6 +100,11 @@ CREATE_TYPES: dict[str, CreateType] = {
     # MEP (Archicad 28 and later)
     "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData"),
     "mep_element": CreateType("CreateMEPElements", "elementsData"),
+    # Electrical (Archicad 30). Circuits are not placed, so no window applies.
+    "electrical_panel": CreateType("CreateElectricalPanels", "electricalPanelsData"),
+    "electrical_device": CreateType("CreateElectricalDevices", "electricalDevicesData"),
+    "electrical_circuit": CreateType("CreateElectricalCircuits", "electricalCircuitsData",
+                                     window=None),
     # Markers placed on the floor plan
     "section": CreateType("CreateSections", "sectionsData"),
     "interior_elevation": CreateType("CreateInteriorElevations", "interiorElevationsData"),
@@ -118,6 +126,9 @@ CREATE_TYPES: dict[str, CreateType] = {
     # Dimensions
     "dimension": CreateType("CreateAssociativeDimensions", "dimensionsData", window=None,
                             hosts=("witnessPoints[].elementId",)),
+    "level_dimension": CreateType("CreateLevelDimensions", "levelDimensionsData",
+                                  window=None, favorite_type="LevelDimension",
+                                  hosts=("parentElementId",)),
     "wall_thickness_dimension": CreateType("CreateWallThicknessDimensions",
                                            "dimensionsData", window=None,
                                            hosts=("wallId",), host_types=_WALL),

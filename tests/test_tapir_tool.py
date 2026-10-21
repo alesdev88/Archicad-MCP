@@ -38,7 +38,7 @@ async def test_install_tapir_without_confirm_is_a_dry_run(monkeypatch):
     seen = _capture(monkeypatch)
     out = await _call({})
     assert seen["dry_run"] is True and seen["replace"] is False and seen["versions"] is None
-    assert out["dry_run"] is True and out["tapir_version"] == "1.7.1"
+    assert out["dry_run"] is True and out["tapir_version"] == "1.7.2"
     assert out["restart_required"] == [] and out["backups"] == []
 
 

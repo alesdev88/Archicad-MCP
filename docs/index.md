@@ -9,7 +9,7 @@ MCP server for a running Archicad 29. Start with the
 [README](https://github.com/alesdev88/Archicad-MCP#readme); these are the
 reference documents it links to.
 
-- **[API dashboard](api-dashboard.html)**: every one of the 343 commands the
+- **[API dashboard](api-dashboard.html)**: every one of the 389 commands the
   server can reach, official JSON API and Tapir, grouped as the add-on groups
   them. Solid boxes have a dedicated tool; hollow boxes are reachable through
   the gateway. This is the one page here that is generated rather than written,

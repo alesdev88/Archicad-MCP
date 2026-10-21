@@ -469,11 +469,14 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description=(
         "Create elements of any type Tapir can create. element_type: model wall, "
-        "beam, column, slab, roof, morph, mesh, stair, railing, zone, object, lamp; "
-        "hosted door, window (in a wall), opening; MEP mep_route, mep_element "
-        "(Archicad 28+); markers section, interior_elevation; hotlink_instance; 2D "
+        "beam, column, slab, roof, morph, mesh, stair, railing, zone, curtain_wall, "
+        "grid_element, object, lamp; hosted door, window (in a wall), opening; MEP "
+        "mep_route, mep_element (Archicad 28+), electrical_panel, electrical_device, "
+        "electrical_circuit (Archicad 30); markers section, interior_elevation; "
+        "hotlink_instance; 2D "
         "line, arc, circle, polyline, spline, hatch, hotspot, text, label, "
-        "keynote_label; dimension, wall_thickness_dimension, section_dimension; "
+        "keynote_label; dimension, level_dimension, wall_thickness_dimension, "
+        "section_dimension; "
         "drawing (on a layout). Plurals and Tapir command names work too. Items use "
         "Tapir's field names and units (metres, radians): call with items=[] to get "
         "the item schema for a type. DRY-RUN BY DEFAULT: every item is validated "
@@ -957,7 +960,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
 
     @mcp.tool(description=(
-        "Install the pinned Tapir add-on (1.7.1) into Archicad's Add-Ons folder. "
+        "Install the pinned Tapir add-on (1.7.2) into Archicad's Add-Ons folder. "
         "Dry run by default: it finds every Archicad on this computer, downloads and "
         "checks the file (sha256) and says what it would do. confirm=true writes. "
         "Never replaces an existing Tapir unless replace_existing=true, and then "

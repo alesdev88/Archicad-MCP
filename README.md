@@ -256,7 +256,7 @@ is covered by unit tests only so far.
 
 **By hand:** download `TapirAddOn_AC<version>_Mac.zip` or
 `TapirAddOn_AC<version>_Win.apx` for your Archicad version from the
-[Tapir 1.7.1 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.1),
+[Tapir 1.7.2 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.2),
 unzip it (macOS) or copy it (Windows) into `Add-Ons/Tapir/` inside the Archicad
 folder, and restart Archicad.
 
@@ -497,12 +497,13 @@ anything, naming the version it needs and the one it found.
 No other Archicad MCP server does this: Graphisoft's own writes on the first
 call, so an agent pointed at a live project has no rehearsal step there.
 
-`create_elements` places any of the 34 element types Tapir can create: walls,
-beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, objects,
-lamps, doors and windows in walls, openings, MEP routes and elements, sections,
-interior elevations, hotlink instances, 2D lines to texts and labels, keynote
-labels, dimensions (associative, wall thickness, on a section) and drawings on
-a layout. Items use Tapir's own fields; `items=[]` returns a type's item
+`create_elements` places any of the 40 element types Tapir can create: walls,
+beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
+walls, grid elements, objects, lamps, doors and windows in walls, openings, MEP
+routes and elements, electrical panels, devices and circuits (Archicad 30),
+sections, interior elevations, hotlink instances, 2D lines to texts and labels,
+keynote labels, dimensions (associative, level, wall thickness, on a section)
+and drawings on a layout. Items use Tapir's own fields; `items=[]` returns a type's item
 schema. The dry run validates every item, checks that a named favourite and a
 named library part exist (with the closest names when they do not), and checks
 hosts (a door's wall, the elements a dimension measures) for existence, type
@@ -650,7 +651,7 @@ is already there.
 
 **Gateway (full mode):** `list_api_commands`, `describe_api_command`,
 `execute_read_api_command`, `execute_write_api_command`. The complete official +
-Tapir command surface (343 commands with the 1.7.1 definitions), for anything the
+Tapir command surface (389 commands with the 1.7.2 definitions), for anything the
 curated tools don't cover.
 
 **Library parts (full mode):** `list_gdl_sources`, `inspect_gdl_source`,
@@ -708,7 +709,7 @@ and sha256 hashes GitHub publishes for every add-on asset), review the diff, and
 check the new version live before releasing:
 
 ```bash
-uv run python scripts/pin_tapir_release.py 1.7.1
+uv run python scripts/pin_tapir_release.py 1.7.2
 ```
 
 Build the Claude Desktop extensions. One bundle per platform, both from this
@@ -784,7 +785,7 @@ uv run python scripts/make_icon.py
 - **[Scripting](docs/scripting.md)**: `run_script` and `apply_changeset`, the
   `ac` object a script sees, and the trust model behind the opt-in switch.
 - **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
-  every one of the 343 reachable commands, grouped, showing which have a
+  every one of the 389 reachable commands, grouped, showing which have a
   dedicated tool and which are gateway-only. Generated rather than written;
   refresh it with `uv run python scripts/build_dashboard.py` after a Tapir
   definitions sync, and the push publishes it.
