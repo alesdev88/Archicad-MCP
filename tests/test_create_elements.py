@@ -37,7 +37,7 @@ class Plan:
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
-                 unread=()):
+                 unread=(), archicad=29, tapir_version="1.8.2"):
         self.types = dict(types or {})
         self.elsewhere = set(elsewhere)  # exist, but in another view's database
         self.refused = set(refused)
@@ -49,6 +49,8 @@ class Plan:
         self.library = library
         self.pictures = list(pictures)
         self.unread = set(unread)
+        self.archicad = archicad
+        self.tapir_version = tapir_version
         self.created: list[tuple[str, dict]] = []
         self.create_errors: dict[int, dict] = {}
 
@@ -68,8 +70,10 @@ class Plan:
         official = dict(api_replays.OFFICIAL)
         official["API.IsAddOnCommandAvailable"] = lambda p: {
             "available": p["addOnCommandId"]["commandName"] not in self.missing_commands}
+        official["API.GetProductInfo"] = {"version": self.archicad, "buildNumber": 5101}
         tapir = dict(api_replays.TAPIR)
         tapir["GetCurrentWindowType"] = lambda p: {"currentWindowType": self.window}
+        tapir["GetAddOnVersion"] = {"version": self.tapir_version}
         # The active window's database: the other-database guard checks hosts
         # against this list (core/editability.py _elsewhere).
         tapir["GetAllElements"] = lambda p: {"elements": [
@@ -422,3 +426,53 @@ def test_a_level_dimension_on_a_missing_element_is_skipped():
                               {"position": {"x": 1, "y": 0}, "parentElementId": {"guid": GONE}}])
     assert [s["index"] for s in result["skipped"]] == [1]
     assert result["ready"] == 1
+
+
+# Types only some Archicad versions create. Live 21.10.2026: Tapir 1.7.2 registers
+# CreateElectricalPanels on Archicad 29 too, and answers it there with "This
+# command requires Archicad 30 or newer." only once sent.
+
+PANEL = {"position": {"x": 0, "y": 0, "z": 1.2}}
+
+
+def test_an_archicad_30_type_is_refused_on_archicad_29_before_sending():
+    plan = Plan(archicad=29)
+    result = create_elements(plan.connection(), "electrical_panel", [PANEL], dry_run=False)
+    assert "Archicad 30" in result["error"] and "Archicad 29" in result["error"]
+    assert plan.sent("CreateElectricalPanels") == []
+
+
+def test_mep_routes_are_refused_before_archicad_28():
+    plan = Plan(archicad=27)
+    route = {"routeSegments": []}
+    result = create_elements(plan.connection(), "mep_route", [route])
+    assert "Archicad 28" in result["error"]
+
+
+def test_an_archicad_30_type_goes_ahead_on_archicad_30():
+    result = create_elements(Plan(archicad=30).connection(), "electrical_panel", [PANEL])
+    assert result["ready"] == 1
+
+
+def test_a_circuit_on_a_missing_panel_is_skipped():
+    plan = Plan(types={W1: "ElectricalPanel"}, archicad=30)
+    result = create_elements(plan.connection(), "electrical_circuit",
+                             [{"electricalPanelId": {"guid": W1}},
+                              {"electricalPanelId": {"guid": GONE}}])
+    assert [s["index"] for s in result["skipped"]] == [1]
+    assert result["ready"] == 1
+
+
+def test_a_tapir_older_than_the_definitions_is_warned_about():
+    # Items are checked against the bundled schemas; a field a newer Tapir added
+    # passes the dry run and the older add-on refuses it when sent.
+    result = create_elements(Plan(tapir_version="1.7.1").connection(), "wall", [WALL])
+    assert any("1.7.1" in w for w in result["warnings"])
+    assert result["ready"] == 1
+
+
+def test_the_tapir_the_definitions_come_from_is_not_warned_about():
+    from archicad_mcp.tapir_requirements import definitions_version
+    result = create_elements(Plan(tapir_version=definitions_version()).connection(),
+                             "wall", [WALL])
+    assert result["warnings"] == []

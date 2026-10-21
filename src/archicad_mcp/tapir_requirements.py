@@ -74,6 +74,13 @@ CORRECTED_VERSIONS: dict[str, tuple[str, str]] = {
 }
 
 _LOCAL = Path(__file__).parent / "gateway" / "definitions" / "local_commands.json"
+_SYNCED = Path(__file__).parent / "gateway" / "definitions" / "tapir_version.json"
+
+
+@lru_cache(maxsize=1)
+def definitions_version() -> str:
+    """The Tapir release the bundled command definitions were synced from."""
+    return json.loads(_SYNCED.read_text())["version"]
 
 
 def _local_names() -> frozenset[str]:
@@ -115,12 +122,24 @@ def tool_minimum(tool: str) -> tuple[str | None, str]:
     return command_version(newest), newest
 
 
-def _installed(conn: ArchicadConnection) -> str:
+def installed_version(conn: ArchicadConnection) -> str | None:
     try:
-        version = conn.tapir("GetAddOnVersion").get("version")
+        return conn.tapir("GetAddOnVersion").get("version")
     except Exception:
-        version = None
+        return None
+
+
+def _installed(conn: ArchicadConnection) -> str:
+    version = installed_version(conn)
     return f"Tapir {version}" if version else "a Tapir of unknown version"
+
+
+def older_than_definitions(conn: ArchicadConnection) -> str | None:
+    """The running Tapir's version when it is older than the bundled definitions."""
+    version = installed_version(conn)
+    if version and _key(version) < _key(definitions_version()):
+        return version
+    return None
 
 
 def require_tapir_command(conn: ArchicadConnection, command: str, tool: str) -> dict | None:
