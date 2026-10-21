@@ -61,17 +61,6 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
 # definitions sync brings the command in (a test fails when they disagree).
 EXPLICIT_VERSIONS: dict[str, tuple[str, str]] = {}
 
-# Commands whose definition names an older release than the one that first
-# shipped them. A test fails once the definitions agree, so the entry can go.
-_FIRST_IN_1_7_2 = ("new in the 1.7.2 definitions, labelled 1.7.1, absent from the 1.7.1 "
-                   "release and from Tapir 1.7.1 on MCP-Test (21.10.2026)")
-CORRECTED_VERSIONS: dict[str, tuple[str, str]] = {
-    name: ("1.7.2", _FIRST_IN_1_7_2) for name in (
-        "DeleteDesignOptionCombinations", "DeleteDesignOptionSets", "DeleteDesignOptions",
-        "Get3DProjectionSettings", "RenameDesignOptionCombinations",
-        "RenameDesignOptionSets", "RenameDesignOptions", "SaveCurrentWindowAsImage",
-        "Set3DProjectionSettings")
-}
 
 _LOCAL = Path(__file__).parent / "gateway" / "definitions" / "local_commands.json"
 _SYNCED = Path(__file__).parent / "gateway" / "definitions" / "tapir_version.json"
@@ -107,8 +96,6 @@ def command_version(name: str) -> str | None:
         return None
     if name in EXPLICIT_VERSIONS:
         return EXPLICIT_VERSIONS[name][0]
-    if name in CORRECTED_VERSIONS:
-        return CORRECTED_VERSIONS[name][0]
     return _registry_versions().get(name)
 
 

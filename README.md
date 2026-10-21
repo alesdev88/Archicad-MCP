@@ -585,7 +585,7 @@ older Tapir the result says which story to open by hand.
 placement can be checked by eye: which way a bed faces, which way a door opens.
 Call `show_elements` first to bring the elements into view; `entire_drawing`
 covers a 2D window's whole drawing instead of its current zoom. Images over
-1600 pixels are scaled down. Needs Tapir 1.7.2.
+1568 pixels are scaled down, and windows over 40 megapixels are refused. Needs Tapir 1.7.2.
 
 `find_collisions` is a clash check between two groups of elements, or within
 one: each group is GUIDs (from `find_elements`, say) plus every element of the

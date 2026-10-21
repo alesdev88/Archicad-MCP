@@ -17,14 +17,17 @@ from tests.fixtures import api_replays
 class Window:
     """Answers SaveCurrentWindowAsImage the way Tapir does: writes the file it is given."""
 
-    def __init__(self, size=(800, 600), write=True, window="FloorPlan", missing=()):
-        self.size, self.write, self.window = size, write, window
+    def __init__(self, size=(800, 600), write=True, window="FloorPlan", missing=(),
+                 content=None):
+        self.size, self.write, self.window, self.content = size, write, window, content
         self.missing = set(missing)
         self.sent: list[dict] = []
 
     def save(self, params):
         self.sent.append(params)
-        if self.write:
+        if self.content is not None:
+            Path(params["imageFilePath"]).write_bytes(self.content)
+        elif self.write:
             Image.new("RGB", self.size, "white").save(params["imageFilePath"], "PNG")
         return {"imageFilePath": params["imageFilePath"]}
 
@@ -65,7 +68,7 @@ def test_the_image_file_does_not_outlive_the_call():
 def test_a_large_window_is_scaled_to_the_longest_side_limit():
     window = Window(size=(4000, 2000))
     result = capture_window(window.connection())
-    assert _size(result["png"]) == (1600, 800)
+    assert _size(result["png"]) == (1568, 784)
     assert result["scaled_from"] == [4000, 2000]
 
 
@@ -73,6 +76,32 @@ def test_the_whole_drawing_can_be_asked_for():
     window = Window()
     capture_window(window.connection(), entire_drawing=True)
     assert window.sent[0]["entireDrawing"] is True
+
+
+def _png(size=(800, 600)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", size, "white").save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_an_empty_file_is_reported_as_an_error():
+    result = capture_window(Window(content=b"").connection())
+    assert "png" not in result and "error" in result
+
+
+def test_a_cut_off_file_is_reported_as_an_error_and_removed():
+    window = Window(content=_png()[:200])
+    result = capture_window(window.connection())
+    assert "png" not in result and "error" in result
+    assert not Path(window.sent[0]["imageFilePath"]).exists()
+
+
+def test_a_window_past_the_pixel_limit_is_refused_without_decoding(monkeypatch):
+    from archicad_mcp.core import window_image
+    monkeypatch.setattr(window_image, "MAX_PIXELS", 1000)
+    result = capture_window(Window(size=(100, 100)).connection(), entire_drawing=True)
+    assert "png" not in result
+    assert "100 x 100" in result["error"] and "entire_drawing" in result["error"]
 
 
 def test_no_file_written_is_reported_as_an_error():

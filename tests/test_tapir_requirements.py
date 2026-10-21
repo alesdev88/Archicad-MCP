@@ -152,12 +152,18 @@ def test_a_command_first_released_in_1_7_2_is_outdated_on_1_7_1():
 
 
 def test_version_corrections_still_correct_the_definitions():
-    registry = build_registry()
-    for name, (version, reason) in req.CORRECTED_VERSIONS.items():
+    from archicad_mcp.gateway.registry import CORRECTED_VERSIONS, DEFINITIONS_DIR, _load_js_json
+    groups = _load_js_json(DEFINITIONS_DIR / "command_definitions.js", "gCommands")
+    labels = {c["name"]: c.get("version") for g in groups for c in g["commands"]}
+    for name, (version, reason) in CORRECTED_VERSIONS.items():
         assert reason
-        labelled = registry[name].version
-        assert _v(labelled) < _v(version), (
-            f"{name}: the definitions now say {labelled}; drop the correction")
+        assert _v(labels[name]) < _v(version), (
+            f"{name}: the definitions now say {labels[name]}; drop the correction")
+
+
+def test_every_reader_of_the_registry_sees_the_corrected_version():
+    # describe_api_command and the dashboard read the registry, as the gates do.
+    assert build_registry()["SaveCurrentWindowAsImage"].version == "1.7.2"
 
 
 def test_outdated_refusal_and_instance_hint_say_replace():

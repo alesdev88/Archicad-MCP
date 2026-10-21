@@ -753,7 +753,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "...) as an image, to check a result by eye: which way a placed object faces, "
         "which way a door opens, whether walls meet. Call show_elements first to bring "
         "the elements into view. entire_drawing=true covers the whole drawing of a 2D "
-        "window instead of the current zoom. Images larger than 1600 pixels are scaled "
+        "window instead of the current zoom. Images larger than 1568 pixels are scaled "
         "down (scaled_from gives the original size). Needs Tapir 1.7.2. Reads only."),
               **_tool_meta("Capture the Archicad window", read_only=True))
     @_guarded

@@ -372,6 +372,12 @@ are `null` even though the instance is otherwise fine.
 - **Doors take the Door tool's settings.** A door created by `libraryPartName`
   without `sillHeight` came in with the Door tool's 0.1 m sill. Send every size
   that matters, as with objects.
+- **Referenced elements are checked as if they were changed.** A level
+  dimension's, a label's or a dimension's parent element is skipped when
+  Archicad would refuse to change it (not reserved in Teamwork, in a hotlinked
+  module, on a locked or hidden layer), although the new element only refers to
+  it. Whether Archicad accepts such a parent is unverified; a hotlinked site mesh
+  is the case to try.
 - **A part's insertion point is its own.** `Bed Double 01` at angle 0 is placed
   by its foot-left corner, with the pillows towards +Y. "Placed against the
   wall" by its insertion point, the bed ran through the wall; `capture_window`
