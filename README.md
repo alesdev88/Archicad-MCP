@@ -33,10 +33,12 @@ does two jobs:
   `archicad-mcp install-tapir`, or ask the client to run the `install_tapir`
   tool (see [Install Tapir](#install-tapir)). Required for element creation,
   issues, IFC checks, highlighting, and publishing. The installer puts the
-  pinned Tapir **1.7.1** in place, checked by sha256. The bundled command
-  definitions are synced from Tapir **1.7.1**; `create_elements` has been
-  exercised live against 1.7.1 on Archicad 29 and 30, the other tools against
-  1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
+  pinned Tapir **1.7.2** in place, checked by sha256. The bundled command
+  definitions are synced from Tapir **1.7.2**. On 1.7.2 and Archicad 29 the
+  live suite, `create_elements` (doors and windows by part name and the new
+  types), `modify_elements`, `capture_window`, `create_swept_beam` and
+  `create_road_marking` have been exercised live; `create_elements` also ran
+  against 1.7.1 on Archicad 30, the other tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
   and the rest degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)

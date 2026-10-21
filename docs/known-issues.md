@@ -354,6 +354,29 @@ The server probes availability per command, so an older add-on degrades to
 `tapir_version` in `list_instances` come from Tapir too. Without the add-on they
 are `null` even though the instance is otherwise fine.
 
+### Tapir 1.7.2 (live 21.10.2026, MCP-Test, Archicad 29 build 5101)
+
+- **Version labels.** Nine commands new in the 1.7.2 definitions are labelled
+  1.7.1 (`SaveCurrentWindowAsImage`, `Get3DProjectionSettings`,
+  `Set3DProjectionSettings` and six design option commands), but the 1.7.1
+  release has none of them. `CORRECTED_VERSIONS` in `tapir_requirements.py`
+  gates them on 1.7.2.
+- **Electrical commands on Archicad 29.** `CreateElectricalPanels` and the other
+  electrical commands are registered (`IsAddOnCommandAvailable` says true) but
+  answer "This command requires Archicad 30 or newer." They are untested on
+  Archicad 30.
+- **Doors take the Door tool's settings.** A door created by `libraryPartName`
+  without `sillHeight` came in with the Door tool's 0.1 m sill. Send every size
+  that matters, as with objects.
+- **A part's insertion point is its own.** `Bed Double 01` at angle 0 is placed
+  by its foot-left corner, with the pillows towards +Y. "Placed against the
+  wall" by its insertion point, the bed ran through the wall; `capture_window`
+  showed it, and a move of the bed's length fixed it.
+- Verified on 1.7.2: doors and windows by `libraryPartName`, door and window
+  width and sill changes through `modify_elements`, a Swept Beam grown from 3 to
+  5 nodes (its arrays read back at 5), a Road Marking, a curtain wall, a grid
+  element, a level dimension, `capture_window`, and the live suite (16 passed).
+
 ## Attribute writes: what Tapir's create-or-overwrite commands do
 
 Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
