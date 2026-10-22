@@ -386,4 +386,55 @@ The descriptions say, in this order and in these terms:
 
 ## Probe results
 
-(Filled in by Task 1.)
+Run 22.10.2026 on MCP-Test (Archicad 29, port 19723, Tapir 1.7.2, floor plan active) in four passes: the brief's samples (run 1); the same with 3D and Section previews, a 512 px preview and floor plan captures (run 2); the Door tool's default part "Door" with the same four combos (run 3); those doors in a wall drawn right to left, plus a GDL read of a bed (run 4). The doors and the reversed wall go beyond the brief because "Window" draws no hinge or swing anywhere (see (c), (d)). Walls came from `CreateWalls` with only begin and end, so they carry the Wall tool default: Composite, `referenceLineLocation` "CoreOutside", `flipped` true, thickness 0.3, height 3.0.
+
+**(a) `API.Get2DBoundingBoxes`.** Request `{"elements": [{"elementId": {"guid": ...}}, ...]}`. Reply, one item per element in request order, world coordinates in metres:
+
+```json
+{"boundingBoxes2D": [{"boundingBox2D": {"xMin": 4, "yMin": 30, "xMax": 5, "yMax": 31.2}},
+                     {"error": {"code": 7203, "message": "Element not supported (element guid: \"...\")"}},
+                     {"error": {"code": 7204, "message": "Element not found (element guid: \"...\")"}}]}
+```
+
+The only top-level key is `boundingBoxes2D`; an item holds either `boundingBox2D` (keys `xMin`, `yMin`, `xMax`, `yMax`) or `error`. In MCP-Test the two PolyLines answer 7203; an unknown GUID answers 7204. All 36 elements of MCP-Test came back in 0.19 s in one call (no larger model was tried). Objects, walls, windows and doors all have boxes. A window's box is only the wall's thickness band (`yMin` 33.95, `yMax` 34.25 in a wall on y = 34); a door's box reaches out to the side it swings to (see (d)).
+
+**(b) `reflected` mirrors the object's local x (x becomes -x).** Boxes relative to the insertion point, angle 0:
+
+| sample | `dimensions` | `reflected` | box x | box y |
+|---|---|---|---|---|
+| Chair 01 at (0, 30) | 0.5, 0.5, 0.9 | false | -0.25 .. 0.25 | -0.25 .. 0.283062117 |
+| Chair 01 at (2, 30) | 0.5, 0.5, 0.9 | true | -0.25 .. 0.25 | -0.25 .. 0.283062117 |
+| Bed Double 01 at (4, 30) | 1.0, 1.0, 1.0 | false | 0 .. 1 | 0 .. 1.2 |
+| Bed Double 01 at (6, 30) | 2.0, 1.5, 1.0 | false | 0 .. 2 | 0 .. 1.5 |
+| Bed Double 01 at (10, 30) (extra) | 1.0, 1.0, 1.0 | true | -1 .. 0 | 0 .. 1.2 |
+
+The chair is symmetric about its local y axis, so its two boxes are equal; that rules out a y mirror (it would give y -0.283 .. 0.25) but cannot show the x mirror. The extra mirrored bed shows it: x 0 .. 1 becomes -1 .. 0, y unchanged.
+
+Bed Double 01 has a minimum length: its GDL `B` reads 1.2 when 1.0 was sent (`possibleValues` `[{"value": 1.2, "flag": "GreaterThanOrEqual"}]`; `A` has 0.8 the same way), and `ZZYZX` is `Disabled` at 0.66 whatever `dimensions.z` says. `GetDetailsOfElements` still reports `dimensions` y 1.0, as sent. So the 1.0 x 1.0 sample is drawn 1.0 x 1.2, and fitting `yMax` against `b` over the two samples (1.0 gives 1.2, 1.5 gives 1.5) would give 0.6 b + 0.6 instead of b. `GetDetailsOfElements` object details carry `origin` {x, y, z}, `dimensions`, `angle`, `reflected` and an `offset` {x, y} (Chair 01: {0, -0.25}; Bed Double 01: {0, 0}).
+
+**(c) What the pictures show.**
+- 2D `GetElementPreviewImage` draws at a fixed 100 px per metre with the insertion point at the image centre, at 256 and at 512 px alike: the 1 x 1 bed covers x 128 .. 228 px of a 256 px image, the 2 x 1.5 bed 256 .. 456 px of a 512 px one. A 256 px preview therefore shows only 1.28 m each way from the insertion point; the 2.0 x 1.5 bed is cut off at 256 px. Only angle 0 was tried for objects.
+- Chair 01 mirrored: not visible; the two 2D previews are byte for byte the same.
+- Bed Double 01 mirrored: visible only as the drawing moving to the left of the centre (x 28 .. 128 px instead of 128 .. 228 px); the bed symbol itself is symmetric.
+- "Window": no hinge and no swing in any picture. 2D previews: (false, false) equals (true, false) and (false, true) equals (true, true) byte for byte; the two pairs differ only in which side of the centre the frame is drawn. 3D and Section previews: (false, false) equals (true, true) and (true, false) equals (false, true), showing a frame and glass with no sash or handle. Floor plan capture: the four windows look the same, no opening lines.
+- "Door" (extra): the floor plan capture shows leaf and arc plainly. Its 2D previews show `reflected` (the leaf moves to the other jamb) but not `oSide` ((false, false) looks like (false, true)), so they cannot tell the hinge jamb or the swing side relative to the wall.
+- So the 2D previews cannot answer hinge or swing for openings, and show an object's mirroring only through where the drawing sits against the centre. The floor plan capture (`FitInWindow`, then `SaveCurrentWindowAsImage` with `entireDrawing` false) answered the doors. `FitInWindow` replies `{"success": true}`; `SaveCurrentWindowAsImage` replies `{"imageFilePath": ..., "zoom": {"xMin", "yMin", "xMax", "yMax"}, "rotation": 0}` and wrote a 2138 x 1152 px PNG (the window's size). The plan stays zoomed there afterwards.
+
+**(d) Hinge and swing per (`reflected`, `oSide`).** For "Window": not established; nothing drawn shows a sash, hinge or swing, and its GDL parameters could not be read (below), so whether this part opens at all is unknown. For "Door" (the Door tool's default part, created without `libraryPartName`), read from the floor plan captures (the open leaf stands at the hinge jamb) and from the door boxes (they reach out on the swing side), identical in a wall drawn +X (begin (0, 38), end (12, 38)) and in one drawn right to left (begin (12, 38), end (0, 38)):
+
+| `reflected`, `oSide` | hinge jamb | swing side of the wall's direction |
+|---|---|---|
+| false, false | begin | right |
+| true, false | end | right |
+| false, true | end | left |
+| true, true | begin | left |
+
+That is: `oSide` false swings right, true swings left; the hinge is at the begin jamb when `reflected` equals `oSide`. Door boxes in the +X wall: `yMin` 37.13 / `yMax` 38.269 for `oSide` false (right is -y), `yMin` 37.931 / `yMax` 38.885 for true. In the reversed wall: 37.731 .. 38.87 for `oSide` false (right of -X is +y), 37.115 .. 38.069 for true. Both walls had `flipped` true; a wall with `flipped` false was not tried: `CreateWalls` has no `flipped` field, no Tapir command found sets it, and MCP-Test has no walls of its own.
+
+`GetGDLParametersOfElements` fails for doors and windows here: one window and two doors (runs 3 and 4, one door read again 1 s after the create) answered `{"error": {"code": -2130313215, "message": "Failed to get parameters of element with guid ...!"}}`, and the four windows of run 2 came back without `parameters` (that raw reply was not kept), while a Bed Double 01 in the same session answered 86 `parameters`, each with `name`, `displayName`, `index`, `type`, `value`, `isLocked`, `flags`, and for A and B `possibleValues` and `canHaveCustomValue`.
+
+Opening details from `GetDetailsOfElements`: `libPart` {`name`, `parentUnID`, `ownUnID`}, `ownerElementId`, `ownerElementType`, `width`, `height`, `sillHeight`, `centerOffset`, `reflected`, `refSide`, `oSide`, all as sent.
+
+**(e) `centerOffset` is measured from the wall's begin point** along the wall. Windows at 1.5, 4.5, 7.5, 10.5 in the wall from (0, 34) to (12, 34) have boxes x 1 .. 2, 4 .. 5, 7 .. 8, 10 .. 11. Doors at the same offsets in the wall from (12, 38) to (0, 38) sit at x 10.5, 7.5, 4.5, 1.5 (box x 10.013 .. 10.987 for 1.5).
+
+**(f) Element count.** `GetAllElements` gave 36 before and 36 after in each of the four runs; a `GetDetailsOfElements` of every created GUID afterwards found none of them, and every `DeleteElements` result was `success` true. Nothing was left behind.
