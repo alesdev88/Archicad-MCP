@@ -49,6 +49,10 @@ INDICES_NAMED = 10
 # AC 27, Tapir 1.5.9: the Object tool's A, B and height, not the part's own).
 _TOOL_SIZED = {"object": "Object tool", "lamp": "Lamp tool"}
 
+# Openings take their sill from the tool too (live 21.10.2026, Tapir 1.7.2: a door
+# placed by libraryPartName without sillHeight came in with the Door tool's 0.1 m).
+_TOOL_SILL = {"door": "Door tool", "window": "Window tool"}
+
 # Fields Archicad drops when it creates an object or lamp.
 _DISCARDED = {
     # Live 16.09.2026 (CVP shading panels): in a batch each object took the
@@ -280,6 +284,15 @@ def _library_part_checks(conn: ArchicadConnection, items: list[dict],
 
 
 def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str]:
+    sill_tool = _TOOL_SILL.get(name)
+    if sill_tool is not None:
+        unsilled = [i for i in ready
+                    if "sillHeight" not in items[i] and "favoriteName" not in items[i]]
+        if not unsilled:
+            return []
+        return [f"No sillHeight on {_named(unsilled)}: a {name} without one takes the "
+                f"{sill_tool}'s current sill height. Send sillHeight in metres (0 for a "
+                "door on the floor)."]
     tool = _TOOL_SIZED.get(name)
     if tool is None:
         return []

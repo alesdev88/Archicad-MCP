@@ -514,7 +514,8 @@ and editability, so an item that would fail is skipped with its reason instead
 of sent. Tapir starts every object from the Object tool's current settings, so
 the dry run warns about an object or lamp without `dimensions` (it would take
 the size the tool is set to, not the library part's own) and about `offset`
-and `useFixedAngle`, which Archicad discards. Model elements are placed from
+and `useFixedAngle`, which Archicad discards, and about a door or window
+without `sillHeight`, which takes the Door or Window tool's sill. Model elements are placed from
 the floor plan or the 3D window; 2D elements go into whichever drawing window
 is active.
 

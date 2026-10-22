@@ -488,8 +488,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "editable; items failing those are skipped with the reason and the rest go "
         "ahead. Warns when the active window is wrong for the type, when an object "
         "or lamp has no dimensions (it would take the tool's current size, not the "
-        "library part's) and when it sends offset or useFixedAngle (Archicad "
-        "discards them). Pass dry_run=false to create: returns created GUIDs, plus "
+        "library part's), when it sends offset or useFixedAngle (Archicad "
+        "discards them), and when a door or window has no sillHeight (it would "
+        "take the tool's sill). Pass dry_run=false to create: returns created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
         "index -> GUID) when not every item was created."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
