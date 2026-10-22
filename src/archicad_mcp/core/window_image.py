@@ -3,7 +3,9 @@
 Tapir 1.7.2's SaveCurrentWindowAsImage writes the window to a file as File >
 Save As does with a picture format. The file is read back and handed to the
 model, so a placement can be checked by eye (which way a bed faces, which way a
-door opens) instead of by the user.
+door opens) instead of by the user. A 2D window's reply also carries its zoom and
+its rotation (radians), which the result passes on: a rotated plan shows the
+model's directions turned.
 """
 from __future__ import annotations
 
@@ -28,8 +30,9 @@ MAX_PIXELS = 40_000_000
 def capture_window(conn: ArchicadConnection, entire_drawing: bool = False) -> dict:
     with tempfile.TemporaryDirectory(prefix="archicad-mcp-") as folder:
         path = Path(folder) / "window.png"
-        conn.tapir("SaveCurrentWindowAsImage", {"imageFilePath": str(path), "format": "png",
-                                                "entireDrawing": entire_drawing})
+        reply = conn.tapir("SaveCurrentWindowAsImage",
+                           {"imageFilePath": str(path), "format": "png",
+                            "entireDrawing": entire_drawing})
         # Read inside the folder's lifetime and close at once, so nothing holds
         # the file when the folder goes (Windows refuses to delete an open file).
         data = path.read_bytes() if path.is_file() else None
@@ -46,6 +49,10 @@ def capture_window(conn: ArchicadConnection, entire_drawing: bool = False) -> di
     except (OSError, Image.DecompressionBombError) as exc:
         return {"error": f"Archicad wrote an image file that could not be read ({exc})."}
     result = {"window": active_window(conn), "width": width, "height": height}
+    # Absent for the 3D window (the bundled definition says so).
+    for key in ("zoom", "rotation"):
+        if isinstance(reply, dict) and key in reply:
+            result[key] = reply[key]
     if max(width, height) > MAX_SIDE:
         result["scaled_from"] = [width, height]
         image.thumbnail((MAX_SIDE, MAX_SIDE))

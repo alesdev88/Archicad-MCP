@@ -1,6 +1,7 @@
 """learn_library_part: samples placed past the model, measured, captured and deleted again."""
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import pytest
@@ -56,7 +57,7 @@ class Fake:
     def __init__(self, boxes=None, boxes_of_model=None, model_elements=0, window="FloorPlan",
                  tapir_version="1.7.2", library=None, fail_create_at=None, gdl_fails=False,
                  refuse_parameters=(), keep=(), capture=True, create_raises=False,
-                 mirror_axis="x", act_story=0, stories=None, appear=()):
+                 mirror_axis="x", act_story=0, stories=None, appear=(), rotation=0.0):
         self.draw = boxes or corner_boxes()
         self.mirror_axis = mirror_axis       # the local axis `reflected` negates
         self.model: dict[str, tuple] = {}
@@ -70,6 +71,7 @@ class Fake:
                          "level": 3.0 * i, "height": 3.0, "name": f"Story {i}"}
                         for i in range(3)] if stories is None else stories
         self.appear = list(appear)
+        self.rotation = rotation             # the plan view's, in radians; None: not said
         self.window = window
         self.tapir_version = tapir_version
         self.library = dict(LIBRARY if library is None else library)
@@ -226,7 +228,11 @@ class Fake:
     def _save(self, p):
         if self.capture:
             Image.new("RGB", (640, 360), "white").save(p["imageFilePath"], "PNG")
-        return {"imageFilePath": p["imageFilePath"]}
+        reply = {"imageFilePath": p["imageFilePath"],
+                 "zoom": {"xMin": 0.0, "yMin": -1.0, "xMax": 20.0, "yMax": 4.0}}
+        if self.rotation is not None:
+            reply["rotation"] = self.rotation
+        return reply
 
     def _fit(self, p):
         self.sent.setdefault("FitInWindow", []).append(p)
@@ -473,6 +479,34 @@ def test_the_plan_is_zoomed_on_the_samples_and_the_reply_says_it_stays_so(record
     [fit] = fake.sent["FitInWindow"]
     assert [e["elementId"]["guid"] for e in fit["elements"]] == fake.created_guids
     assert any("stays zoomed" in w for w in out["warnings"])
+
+
+@pytest.mark.parametrize("kind, name", [("object", "Bed Double 01"), ("door", "Door")])
+def test_a_rotated_plan_view_is_refused_and_every_sample_deleted(records, kind, name):
+    # The agent reads head, hinge and swing on screen: in a rotated view they would be
+    # recorded turned.
+    fake = Fake(rotation=math.pi / 2)
+    out = learn_library_part(fake.connection(), records, name, kind)
+    assert "rotated by 90 degrees" in out["error"]
+    assert "orientation" in out["error"] and "learn" in out["error"]
+    assert "deleted again" in out["error"]
+    assert fake.created_guids and fake.remaining == []
+    assert records.get(name) is None and "png" not in out
+
+
+def test_a_plan_turned_a_full_circle_is_not_rotated(records):
+    out = learn_library_part(Fake(rotation=2 * math.pi).connection(), records,
+                             "Bed Double 01", "object")
+    assert "error" not in out
+
+
+def test_a_capture_that_does_not_say_its_rotation_is_warned_about(records):
+    out = learn_library_part(Fake(rotation=None).connection(), records, "Bed Double 01",
+                             "object")
+    assert "error" not in out
+    assert any("did not say whether the plan view is rotated" in w for w in out["warnings"])
+    plain = learn_library_part(Fake().connection(), records, "Bed Double 01", "object")
+    assert not any("rotated" in w for w in plain["warnings"])
 
 
 def test_refuses_outside_the_floor_plan(records):

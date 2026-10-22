@@ -101,6 +101,12 @@ _WINDOW_NOTE = ("If the capture shows the windows without opening lines, the mod
                 "cannot show hinge or swing: ask the user to show them, then learn the "
                 "window again, before recording hinge and swing.")
 _UNCHECKED = "Archicad did not answer the check afterwards, so it may still be there"
+_ROTATION_UNSAID = ("Archicad did not say whether the plan view is rotated. If it is, the "
+                    "image shows the samples turned: set the view orientation back to 0 and "
+                    "learn again before recording head, hinge or swing.")
+
+# Radians a plan view may be turned and still count as not rotated.
+_ROTATION_TOLERANCE = 1e-6
 
 # The element types a learning call places, per kind: an element of one of these
 # that appears past the old model extent while learning is a sample whose GUID
@@ -580,12 +586,22 @@ class _Learning:
         return _named_values(parameters)
 
     def _look(self, guids: list[str]) -> bytes:
+        """The capture of the samples. The agent reads the head and the wall's direction
+        on screen, so a rotated plan view would record them turned: it is refused."""
         zoomed = fit_in_window(self.conn, guids)
         self.warnings.append(_ZOOMED if zoomed else _NOT_ZOOMED)
         image = capture_window(self.conn)
         if "png" not in image:
             raise _Failed(f"The samples could not be captured: "
                           f"{image.get('error', 'no image came back')}")
+        rotation = image.get("rotation")
+        if not isinstance(rotation, (int, float)) or isinstance(rotation, bool):
+            self.warnings.append(_ROTATION_UNSAID)
+        elif _turned(rotation):
+            raise _Failed(f"The floor plan view is rotated by {math.degrees(rotation):g} "
+                          f"degrees (rotation {rotation:g} rad), so the image would show the "
+                          "samples' head, hinge and swing turned and they would be recorded "
+                          "wrong. Set the view orientation back to 0 and learn again.")
         return image["png"]
 
 
@@ -781,6 +797,12 @@ def _record(earlier: PartRecord | None, name: str, guid: str, kind: str, tapir: 
                        footprint=footprint)
     return PartRecord(name=name, guid=guid, kind=kind, learned=learned, tapir=tapir,
                       footprint=footprint)
+
+
+def _turned(rotation: float) -> bool:
+    """True for a view rotation (radians) that is not a whole turn."""
+    off = rotation % math.tau
+    return min(off, math.tau - off) > _ROTATION_TOLERANCE
 
 
 def _older(version: str | None, minimum: tuple[int, ...]) -> bool:
