@@ -433,6 +433,22 @@ def test_the_height_falls_back_to_the_record_then_the_element(tmp_path):
                             "cannot read a part's own height"}
 
 
+def test_a_footprint_off_the_size_asked_warns_and_one_of_no_width_is_an_error(tmp_path):
+    headboard = {"xMin": [-0.5, 0], "xMax": [0.5, 0], "yMin": [0, 0], "yMax": [1, 0.1]}
+    project, records = _bed_project(tmp_path, footprint=headboard)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    [warning] = _warnings(out, OBJECT)
+    assert warning.startswith("covers 2.10 m along its head and 1.60 m across")
+
+    flat = {"xMin": [-1, 0.5], "xMax": [1, -0.5], "yMin": [-1, 0.5], "yMax": [1, -0.5]}
+    project, records = _bed_project(tmp_path / "flat", footprint=flat)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed(
+        size={"length": 0.5, "width": 0.5, "height": 0.9})}], records=records)
+    assert out["error"].startswith(f"change 1 ({OBJECT}): the footprint recorded for "
+                                   "'Bed Double 01' covers 0.00 x 0.00 m")
+
+
 def test_a_door_hinged_at_the_other_jamb_flips_reflected(tmp_path):
     project, records = _door_project(tmp_path)
     # The hinge moves to the begin jamb, still opening left: tt.

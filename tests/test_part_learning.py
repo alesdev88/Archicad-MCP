@@ -425,11 +425,38 @@ def test_the_footprint_is_fitted_against_the_size_the_part_took(records):
 
 
 def test_sizes_that_cannot_be_read_fall_back_to_the_sizes_sent(records):
-    out = learn_library_part(Fake(boxes=corner_boxes(min_b=1.2), gdl_fails=True).connection(),
-                             records, "Bed Double 01", "object")
-    assert out["measured"]["yMax"] == pytest.approx([0.6, 0.6])    # 1.0 drew 1.2, 1.5 drew 1.5
+    out = learn_library_part(Fake(gdl_fails=True).connection(), records, "Bed Double 01",
+                             "object")
+    assert out["measured"]["yMax"] == pytest.approx([1.0, 0.0])
     assert any("A and B of sample '1.0 x 1.0 m' could not be read" in w for w in out["warnings"])
     assert out["parameters"] == []
+    # Without the read-back, a clamped B is a box that grows slower than the B sent
+    # (1.0 drew 1.2, 1.5 drew 1.5): no footprint, rather than 0.6 B + 0.6.
+    clamped = learn_library_part(Fake(boxes=corner_boxes(min_b=1.2), gdl_fails=True)
+                                 .connection(), records, "Bed Double 01", "object")
+    assert clamped["measured"] is None and "depth" in clamped["note"]
+
+
+def chair_boxes(a: float, b: float):
+    """Chair 01 live (22.10.2026): its GDL forces A = B (B wins), while its plan width
+    follows the A sent and its depth max(A, B) sent, centred on the insertion point."""
+    depth = max(a, b)
+    return (b, b), (-a / 2, -depth / 2, a / 2, depth / 2)
+
+
+def test_a_part_whose_plan_size_does_not_follow_its_a_and_b_gets_no_footprint(records):
+    fake = Fake(boxes=chair_boxes)
+    out = learn_library_part(fake.connection(), records, "Chair 01", "object")
+    assert "error" not in out and fake.remaining == []
+    # x follows the A sent (1 to 2, the box 1 to 2 wide), not the A read back (1 to 1.5).
+    assert any("plan width follows the A sent" in w for w in out["warnings"])
+    # y grows 1 to 2 while B goes 1 to 1.5, sent and read back alike.
+    assert out["measured"] is None and records.get("Chair 01").footprint is None
+    assert out["next"] == ["footprint", "head", "one_sided"]
+    note = out["note"]
+    assert "plan size does not follow its own A and B" in note
+    assert "plan depth" in note and "plan width" not in note
+    assert "coordinates" in note
 
 
 def test_a_part_that_mirrors_some_other_way_is_warned_about(records):

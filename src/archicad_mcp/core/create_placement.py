@@ -106,9 +106,10 @@ class _Skip(Exception):
 
 def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
                        records: PartRecords | None, parts: LoadedParts,
-                       ) -> tuple[list[dict], dict[int, str], list[dict], dict[int, dict]]:
+                       ) -> tuple[list[dict], dict[int, str], list[dict], dict[int, dict],
+                                  dict[int, list[str]]]:
     """(the items as Tapir takes them, skips, the placements report, the leaf state to
-    write per item index).
+    write per item index, the warnings per item index).
 
     Items without placement come back as they were. A skipped item comes back without
     its placement and is not sent. `records` None reads the default store.
@@ -116,7 +117,7 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
     schema = PLACEMENT_SCHEMAS.get(name)
     placing = [i for i, item in enumerate(items) if "placement" in item]
     if schema is None or not placing:
-        return items, {}, [], {}
+        return items, {}, [], {}, {}
     store = records if records is not None else PartRecords()
     resolved = list(items)
     skipped: dict[int, str] = {}
@@ -133,15 +134,19 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
     stories = _stories(conn) if name in OBJECT_KINDS and learned else None
     placements: list[dict] = []
     leaf_writes: dict[int, dict] = {}
+    warnings: dict[int, list[str]] = {}
     for index, record in learned.items():
         item, placement = items[index], items[index]["placement"]
+        found: list[str] = []
         try:
-            fields = (_object_fields(record, item, placement, stories)
+            fields = (_object_fields(record, item, placement, stories, found)
                       if name in OBJECT_KINDS
                       else _opening_fields(record, item, placement, walls))
         except (_Skip, ValueError) as error:
             skipped[index] = str(error)
             continue
+        if found:
+            warnings[index] = [f"Item {index} ('{record.name}') {text}" for text in found]
         resolved[index].update(fields)
         derived = dict(fields)
         state = placement.get("leaves")
@@ -150,7 +155,7 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
                                                       "parameters": record.leaf_states[state]}
         placements.append({"index": index, "part": item["libraryPartName"],
                            "derived": derived})
-    return resolved, skipped, placements, leaf_writes
+    return resolved, skipped, placements, leaf_writes, warnings
 
 
 def _learned(name: str, item: dict, schema: dict, store: PartRecords,
@@ -198,6 +203,10 @@ def _record_for(store: PartRecords, name: str, part: str, state: str | None) -> 
         raise _Skip(f"'{part}' was learned as a {record.kind}, not a {name}: learn it as a "
                     f"{name} with learn_library_part")
     missing = record.missing()
+    if "footprint" in missing:
+        raise _Skip(f"'{part}' has no footprint: learning found that its plan size does not "
+                    "follow its own A and B, so placement cannot place it; place it by "
+                    "coordinates, angle, reflected and dimensions")
     if missing:
         raise _Skip(f"the record of '{part}' lacks {_listed(missing)}: give them with "
                     "record_library_part (learn_library_part shows the part again)")
@@ -227,7 +236,8 @@ def _shape_problem(placement: object, schema: dict, hint: str = _SCHEMA_HINT) ->
 
 
 def _object_fields(record: PartRecord, item: dict, placement: dict,
-                   stories: tuple[int | None, dict[int, float]] | str) -> dict:
+                   stories: tuple[int | None, dict[int, float]] | str,
+                   warnings: list[str]) -> dict:
     """Tapir's fields, on the floor of the item's story: Tapir reads coordinates.z as
     absolute, and without floorIndex takes the story from it, so z 0 would put the part
     on the ground floor whatever story the plan shows."""
@@ -249,7 +259,7 @@ def _object_fields(record: PartRecord, item: dict, placement: dict,
     center = placement["center"]
     on_floor = {"x": center["x"], "y": center["y"], "z": level + center.get("z", 0.0)}
     fields = object_fields(record, on_floor, size["length"], size["width"], height,
-                           placement["head"], placement.get("mirrored", False))
+                           placement["head"], placement.get("mirrored", False), warnings)
     fields["floorIndex"] = story
     return fields
 

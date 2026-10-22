@@ -692,6 +692,35 @@ def test_object_without_height_falls_back_to_the_record_then_skips(tmp_path):
                               "part's own height")
 
 
+def test_a_footprint_of_no_width_is_skipped_and_one_off_the_size_asked_warns(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    # A headboard 0.1 m past B; Chair 01 fitted against its read-back (2A - 1 wide).
+    headboard = bed_record(footprint={"xMin": [-0.5, 0], "xMax": [0.5, 0],
+                                      "yMin": [0, 0], "yMax": [1, 0.1]})
+    flat = bed_record(name="Chair 01", guid="lib-2",
+                      footprint={"xMin": [-1, 0.5], "xMax": [1, -0.5],
+                                 "yMin": [-1, 0.5], "yMax": [1, -0.5]})
+    small = {"length": 0.5, "width": 0.5, "height": 0.9}
+    result = create_elements(plan.connection(), "object", [bed(), bed("Chair 01", size=small)],
+                             records=store(tmp_path, headboard, flat))
+    [skip] = result["skipped"]
+    assert skip["index"] == 1
+    assert "'Chair 01' covers 0.00 x 0.00 m at A 0.5, B 0.5" in skip["reason"]
+    [warning] = [w for w in result["warnings"] if w.startswith("Item 0")]
+    assert warning.startswith("Item 0 ('Bed Double 01') covers 2.10 m along its head and "
+                              "1.60 m across")
+    assert result["ready"] == 1
+
+
+def test_a_part_whose_plan_size_does_not_follow_its_size_is_placed_by_coordinates(tmp_path):
+    plan = Plan(library=["Chair 01"])
+    records = store(tmp_path, bed_record(name="Chair 01", footprint=None))
+    result = create_elements(plan.connection(), "object", [bed("Chair 01")], records=records)
+    [skip] = result["skipped"]
+    assert "plan size does not follow its own A and B" in skip["reason"]
+    assert "coordinates, angle, reflected and dimensions" in skip["reason"]
+
+
 def test_a_door_by_hinge_point_and_swing_gets_reflected_and_oside(tmp_path):
     plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
     records = store(tmp_path, door_record())

@@ -16,9 +16,13 @@ and it shows neither a door's hinge nor its swing. Tapir cannot set the zoom
 back, so the reply says the plan stays zoomed there.
 
 Objects and lamps are sampled at two explicit sizes, because on Tapir 1.7.2 a
-part sent without dimensions takes the Object tool's size, and the footprint is
-fitted against the A and B each sample took, read back from its GDL: Bed Double
-01 clamps B to at least 1.2, so a sample sent at 1.0 x 1.0 is drawn 1.0 x 1.2.
+part sent without dimensions takes the Object tool's size. Each axis of the
+footprint is fitted against whichever of the A and B read back from the GDL and
+the A and B sent its plan box follows (part_placement.fit_axis): Bed Double 01
+clamps B to at least 1.2, so a sample sent at 1.0 x 1.0 is drawn 1.0 x 1.2 and
+its GDL reads B 1.2; Chair 01's GDL forces A = B, while its plan width follows
+the A sent and its depth neither. A part whose plan size follows neither on an
+axis gets no footprint, and is placed by coordinates.
 """
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ from archicad_mcp.core.create import FLOOR_PLAN, closest_names
 from archicad_mcp.core.editability import active_window, present
 from archicad_mcp.core.element_data import error_fields
 from archicad_mcp.core.mutate import _refused_deletions, _survivor_reason
-from archicad_mcp.core.part_placement import Sample, fit_footprint
+from archicad_mcp.core.part_placement import Sample, fit_axis
 from archicad_mcp.core.part_records import (
     COMBOS,
     HEADS,
@@ -104,6 +108,9 @@ _UNCHECKED = "Archicad did not answer the check afterwards, so it may still be t
 _SAMPLED_TYPES = {"object": ("Object",), "lamp": ("Lamp",), "door": ("Door", "Wall"),
                   "window": ("Window", "Wall")}
 
+
+# Per footprint axis: what its extent is called, and the size it should follow.
+_AXIS_WORDS = {"x": ("width", "A"), "y": ("depth", "B")}
 
 # The words a recorded combination is made of: where the hinge sits along the wall
 # from its begin point to its end, and which side of the wall the door swings to.
@@ -208,6 +215,8 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
               "warnings": learning.warnings, "next": record.missing()}
     if kind == "window":
         result["note"] = _WINDOW_NOTE
+    elif learning.note is not None:
+        result["note"] = learning.note
     return result
 
 
@@ -362,6 +371,7 @@ class _Learning:
         self.samples: list[str] = []         # GUIDs of the samples placed, in order
         self.wall: str | None = None
         self.warnings: list[str] = []
+        self.note: str | None = None         # what the reply must say above the warnings
 
     def placed(self) -> list[str]:
         return self.samples + ([self.wall] if self.wall else [])
@@ -473,7 +483,7 @@ class _Learning:
                 self.warnings.append(f"Archicad gave no plan box for sample '{p.label}', so "
                                      "the footprint is fitted without it.")
                 continue
-            samples.append(Sample(a, b, _from_insertion(box, p)))
+            samples.append(Sample(a, b, _from_insertion(box, p), sent=(p.a, p.b)))
         if not samples:
             raise _Failed("Archicad gave no plan box for any sample, so the footprint "
                           "could not be measured.")
@@ -481,7 +491,31 @@ class _Learning:
             self.warnings.append("Only one size could be measured, so the footprint is "
                                  "fixed: it will not follow the size the part is placed at.")
         self._check_mirror(sized[0], boxes[0], mirrored, boxes[len(SAMPLE_SIZES)])
-        return fit_footprint(samples), parameters
+        return self._fitted(samples), parameters
+
+    def _fitted(self, samples: list[Sample]) -> dict | None:
+        """The footprint, each axis fitted against the size its plan box follows; None,
+        and the reply's note, when an axis follows neither."""
+        fits = {axis: fit_axis(samples, axis) for axis in _AXIS_WORDS}
+        for axis, fit in fits.items():
+            if fit.against == "sent":
+                extent, size = _AXIS_WORDS[axis]
+                self.warnings.append(
+                    f"The plan {extent} follows the {size} sent, not the {size} the part's "
+                    f"GDL reads back, so the {axis} edges of the footprint are fitted "
+                    "against the size sent.")
+        unfollowed = [axis for axis, fit in fits.items() if fit.edges is None]
+        if not unfollowed:
+            return {**fits["x"].edges, **fits["y"].edges}
+        extents = " and ".join(f"plan {_AXIS_WORDS[axis][0]}" for axis in unfollowed)
+        sizes = " and ".join(_AXIS_WORDS[axis][1] for axis in unfollowed)
+        grows = "grow" if len(unfollowed) > 1 else "grows"
+        self.note = (f"This part's plan size does not follow its own A and B: its {extents} "
+                     f"{grows} at another rate than the {sizes} it was sent at and the "
+                     f"{sizes} its GDL reads back, so no footprint is recorded and "
+                     "placement cannot place it. Place it by coordinates, angle, reflected "
+                     "and dimensions, then look with capture_window.")
+        return None
 
     def _sizes_taken(self, sized: list[_Placed]) -> tuple[list[tuple[float, float]], list]:
         """The A and B each sample took, as its GDL reads them; the size sent where the
@@ -504,8 +538,8 @@ class _Learning:
             if abs(a - p.a) > _SAME or abs(b - p.b) > _SAME:
                 self.warnings.append(
                     f"Sample '{p.label}' was sent at A {p.a:g}, B {p.b:g} and the part took "
-                    f"A {a:g}, B {b:g}: it limits its size, and the footprint is fitted "
-                    "against the size it took.")
+                    f"A {a:g}, B {b:g} (its GDL reads them so): each axis of the footprint "
+                    "is fitted against whichever of the two sizes its plan box follows.")
             taken.append((a, b))
         return taken, _named_values(lists[0] or [])
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.element_data import error_fields
@@ -23,31 +24,80 @@ from archicad_mcp.core.part_records import COMBOS, PartRecord
 # Sizes closer than this count as the same size, so a fit does not divide by noise.
 _SAME = 1e-6
 
+# How far an axis's extent slope (how fast the plan box grows with the size) may stray
+# from 1 for a fit to be taken: a part whose box grows at another rate does not draw the
+# size it is given on that axis.
+SLOPE_TOLERANCE = 0.05
+
+# Metres the footprint at the size asked may differ from it before placement warns.
+SIZE_TOLERANCE = 0.03
+
+# Hinge points closer than this to the opening's centre along the wall, and swing points
+# closer than this to the wall's line, name neither jamb or side.
+AMBIGUOUS = 0.05
+
 _HEAD_DIRECTIONS = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+y": (0.0, 1.0), "-y": (0.0, -1.0)}
+
+# Per axis: its edges, their places in a box, and the size (A or B) they follow.
+_AXES = {"x": (("xMin", 0), ("xMax", 2), 0), "y": (("yMin", 1), ("yMax", 3), 1)}
 
 
 @dataclass(frozen=True)
 class Sample:
     """One placement of a part and the box it was seen to cover."""
-    a: float
+    a: float                                    # the A and B it took (its GDL read back)
     b: float
     box: tuple[float, float, float, float]      # xMin, yMin, xMax, yMax from the insertion point
+    sent: tuple[float, float] | None = None     # the A and B sent, when not a and b
+
+    def size(self, axis: str, against: str) -> float:
+        """The A (axis "x") or B (axis "y") taken, or sent when `against` is "sent"."""
+        sizes = self.sent if against == "sent" and self.sent is not None else (self.a, self.b)
+        return sizes[_AXES[axis][2]]
 
 
-def fit_footprint(samples: list[Sample]) -> dict:
-    """A footprint in the record's form: each edge as [k, c], edge = k * size + c.
+class AxisFit(NamedTuple):
+    """One axis of a footprint, and what its edges were fitted against: "fixed" (the
+    box does not change), "taken" (the size read back), "sent", or None for no fit."""
+    edges: dict | None
+    against: str | None
 
-    The x edges are fitted against a, the y edges against b. When the sizes do not
-    differ (a part that clamps a size, or has a fixed one) the edge is fixed: k = 0.
+
+def fit_axis(samples: list[Sample], axis: str) -> AxisFit:
+    """The two edges of one axis ("x" by A, "y" by B), each as [k, c], edge = k * size + c.
+
+    The edges are fitted against the size the part took and against the size sent,
+    wherever that size varies across the samples, and the first fit whose box grows as
+    fast as the size (extent slope within SLOPE_TOLERANCE of 1) is taken, the size taken
+    first: Bed Double 01 clamps B, so its box follows the B read back; Chair 01's GDL
+    forces A = B, so its box width follows the A sent. A box that does not change keeps
+    fixed edges (k = 0). When no fit grows at that rate, the part's plan size does not
+    follow its size on this axis, and there is no fit.
     """
     if not samples:
         raise ValueError("fitting a footprint takes at least one sample")
-    return {
-        "xMin": _fit([s.a for s in samples], [s.box[0] for s in samples]),
-        "xMax": _fit([s.a for s in samples], [s.box[2] for s in samples]),
-        "yMin": _fit([s.b for s in samples], [s.box[1] for s in samples]),
-        "yMax": _fit([s.b for s in samples], [s.box[3] for s in samples]),
-    }
+    (low, low_at), (high, high_at), _ = _AXES[axis]
+    lows, highs = [s.box[low_at] for s in samples], [s.box[high_at] for s in samples]
+    if _spread(lows) < _SAME and _spread(highs) < _SAME:
+        return AxisFit({low: [0.0, _tidy(_mean(lows))], high: [0.0, _tidy(_mean(highs))]},
+                       "fixed")
+    for against in ("taken", "sent"):
+        sizes = [s.size(axis, against) for s in samples]
+        if _spread(sizes) < _SAME:
+            continue
+        low_fit, high_fit = _fit(sizes, lows), _fit(sizes, highs)
+        if abs(high_fit[0] - low_fit[0] - 1) <= SLOPE_TOLERANCE:
+            return AxisFit({low: low_fit, high: high_fit}, against)
+    return AxisFit(None, None)
+
+
+def fit_footprint(samples: list[Sample]) -> dict | None:
+    """A footprint in the record's form (fit_axis for each axis), or None when the
+    plan box on an axis follows neither size."""
+    x, y = fit_axis(samples, "x"), fit_axis(samples, "y")
+    if x.edges is None or y.edges is None:
+        return None
+    return {**x.edges, **y.edges}
 
 
 def footprint_at(footprint: dict, a: float, b: float) -> tuple[float, float, float, float]:
@@ -59,9 +109,13 @@ def footprint_at(footprint: dict, a: float, b: float) -> tuple[float, float, flo
 
 
 def object_fields(record: PartRecord, center: dict, length: float, width: float, height: float,
-                  head: dict, mirrored: bool) -> dict:
+                  head: dict, mirrored: bool, warnings: list[str] | None = None) -> dict:
     """Tapir's fields for an object whose footprint is centred on `center` with its head
-    pointing along `head` (a direction vector with x and y)."""
+    pointing along `head` (a direction vector with x and y).
+
+    A footprint that covers nothing at this size is refused (ValueError). One that covers
+    more than SIZE_TOLERANCE off the length or width asked adds a warning to `warnings`.
+    """
     if record.footprint is None or record.head not in _HEAD_DIRECTIONS:
         raise ValueError(f"'{record.name}' has no footprint and head direction recorded")
     if math.hypot(head["x"], head["y"]) < _SAME:
@@ -71,6 +125,19 @@ def object_fields(record: PartRecord, center: dict, length: float, width: float,
     a, b = (width, length) if along_y else (length, width)
 
     x_min, y_min, x_max, y_max = footprint_at(record.footprint, a, b)
+    across_x, across_y = x_max - x_min, y_max - y_min
+    if across_x <= 0 or across_y <= 0:
+        raise ValueError(f"the footprint recorded for '{record.name}' covers "
+                         f"{max(across_x, 0.0):.2f} x {max(across_y, 0.0):.2f} m at A {a:g}, "
+                         f"B {b:g}, so it cannot be placed by placement at this size: place "
+                         "it by coordinates, angle, reflected and dimensions, or learn it again")
+    drawn_length, drawn_width = (across_y, across_x) if along_y else (across_x, across_y)
+    if warnings is not None and (abs(drawn_length - length) > SIZE_TOLERANCE
+                                 or abs(drawn_width - width) > SIZE_TOLERANCE):
+        warnings.append(f"covers {drawn_length:.2f} m along its head and {drawn_width:.2f} m "
+                        f"across by the footprint recorded for '{record.name}', not the "
+                        f"{length:g} x {width:g} m asked: the part does not draw the size it "
+                        "is sent at, so look with capture_window after placing")
     head_x, head_y = _HEAD_DIRECTIONS[record.head]
     if mirrored:                                 # reflected: local x becomes -x
         x_min, x_max = -x_max, -x_min
@@ -144,14 +211,19 @@ def write_leaf_state(conn: ArchicadConnection, guid: str, parameters: dict) -> s
 
 
 def _fit(sizes: list[float], edges: list[float]) -> list[float]:
-    """Least squares line edge = k * size + c; a fixed edge when the sizes do not differ."""
-    count = len(sizes)
-    mean_size, mean_edge = sum(sizes) / count, sum(edges) / count
-    if max(sizes) - min(sizes) < _SAME:
-        return [0.0, _tidy(mean_edge)]
+    """Least squares line edge = k * size + c, over sizes that differ."""
+    mean_size, mean_edge = _mean(sizes), _mean(edges)
     k = (sum((s - mean_size) * (e - mean_edge) for s, e in zip(sizes, edges))
          / sum((s - mean_size) ** 2 for s in sizes))
     return [_tidy(k), _tidy(mean_edge - k * mean_size)]
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _spread(values: list[float]) -> float:
+    return max(values) - min(values)
 
 
 def _tidy(value: float) -> float:

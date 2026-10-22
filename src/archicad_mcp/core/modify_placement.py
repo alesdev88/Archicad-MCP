@@ -14,7 +14,7 @@ the change: modify's skips name Tapir's fields, which the change did not give.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.create_placement import (
@@ -50,6 +50,7 @@ class Placed:
     """What a placement names besides Tapir's fields."""
     part: str
     leaves: dict | None = None        # {"state", "parameters"}, written after the commit
+    warnings: list[str] = field(default_factory=list)    # for the dry run's warnings
 
 
 @dataclass
@@ -104,8 +105,10 @@ def resolve_placements(conn: ArchicadConnection, changes: list[dict],
     placed: dict[str, Placed] = {}
     for p in pending:
         placement = changes[p.number - 1]["placement"]
+        found: list[str] = []
         try:
-            fields = (_object_fields(p.record, placement, p.entry) if p.kind in OBJECT_KINDS
+            fields = (_object_fields(p.record, placement, p.entry, found)
+                      if p.kind in OBJECT_KINDS
                       else _opening_fields(p.record, placement, p.given, p.entry, walls))
         except (_Skip, ValueError) as problem:
             problems.append(f"change {p.number} ({p.guid}): {problem}")
@@ -114,7 +117,7 @@ def resolve_placements(conn: ArchicadConnection, changes: list[dict],
         state = placement.get("leaves")
         leaves = (None if state is None
                   else {"state": state, "parameters": p.record.leaf_states[state]})
-        placed[p.guid] = Placed(p.record.name, leaves)
+        placed[p.guid] = Placed(p.record.name, leaves, found)
     if problems:
         return "\n".join(problems)
     return resolved, placed
@@ -155,7 +158,8 @@ def _learned(placement: object, given: dict, entry: dict,
     return kind, record
 
 
-def _object_fields(record: PartRecord, placement: dict, entry: dict) -> dict:
+def _object_fields(record: PartRecord, placement: dict, entry: dict,
+                   warnings: list[str]) -> dict:
     """coordinates {x, y}, angle, reflected and dimensions: modify completes the z of
     coordinates from the current origin, so the object keeps its story and elevation."""
     size = placement["size"]
@@ -167,7 +171,7 @@ def _object_fields(record: PartRecord, placement: dict, entry: dict) -> dict:
             raise _Skip(NO_HEIGHT)
     center = {"x": placement["center"]["x"], "y": placement["center"]["y"]}
     fields = object_fields(record, center, size["length"], size["width"], height,
-                           placement["head"], placement.get("mirrored", False))
+                           placement["head"], placement.get("mirrored", False), warnings)
     fields["coordinates"] = {axis: fields["coordinates"][axis] for axis in ("x", "y")}
     return fields
 

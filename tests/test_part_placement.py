@@ -4,6 +4,7 @@ import pytest
 
 from archicad_mcp.core.part_placement import (
     Sample,
+    fit_axis,
     fit_footprint,
     footprint_at,
     object_fields,
@@ -77,12 +78,62 @@ def test_fit_recovers_a_corner_and_a_centre_insertion():
 
 
 def test_fit_keeps_a_constant_offset():
-    # xMin = 0.5 * A - 0.2 (e.g. a headboard), yMax = B + 0.1.
-    samples = [Sample(1.0, 2.0, (0.3, 0.0, 1.0, 2.1)),
-               Sample(2.0, 3.0, (0.8, 0.0, 2.0, 3.1)),
-               Sample(3.0, 1.0, (1.3, 0.0, 3.0, 1.1))]
-    assert_footprint(fit_footprint(samples), {"xMin": [0.5, -0.2], "xMax": [1, 0],
+    # The insertion point 0.2 inside the left edge: xMin = -0.2, xMax = A - 0.2; a
+    # headboard: yMax = B + 0.1.
+    samples = [Sample(1.0, 2.0, (-0.2, 0.0, 0.8, 2.1)),
+               Sample(2.0, 3.0, (-0.2, 0.0, 1.8, 3.1)),
+               Sample(3.0, 1.0, (-0.2, 0.0, 2.8, 1.1))]
+    assert_footprint(fit_footprint(samples), {"xMin": [0, -0.2], "xMax": [1, -0.2],
                                               "yMin": [0, 0], "yMax": [1, 0.1]})
+
+
+def test_a_box_that_grows_at_another_rate_than_its_size_is_no_fit():
+    # xMin = 0.5 * A - 0.2, xMax = A: the plan width grows at half the rate of A.
+    samples = [Sample(1.0, 2.0, (0.3, 0.0, 1.0, 2.0)),
+               Sample(2.0, 3.0, (0.8, 0.0, 2.0, 3.0))]
+    assert fit_axis(samples, "x").edges is None
+    assert fit_footprint(samples) is None
+
+
+# Chair 01 live (22.10.2026): its GDL forces A = B (B wins), its plan width follows the
+# A sent and its plan depth max(A, B) sent. Sent (1, 1) and (2, 1.5); read back (1, 1)
+# and (1.5, 1.5); boxes centred, 1 x 1 and 2 x 2.
+CHAIR_SAMPLES = [Sample(1.0, 1.0, (-0.5, -0.5, 0.5, 0.5), sent=(1.0, 1.0)),
+                 Sample(1.5, 1.5, (-1.0, -1.0, 1.0, 1.0), sent=(2.0, 1.5))]
+
+
+def test_an_axis_whose_box_follows_the_size_sent_is_fitted_against_it():
+    # Against the read-back A (1 to 1.5) the width grows twice as fast; against the A
+    # sent (1 to 2) at the same rate.
+    fit = fit_axis(CHAIR_SAMPLES, "x")
+    assert fit.against == "sent"
+    assert_footprint(fit.edges, {"xMin": [-0.5, 0], "xMax": [0.5, 0]})
+
+
+def test_an_axis_whose_box_follows_neither_size_has_no_fit():
+    # The depth grows 1 to 2 while B goes 1 to 1.5, sent and read back alike.
+    fit = fit_axis(CHAIR_SAMPLES, "y")
+    assert fit.edges is None and fit.against is None
+    assert fit_footprint(CHAIR_SAMPLES) is None
+
+
+def test_an_axis_whose_box_follows_the_size_taken_is_fitted_against_that_first():
+    # Bed Double 01 takes B 1.2 when sent 1.0: its box follows the B read back (slope 1),
+    # not the B sent (slope 0.6).
+    samples = [Sample(1.0, 1.2, (0.0, 0.0, 1.0, 1.2), sent=(1.0, 1.0)),
+               Sample(2.0, 1.5, (0.0, 0.0, 2.0, 1.5), sent=(2.0, 1.5))]
+    fit = fit_axis(samples, "y")
+    assert fit.against == "taken"
+    assert_footprint(fit.edges, {"yMin": [0, 0], "yMax": [1, 0]})
+    assert fit_axis(samples, "x").against == "taken"
+
+
+def test_an_axis_whose_box_does_not_change_keeps_fixed_edges():
+    samples = [Sample(1.0, 1.0, (0.0, -0.3, 1.0, 0.3), sent=(1.0, 1.0)),
+               Sample(2.0, 1.5, (0.0, -0.3, 2.0, 0.3), sent=(2.0, 1.5))]
+    fit = fit_axis(samples, "y")
+    assert fit.against == "fixed"
+    assert_footprint(fit.edges, {"yMin": [0, -0.3], "yMax": [0, 0.3]})
 
 
 def test_fit_with_equal_a_fixes_the_x_edges():
@@ -238,6 +289,49 @@ def test_a_zero_head_is_an_error():
     with pytest.raises(ValueError):
         object_fields(BED, {"x": 0, "y": 0}, length=2.0, width=1.8, height=0.5,
                       head={"x": 0, "y": 0}, mirrored=False)
+
+
+def test_a_footprint_of_no_width_at_the_size_asked_is_refused():
+    # Chair 01 fitted against its read-back A and B: 2A - 1 wide, nothing at 0.5 x 0.5.
+    chair = record(name="Chair 01", head="+y",
+                   footprint={"xMin": [-1, 0.5], "xMax": [1, -0.5],
+                              "yMin": [-1, 0.5], "yMax": [1, -0.5]})
+    with pytest.raises(ValueError, match="Chair 01") as refused:
+        object_fields(chair, {"x": 0, "y": 0}, length=0.5, width=0.5, height=0.9,
+                      head={"x": 0, "y": 1}, mirrored=False)
+    assert "coordinates" in str(refused.value)
+
+
+def test_a_footprint_that_is_not_the_size_asked_is_warned_about():
+    # A headboard 0.1 m past B: the footprint is 0.1 m longer than asked.
+    headboard = record(head="+y", footprint={"xMin": [0, 0], "xMax": [1, 0],
+                                             "yMin": [0, 0], "yMax": [1, 0.1]})
+    warnings: list[str] = []
+    object_fields(headboard, {"x": 5, "y": 5}, length=2.0, width=1.8, height=0.5,
+                  head={"x": 0, "y": 1}, mirrored=False, warnings=warnings)
+    [warning] = warnings
+    assert "2.10 m along its head" in warning and "1.80 m across" in warning
+    assert "2 x 1.8 m" in warning and "capture_window" in warning
+
+    within: list[str] = []
+    slightly = record(head="+y", footprint={"xMin": [0, 0], "xMax": [1, 0.02],
+                                            "yMin": [0, 0], "yMax": [1, 0.02]})
+    object_fields(slightly, {"x": 5, "y": 5}, length=2.0, width=1.8, height=0.5,
+                  head={"x": 0, "y": 1}, mirrored=False, warnings=within)
+    object_fields(BED, {"x": 5, "y": 5}, length=2.0, width=1.8, height=0.5,
+                  head={"x": 0, "y": 1}, mirrored=False, warnings=within)
+    assert within == []
+
+
+def test_the_size_warning_reads_length_and_width_by_the_head():
+    # Head along local x: A is the length. A fixed width of 0.6 asked 0.8 across.
+    sideways = record(head="+x", footprint={"xMin": [0, 0], "xMax": [1, 0],
+                                            "yMin": [0, 0], "yMax": [0, 0.6]})
+    warnings: list[str] = []
+    object_fields(sideways, {"x": 0, "y": 0}, length=2.0, width=0.8, height=0.5,
+                  head={"x": 1, "y": 0}, mirrored=False, warnings=warnings)
+    [warning] = warnings
+    assert "2.00 m along its head and 0.60 m across" in warning
 
 
 # --- doors and windows -----------------------------------------------------------------

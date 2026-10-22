@@ -436,6 +436,8 @@ def plan_changes(conn: ArchicadConnection, changes,
 
     for p in plan.planned:
         warnings = _element_warnings(p, typed_fields[p.guid], ctx)
+        if p.guid in placed:
+            warnings += placed[p.guid].warnings
         if warnings:
             plan.warnings[p.guid] = warnings
     plan.groups = _groups(conn, [p.guid for p in plan.planned])

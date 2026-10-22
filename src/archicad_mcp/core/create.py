@@ -523,8 +523,8 @@ def create_elements(conn: ArchicadConnection, element_type: str,
         return dict(refusal, element_type=name)
     library = LoadedParts(conn)
     # Before the schema check: Tapir's item schema has no placement field.
-    items, skipped, placements, leaf_writes = resolve_placements(conn, name, items, records,
-                                                                 library)
+    items, skipped, placements, leaf_writes, placed_warnings = resolve_placements(
+        conn, name, items, records, library)
     problems = _problems(items, schema, skipped)
     if problems:
         reply = {"dry_run": dry_run, "element_type": name, "command": spec.command,
@@ -544,6 +544,8 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     placements = [p for p in placements if p["index"] not in skipped]
     leaf_writes = {i: leaves for i, leaves in leaf_writes.items() if i not in skipped}
     warnings = (_window_warnings(name, spec, items, window) + library_warnings
+                + [text for i, texts in sorted(placed_warnings.items()) if i not in skipped
+                   for text in texts]
                 + _object_warnings(name, items, ready)
                 + _tool_part_warnings(name, items, ready, dry_run)
                 + _stale_tapir_warnings(conn))
