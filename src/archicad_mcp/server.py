@@ -766,6 +766,73 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
             return result
         return [Image(data=png, format="png"), result]
 
+    from archicad_mcp.core import part_learning as _part_learning
+    from archicad_mcp.core.part_records import PartRecords
+
+    # The one store of learned library parts. The file is read when a tool first
+    # needs it, never here, so an unreadable file stops no server start: it comes
+    # back as the tool's error.
+    records = PartRecords()
+
+    @mcp.tool(description=(
+        "Learn a library part once, so it can be placed right later. Places samples "
+        "of the part named name (kind: object, lamp, door or window) in a row just "
+        "past the right edge of the model, on the story the floor plan shows, "
+        "measures their footprints, shows them in one floor plan image, deletes every "
+        "sample again in the same call and stores the measurement. The reply lists "
+        "'samples' in image order, the first sample's GDL parameters, warnings, and "
+        "'next', the fields still to give record_library_part. variants: optional "
+        "sets of GDL parameter values (parameter name to value), each placed as one "
+        "more sample, such as a leaf opened. Lengths are metres. The floor plan must "
+        "be the active window. It zooms the plan to the samples and Tapir cannot "
+        "set the zoom back; a door or window learned may leave the Door or Window "
+        "tool holding the part. Needs Tapir 1.7.2."),
+              **_tool_meta("Learn a library part", read_only=False, destructive=True))
+    @_guarded
+    def learn_library_part(name: str, kind: str, variants: list[dict] | None = None,
+                           port: int | None = None):
+        result = _part_learning.learn_library_part(
+            _tapir_conn(port, "learn_library_part"), records, name, kind, variants)
+        png = result.pop("png", None)
+        if png is None:
+            return result
+        return [Image(data=png, format="png"), result]
+
+    @mcp.tool(description=(
+        "Record what you judged from learn_library_part's image, in the part's stored "
+        "record. Objects and lamps: head ('+x', '-x', '+y' or '-y', the direction a "
+        "bed's head points in the part's own axes), one_sided (true or false) and "
+        "height (metres). Doors and windows: combos, which maps a flag pair (reflected "
+        "then oSide, t for true and f for false: 'ff', 'tf', 'ft' or 'tt') to [hinge, "
+        "swing], hinge 'begin' or 'end' and swing 'left' or 'right' along the wall; "
+        "leaves (a whole number, at least 1); and leaf_states, which maps a state name "
+        "to GDL parameter values. Combos and leaf_states add to what is recorded, a "
+        "key given again replaces its value; every other field replaces its value. "
+        "One refused value saves nothing. Returns the record and 'missing', the "
+        "fields still needed before the part can be placed from it. forget=true "
+        "removes the part's record and takes no other field. The part must have been "
+        "learned first. Writes only the local records file and needs no Archicad."),
+              **_tool_meta("Record a learned library part", read_only=False,
+                           destructive=True))
+    @_guarded
+    def record_library_part(name: str, head: str | None = None,
+                            one_sided: bool | None = None, height: float | None = None,
+                            combos: dict | None = None, leaves: int | None = None,
+                            leaf_states: dict | None = None, forget: bool = False) -> dict:
+        return _part_learning.record_library_part(records, name, head, one_sided, height,
+                                                  combos, leaves, leaf_states, forget)
+
+    @mcp.tool(description=(
+        "List the learned library parts, all or only those in names, each with its "
+        "stored fields and 'missing', the fields still needed before it can be placed "
+        "from. 'not_recorded' names any part asked for that has no record. Also "
+        "returns the path of the records file. Reads only that local file and needs "
+        "no Archicad."),
+              **_tool_meta("List learned library parts", read_only=True, destructive=False))
+    @_guarded
+    def list_library_part_records(names: list[str] | None = None) -> dict:
+        return _part_learning.list_library_part_records(records, names)
+
     from archicad_mcp.core import collisions as _collisions
 
     @mcp.tool(description=(

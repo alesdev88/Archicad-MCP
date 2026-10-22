@@ -23,6 +23,7 @@ fitted against the A and B each sample took, read back from its GDL: Bed Double
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, replace
 from datetime import date
@@ -38,6 +39,7 @@ from archicad_mcp.core.mutate import _refused_deletions, _survivor_reason
 from archicad_mcp.core.part_placement import Sample, fit_footprint
 from archicad_mcp.core.part_records import (
     COMBOS,
+    HEADS,
     KINDS,
     PartRecord,
     PartRecords,
@@ -103,8 +105,18 @@ _SAMPLED_TYPES = {"object": ("Object",), "lamp": ("Lamp",), "door": ("Door", "Wa
                   "window": ("Window", "Wall")}
 
 
+# The words a recorded combination is made of: where the hinge sits along the wall
+# from its begin point to its end, and which side of the wall the door swings to.
+_HINGES = ("begin", "end")
+_SWINGS = ("left", "right")
+
+
 class _Failed(Exception):
     """Learning cannot go on; the message is the reply's error."""
+
+
+class _Refused(ValueError):
+    """A value record_library_part was given cannot be recorded; the message says why."""
 
 
 @dataclass
@@ -197,6 +209,144 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
     if kind == "window":
         result["note"] = _WINDOW_NOTE
     return result
+
+
+def record_library_part(records: PartRecords, name: str, head: str | None = None,
+                        one_sided: bool | None = None, height: float | None = None,
+                        combos: dict | None = None, leaves: int | None = None,
+                        leaf_states: dict | None = None, forget: bool = False) -> dict:
+    """Put what the agent judged from the learning image into the part's record.
+
+    A part never learned has no record to put it in, and a refused value saves
+    nothing, the valid ones beside it included. `combos` and `leaf_states` add to
+    what is recorded (a key given again replaces its value); every other field
+    replaces its value. `forget` removes the record instead and takes no fields.
+    """
+    given = {"head": head, "one_sided": one_sided, "height": height, "combos": combos,
+             "leaves": leaves, "leaf_states": leaf_states}
+    try:
+        if forget:
+            return _forgotten(records, name, [key for key, value in given.items()
+                                              if value is not None])
+        record = records.get(name)
+        if record is None:
+            return {"error": f"No record is kept for '{name}': call learn_library_part for "
+                             "it first (it places samples, measures them and shows them in "
+                             "an image), then record what the image shows. Nothing was "
+                             "recorded."}
+        try:
+            changes = _checked(record, given)
+        except _Refused as refusal:
+            return {"error": f"{refusal} Nothing was recorded."}
+        if changes:
+            record = replace(record, **changes)
+            records.save(record)
+        return {"record": record.to_json(), "missing": record.missing()}
+    except RecordsFileError as error:
+        return {"error": str(error)}
+
+
+def list_library_part_records(records: PartRecords, names: list[str] | None = None) -> dict:
+    """The kept records (those named in `names`, when given and not empty), each with
+    what is still missing from it, and the file they live in."""
+    try:
+        kept = {record.name: record for record in records.all()}
+    except RecordsFileError as error:
+        return {"error": str(error)}
+    if not names:
+        chosen = list(kept.values())
+        absent: list[str] = []
+    else:
+        wanted = list(dict.fromkeys(names))
+        chosen = [kept[n] for n in wanted if n in kept]
+        absent = [n for n in wanted if n not in kept]
+    result: dict = {"records": [{**record.to_json(), "missing": record.missing()}
+                                for record in chosen],
+                    "path": str(records.path)}
+    if absent:
+        result["not_recorded"] = absent
+    return result
+
+
+def _forgotten(records: PartRecords, name: str, given: list[str]) -> dict:
+    if given:
+        return {"error": f"forget removes the whole record and takes no other field, but "
+                         f"{', '.join(given)} came with it. Nothing was changed."}
+    removed = records.forget(name)
+    result = {"forgotten": removed, "name": name}
+    if not removed:
+        result["note"] = f"No record was kept for '{name}'."
+    return result
+
+
+def _checked(record: PartRecord, given: dict) -> dict:
+    """The record's changes for the fields given, or _Refused on the first bad value."""
+    changes: dict = {}
+    if given["head"] is not None:
+        if given["head"] not in HEADS:
+            raise _Refused(f"head must be one of {', '.join(HEADS)} (the direction the head "
+                           f"points in the part's own axes), not {given['head']!r}.")
+        changes["head"] = given["head"]
+    if given["one_sided"] is not None:
+        if not isinstance(given["one_sided"], bool):
+            raise _Refused(f"one_sided must be true or false, not {given['one_sided']!r}.")
+        changes["one_sided"] = given["one_sided"]
+    if given["height"] is not None:
+        height = given["height"]
+        if isinstance(height, bool) or not isinstance(height, (int, float)) \
+                or not math.isfinite(height) or height <= 0:
+            raise _Refused(f"height must be a positive number of metres, not {height!r}.")
+        changes["height"] = float(height)
+    if given["leaves"] is not None:
+        leaves = given["leaves"]
+        if isinstance(leaves, bool) or not isinstance(leaves, int) or leaves < 1:
+            raise _Refused(f"leaves must be a whole number of at least 1, not {leaves!r}.")
+        changes["leaves"] = leaves
+    if given["combos"] is not None:
+        changes["combos"] = {**(record.combos or {}), **_checked_combos(given["combos"])}
+    if given["leaf_states"] is not None:
+        changes["leaf_states"] = {**(record.leaf_states or {}),
+                                  **_checked_states(given["leaf_states"])}
+    return changes
+
+
+def _checked_combos(combos: object) -> dict[str, list[str]]:
+    if not isinstance(combos, dict) or not combos:
+        raise _Refused("combos must be an object of flag pairs (" + ", ".join(COMBOS)
+                       + ") to [hinge, swing], such as {\"ff\": [\"begin\", \"right\"]}.")
+    out: dict[str, list[str]] = {}
+    for combo, pair in combos.items():
+        if combo not in COMBOS:
+            raise _Refused(f"A combo is one of {', '.join(COMBOS)} (reflected then oSide, "
+                           f"t for true, f for false), not {combo!r}.")
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            raise _Refused(f"Combo {combo} must be [hinge, swing], such as [\"begin\", "
+                           f"\"right\"], not {pair!r}.")
+        hinge, swing = pair
+        if hinge not in _HINGES:
+            raise _Refused(f"Combo {combo}: the hinge is {' or '.join(_HINGES)}, "
+                           f"not {hinge!r}.")
+        if swing not in _SWINGS:
+            raise _Refused(f"Combo {combo}: the swing is {' or '.join(_SWINGS)}, "
+                           f"not {swing!r}.")
+        out[combo] = [hinge, swing]
+    return out
+
+
+def _checked_states(states: object) -> dict[str, dict]:
+    if not isinstance(states, dict) or not states:
+        raise _Refused("leaf_states must be an object of state names to GDL parameter "
+                       "values, such as {\"left sash open\": {\"gs_leaf_1_open\": 1}}.")
+    out: dict[str, dict] = {}
+    for state, values in states.items():
+        if not isinstance(state, str) or not state:
+            raise _Refused(f"A leaf state needs a name, not {state!r}.")
+        if not isinstance(values, dict) or not values \
+                or not all(isinstance(key, str) and key for key in values):
+            raise _Refused(f"Leaf state '{state}' must be an object of GDL parameter names "
+                           f"to values, such as {{\"gs_leaf_1_open\": 1}}, not {values!r}.")
+        out[state] = dict(values)
+    return out
 
 
 class _Learning:

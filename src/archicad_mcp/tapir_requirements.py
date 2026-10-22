@@ -55,6 +55,17 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
     # commands are checked per change, in core/attribute_edit.py.
     "edit_attributes": ("GetAttributesByType",),
     "deploy_gdl_object": ("ReloadLibraries", "CreateObjects", "GetElementPreviewImage"),
+    # Every Tapir command learning sends, the delete and the checks around it
+    # included (a test lists what a run sends). It zooms and captures the plan
+    # rather than reading GetElementPreviewImage, which draws a 2D part at a
+    # fixed scale and cuts a bed off. GetAddOnVersion is left out: a Tapir that
+    # cannot answer it is let through.
+    "learn_library_part": ("GetAvailableLibraryParts", "GetCurrentWindowType", "GetStories",
+                           "CreateObjects", "CreateLamps", "CreateWalls", "CreateWindows",
+                           "CreateDoors", "GetGDLParametersOfElements",
+                           "SetGDLParametersOfElements", "DeleteElements", "FitInWindow",
+                           "SaveCurrentWindowAsImage", "GetAllElements",
+                           "GetDetailsOfElements"),
 }
 
 # Commands the synced definitions do not carry yet. Remove an entry once a

@@ -15,9 +15,12 @@ from archicad_mcp.core.part_learning import (
     SAMPLE_SIZES,
     SPACING,
     learn_library_part,
+    list_library_part_records,
+    record_library_part,
     sample_origin,
 )
 from archicad_mcp.core.part_records import COMBOS, PartRecord, PartRecords
+from archicad_mcp.tapir_requirements import TOOL_COMMANDS
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
 
@@ -594,3 +597,183 @@ def test_elements_the_user_adds_while_learning_are_left_alone(records, element_t
     assert "error" not in out and "user-0" in fake.model
     assert "user-0" not in fake.deleted and not any("user-0" in w for w in out["warnings"])
     assert fake.remaining == [] and records.get("Bed Double 01") is not None
+
+
+FOOTPRINT = {"xMin": [0.0, 0.0], "xMax": [1.0, 0.0], "yMin": [0.0, 0.0], "yMax": [1.0, 0.0]}
+
+
+def learned(tmp_path, name: str, kind: str) -> PartRecords:
+    """A store holding what learning measured for the part and nothing the agent judged."""
+    records = PartRecords(tmp_path / "r.json")
+    records.save(PartRecord(name=name, guid=LIBRARY[name], kind=kind, learned="2026-10-22",
+                            tapir="1.7.2",
+                            footprint=FOOTPRINT if kind in ("object", "lamp") else None))
+    return records
+
+
+def test_recording_the_agents_fields_completes_the_record(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Bed Double 01", head="+y", one_sided=False, height=0.55)
+    assert "error" not in out
+    assert out["missing"] == [] and records.get("Bed Double 01").head == "+y"
+    assert out["record"] == records.get("Bed Double 01").to_json()
+    assert (out["record"]["one_sided"], out["record"]["height"]) == (False, 0.55)
+    assert out["record"]["footprint"] == FOOTPRINT       # what learning measured stays
+
+
+def test_what_is_still_missing_is_named(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Bed Double 01", head="-x")
+    assert out["missing"] == ["one_sided"]
+
+
+def test_an_opening_takes_combos_leaves_and_leaf_states(tmp_path):
+    records = learned(tmp_path, "Window", "window")
+    combos = {"ff": ("begin", "left"), "tf": ["end", "left"], "ft": ["begin", "right"],
+              "tt": ["end", "right"]}
+    states = {"left sash open": {"gs_leaf_1_open": 1, "gs_leaf_2_open": 0}}
+    out = record_library_part(records, "Window", combos=combos, leaves=2, leaf_states=states)
+    assert out["missing"] == []
+    stored = records.get("Window")
+    assert stored.combos["ff"] == ["begin", "left"] and type(stored.combos["ff"]) is list
+    assert all(type(value) is list for value in out["record"]["combos"].values())
+    assert (stored.leaves, stored.leaf_states) == (2, states)
+
+
+def test_combos_and_leaf_states_recorded_later_add_to_the_earlier_ones(tmp_path):
+    records = learned(tmp_path, "Door", "door")
+    record_library_part(records, "Door", combos={"ff": ["begin", "left"]},
+                        leaf_states={"open": {"gs_open": 1}})
+    out = record_library_part(records, "Door", combos={"tf": ["end", "left"],
+                                                       "ff": ["begin", "right"]},
+                              leaf_states={"shut": {"gs_open": 0}})
+    assert out["record"]["combos"] == {"ff": ["begin", "right"], "tf": ["end", "left"]}
+    assert out["record"]["leaf_states"] == {"open": {"gs_open": 1}, "shut": {"gs_open": 0}}
+
+
+def test_recording_again_replaces_a_single_value(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    record_library_part(records, "Bed Double 01", head="+y", one_sided=True)
+    out = record_library_part(records, "Bed Double 01", head="-x")
+    assert out["record"]["head"] == "-x" and out["record"]["one_sided"] is True
+
+
+def test_recording_nothing_reads_the_record_back(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Bed Double 01")
+    assert out["record"]["name"] == "Bed Double 01" and out["missing"] == ["head", "one_sided"]
+
+
+def test_recording_a_part_never_learned_is_refused(tmp_path):
+    records = PartRecords(tmp_path / "r.json")
+    out = record_library_part(records, "Bed Double 01", head="+y")
+    assert "learn_library_part" in out["error"] and "Bed Double 01" in out["error"]
+    assert "record" not in out and not (tmp_path / "r.json").exists()
+
+
+@pytest.mark.parametrize("fields", [
+    {"head": "up"}, {"head": "+z"}, {"head": 1},
+    {"combos": {"xx": ["begin", "left"]}}, {"combos": {"ff": ["top", "left"]}},
+    {"combos": {"ff": ["begin", "up"]}}, {"combos": {"ff": ["left", "begin"]}},
+    {"combos": {"ff": ["begin"]}}, {"combos": {"ff": "begin left"}},
+    {"combos": {"ff": ["begin", "left", "x"]}}, {"combos": ["ff"]}, {"combos": {}},
+    {"leaves": 0}, {"leaves": -1}, {"leaves": 1.5}, {"leaves": True}, {"leaves": "2"},
+    {"leaf_states": {"left": 1}}, {"leaf_states": {"left": {1: 2}}}, {"leaf_states": []},
+    {"leaf_states": {"left": {}}}, {"leaf_states": {"": {"gs_open": 1}}},
+    {"height": 0}, {"height": -0.5}, {"height": "tall"}, {"height": True},
+    {"one_sided": "yes"}, {"one_sided": 1},
+    {"head": "+y", "leaves": 0},                  # one good value beside a bad one
+])
+def test_bad_values_are_refused_and_nothing_is_saved(tmp_path, fields):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    before = (tmp_path / "r.json").read_bytes()
+    out = record_library_part(records, "Bed Double 01", **fields)
+    assert "error" in out and "record" not in out
+    assert (tmp_path / "r.json").read_bytes() == before
+
+
+def test_the_error_names_the_value_and_what_is_allowed(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    assert "+x" in record_library_part(records, "Bed Double 01", head="up")["error"]
+    assert "ff" in record_library_part(records, "Bed Double 01",
+                                       combos={"xx": ["begin", "left"]})["error"]
+    assert "begin" in record_library_part(records, "Bed Double 01",
+                                          combos={"ff": ["top", "left"]})["error"]
+
+
+def test_forget_removes_the_record(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Bed Double 01", forget=True)
+    assert out == {"forgotten": True, "name": "Bed Double 01"}
+    assert records.get("Bed Double 01") is None
+
+
+def test_forgetting_a_part_with_no_record_changes_nothing(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Chair 01", forget=True)
+    assert out["forgotten"] is False and "error" not in out
+    assert records.get("Bed Double 01") is not None
+
+
+def test_forget_does_not_come_with_other_fields(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    out = record_library_part(records, "Bed Double 01", head="+y", forget=True)
+    assert "error" in out and records.get("Bed Double 01") is not None
+    assert records.get("Bed Double 01").head is None
+
+
+def test_an_unreadable_file_is_an_error_and_is_left_as_it_is(tmp_path):
+    (tmp_path / "r.json").write_text("{not json", encoding="utf-8")
+    records = PartRecords(tmp_path / "r.json")
+    for out in (record_library_part(records, "Bed Double 01", head="+y"),
+                record_library_part(records, "Bed Double 01", forget=True),
+                list_library_part_records(records)):
+        assert str(tmp_path / "r.json") in out["error"]
+    assert (tmp_path / "r.json").read_text(encoding="utf-8") == "{not json"
+
+
+def test_list_names_the_file_and_filters_by_name(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    records.save(PartRecord(name="Window", guid=LIBRARY["Window"], kind="window",
+                            learned="2026-10-22"))
+    everything = list_library_part_records(records)
+    assert everything["path"] == str(tmp_path / "r.json")
+    assert {r["name"] for r in everything["records"]} == {"Bed Double 01", "Window"}
+    chosen = list_library_part_records(records, ["Window", "Chair 01"])
+    assert [r["name"] for r in chosen["records"]] == ["Window"]
+    assert chosen["not_recorded"] == ["Chair 01"] and chosen["path"] == everything["path"]
+    assert "not_recorded" not in everything
+
+
+def test_list_says_what_each_record_still_needs(tmp_path):
+    records = learned(tmp_path, "Bed Double 01", "object")
+    [only] = list_library_part_records(records)["records"]
+    assert only["missing"] == ["head", "one_sided"] and only["footprint"] == FOOTPRINT
+
+
+def test_listing_an_empty_store_gives_no_records_and_the_path(tmp_path):
+    out = list_library_part_records(PartRecords(tmp_path / "none.json"))
+    assert out == {"records": [], "path": str(tmp_path / "none.json")}
+    assert not (tmp_path / "none.json").exists()
+
+
+def test_learning_is_gated_on_every_command_it_sends():
+    assert TOOL_COMMANDS["learn_library_part"] == (
+        "GetAvailableLibraryParts", "GetCurrentWindowType", "GetStories", "CreateObjects",
+        "CreateLamps", "CreateWalls", "CreateWindows", "CreateDoors",
+        "GetGDLParametersOfElements", "SetGDLParametersOfElements", "DeleteElements",
+        "FitInWindow", "SaveCurrentWindowAsImage",
+        # the model's elements before and after, and the check that the samples are gone
+        "GetAllElements", "GetDetailsOfElements")
+
+
+@pytest.mark.parametrize("kind, name", [("object", "Bed Double 01"), ("lamp", "Chair 01"),
+                                        ("door", "Door"), ("window", "Window")])
+def test_every_tapir_command_learning_sends_is_in_its_gate(tmp_path, kind, name):
+    fake = Fake()
+    connection = fake.connection()
+    out = learn_library_part(connection, PartRecords(tmp_path / "r.json"), name, kind)
+    assert "error" not in out
+    tapir = {command for command, _ in fake.core.calls if command in fake.core.tapir_responses}
+    # GetAddOnVersion only names the version; a Tapir that cannot answer it is let through.
+    assert tapir - {"GetAddOnVersion"} <= set(TOOL_COMMANDS["learn_library_part"])
