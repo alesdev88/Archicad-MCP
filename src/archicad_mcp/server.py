@@ -464,6 +464,14 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _classification_edit.import_definitions(
             _conn(port), kind, xml_path, conflict, item_conflict, dry_run)
 
+    from archicad_mcp.core.part_records import PartRecords
+
+    # The one store of learned library parts. The file is read when a tool first
+    # needs it, never here, so an unreadable file stops no server start: it comes
+    # back as the tool's error. create_elements, modify_elements and the learning
+    # tools share it.
+    records = PartRecords()
+
     from archicad_mcp.core import create as _create
     from archicad_mcp.core import mutate as _mutate
     from archicad_mcp.core import selection as _selection
@@ -489,15 +497,25 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "ahead. Warns when the active window is wrong for the type, when an object "
         "or lamp has no dimensions (it would take the tool's current size, not the "
         "library part's), when it sends offset or useFixedAngle (Archicad "
-        "discards them), and when a door or window has no sillHeight (it would "
-        "take the tool's sill). Pass dry_run=false to create: returns created GUIDs, plus "
+        "discards them), when a door or window has no sillHeight (it would "
+        "take the tool's sill), and when one placed by libraryPartName leaves the Door "
+        "or Window tool holding that part. An object, lamp, door or window of a part "
+        "learned with learn_library_part may give placement instead: an object's "
+        "footprint centre, size (length along the head, width across it) and head "
+        "direction, for coordinates, angle, reflected and dimensions; a door's or "
+        "window's hinge_near and opens_toward points, for reflected and oSide, and "
+        "leaves (a recorded leaf state, written right after the create). items=[] "
+        "shows its placement_schema; 'placements' lists what each one derived. Pass "
+        "dry_run=false to create: returns created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
-        "index -> GUID) when not every item was created."),
+        "index -> GUID) when not every item was created, and 'placed_not_set' for an "
+        "element placed whose leaves Archicad refused."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
                         port: int | None = None) -> dict:
-        return _create.create_elements(_conn(port), element_type, items, dry_run)
+        return _create.create_elements(_conn(port), element_type, items, dry_run,
+                                       records=records)
 
     from archicad_mcp.core import swept_beam as _swept
 
@@ -767,12 +785,6 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return [Image(data=png, format="png"), result]
 
     from archicad_mcp.core import part_learning as _part_learning
-    from archicad_mcp.core.part_records import PartRecords
-
-    # The one store of learned library parts. The file is read when a tool first
-    # needs it, never here, so an unreadable file stops no server start: it comes
-    # back as the tool's error.
-    records = PartRecords()
 
     @mcp.tool(description=(
         "Learn a library part once, so it can be placed right later. Places samples "

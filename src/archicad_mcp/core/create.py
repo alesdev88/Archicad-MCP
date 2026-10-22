@@ -5,7 +5,8 @@ follows Tapir's schema as it grows instead of keeping a parallel one. What the
 tool adds is the checking an agent needs before a write: the item schema on
 request, validation per item, favourites and library parts that exist, and
 hosts (the wall of a door, the element a dimension measures) that Archicad
-would accept.
+would accept. An object, lamp, door or window of a learned part may give
+`placement` instead of some of Tapir's fields (core/create_placement.py).
 """
 from __future__ import annotations
 
@@ -16,7 +17,10 @@ import jsonschema
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.create_placement import PLACEMENT_SCHEMAS, resolve_placements
 from archicad_mcp.core.editability import active_window, refusals
+from archicad_mcp.core.part_placement import write_leaf_state
+from archicad_mcp.core.part_records import PartRecords
 from archicad_mcp.extract import _fetch_types
 from archicad_mcp.gateway.registry import build_registry
 from archicad_mcp.tapir_requirements import (
@@ -174,10 +178,13 @@ def _item_schema(spec: CreateType) -> dict:
     return schema.get("properties", {}).get(spec.payload_key, {}).get("items", {})
 
 
-def _problems(items: list[dict], schema: dict) -> list[dict]:
+def _problems(items: list[dict], schema: dict, skipped=()) -> list[dict]:
+    """Schema problems per item; `skipped` items are not sent, so not checked."""
     validator = jsonschema.validators.validator_for(schema)(schema)
     problems = []
     for index, item in enumerate(items):
+        if index in skipped:
+            continue
         errors = sorted(validator.iter_errors(item), key=jsonschema.exceptions.relevance)
         for error in errors[:PROBLEMS_PER_ITEM]:
             path = "/".join(str(p) for p in error.absolute_path)
@@ -235,7 +242,62 @@ def closest_names(name: str, names: list[str]) -> str:
     return f"; closest: {', '.join(close)}" if close else ""
 
 
-def _library_part_checks(conn: ArchicadConnection, items: list[dict],
+class LoadedParts:
+    """GetAvailableLibraryParts, asked at most once per call and only when an item
+    needs it (the answer is about 1.2 MB on MCP-Test): the name check and
+    placement's identity check share it."""
+
+    def __init__(self, conn: ArchicadConnection):
+        self._conn = conn
+        self._asked = False
+        self._answer: dict | None = None
+        self._parts: list[dict] = []
+
+    def answer(self) -> dict | None:
+        """The listing, or None when Archicad gives none."""
+        if not self._asked:
+            self._asked = True
+            try:
+                response = self._conn.tapir("GetAvailableLibraryParts", {})
+            except APIErrorBase:
+                response = None
+            if isinstance(response, dict) and isinstance(response.get("libraryParts"), list):
+                self._answer = response
+                # Pictures are image files in the library, not parts an element can use.
+                self._parts = [e for e in response["libraryParts"]
+                               if isinstance(e, dict) and e.get("typeId") != "Picture"]
+        return self._answer
+
+    def parts(self) -> list[dict]:
+        """The loaded parts, pictures left out; none when the listing failed."""
+        self.answer()
+        return self._parts
+
+    def guid_of(self, name: str) -> tuple[str | None, str | None]:
+        """(the main GUID of the loaded part named name, why there is none). With
+        several parts of that name it is the first, as learn_library_part takes it."""
+        response = self.answer()
+        if response is None:
+            return None, (f"the loaded library parts could not be listed, so the record of "
+                          f"'{name}' could not be checked against the part")
+        parts = self.parts()
+        matches = [e for e in parts if e.get("documentName") == name]
+        if not matches:
+            names = sorted({str(e.get("documentName")) for e in parts})
+            reason = f"no loaded library part named '{name}'{closest_names(name, names)}"
+            unread = response.get("skippedCount") or 0
+            if unread:
+                reason += (f" ({unread} library entries could not be read, and without the "
+                           "part's GUID its record cannot be checked)")
+            return None, reason
+        guid = matches[0].get("guid")
+        if not isinstance(guid, str) or not guid:
+            return None, (f"Archicad lists '{name}' without its GUID, so its record could "
+                          "not be checked against it")
+        return guid, None
+
+
+def _library_part_checks(library: LoadedParts, items: list[dict],
                          skipped: dict[int, str]) -> tuple[dict[int, str], list[str]]:
     """Items whose libraryPartName no loaded part has, and warnings for names the
     library spells another way."""
@@ -245,15 +307,11 @@ def _library_part_checks(conn: ArchicadConnection, items: list[dict],
             wanted.setdefault(item["libraryPartName"], []).append(index)
     if not wanted:
         return {}, []
-    try:
-        response = conn.tapir("GetAvailableLibraryParts", {})
-    except APIErrorBase:
+    response = library.answer()
+    if response is None:
         return {}, []  # unreadable: let Archicad judge the names
-    entries = response.get("libraryParts")
-    if not isinstance(entries, list):
-        return {}, []
-    # Pictures are image files in the library, not parts an element can use.
-    parts = [e for e in entries if e.get("typeId") != "Picture"]
+    entries = response["libraryParts"]
+    parts = library.parts()
     names = {str(e.get("documentName")) for e in parts}
     ordered = sorted(names)
     spellings = {}
@@ -315,6 +373,23 @@ def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str
     return warnings
 
 
+def _tool_part_warnings(name: str, items: list[dict], ready: list[int],
+                        dry_run: bool) -> list[str]:
+    """A door or window placed by libraryPartName leaves its tool holding the part: live
+    22.10.2026, Tapir 1.7.2's CreateDoors and CreateWindows set the tool's defaults to
+    it and never set them back."""
+    tool = _TOOL_SILL.get(name)
+    named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
+    if tool is None or not named:
+        return []
+    part = items[named[-1]]["libraryPartName"]
+    holds = "will hold" if dry_run else "now holds"
+    return [f"After this create, the {tool} {holds} '{part}' (the part of the last {name} "
+            f"in it named by libraryPartName): Tapir 1.7.2 sets the tool to that part and "
+            f"never sets it back, so the next {name} drawn by hand gets it. Set the {tool} "
+            "back by hand if that is not wanted."]
+
+
 def _stale_tapir_warnings(conn: ArchicadConnection) -> list[str]:
     old = older_than_definitions(conn)
     if old is None:
@@ -364,8 +439,25 @@ def _window_warnings(name: str, spec: CreateType, items: list[dict],
             "committing."]
 
 
+def _write_leaves(conn: ArchicadConnection, leaf_writes: dict[int, dict],
+                  by_index: dict[str, str]) -> list[dict]:
+    """Each created door's or window's leaf state, written after the create. A refusal
+    keeps the element as placed and names it, so the agent can set it another way."""
+    unset = []
+    for index, leaves in sorted(leaf_writes.items()):
+        guid = by_index.get(str(index))
+        if guid is None:
+            continue  # not created
+        message = write_leaf_state(conn, guid, leaves["parameters"])
+        if message is not None:
+            unset.append({"index": index, "guid": guid, "leaves": leaves["state"],
+                          "parameters": leaves["parameters"], "message": message})
+    return unset
+
+
 def _commit(conn: ArchicadConnection, spec: CreateType, items: list[dict],
-            ready: list[int], skipped: dict[int, str], warnings: list[str]) -> dict:
+            ready: list[int], skipped: dict[int, str], warnings: list[str],
+            placements: list[dict], leaf_writes: dict[int, dict]) -> dict:
     response = conn.tapir(spec.command, {spec.payload_key: [items[i] for i in ready]})
     entries = response.get("elements", [])
     by_index: dict[str, str] = {}
@@ -386,6 +478,11 @@ def _commit(conn: ArchicadConnection, spec: CreateType, items: list[dict],
                             for (code, message), indices in failed.items()]
         result["skipped"] = _skipped_list(skipped)
         result["by_index"] = by_index
+    if placements:
+        result["placements"] = placements
+    unset = _write_leaves(conn, leaf_writes, by_index)
+    if unset:
+        result["placed_not_set"] = unset
     if warnings:
         result["warnings"] = warnings
     return result
@@ -396,7 +493,10 @@ def _skipped_list(skipped: dict[int, str]) -> list[dict]:
 
 
 def create_elements(conn: ArchicadConnection, element_type: str,
-                    items: list[dict], dry_run: bool = True) -> dict:
+                    items: list[dict], dry_run: bool = True,
+                    records: PartRecords | None = None) -> dict:
+    """`records` is the store of learned parts that `placement` reads; None reads the
+    default one, and only when an item gives a placement."""
     found = _lookup(element_type)
     if found is None:
         return {"error": f"Unknown element_type '{element_type}'. {_FAMILY_HINT}",
@@ -405,8 +505,11 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     info = build_registry()[spec.command]
     schema = _item_schema(spec)
     if not items:
-        return {"element_type": name, "command": spec.command,
-                "since_tapir": info.version, "item_schema": schema}
+        result = {"element_type": name, "command": spec.command,
+                  "since_tapir": info.version, "item_schema": schema}
+        if name in PLACEMENT_SCHEMAS:
+            result["placement_schema"] = PLACEMENT_SCHEMAS[name]
+        return result
     archicad = conn.archicad_version()
     if spec.archicad and archicad and archicad < spec.archicad:
         return {"error": f"'{name}' elements need Archicad {spec.archicad} or later, and "
@@ -415,26 +518,41 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     refusal = require_tapir_command(conn, spec.command, "create_elements")
     if refusal is not None:
         return dict(refusal, element_type=name)
-    problems = _problems(items, schema)
+    library = LoadedParts(conn)
+    # Before the schema check: Tapir's item schema has no placement field.
+    items, skipped, placements, leaf_writes = resolve_placements(conn, name, items, records,
+                                                                 library)
+    problems = _problems(items, schema, skipped)
     if problems:
-        return {"dry_run": dry_run, "element_type": name, "command": spec.command,
-                "items": len(items), "created": 0, "problems": problems,
-                "hint": "Nothing was sent. Call create_elements with items=[] for "
-                        "this type's item schema."}
-    skipped = _favorite_skips(conn, name, spec, items)
+        reply = {"dry_run": dry_run, "element_type": name, "command": spec.command,
+                 "items": len(items), "created": 0, "problems": problems,
+                 "hint": "Nothing was sent. Call create_elements with items=[] for "
+                         "this type's item schema."}
+        if skipped:  # placements that cannot be resolved, so all can be fixed at once
+            reply["skipped"] = _skipped_list(skipped)
+        return reply
+    for index, reason in _favorite_skips(conn, name, spec, items).items():
+        skipped.setdefault(index, reason)
     skipped.update(_host_skips(conn, name, spec, items, skipped))
-    library_skips, library_warnings = _library_part_checks(conn, items, skipped)
+    library_skips, library_warnings = _library_part_checks(library, items, skipped)
     skipped.update(library_skips)
     window = active_window(conn)
     ready = [i for i in range(len(items)) if i not in skipped]
+    placements = [p for p in placements if p["index"] not in skipped]
+    leaf_writes = {i: leaves for i, leaves in leaf_writes.items() if i not in skipped}
     warnings = (_window_warnings(name, spec, items, window) + library_warnings
-                + _object_warnings(name, items, ready) + _stale_tapir_warnings(conn))
+                + _object_warnings(name, items, ready)
+                + _tool_part_warnings(name, items, ready, dry_run)
+                + _stale_tapir_warnings(conn))
     if not dry_run:
         if not ready:
             return {"dry_run": False, "created": 0, "elements": [],
                     "skipped": _skipped_list(skipped), "warnings": warnings}
-        return _commit(conn, spec, items, ready, skipped, warnings)
-    return {"dry_run": True, "element_type": name, "command": spec.command,
-            "items": len(items), "ready": len(ready), "skipped": _skipped_list(skipped),
-            "warnings": warnings, "active_window": window,
-            "payload": {spec.payload_key: [items[i] for i in ready]}}
+        return _commit(conn, spec, items, ready, skipped, warnings, placements, leaf_writes)
+    result = {"dry_run": True, "element_type": name, "command": spec.command,
+              "items": len(items), "ready": len(ready), "skipped": _skipped_list(skipped),
+              "warnings": warnings, "active_window": window,
+              "payload": {spec.payload_key: [items[i] for i in ready]}}
+    if placements:
+        result["placements"] = placements
+    return result

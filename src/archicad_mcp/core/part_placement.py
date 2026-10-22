@@ -6,14 +6,18 @@ direction in its own axes, or which hinge and swing each flag combination gives.
 This module joins the two: the insertion point, angle, mirroring and size of an
 object, the `reflected` and `oSide` flags of a door or window.
 
-Pure arithmetic, no Archicad calls. Plan coordinates are metres, angles radians
-counter-clockwise about the insertion point.
+Pure arithmetic, apart from write_leaf_state, the one Archicad call: the leaves
+of a door or window are set after it is placed. Plan coordinates are metres,
+angles radians counter-clockwise about the insertion point.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
+from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.element_data import error_fields
+from archicad_mcp.core.element_kinds import send_items
 from archicad_mcp.core.part_records import COMBOS, PartRecord
 
 # Sizes closer than this count as the same size, so a fit does not divide by noise.
@@ -116,6 +120,27 @@ def opening_fields(record: PartRecord, wall_beg: dict, wall_end: dict, center_of
             return {"reflected": combo[0] == "t", "oSide": combo[1] == "t"}
     raise ValueError(f"'{record.name}' has no recorded combination with the hinge at the "
                      f"{hinge} of the wall and the swing to the {swing}")
+
+
+def write_leaf_state(conn: ArchicadConnection, guid: str, parameters: dict) -> str | None:
+    """Set which leaves of a placed door or window open: one SetGDLParametersOfElements
+    call with a leaf state's values. Archicad's message when it refuses them or the call
+    fails, else None.
+
+    CreateDoors and CreateWindows take no GDL parameters on Tapir 1.7.2, so this runs
+    after the create, and a refusal leaves the element as placed.
+    """
+    entry = {"elementId": {"guid": guid},
+             "gdlParameters": [{"name": name, "value": value}
+                               for name, value in parameters.items()]}
+    sent = send_items(conn.tapir, "SetGDLParametersOfElements", "elementsWithGDLParameters",
+                      [entry], 1)
+    if sent.stopped is not None:
+        return error_fields(sent.stopped)["message"]
+    outcome = sent.outcomes[0]
+    if isinstance(outcome, dict):
+        return outcome.get("message") or "Archicad refused the values without a reason"
+    return None
 
 
 def _fit(sizes: list[float], edges: list[float]) -> list[float]:
