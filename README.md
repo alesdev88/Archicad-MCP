@@ -491,7 +491,8 @@ rule with no failures removes the highlight.
 **Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
 `set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
 `modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `capture_window`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
+`show_elements`, `capture_window`, `learn_library_part`, `record_library_part`,
+`list_library_part_records`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
 Every write is dry-run by default; delete and move also require `confirm=true`.
@@ -587,6 +588,49 @@ placement can be checked by eye: which way a bed faces, which way a door opens.
 Call `show_elements` first to bring the elements into view; `entire_drawing`
 covers a 2D window's whole drawing instead of its current zoom. Images over
 1568 pixels are scaled down, and windows over 40 megapixels are refused. Needs Tapir 1.7.2.
+
+`learn_library_part`, `record_library_part` and `list_library_part_records` teach
+the server a library part once, so a sketch can be turned into a placement.
+Archicad's API does not say where a part's insertion point sits on its footprint,
+which end of a bed is its head, or what `reflected` and `oSide` do to a door's
+hinge and swing. `learn_library_part` places a few samples of the part (an object,
+lamp, door or window) in a row just past the right edge of the model, on the story
+the floor plan shows, measures their footprints, returns one floor plan image of
+them, left to right, and deletes every sample again in the same call. The floor
+plan must be the active window; it is zoomed to the samples and stays zoomed, and a
+door or window learned may leave the Door or Window tool holding that part. Then the
+agent looks at the image and tells `record_library_part` what it shows: a bed's head
+direction, a door's or window's hinge and swing for each way the part can be
+flipped, and how many leaves it has. On Tapir 1.7.2 the GDL parameters of doors and
+windows placed through the API usually cannot be read, so the values that open a
+leaf may have to come from a door placed by hand. If a window's capture shows no
+opening lines, the view settings hide them: show them, then learn the window again
+before recording hinge and swing. The records are one JSON file on this machine,
+shared by every project (`list_library_part_records` gives its path).
+`record_library_part` writes only that file, never the model. Recording a flag pair
+or a leaf state again replaces it, and removing one means forgetting the part and
+learning it again. Needs Tapir 1.7.2.
+
+Once a part is learned, `create_elements` and `modify_elements` take `placement`
+instead of Tapir's coordinates, angle, `reflected` and sizes: an object's footprint
+centre, size and head direction, or a door's or window's two points (near the hinge,
+and on the side it opens to) and which leaves open. The record turns them into
+Tapir's own fields, so nothing is sampled again; `create_elements` with `items=[]`
+shows the schema. The tool descriptions carry the architect's own rules for reading
+a sketch, so the agent follows them without being told:
+
+- Learn a part once before placing it by `placement`; a learned part is placed with
+  no samples.
+- Choose the part from what the sketch draws. The lines dividing a window give its
+  sashes, and the arcs give which sash or leaf opens and where it is hinged. When
+  the sketch says no more, take the plain generic part ("Window", "Door",
+  "Double Window").
+- Width is a check. A window about 1.2 m wide is a single or a double window, never
+  a multi-sash one. When the count and the width disagree, the agent asks.
+- The head of a bed is the end with the pillows, or with the duvet's turned-back
+  edge. When the sketch shows neither, the agent asks.
+- After placing, the agent looks with `capture_window` and corrects with
+  `modify_elements` before reporting done.
 
 `find_collisions` is a clash check between two groups of elements, or within
 one: each group is GUIDs (from `find_elements`, say) plus every element of the

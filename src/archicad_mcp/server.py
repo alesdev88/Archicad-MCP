@@ -499,14 +499,24 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "library part's), when it sends offset or useFixedAngle (Archicad "
         "discards them), when a door or window has no sillHeight (it would "
         "take the tool's sill), and when one placed by libraryPartName leaves the Door "
-        "or Window tool holding that part. An object, lamp, door or window of a part "
-        "learned with learn_library_part may give placement instead: an object's "
-        "footprint centre, size (length along the head, width across it) and head "
-        "direction, for coordinates, angle, reflected and dimensions; a door's or "
-        "window's hinge_near and opens_toward points, for reflected and oSide, and "
-        "leaves (a recorded leaf state, written right after the create). items=[] "
-        "shows its placement_schema; 'placements' lists what each one derived. Pass "
-        "dry_run=false to create: returns created GUIDs, plus "
+        "or Window tool holding that part. Learn a part once with learn_library_part "
+        "before placing it by placement; a learned part is then placed with no "
+        "samples. An object, lamp, door or window of such a part may give placement "
+        "instead: an object's footprint centre, size (length along the head, width "
+        "across it) and head direction, for coordinates, angle, reflected and "
+        "dimensions; a door's or window's hinge_near and opens_toward points, for "
+        "reflected and oSide, and leaves (a recorded leaf state, written right after "
+        "the create). items=[] shows its placement_schema; 'placements' lists what "
+        "each one derived. Reading a sketch: choose the part from what it draws, the "
+        "lines dividing a window give its sashes and the arcs give which sash or leaf "
+        "opens and where it is hinged; prefer the plain generic part (\"Window\", "
+        "\"Door\", \"Double Window\") when the sketch says no more. Width is a check: "
+        "a window about 1.2 m wide is a single or a double window, never a multi-sash "
+        "one; when the count and the width disagree, ask. A bed's head is the end with "
+        "the pillows, or with the duvet's turned-back edge; when the sketch shows "
+        "neither, ask. After placing, look (capture_window) and correct with "
+        "modify_elements before reporting done. Pass dry_run=false to create: returns "
+        "created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
         "index -> GUID) when not every item was created, and 'placed_not_set' for an "
         "element placed whose leaves Archicad refused."),
@@ -657,7 +667,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "keeps its story and elevation (center takes x and y only), a door or window its "
         "wall and centerOffset; leaves are written after the commit, and 'placed_not_set' "
         "names an element whose leaves were not set. A placement that cannot be worked "
-        "out makes the whole call an error naming the change. A commit reads the "
+        "out makes the whole call an error naming the change. After a placement, look "
+        "(capture_window) and correct with this tool before reporting done; "
+        "create_elements has the rules for reading a sketch. A commit reads the "
         "elements back: 'modified' counts what landed, 'failed' "
         "groups Archicad's refusals, 'not_applied' lists fields Archicad answered "
         "success for but did not change."),
@@ -794,18 +806,24 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import part_learning as _part_learning
 
     @mcp.tool(description=(
-        "Learn a library part once, so it can be placed right later. Places samples "
-        "of the part named name (kind: object, lamp, door or window) in a row just "
-        "past the right edge of the model, on the story the floor plan shows, "
-        "measures their footprints, shows them in one floor plan image, deletes every "
-        "sample again in the same call and stores the measurement. The reply lists "
-        "'samples' in image order, the first sample's GDL parameters, warnings, and "
-        "'next', the fields still to give record_library_part. variants: optional "
-        "sets of GDL parameter values (parameter name to value), each placed as one "
-        "more sample, such as a leaf opened. Lengths are metres. The floor plan must "
-        "be the active window. It zooms the plan to the samples and Tapir cannot "
-        "set the zoom back; a door or window learned may leave the Door or Window "
-        "tool holding the part. Needs Tapir 1.7.2."),
+        "Learn a library part once, before placing it by placement; a learned part is "
+        "then placed with no samples. Places samples of the part named name (kind: "
+        "object, lamp, door or window) in a row just past the right edge of the model, "
+        "on the story the floor plan shows, measures their footprints, shows them in "
+        "one floor plan image, deletes every sample again in the same call and stores "
+        "the measurement. The reply lists 'samples' left to right as the image shows "
+        "them, the first sample's GDL parameters, warnings, and 'next', the fields "
+        "still to give record_library_part. variants: optional sets of GDL parameter "
+        "values (parameter name to value), each placed as one more sample, such as a "
+        "leaf or one of a window's sashes opened. On Tapir 1.7.2 the GDL parameters of "
+        "doors and windows placed through the API usually cannot be read, so the "
+        "values that open a leaf or sash may have to come from elsewhere, such as a "
+        "door placed by hand. When a window's capture shows no opening lines, the "
+        "view settings hide them: ask the user to show them before recording hinge "
+        "and swing. Lengths are metres. The floor plan must be the active window. It zooms the plan to "
+        "the samples and leaves it zoomed, since Tapir cannot set the zoom back; a "
+        "door or window learned may leave the Door or Window tool holding the part. "
+        "Needs Tapir 1.7.2."),
               **_tool_meta("Learn a library part", read_only=False, destructive=True))
     @_guarded
     def learn_library_part(name: str, kind: str, variants: list[dict] | None = None,
@@ -819,20 +837,25 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description=(
         "Record what you judged from learn_library_part's image, in the part's stored "
-        "record. Objects and lamps: head ('+x', '-x', '+y' or '-y', the direction a "
-        "bed's head points in the part's own axes), one_sided (true or false) and "
-        "height (metres). Doors and windows: combos, which maps a flag pair (reflected "
-        "then oSide, t for true and f for false: 'ff', 'tf', 'ft' or 'tt') to [hinge, "
-        "swing], hinge 'begin' or 'end' and swing 'left' or 'right' along the wall; "
-        "leaves (a whole number, at least 1); and leaf_states, which maps a state name "
-        "to GDL parameter values. Combos and leaf_states add to what is recorded, a "
-        "key given again replaces its value; every other field replaces its value. "
-        "One refused value saves nothing. Returns the record and 'missing', the "
-        "fields still needed before the part can be placed from it. forget=true "
-        "removes the part's record and takes no other field. The part must have been "
-        "learned first. Writes only the local records file and needs no Archicad."),
+        "record. Objects and lamps: head ('+x', '-x', '+y' or '-y', the part's own "
+        "axis its head points along), one_sided (true or false) and height (metres). "
+        "A bed's head is the end with the pillows, or with the duvet's turned-back "
+        "edge; when the image shows neither, ask. Doors and windows: combos, which "
+        "maps a flag pair (reflected then oSide, t for true and f for false: 'ff', "
+        "'tf', 'ft' or 'tt') to [hinge, swing], hinge 'begin' or 'end' of the wall's "
+        "own direction and swing 'left' or 'right' of it; leaves (a whole number, at "
+        "least 1); and leaf_states, which maps a state name to GDL parameter values. "
+        "The lines dividing a window give its sashes, the arcs give which sash or "
+        "leaf opens and where it is hinged. combos and leaf_states merge by key: "
+        "recording a key again replaces it, and removing one takes forget and a new "
+        "learn; every other field replaces its value. One refused value saves "
+        "nothing. Returns the record and 'missing', the fields still needed before "
+        "the part can be placed from it. forget=true removes the part's record, which "
+        "can be learned again, and takes no other field. The part must have been "
+        "learned first. Writes only the MCP's own learned-parts file, never the "
+        "model, and needs no Archicad."),
               **_tool_meta("Record a learned library part", read_only=False,
-                           destructive=True))
+                           destructive=False))
     @_guarded
     def record_library_part(name: str, head: str | None = None,
                             one_sided: bool | None = None, height: float | None = None,

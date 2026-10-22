@@ -55,10 +55,47 @@ async def test_the_library_part_tools_declare_what_they_change():
     hints = {name: (tools[name].annotations.readOnlyHint, tools[name].annotations.destructiveHint)
              for name in LIBRARY_PART_TOOLS}
     assert hints == {"learn_library_part": (False, True),
-                     "record_library_part": (False, True),
+                     "record_library_part": (False, False),
                      "list_library_part_records": (True, False)}
     for name in LIBRARY_PART_TOOLS:
         assert not {"\N{EM DASH}", "\N{EN DASH}"} & set(tools[name].description), name
+
+
+async def _descriptions():
+    async with Client(build_server(mode="full")) as client:
+        return {t.name: t.description for t in await client.list_tools()}
+
+
+async def test_no_tool_description_has_an_em_or_en_dash():
+    for name, text in (await _descriptions()).items():
+        assert not {"\N{EM DASH}", "\N{EN DASH}"} & set(text), name
+
+
+async def test_the_descriptions_carry_the_architects_rules_for_reading_a_sketch():
+    text = await _descriptions()
+    create = text["create_elements"]
+    # Learn once, then place with no samples.
+    assert "learn_library_part" in create and "no samples" in create
+    # The part comes from what the sketch draws: sashes from the dividing lines,
+    # the opening one from the arcs, the plain generic part when it says no more.
+    assert "sashes" in create and "arcs" in create and "Double Window" in create
+    # Width is a check, and a disagreement is a question.
+    assert "1.2 m" in create and "ask" in create
+    # A bed's head is the pillow end, or the turned-back edge of the duvet.
+    assert "pillows" in create and "duvet" in create
+    # After placing: look, correct, then report.
+    assert "capture_window" in create and "modify_elements" in create
+    assert "capture_window" in text["modify_elements"]
+    # The same reading rules where the agent records what the image shows.
+    record = text["record_library_part"]
+    assert "pillows" in record and "duvet" in record and "sashes" in record
+    assert "ask" in record
+    # A window learned without opening lines in the capture: ask to show them.
+    learn = text["learn_library_part"]
+    assert "sashes" in learn and "opening lines" in learn and "ask the user" in learn
+    assert "no samples" in learn
+    # What the records file takes and what it never touches.
+    assert "replaces" in record and "forget" in record and "never the model" in record
 
 
 async def _call(client, tool, args):

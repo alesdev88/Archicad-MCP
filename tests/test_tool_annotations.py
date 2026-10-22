@@ -54,8 +54,11 @@ WRITERS = {
 # file on disk. Everything else in WRITERS is destructive. A Teamwork
 # reservation is team-visible state, not project data, and is undone by a
 # release; it is confirm-gated in the tool instead.
+# record_library_part writes only the MCP's own learned-parts file, never the model,
+# and a forgotten record can be learned again.
 NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection",
-                           "reserve_elements", "release_elements", "show_elements"}
+                           "reserve_elements", "release_elements", "show_elements",
+                           "record_library_part"}
 
 
 async def _tools(mode: str):
