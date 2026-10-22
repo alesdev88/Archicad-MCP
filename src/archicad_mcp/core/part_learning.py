@@ -2,11 +2,12 @@
 
 No API says where a part's insertion point sits on its footprint, which way its
 head points, or what `reflected` and `oSide` do to a door's hinge and swing. So
-the part is placed a few times in a row just past the model, its footprint is
-measured from the floor plan boxes, the row is captured in one floor plan image
-for the agent to judge, and every sample is deleted again in the same call, also
-when something fails part way. The measurement goes into the part's record; what
-only a look tells, the agent records afterwards (record_library_part).
+the part is placed a few times in a row just past the model, on the story the
+floor plan shows, its footprint is measured from the floor plan boxes, the row is
+captured in one floor plan image for the agent to judge, and every sample is
+deleted again in the same call, also when something fails part way. The
+measurement goes into the part's record; what only a look tells, the agent
+records afterwards (record_library_part).
 
 The image is a capture of the floor plan zoomed on the samples, not
 GetElementPreviewImage: live 22.10.2026 (AC 29, Tapir 1.7.2) a 2D preview draws
@@ -44,7 +45,7 @@ from archicad_mcp.core.part_records import (
     identity_problem,
 )
 from archicad_mcp.core.window_image import capture_window
-from archicad_mcp.extract import element_payload, get_all_element_ids
+from archicad_mcp.extract import _fetch_types, element_payload, get_all_element_ids
 from archicad_mcp.tapir_requirements import installed_version
 
 # Objects and lamps: the sizes (A, B) sampled, so each edge can be fitted as a
@@ -94,8 +95,12 @@ _WINDOW_NOTE = ("If the capture shows the windows without opening lines, the mod
                 "cannot show hinge or swing: ask the user to show them, then learn the "
                 "window again, before recording hinge and swing.")
 _UNCHECKED = "Archicad did not answer the check afterwards, so it may still be there"
-_APPEARED = ("it appeared while learning and no reply named it, so it is likely a sample "
-             "whose create failed part way")
+
+# The element types a learning call places, per kind: an element of one of these
+# that appears past the old model extent while learning is a sample whose GUID
+# no reply carried (see _strays).
+_SAMPLED_TYPES = {"object": ("Object",), "lamp": ("Lamp",), "door": ("Door", "Wall"),
+                  "window": ("Window", "Wall")}
 
 
 class _Failed(Exception):
@@ -142,14 +147,19 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
     except RecordsFileError as error:
         return {"error": f"{error} Nothing was placed."}
     try:
+        story = _current_story(conn)
         before = get_all_element_ids(conn)
         origin = _origin(_boxes(conn, before))
     except (APIErrorBase, ArchicadUnavailableError) as exc:
-        return {"error": f"The model's extent could not be read "
-                         f"({error_fields(exc)['message']}), so no spot clear of it is "
+        return {"error": f"The model's extent or the current story could not be read "
+                         f"({error_fields(exc)['message']}), so no spot for the samples is "
                          "known. Nothing was placed."}
+    if story is None:
+        return {"error": "Archicad did not say which story the floor plan shows, or its "
+                         "level, so the samples could not be put where the capture sees "
+                         "them. Nothing was placed."}
 
-    learning = _Learning(conn, name, kind, origin, variants)
+    learning = _Learning(conn, name, kind, origin, story, variants)
     learning.warnings.extend(notes)
     left: dict[str, str] = {}
     try:
@@ -161,7 +171,8 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
     except Exception as exc:    # whatever stopped it, the reply must say what is left
         outcome = {"error": f"Learning stopped on {type(exc).__name__}: {exc}."}
     finally:
-        left = _remove(conn, learning.to_delete(), before)
+        strays = _strays(conn, before, learning.placed(), kind, origin[0])
+        left = _remove(conn, learning.to_delete(strays))
 
     side_effects = {"warnings": learning.warnings} if learning.warnings else {}
     if left:
@@ -192,17 +203,24 @@ class _Learning:
     """One learning call: what it placed, and what it has to report."""
 
     def __init__(self, conn: ArchicadConnection, name: str, kind: str,
-                 origin: tuple[float, float], variants: list[dict]):
+                 origin: tuple[float, float], story: tuple[int, float],
+                 variants: list[dict]):
         self.conn, self.name, self.kind = conn, name, kind
         self.origin = origin
+        self.story = story                   # (index, level) of the story on screen
         self.variants = variants
         self.samples: list[str] = []         # GUIDs of the samples placed, in order
         self.wall: str | None = None
         self.warnings: list[str] = []
 
-    def to_delete(self) -> list[str]:
-        # The openings before the wall that hosts them.
+    def placed(self) -> list[str]:
         return self.samples + ([self.wall] if self.wall else [])
+
+    def to_delete(self, strays: list[tuple[str, str]]) -> list[str]:
+        # Openings before the walls that host them.
+        walls = [guid for guid, element_type in strays if element_type == "Wall"]
+        return (self.samples + [guid for guid, _ in strays if guid not in walls]
+                + ([self.wall] if self.wall else []) + walls)
 
     def run(self) -> dict:
         if self.kind in ("object", "lamp"):
@@ -211,7 +229,7 @@ class _Learning:
 
     def _objects(self) -> dict:
         command, key = _CREATE[self.kind]
-        placed = _object_samples(self.name, self.origin, self.variants)
+        placed = _object_samples(self.name, self.origin, self.story, self.variants)
         self._create(command, key, placed)
         self._apply_variants(placed)
         footprint, parameters = self._measure(placed)
@@ -223,9 +241,11 @@ class _Learning:
         command, key = _CREATE[self.kind]
         x, y = self.origin
         slots = len(COMBOS) + len(self.variants)
+        # With floorIndex, CreateWalls reads zCoordinate as the offset from that
+        # story, so leaving it out puts the wall on the story's floor.
         wall = _Placed("temporary wall", {"begCoordinate": {"x": x, "y": y},
                                           "endCoordinate": {"x": x + SPACING * slots, "y": y},
-                                          "height": WALL_HEIGHT})
+                                          "height": WALL_HEIGHT, "floorIndex": self.story[0]})
         self._create("CreateWalls", "wallsData", [wall], host=True)
         placed = _opening_samples(self.name, self.kind, wall.guid, self.variants)
         tool = self.kind.capitalize()
@@ -368,8 +388,8 @@ class _Learning:
             if why is None and isinstance(entry, dict):
                 why = (entry.get("error") or {}).get("message")
             self.warnings.append(
-                f"The {self.kind}'s GDL parameters could not be read: Tapir 1.7.2 refuses "
-                "them for doors and windows placed through the API"
+                f"The {self.kind}'s GDL parameters could not be read, probably because "
+                "Tapir 1.7.2 refuses them for doors and windows placed through the API"
                 + (f" ({why})" if why else "") + ". Which sash or leaf a parameter opens "
                 "cannot be read from this sample.")
             return []
@@ -385,7 +405,7 @@ class _Learning:
         return image["png"]
 
 
-def _object_samples(name: str, origin: tuple[float, float],
+def _object_samples(name: str, origin: tuple[float, float], story: tuple[int, float],
                     variants: list[dict]) -> list[_Placed]:
     a0, b0 = SAMPLE_SIZES[0]
     specs = [(f"{a} x {b} m", a, b, False, None) for a, b in SAMPLE_SIZES]
@@ -393,10 +413,15 @@ def _object_samples(name: str, origin: tuple[float, float],
     specs += [(f"{a0} x {b0} m, variant {n}: {_said(v)}", a0, b0, False, v)
               for n, v in enumerate(variants, 1)]
     x, y = origin
+    index, level = story
     placed = []
     for label, a, b, mirrored, variant in specs:
+        # Without floorIndex Tapir picks the story from z, so z 0 lands on the
+        # ground story whatever story is on screen. With it, z is absolute and
+        # Tapir keeps z minus the story's level: at the level, on its floor.
         placed.append(_Placed(label, {"libraryPartName": name,
-                                      "coordinates": {"x": x, "y": y, "z": 0.0},
+                                      "coordinates": {"x": x, "y": y, "z": level},
+                                      "floorIndex": index,
                                       "dimensions": {"x": a, "y": b, "z": SAMPLE_HEIGHT},
                                       "angle": 0.0, "reflected": mirrored},
                               a, b, variant))
@@ -505,36 +530,61 @@ def _origin(boxes: list[tuple | None]) -> tuple[float, float]:
     return max(box[2] for box in found) + CLEARANCE, min(box[1] for box in found)
 
 
-def _remove(conn: ArchicadConnection, guids: list[str], before: list[str]) -> dict[str, str]:
+def _current_story(conn: ArchicadConnection) -> tuple[int, float] | None:
+    """(index, level) of the story the floor plan shows, or None if Archicad does not say."""
+    stories = conn.tapir("GetStories")
+    index = stories.get("actStory")
+    for story in stories.get("stories") or []:
+        if isinstance(story, dict) and story.get("index") == index \
+                and isinstance(story.get("level"), (int, float)):
+            return index, float(story["level"])
+    return None
+
+
+def _strays(conn: ArchicadConnection, before: list[str], placed: list[str], kind: str,
+            origin_x: float) -> list[tuple[str, str]]:
+    """(guid, type) of samples in the model that no reply named: a create that failed
+    part way can leave one.
+
+    Only an element that appeared while learning, is of a type this call places, and
+    lies past the old model extent counts. Anything else that appeared is the user's
+    (drawn meanwhile, or received in Teamwork) and is left alone. Runs in a finally,
+    so it never raises: a failed read finds none.
+    """
+    try:
+        known = {guid.upper() for guid in [*before, *placed]}
+        appeared = [g for g in get_all_element_ids(conn) if g.upper() not in known]
+        if not appeared:
+            return []
+        past = [g for g, box in zip(appeared, _boxes(conn, appeared))
+                if box is not None and box[0] >= origin_x - CLEARANCE / 2]
+        types = _fetch_types(conn, past) if past else {}
+    except Exception:
+        return []
+    return [(g, types[g]) for g in past if types.get(g) in _SAMPLED_TYPES[kind]]
+
+
+def _remove(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
     """guid -> why it is still in the model, after deleting everything learning placed.
 
-    It runs in a finally, so it never raises. Besides the GUIDs placed, the model is
-    listed again: a create that failed part way may have placed an element whose GUID
-    no reply carried.
+    It runs in a finally, so it never raises.
     """
     left: dict[str, str] = {}
-    if guids:
-        response, stopped = {}, None
-        try:
-            response = conn.tapir("DeleteElements", {"elements": element_payload(guids)}) or {}
-        except Exception as exc:     # an unanswered delete is reported, never raised
-            stopped = exc
-        try:
-            remaining, reason = present(conn, guids), None
-        except Exception:
-            remaining, reason = set(guids), _UNCHECKED
-        refused = _refused_deletions(response, guids)
-        for guid in guids:
-            if guid in remaining:
-                left[guid] = refused.get(guid) or reason or _survivor_reason(response, stopped)
-    try:
-        after = get_all_element_ids(conn)
-    except Exception:
+    if not guids:
         return left
-    known = {guid.upper() for guid in [*before, *guids]}
-    for guid in after:
-        if guid.upper() not in known:
-            left.setdefault(guid, _APPEARED)
+    response, stopped = {}, None
+    try:
+        response = conn.tapir("DeleteElements", {"elements": element_payload(guids)}) or {}
+    except Exception as exc:     # an unanswered delete is reported, never raised
+        stopped = exc
+    try:
+        remaining, reason = present(conn, guids), None
+    except Exception:
+        remaining, reason = set(guids), _UNCHECKED
+    refused = _refused_deletions(response, guids)
+    for guid in guids:
+        if guid in remaining:
+            left[guid] = refused.get(guid) or reason or _survivor_reason(response, stopped)
     return left
 
 

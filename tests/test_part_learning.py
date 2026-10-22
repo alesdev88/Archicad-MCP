@@ -46,20 +46,27 @@ class Fake:
     `fail_create_at` is the index of the library-part sample (the temporary wall not
     counted) whose create answers an error; `keep` holds indices into created_guids
     that DeleteElements refuses; `create_raises` places the first sample of a create
-    and then fails the whole command, so no reply names it.
+    and then fails the whole command, so no reply names it; `appear` is (type, box)
+    of elements the user adds while the plan is zoomed (FitInWindow).
     """
 
     def __init__(self, boxes=None, boxes_of_model=None, model_elements=0, window="FloorPlan",
                  tapir_version="1.7.2", library=None, fail_create_at=None, gdl_fails=False,
                  refuse_parameters=(), keep=(), capture=True, create_raises=False,
-                 mirror_axis="x"):
+                 mirror_axis="x", act_story=0, stories=None, appear=()):
         self.draw = boxes or corner_boxes()
         self.mirror_axis = mirror_axis       # the local axis `reflected` negates
         self.model: dict[str, tuple] = {}
+        self.model_types: dict[str, str] = {}
         if boxes_of_model is not None:
             self.model["model-0"] = tuple(float(v) for v in boxes_of_model)
         for i in range(model_elements):
             self.model[f"model-{i}"] = (float(i), 0.0, i + 1.0, 1.0)
+        self.act_story = act_story
+        self.stories = [{"index": i, "floorId": i + 1, "dispOnSections": True,
+                         "level": 3.0 * i, "height": 3.0, "name": f"Story {i}"}
+                        for i in range(3)] if stories is None else stories
+        self.appear = list(appear)
         self.window = window
         self.tapir_version = tapir_version
         self.library = dict(LIBRARY if library is None else library)
@@ -131,7 +138,10 @@ class Fake:
         if element["type"] == "Wall":
             begin, end = item["begCoordinate"], item["endCoordinate"]
             return (begin["x"], begin["y"], end["x"], end["y"] + 0.3)
-        return None
+        # An opening in a wall along +X: its width about the centre, the leaf's reach.
+        begin = self.elements[element["host"]]["item"]["begCoordinate"]
+        x = begin["x"] + item["centerOffset"]
+        return (x - item["width"] / 2, begin["y"] - 1.0, x + item["width"] / 2, begin["y"] + 0.3)
 
     def _boxes(self, p):
         self.box_calls += 1
@@ -179,6 +189,11 @@ class Fake:
         results = []
         for e in p["elements"]:
             guid = e["elementId"]["guid"]
+            if guid in self.model and guid not in kept:     # the user's: Archicad obeys
+                self.deleted.append(guid)
+                del self.model[guid]
+                results.append({"success": True})
+                continue
             element = self.elements.get(guid)
             if guid in kept or element is None:
                 results.append({"success": False, "error": {
@@ -194,11 +209,16 @@ class Fake:
         return {"executionResults": results}
 
     def _details(self, p):
-        return {"detailsOfElements": [
-            {"type": self.elements[e["elementId"]["guid"]]["type"]}
-            if e["elementId"]["guid"] in self.elements
-            else {"error": {"code": -2130313112, "message": "not found"}}
-            for e in p["elements"]]}
+        out = []
+        for e in p["elements"]:
+            guid = e["elementId"]["guid"]
+            if guid in self.elements:
+                out.append({"type": self.elements[guid]["type"]})
+            elif guid in self.model:
+                out.append({"type": self.model_types.get(guid, "Slab")})
+            else:
+                out.append({"error": {"code": -2130313112, "message": "not found"}})
+        return {"detailsOfElements": out}
 
     def _save(self, p):
         if self.capture:
@@ -207,13 +227,32 @@ class Fake:
 
     def _fit(self, p):
         self.sent.setdefault("FitInWindow", []).append(p)
+        for n, (element_type, box) in enumerate(self.appear):
+            self.model[f"user-{n}"] = tuple(float(v) for v in box)
+            self.model_types[f"user-{n}"] = element_type
         return {"success": True}
+
+    def _types(self, p):
+        out = []
+        for e in p["elements"]:
+            guid = e["elementId"]["guid"]
+            element_type = self.model_types.get(guid) or (self.elements.get(guid) or {}).get(
+                "type") or ("Slab" if guid in self.model else None)
+            out.append({"typeOfElement": {"elementId": e["elementId"],
+                                          "elementType": element_type}}
+                       if element_type else {"error": {"code": 7204,
+                                                       "message": "Element not found"}})
+        return {"typesOfElements": out}
 
     def connection(self) -> ArchicadConnection:
         official = dict(api_replays.OFFICIAL)
         official["API.Get2DBoundingBoxes"] = self._boxes
+        official["API.GetTypesOfElements"] = self._types
         tapir = {
             "GetCurrentWindowType": lambda p: {"currentWindowType": self.window},
+            "GetStories": lambda p: {"firstStory": 0, "lastStory": 2,
+                                     "actStory": self.act_story, "skipNullFloor": False,
+                                     "stories": self.stories},
             "GetAddOnVersion": {"version": self.tapir_version},
             "GetAllElements": lambda p: {"elements": [
                 {"elementId": {"guid": g}} for g in [*self.model, *self.elements]]},
@@ -364,8 +403,8 @@ def test_windows_are_sampled_at_a_window_height_and_sill(records):
 def test_door_parameters_that_cannot_be_read_are_a_warning_not_an_error(records):
     out = learn_library_part(Fake().connection(), records, "Door", "door")
     assert "error" not in out and out["parameters"] == []
-    assert any("parameters could not be read: Tapir 1.7.2 refuses them for doors and windows "
-               "placed through the API" in w for w in out["warnings"])
+    assert any("parameters could not be read, probably because Tapir 1.7.2 refuses them for "
+               "doors and windows placed through the API" in w for w in out["warnings"])
 
 
 def test_the_first_samples_parameters_come_back_by_name_type_and_value(records):
@@ -508,9 +547,50 @@ def test_a_failed_capture_still_deletes_everything(records):
     assert records.get("Bed Double 01") is None
 
 
-def test_an_element_no_reply_named_is_reported_as_left_in_the_model(records):
+def test_samples_go_on_the_story_the_floor_plan_shows(records):
+    # Story 2 is on screen, at level 6.0. Without floorIndex, Tapir would put z 0
+    # on the ground story, where the capture of story 2 does not see it.
+    fake = Fake(act_story=2)
+    learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+    assert {(i["floorIndex"], i["coordinates"]["z"]) for i in fake.items("CreateObjects")} \
+        == {(2, 6.0)}
+    learn_library_part(fake.connection(), records, "Door", "door")
+    [wall] = fake.items("CreateWalls")
+    assert wall["floorIndex"] == 2 and "zCoordinate" not in wall
+
+
+def test_refuses_when_the_current_story_cannot_be_read(records):
+    fake = Fake(stories=[])
+    out = learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+    assert "story" in out["error"] and fake.created_guids == []
+
+
+@pytest.mark.parametrize("name, kind", [("Bed Double 01", "object"), ("Door", "door")])
+def test_a_sample_no_reply_named_is_found_and_deleted(records, name, kind):
     fake = Fake(create_raises=True)
+    out = learn_library_part(fake.connection(), records, name, kind)
+    stray = fake.created_guids[-1]          # the door after its wall, or the one object
+    assert fake.remaining == [] and fake.deleted[0] == stray    # before the wall, if any
+    assert sorted(fake.deleted) == sorted(fake.created_guids)
+    assert "The command stopped" in out["error"] and "deleted again" in out["error"]
+    assert "left_in_model" not in out
+
+
+def test_a_stray_sample_that_will_not_go_is_named(records):
+    fake = Fake(create_raises=True, keep={0})
     out = learn_library_part(fake.connection(), records, "Bed Double 01", "object")
     [stray] = fake.remaining
-    assert stray in out["error"] and out["left_in_model"] == [stray]
-    assert "The command stopped" in out["error"]
+    assert out["left_in_model"] == [stray] and stray in out["error"]
+
+
+@pytest.mark.parametrize("element_type, box", [
+    ("Object", (2, 1, 3, 2)),              # the sampled type, inside the old extent
+    ("Zone", (20, -2, 24, 2)),             # past the extent, a type learning never places
+    ("Wall", (20, -2, 24, -1.7)),          # a wall, but an object is being learned
+])
+def test_elements_the_user_adds_while_learning_are_left_alone(records, element_type, box):
+    fake = Fake(boxes_of_model=(0, 0, 10, 4), appear=[(element_type, box)])
+    out = learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+    assert "error" not in out and "user-0" in fake.model
+    assert "user-0" not in fake.deleted and not any("user-0" in w for w in out["warnings"])
+    assert fake.remaining == [] and records.get("Bed Double 01") is not None
