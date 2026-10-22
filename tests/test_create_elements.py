@@ -9,10 +9,11 @@ import pytest
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.create import CREATE_TYPES, create_elements
-from archicad_mcp.core.part_records import PartRecord, PartRecords
+from archicad_mcp.core.part_records import PartRecords
 from archicad_mcp.gateway.registry import DEFINITIONS_DIR, _load_js_json, build_registry
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
+from tests.fixtures.learned_parts import LEAVES, bed_record, door_record, store
 
 WALL = {"begCoordinate": {"x": 0, "y": 0}, "endCoordinate": {"x": 5, "y": 0},
         "height": 3.0, "thickness": 0.2}
@@ -532,40 +533,11 @@ def test_an_opening_from_a_favourite_takes_its_sill_from_the_favourite():
 
 
 # Placing a learned part by what the sketch shows. The fake library gives its parts
-# the GUIDs lib-1, lib-2, ... in the order listed; a record must carry the same one.
-
-FOOT_AT_INSERTION = {"xMin": [-0.5, 0], "xMax": [0.5, 0], "yMin": [0, 0], "yMax": [1, 0]}
-
-# The door table measured live for the part "Door" (hinge, swing along the wall).
-DOOR_COMBOS = {"ff": ["begin", "right"], "tf": ["end", "right"],
-               "ft": ["end", "left"], "tt": ["begin", "left"]}
-
-LEAVES = {"left open": {"gs_leaf_1_open": 1, "gs_leaf_2_open": 0}}
+# the GUIDs lib-1, lib-2, ... in the order listed; a record must carry the same one
+# (tests/fixtures/learned_parts.py).
 
 # The opening's centre is door()'s centerOffset, 1.0 m along this wall from its begin.
 WALL_ALONG_X = ((0.0, 0.0), (5.0, 0.0))
-
-
-def bed_record(**overrides) -> PartRecord:
-    """Centred across, the foot end at the insertion point, the head along local +y."""
-    fields = dict(name="Bed Double 01", guid="lib-1", kind="object", learned="2026-10-22",
-                  footprint=FOOT_AT_INSERTION, head="+y", one_sided=True)
-    fields.update(overrides)
-    return PartRecord(**fields)
-
-
-def door_record(**overrides) -> PartRecord:
-    fields = dict(name="Door", guid="lib-1", kind="door", learned="2026-10-22",
-                  combos=DOOR_COMBOS, leaves=1)
-    fields.update(overrides)
-    return PartRecord(**fields)
-
-
-def store(tmp_path, *records: PartRecord) -> PartRecords:
-    kept = PartRecords(tmp_path / "library-parts.json")
-    for record in records:
-        kept.save(record)
-    return kept
 
 
 def bed(part="Bed Double 01", **placement) -> dict:

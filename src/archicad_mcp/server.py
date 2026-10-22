@@ -651,14 +651,21 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "are completed from the current values. Elements Archicad would refuse "
         "(another view's, hidden or locked layer, not reserved in Teamwork, inside a "
         "hotlinked module, locked) are skipped with the reason, never unlocked. A "
-        "commit reads the elements back: 'modified' counts what landed, 'failed' "
+        "placed object, lamp, door or window of a part learned with learn_library_part "
+        "may take placement, as create_elements does (its items=[] shows the "
+        "placement_schema), in place of the fields it works out: an object or lamp "
+        "keeps its story and height (center takes x and y only), a door or window its "
+        "wall and centerOffset; leaves are written after the commit, and 'placed_not_set' "
+        "names an element whose leaves were not set. A placement that cannot be worked "
+        "out makes the whole call an error naming the change. A commit reads the "
+        "elements back: 'modified' counts what landed, 'failed' "
         "groups Archicad's refusals, 'not_applied' lists fields Archicad answered "
         "success for but did not change."),
         **_tool_meta("Modify elements", read_only=False, destructive=True))
     @_guarded
     def modify_elements(changes: list[dict], dry_run: bool = True,
                         port: int | None = None) -> dict:
-        return _modify.modify_elements(_conn(port), changes, dry_run)
+        return _modify.modify_elements(_conn(port), changes, dry_run, records=records)
 
     from archicad_mcp.core import favorites as _favorites
 

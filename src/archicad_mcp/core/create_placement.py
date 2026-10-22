@@ -5,7 +5,8 @@ points; a door or window item gives a point near the jamb it hinges at, one on t
 side it opens to, and which leaves open. The part's record (learn_library_part,
 record_library_part) turns them into Tapir's own fields, which replace `placement`
 before the item schema is checked, so Tapir never sees the field. An item that
-cannot be placed so is skipped with the reason; the rest go ahead.
+cannot be placed so is skipped with the reason; the rest go ahead. modify_elements
+corrects a placed part with the same placement and these checks (core.modify_placement).
 """
 from __future__ import annotations
 
@@ -96,6 +97,8 @@ _DERIVED = {"object": ("coordinates", "angle", "reflected", "dimensions"),
 
 NO_HEIGHT = "give size.height in metres: Tapir 1.7.2 cannot read a part's own height"
 
+_SCHEMA_HINT = "create_elements with items=[] shows the placement_schema"
+
 
 class _Skip(Exception):
     """The item cannot be placed from its placement; the message is the reason."""
@@ -125,7 +128,7 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
             learned[index] = _learned(name, item, schema, store, parts)
         except _Skip as skip:
             skipped[index] = str(skip)
-    walls = (_wall_ends(conn, name, [items[i] for i in learned])
+    walls = (_wall_ends(conn, name, [_wall_guid(items[i]) for i in learned])
              if name in OPENING_KINDS else {})
     stories = _stories(conn) if name in OBJECT_KINDS and learned else None
     placements: list[dict] = []
@@ -160,13 +163,30 @@ def _learned(name: str, item: dict, schema: dict, store: PartRecords,
     if not isinstance(part, str):
         raise _Skip("placement needs libraryPartName, the part learned with "
                     "learn_library_part")
-    given = [field for field in _DERIVED[name] if field in item]
-    if given:
-        raise _Skip(f"placement sets {_listed(given)}; leave one out")
+    problem = _derived_problem(name, item)
+    if problem is not None:
+        raise _Skip(problem)
     if name in OPENING_KINDS and (_wall_guid(item) is None
                                   or not _is_number(item.get("centerOffset"))):
         raise _Skip("placement needs the item's ownerWallId and centerOffset (metres along "
                     "the wall from its begin point to the opening's centre)")
+    record = _record_for(store, name, part, item["placement"].get("leaves"))
+    guid, reason = parts.guid_of(part)
+    if guid is None:
+        raise _Skip(reason)
+    _check_identity(record, guid)
+    return record
+
+
+def _derived_problem(name: str, fields: dict) -> str | None:
+    """Why fields that also give what placement works out cannot go, or None."""
+    given = [field for field in _DERIVED[name] if field in fields]
+    return f"placement sets {_listed(given)}; leave one out" if given else None
+
+
+def _record_for(store: PartRecords, name: str, part: str, state: str | None) -> PartRecord:
+    """The record of `part` for a `name` placement, once it can place one: learned as
+    that kind, nothing missing, and the leaf state named, if any, recorded."""
     try:
         record = store.get(part)
     except RecordsFileError as error:
@@ -181,30 +201,29 @@ def _learned(name: str, item: dict, schema: dict, store: PartRecords,
     if missing:
         raise _Skip(f"the record of '{part}' lacks {_listed(missing)}: give them with "
                     "record_library_part (learn_library_part shows the part again)")
-    state = item["placement"].get("leaves")
     states = record.leaf_states or {}
     if state is not None and state not in states:
         known = (f"recorded: {', '.join(sorted(states))}" if states
                  else "none is recorded; give leaf_states with record_library_part")
         raise _Skip(f"'{part}' has no leaf state '{state}' ({known})")
-    guid, reason = parts.guid_of(part)
-    if guid is None:
-        raise _Skip(reason)
-    problem = identity_problem(record, guid)
-    if problem is not None:
-        raise _Skip(f"{problem.removesuffix('.')} (learn_library_part).")
     return record
 
 
-def _shape_problem(placement: object, schema: dict) -> str | None:
+def _check_identity(record: PartRecord, guid: str) -> None:
+    """Refuses a record learned for another part than the one with this main GUID."""
+    problem = identity_problem(record, guid)
+    if problem is not None:
+        raise _Skip(f"{problem.removesuffix('.')} (learn_library_part).")
+
+
+def _shape_problem(placement: object, schema: dict, hint: str = _SCHEMA_HINT) -> str | None:
     """Where the placement departs from its schema, or None."""
     validator = jsonschema.validators.validator_for(schema)(schema)
     error = jsonschema.exceptions.best_match(validator.iter_errors(placement))
     if error is None:
         return None
     where = "/".join(["placement", *(str(p) for p in error.absolute_path)])
-    return (f"{where}: {error.message}; create_elements with items=[] shows the "
-            "placement_schema")
+    return f"{where}: {error.message}; {hint}"
 
 
 def _object_fields(record: PartRecord, item: dict, placement: dict,
@@ -261,9 +280,10 @@ def _opening_fields(record: PartRecord, item: dict, placement: dict,
 
 
 def _wall_ends(conn: ArchicadConnection, name: str,
-               items: list[dict]) -> dict[str, tuple[dict, dict] | str]:
-    """Wall GUID -> its (begin, end) points in plan, or why they are not known."""
-    guids = list(dict.fromkeys(_wall_guid(item) for item in items))
+               walls: list[str]) -> dict[str, tuple[dict, dict] | str]:
+    """Wall GUID -> its (begin, end) points in plan, or why they are not known. `name`
+    is what stands in them, for the reason a host that is no wall gives."""
+    guids = list(dict.fromkeys(walls))
     if not guids:
         return {}
     try:

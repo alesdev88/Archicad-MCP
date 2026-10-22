@@ -6,6 +6,8 @@ import archicad_mcp.server as server_mod
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.part_records import PartRecord, PartRecords
 from archicad_mcp.server import build_server
+from tests.fixtures.learned_parts import bed_record
+from tests.fixtures.modify_project import ModifyProject
 from tests.test_part_learning import Fake
 
 
@@ -122,3 +124,20 @@ async def test_learning_names_the_tapir_it_needs_before_placing_anything(monkeyp
     assert [block.type for block in result.content] == ["text"]
     assert "1.7.2" in json.loads(result.content[0].text)["error"]
     assert fake.created_guids == []
+
+
+async def test_modify_elements_places_from_the_learned_parts_store(monkeypatch, tmp_path):
+    monkeypatch.setattr("archicad_mcp.core.part_records.data_root", lambda: tmp_path)
+    bed, part = "5349C8FC-A4BF-3548-A614-77BEB2CE4261", "B5D0A1C2-7E4F-4C11-9A3B-0D6E2F8A1B01"
+    PartRecords().save(bed_record(guid=part))
+    project = ModifyProject()
+    project.set_part(bed, "Bed Double 01", part)
+    monkeypatch.setattr(server_mod, "get_connection", lambda port: project.connect())
+    placement = {"center": {"x": 2.0, "y": 3.0}, "head": {"x": 0.0, "y": -1.0},
+                 "size": {"length": 2.0, "width": 1.6, "height": 0.5}}
+    async with Client(build_server(mode="full")) as client:
+        out = await _call(client, "modify_elements",
+                          {"changes": [{"guid": bed, "placement": placement}]})
+    [planned] = out["planned"]
+    assert planned["placement"] == {"part": "Bed Double 01"}
+    assert set(planned["changes"]) == {"coordinates", "angle", "reflected", "dimensions"}

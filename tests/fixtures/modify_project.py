@@ -59,6 +59,10 @@ class ModifyProject:
         self.dead_after: str | None = None          # this command, and every call after it, raises
         self._dead = False
         self.suspend_fail: set[bool] = set()        # SetSuspendGroupsMode answers failure for these
+        # SetGDLParametersOfElements (a placement's leaves): every write sent, and the
+        # error it answers each element with when set.
+        self.parameter_writes: list[dict] = []
+        self.parameter_error: dict | None = None
         # Elements FilterElements IsEditable passes but the details read does not
         # find: floor-plan labels seen from a Layout (28.09.2026). Seen from the
         # floor plan, layout Drawings and section-only Objects are found by the
@@ -96,6 +100,14 @@ class ModifyProject:
 
     def command_names(self) -> list[str]:
         return [name for name, _ in self.core.calls]
+
+    def set_part(self, guid: str, name: str, part_guid: str) -> None:
+        """Make the element an instance of the library part `name`, whose main GUID is
+        `part_guid`: libPart as GetDetailsOfElements reports it (Tapir 1.7.2 gives both
+        unIDs as main GUIDs, in the form GetAvailableLibraryParts lists them)."""
+        self.elements[guid]["details"]["libPart"] = {
+            "name": name, "parentUnID": {"guid": "F938E33A-329D-4A36-BE3E-85E126820996"},
+            "ownUnID": {"guid": part_guid}}
 
     # ---------- state rules ----------
 
@@ -322,9 +334,19 @@ class ModifyProject:
         self.suspend_history.append(self.suspend)
         return {"executionResult": {"success": True}}
 
+    def set_parameters(self, p):
+        self._raise_if("SetGDLParametersOfElements")
+        self.parameter_writes.append(copy.deepcopy(p))
+        entries = p["elementsWithGDLParameters"]
+        if self.parameter_error is not None:
+            return {"executionResults": [{"success": False, "error": self.parameter_error}
+                                         for _ in entries]}
+        return {"executionResults": [{"success": True} for _ in entries]}
+
     def _write_handlers(self) -> dict:
         handlers = {"SetDetailsOfElements": self.set_details, "MoveElements": self.move,
-                    "SetSuspendGroupsMode": self.set_suspend}
+                    "SetSuspendGroupsMode": self.set_suspend,
+                    "SetGDLParametersOfElements": self.set_parameters}
         for command, list_key in LIST_KEYS.items():
             handlers[command] = self.modify(command, list_key)
         return handlers
