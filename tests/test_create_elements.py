@@ -42,13 +42,16 @@ class Plan:
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
                  unread=(), archicad=29, tapir_version="1.8.2", walls=None,
-                 parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0):
+                 parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0,
+                 wall_details=None):
         self.types = dict(types or {})
         # Story i is at levels[i]; the floor plan shows act_story (None: not said).
         self.levels = list(levels)
         self.act_story = act_story
-        # GUID -> ((begin x, y), (end x, y)); each is a Wall.
+        # GUID -> ((begin x, y), (end x, y)); each is a Wall. wall_details adds to a
+        # wall's details (flipped, arcAngle).
         self.walls = dict(walls or {})
+        self.wall_details = dict(wall_details or {})
         self.types.update({g: "Wall" for g in self.walls})
         # SetGDLParametersOfElements answers every element with this error when set.
         self.parameter_error = parameter_error
@@ -127,7 +130,8 @@ class Plan:
         if guid in self.walls:
             (bx, by), (ex, ey) = self.walls[guid]
             entry["details"] = {"begCoordinate": {"x": bx, "y": by},
-                                "endCoordinate": {"x": ex, "y": ey}}
+                                "endCoordinate": {"x": ex, "y": ey},
+                                **self.wall_details.get(guid, {})}
         return entry
 
     def _set_parameters(self, p):
@@ -736,13 +740,78 @@ def test_a_door_by_hinge_point_and_swing_gets_reflected_and_oside(tmp_path):
     assert (second["reflected"], second["oSide"]) == (True, True)
     # The begin jamb, opening right: ff.
     assert (third["reflected"], third["oSide"]) == (False, False)
-    assert result["placements"][0] == {"index": 0, "part": "Door",
+    # The hinge and swing read from the two points, in words.
+    assert result["placements"][0] == {"index": 0, "part": "Door", "hinge": "end",
+                                       "swing": "left",
                                        "derived": {"reflected": False, "oSide": True}}
+    assert [(p["hinge"], p["swing"]) for p in result["placements"][1:]] == [
+        ("begin", "left"), ("begin", "right")]
     walls_read = [p for c, p in plan.core.calls if c == "GetDetailsOfElements"
                   and p["elements"] == [{"elementId": {"guid": W1}}]]
     assert walls_read
     # A door stands on its wall's story: no story is read for it.
     assert "GetStories" not in [command for command, _ in plan.core.calls]
+
+
+def test_a_door_sent_with_ref_side_true_and_a_placement_is_skipped(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door",
+                             [placed_door(1.4, 2.0, refSide=True),
+                              placed_door(1.4, 2.0, refSide=False)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert skip["index"] == 0
+    assert "refSide true" in skip["reason"] and "refSide false" in skip["reason"]
+    assert result["payload"]["doorsData"][0]["refSide"] is False
+
+
+def test_a_door_in_a_wall_flipped_otherwise_than_where_it_was_learned_warns(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X, W2: WALL_ALONG_X}, library=["Door"],
+                wall_details={W1: {"flipped": False}, W2: {"flipped": True}})
+    other_wall = placed_door(1.4, 2.0)
+    other_wall["ownerWallId"] = {"guid": W2}
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0), other_wall],
+                             records=store(tmp_path, door_record(wall_flipped=True)))
+    [warning] = [w for w in result["warnings"] if "flipped" in w]
+    assert warning.startswith("Item 0 ('Door') stands in a wall with flipped false")
+    assert "learned in a wall with flipped true" in warning and "capture_window" in warning
+    # A record learned before the wall's flipped was kept warns of nothing.
+    unknown = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                              records=store(tmp_path / "old", door_record()))
+    assert not any("flipped" in w for w in unknown["warnings"])
+
+
+def test_a_door_in_a_curved_wall_is_skipped(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"],
+                wall_details={W1: {"arcAngle": 0.8}})
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert f"wall {W1} is curved" in skip["reason"]
+    assert "reflected and oSide" in skip["reason"]
+
+
+@pytest.mark.parametrize("hinge_x, toward_y, words", [(1.02, 2.0, "hinge_near"),
+                                                      (1.4, 0.01, "opens_toward")])
+def test_a_door_whose_points_name_no_jamb_or_side_is_skipped(tmp_path, hinge_x, toward_y,
+                                                             words):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door", [placed_door(hinge_x, toward_y)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert words in skip["reason"]
+
+
+def test_a_record_without_combos_says_hidden_opening_lines_need_showing(tmp_path):
+    # Live 22.10.2026: MCP-Test's plan drew no window opening lines, so no combos could
+    # be recorded; the user has to show them before learning again.
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record(combos=None)))
+    [skip] = result["skipped"]
+    assert "lacks combos" in skip["reason"]
+    assert "no opening lines" in skip["reason"] and "ask the user to show them" in skip["reason"]
+    assert "learn it again" in skip["reason"]
 
 
 def test_a_door_in_a_wall_that_cannot_be_read_is_skipped(tmp_path):

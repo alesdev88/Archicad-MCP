@@ -350,10 +350,12 @@ def _bed(head=None, **placement) -> dict:
 
 def _door_project(tmp_path, center_offset=1.0, **record):
     """DOOR-1 as a placed "Door" in WALL-1, its centre 1 m along the wall, hinged at
-    the end jamb and opening left (reflected false, oSide true: ft)."""
+    the end jamb and opening left (reflected false, oSide true: ft), with refSide false
+    as a door placed through the API reads it (Probe results (d))."""
     project = ModifyProject()
     project.set_part("DOOR-1", "Door", DOOR_PART)
     project.elements["DOOR-1"]["details"]["centerOffset"] = center_offset
+    project.elements["DOOR-1"]["details"]["refSide"] = False
     return project, store(tmp_path, door_record(guid=DOOR_PART, **record))
 
 
@@ -457,11 +459,56 @@ def test_a_door_hinged_at_the_other_jamb_flips_reflected(tmp_path):
     entry = _planned(out, "DOOR-1")
     assert entry["changes"] == {"reflected": {"current": False, "new": True},
                                 "oSide": {"current": True, "new": True}}
-    assert entry["placement"] == {"part": "Door"}
+    assert entry["placement"] == {"part": "Door", "hinge": "begin", "swing": "left"}
     # The wall is the door's owner, read for its begin and end points.
     assert {"elements": [{"elementId": {"guid": "WALL-1"}}]} in project.sent(
         "GetDetailsOfElements")
     assert _writes(project) == []
+
+
+def test_a_door_with_ref_side_true_cannot_be_placed(tmp_path):
+    project, records = _door_project(tmp_path)
+    project.elements["DOOR-1"]["details"]["refSide"] = True
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    [error] = out.values()
+    assert error.startswith("change 1 (DOOR-1): ") and "refSide true" in error
+    assert "refSide false" in error and "reflected and oSide" in error
+    # Nor can a change that turns it to refSide true.
+    project, records = _door_project(tmp_path / "turned")
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "refSide": True,
+                                               "placement": _swing(0.6, 2.0)}], records=records)
+    assert "refSide true" in out["error"]
+    assert _writes(project) == []
+
+
+def test_a_door_in_a_wall_flipped_otherwise_than_where_it_was_learned_warns(tmp_path):
+    # WALL-1 has flipped false.
+    project, records = _door_project(tmp_path, wall_flipped=True)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    [warning] = _warnings(out, "DOOR-1")
+    assert warning.startswith("stands in a wall with flipped false, and 'Door' was learned "
+                              "in a wall with flipped true")
+    project, records = _door_project(tmp_path / "same", wall_flipped=False)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    assert not _warnings(out, "DOOR-1")
+
+
+def test_a_door_in_a_curved_wall_cannot_be_placed(tmp_path):
+    project, records = _door_project(tmp_path)
+    project.elements["WALL-1"]["details"]["arcAngle"] = 1.2
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    assert out["error"].startswith("change 1 (DOOR-1): wall WALL-1 is curved")
+
+
+def test_a_hinge_point_at_the_doors_centre_makes_the_call_an_error(tmp_path):
+    project, records = _door_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(1.0, 2.0)}],
+                          records=records)
+    assert out["error"].startswith("change 1 (DOOR-1): placement.hinge_near")
 
 
 def test_a_doors_centre_comes_from_its_details_unless_the_change_gives_one(tmp_path):
@@ -495,7 +542,8 @@ def test_leaves_show_in_the_dry_run_and_nothing_is_written(tmp_path):
                           [{"guid": "DOOR-1", "placement": _swing(0.6, -2.0, leaves="left open")}],
                           records=records)
     assert _planned(out, "DOOR-1")["placement"] == {
-        "part": "Door", "leaves": {"state": "left open", "parameters": LEAVES["left open"]}}
+        "part": "Door", "hinge": "begin", "swing": "right",
+        "leaves": {"state": "left open", "parameters": LEAVES["left open"]}}
     assert project.parameter_writes == [] and _writes(project) == []
 
 

@@ -62,6 +62,7 @@ class Planned:
     level_shift: float = 0.0
     part: str | None = None        # the learned part a placement was worked out from
     leaves: dict | None = None     # its leaf state {"state", "parameters"}, set after the commit
+    opening: dict = field(default_factory=dict)    # a door's hinge and swing, in words
 
 
 @dataclass
@@ -430,6 +431,7 @@ def plan_changes(conn: ArchicadConnection, changes,
                 continue
             if guid in placed:
                 planned.part, planned.leaves = placed[guid].part, placed[guid].leaves
+                planned.opening = placed[guid].opening
             plan.planned.append(planned)
             typed_fields[guid] = {k: v for k, v in fields.items()
                                   if k not in mf.COMMON_FIELDS}
@@ -472,7 +474,7 @@ def _view(p: Planned) -> dict:
         view["id"] = p.id
     view["changes"] = p.display
     if p.part is not None:
-        view["placement"] = {"part": p.part}
+        view["placement"] = {"part": p.part, **p.opening}
         if p.leaves is not None:
             view["placement"]["leaves"] = p.leaves
     return view

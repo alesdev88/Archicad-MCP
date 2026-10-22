@@ -409,6 +409,31 @@ def test_no_recorded_combo_for_that_hinge_and_swing_is_an_error():
                        hinge_near={"x": 4.6, "y": 0}, opens_toward={"x": 4, "y": -1})
 
 
+@pytest.mark.parametrize("hinge_x", [4.0, 4.04, 3.96])
+def test_a_hinge_point_at_the_openings_centre_names_no_jamb(hinge_x):
+    # The centre is 4.0 along the wall: within 0.05 m of it, the point is at neither jamb.
+    with pytest.raises(ValueError, match="hinge_near") as refused:
+        opening_fields(DOOR, {"x": 0, "y": 0}, {"x": 10, "y": 0}, 4.0,
+                       hinge_near={"x": hinge_x, "y": 0.7}, opens_toward={"x": 4, "y": -1})
+    assert "jamb" in str(refused.value)
+
+
+def test_a_swing_point_on_the_wall_line_names_no_side():
+    # Wall (0, 0) to (6, 8): (3, 4) lies on its line, and (3.03, 3.96) 0.048 m off it,
+    # measured square to it, though the cross product with (6, 8) itself reads 0.48.
+    with pytest.raises(ValueError, match="opens_toward") as refused:
+        opening_fields(DOOR, {"x": 0, "y": 0}, {"x": 6, "y": 8}, 4.0,
+                       hinge_near={"x": 3.6, "y": 4.8}, opens_toward={"x": 3.0, "y": 4.0})
+    assert "side" in str(refused.value)
+    with pytest.raises(ValueError, match="opens_toward"):
+        opening_fields(DOOR, {"x": 0, "y": 0}, {"x": 6, "y": 8}, 4.0,
+                       hinge_near={"x": 3.6, "y": 4.8}, opens_toward={"x": 3.03, "y": 3.96})
+    # 0.06 m off the line is a side.
+    assert opening_fields(DOOR, {"x": 0, "y": 0}, {"x": 10, "y": 0}, 4.0,
+                          hinge_near={"x": 4.6, "y": 0}, opens_toward={"x": 4, "y": -0.06}) \
+        == {"reflected": True, "oSide": False}
+
+
 def test_a_wall_without_length_is_an_error():
     with pytest.raises(ValueError):
         opening_fields(DOOR, {"x": 3, "y": 3}, {"x": 3, "y": 3}, 0.0,

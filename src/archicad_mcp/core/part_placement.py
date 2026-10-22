@@ -161,16 +161,21 @@ def object_fields(record: PartRecord, center: dict, length: float, width: float,
 
 def opening_fields(record: PartRecord, wall_beg: dict, wall_end: dict, center_offset: float,
                    hinge_near: dict, opens_toward: dict) -> dict:
-    """The `reflected` and `oSide` flags that give a door or window the hinge and swing seen.
-
-    Hinge and swing are read along the wall from its begin point to its end: the hinge
-    is "begin" when it lies before the opening's centre (`center_offset` along the
-    wall), else "end"; the swing is "left" when `opens_toward` lies to the left of the
-    wall, else "right".
-    """
+    """The `reflected` and `oSide` flags that give a door or window the hinge and swing seen
+    (hinge_and_swing, then combo_flags)."""
     if not record.combos:
         raise ValueError(f"'{record.name}' has no hinge and swing combinations recorded")
+    hinge, swing = hinge_and_swing(wall_beg, wall_end, center_offset, hinge_near, opens_toward)
+    return combo_flags(record, hinge, swing)
 
+
+def hinge_and_swing(wall_beg: dict, wall_end: dict, center_offset: float,
+                    hinge_near: dict, opens_toward: dict) -> tuple[str, str]:
+    """(hinge, swing) read along the wall from its begin point to its end: the hinge is
+    "begin" when `hinge_near` lies before the opening's centre (`center_offset` along
+    the wall), else "end"; the swing is "left" when `opens_toward` lies to the left of
+    the wall, else "right". A point within AMBIGUOUS of the centre, or of the wall's
+    line, names neither and is refused (ValueError)."""
     dx, dy = wall_end["x"] - wall_beg["x"], wall_end["y"] - wall_beg["y"]
     length = math.hypot(dx, dy)
     if length < _SAME:
@@ -178,12 +183,23 @@ def opening_fields(record: PartRecord, wall_beg: dict, wall_end: dict, center_of
     dx, dy = dx / length, dy / length
 
     along = (hinge_near["x"] - wall_beg["x"]) * dx + (hinge_near["y"] - wall_beg["y"]) * dy
-    hinge = "begin" if along < center_offset else "end"
+    if abs(along - center_offset) < AMBIGUOUS:
+        raise ValueError(f"placement.hinge_near lies {abs(along - center_offset):.2f} m from "
+                         "the opening's centre along the wall, so it names neither jamb: "
+                         "give a point nearer the jamb the leaf hangs on")
+    # The distance to the wall's line, signed: dx and dy are of unit length.
     side = dx * (opens_toward["y"] - wall_beg["y"]) - dy * (opens_toward["x"] - wall_beg["x"])
-    swing = "left" if side > 0 else "right"
+    if abs(side) < AMBIGUOUS:
+        raise ValueError(f"placement.opens_toward lies {abs(side):.2f} m from the wall's "
+                         "line, so it names neither side: give a point inside the room the "
+                         "leaf swings into")
+    return ("begin" if along < center_offset else "end"), ("left" if side > 0 else "right")
 
+
+def combo_flags(record: PartRecord, hinge: str, swing: str) -> dict:
+    """The `reflected` and `oSide` of the recorded combination with this hinge and swing."""
     for combo in COMBOS:
-        if record.combos.get(combo) == [hinge, swing]:
+        if (record.combos or {}).get(combo) == [hinge, swing]:
             return {"reflected": combo[0] == "t", "oSide": combo[1] == "t"}
     raise ValueError(f"'{record.name}' has no recorded combination with the hinge at the "
                      f"{hinge} of the wall and the swing to the {swing}")

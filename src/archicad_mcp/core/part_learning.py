@@ -211,7 +211,8 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
         return {"error": f"{outcome['error']} Every element placed for learning was deleted "
                          "again; nothing was recorded.", **side_effects}
 
-    record = _record(earlier, name, part_guid, kind, tapir, outcome["measured"])
+    record = _record(earlier, name, part_guid, kind, tapir, outcome["measured"],
+                     outcome.get("wall_flipped"))
     try:
         records.save(record)
     except RecordsFileError as error:
@@ -413,6 +414,7 @@ class _Learning:
                                           "endCoordinate": {"x": x + SPACING * slots, "y": y},
                                           "height": WALL_HEIGHT, "floorIndex": self.story[0]})
         self._create("CreateWalls", "wallsData", [wall], host=True)
+        flipped = self._wall_flipped()
         placed = _opening_samples(self.name, self.kind, wall.guid, self.variants)
         tool = self.kind.capitalize()
         try:
@@ -425,7 +427,25 @@ class _Learning:
         parameters = self._opening_parameters(placed[0])
         png = self._look([wall.guid] + [p.guid for p in placed])
         return {"png": png, "samples": [p.label for p in placed], "measured": None,
-                "parameters": parameters}
+                "wall_flipped": flipped, "parameters": parameters}
+
+    def _wall_flipped(self) -> bool | None:
+        """The temporary wall's `flipped` (the Wall tool's), which the combinations seen
+        hold for; None, with a warning, when it cannot be read."""
+        try:
+            response = self.conn.tapir("GetDetailsOfElements",
+                                       {"elements": element_payload([self.wall])})
+            entries = response.get("detailsOfElements") or []
+        except APIErrorBase:
+            entries = []
+        details = entries[0].get("details") if entries and isinstance(entries[0], dict) \
+            else None
+        flipped = details.get("flipped") if isinstance(details, dict) else None
+        if isinstance(flipped, bool):
+            return flipped
+        self.warnings.append("The temporary wall's flipped could not be read, so placing "
+                             "this part cannot warn of a wall flipped the other way.")
+        return None
 
     def _create(self, command: str, key: str, placed: list[_Placed],
                 host: bool = False) -> None:
@@ -636,10 +656,11 @@ def _opening_samples(name: str, kind: str, wall: str,
                      variants: list[dict]) -> list[_Placed]:
     height, sill = _OPENING_SIZES[kind]
 
+    # refSide false on every sample: the combinations recorded hold for it.
     def item(slot: int, combo: str) -> dict:
         return {"ownerWallId": {"guid": wall}, "centerOffset": SPACING * (slot + 0.5),
                 "width": OPENING_WIDTH, "height": height, "sillHeight": sill,
-                "reflected": combo[0] == "t", "oSide": combo[1] == "t",
+                "reflected": combo[0] == "t", "oSide": combo[1] == "t", "refSide": False,
                 "libraryPartName": name}
 
     placed = [_Placed(f"{combo}: reflected {_word(combo[0])}, oSide {_word(combo[1])}",
@@ -789,14 +810,14 @@ def _remove(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
 
 
 def _record(earlier: PartRecord | None, name: str, guid: str, kind: str, tapir: str | None,
-            footprint: dict | None) -> PartRecord:
+            footprint: dict | None, wall_flipped: bool | None) -> PartRecord:
     learned = date.today().isoformat()
     if earlier is not None and identity_problem(earlier, guid) is None:
         # The same part learned again: what the agent recorded about it stays.
         return replace(earlier, guid=guid, kind=kind, learned=learned, tapir=tapir,
-                       footprint=footprint)
+                       footprint=footprint, wall_flipped=wall_flipped)
     return PartRecord(name=name, guid=guid, kind=kind, learned=learned, tapir=tapir,
-                      footprint=footprint)
+                      footprint=footprint, wall_flipped=wall_flipped)
 
 
 def _turned(rotation: float) -> bool:

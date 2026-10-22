@@ -5,8 +5,10 @@ against the element as it stands. The part and its main GUID come from the eleme
 details (libPart; Tapir gives ownUnID as the main GUID, in the form
 GetAvailableLibraryParts lists it, so a record checks against it as it is). A door or
 window keeps the wall it stands in (its owner) and, unless a change for it gives one,
-its centerOffset. An object or lamp keeps its story and its elevation: placement moves and
-turns it in plan only, and modify completes coordinates.z from the current value.
+its centerOffset; one whose refSide is or would become true cannot be placed, as the
+hinge and swing were learned with refSide false. An object or lamp keeps its story and
+its elevation: placement moves and turns it in plan only, and modify completes
+coordinates.z from the current value.
 
 The fields replace `placement` before the changes are merged, so modify plans them as any
 other field. A placement that cannot be worked out makes the whole call an error naming
@@ -22,15 +24,17 @@ from archicad_mcp.core.create_placement import (
     OBJECT_KINDS,
     OPENING_KINDS,
     PLACEMENT_SCHEMAS,
+    Host,
     _check_identity,
     _derived_problem,
     _is_number,
+    _opening_placement,
     _record_for,
     _shape_problem,
     _Skip,
     _wall_ends,
 )
-from archicad_mcp.core.part_placement import object_fields, opening_fields
+from archicad_mcp.core.part_placement import object_fields
 from archicad_mcp.core.part_records import PartRecord, PartRecords
 
 # Element types as GetDetailsOfElements names them -> the kinds parts are learned as.
@@ -51,6 +55,7 @@ class Placed:
     part: str
     leaves: dict | None = None        # {"state", "parameters"}, written after the commit
     warnings: list[str] = field(default_factory=list)    # for the dry run's warnings
+    opening: dict = field(default_factory=dict)          # a door's hinge and swing, in words
 
 
 @dataclass
@@ -107,9 +112,10 @@ def resolve_placements(conn: ArchicadConnection, changes: list[dict],
         placement = changes[p.number - 1]["placement"]
         found: list[str] = []
         try:
-            fields = (_object_fields(p.record, placement, p.entry, found)
-                      if p.kind in OBJECT_KINDS
-                      else _opening_fields(p.record, placement, p.given, p.entry, walls))
+            fields, words = ((_object_fields(p.record, placement, p.entry, found), {})
+                             if p.kind in OBJECT_KINDS
+                             else _opening_fields(p.record, placement, p.given, p.entry,
+                                                  walls, found))
         except (_Skip, ValueError) as problem:
             problems.append(f"change {p.number} ({p.guid}): {problem}")
             continue
@@ -117,7 +123,7 @@ def resolve_placements(conn: ArchicadConnection, changes: list[dict],
         state = placement.get("leaves")
         leaves = (None if state is None
                   else {"state": state, "parameters": p.record.leaf_states[state]})
-        placed[p.guid] = Placed(p.record.name, leaves, found)
+        placed[p.guid] = Placed(p.record.name, leaves, found, words)
     if problems:
         return "\n".join(problems)
     return resolved, placed
@@ -155,6 +161,11 @@ def _learned(placement: object, given: dict, entry: dict,
     _check_identity(record, guid)
     if kind in OPENING_KINDS and _owner(entry) is None:
         raise _Skip("its details name no wall it stands in (ownerElementId)")
+    if kind in OPENING_KINDS and given.get("refSide", details.get("refSide")) is True:
+        said = ("a change gives it refSide true" if given.get("refSide") is True
+                else "its details say refSide true")
+        raise _Skip(f"{said}, and the hinge and swing learned for '{name}' hold for refSide "
+                    "false: give reflected and oSide instead of placement")
     return kind, record
 
 
@@ -177,20 +188,19 @@ def _object_fields(record: PartRecord, placement: dict, entry: dict,
 
 
 def _opening_fields(record: PartRecord, placement: dict, given: dict, entry: dict,
-                    walls: dict[str, tuple[dict, dict] | str]) -> dict:
-    """reflected and oSide, the hinge read against the centre the element will have: a
-    centerOffset from any of its changes, else the current one."""
-    ends = walls[_owner(entry)]
-    if isinstance(ends, str):
-        raise _Skip(ends)
+                    walls: dict[str, Host | str], warnings: list[str]) -> tuple[dict, dict]:
+    """(reflected and oSide, the hinge and swing in words), the hinge read against the
+    centre the element will have: a centerOffset from any of its changes, else the
+    current one."""
+    host = walls[_owner(entry)]
+    if isinstance(host, str):
+        raise _Skip(host)
     offset = given.get("centerOffset", (entry.get("details") or {}).get("centerOffset"))
     if not _is_number(offset):
         raise _Skip("the hinge side needs centerOffset as a number (metres along the "
                     "wall from its begin point to the opening's centre), in a change or "
                     "in its details")
-    begin, end = ends
-    return opening_fields(record, begin, end, offset, placement["hinge_near"],
-                          placement["opens_toward"])
+    return _opening_placement(record, host, offset, placement, warnings)
 
 
 def _owner(entry: dict) -> str | None:

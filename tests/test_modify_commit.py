@@ -231,9 +231,12 @@ TO_BEGIN_LEFT = {"hinge_near": {"x": 0.6, "y": 0.0}, "opens_toward": {"x": 1.0, 
 
 
 def _door(tmp_path):
+    """DOOR-1 as a placed "Door", with refSide false as a door placed through the API
+    reads it (Probe results (d))."""
     project = ModifyProject()
     project.set_part("DOOR-1", "Door", DOOR_PART)
     project.elements["DOOR-1"]["details"]["centerOffset"] = 1.0
+    project.elements["DOOR-1"]["details"]["refSide"] = False
     return project, store(tmp_path, door_record(guid=DOOR_PART, leaves=2, leaf_states=LEAVES))
 
 

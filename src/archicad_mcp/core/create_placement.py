@@ -7,16 +7,20 @@ record_library_part) turns them into Tapir's own fields, which replace `placemen
 before the item schema is checked, so Tapir never sees the field. An item that
 cannot be placed so is skipped with the reason; the rest go ahead. modify_elements
 corrects a placed part with the same placement and these checks (core.modify_placement).
+
+A door's or window's hinge and swing were learned with refSide false in a straight
+temporary wall, so an item that sends refSide true, or stands in a curved wall, is
+skipped, and one in a wall flipped otherwise than the learning wall is warned about.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import jsonschema
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection
-from archicad_mcp.core.part_placement import object_fields, opening_fields
+from archicad_mcp.core.part_placement import combo_flags, hinge_and_swing, object_fields
 from archicad_mcp.core.part_records import (
     PartRecord,
     PartRecords,
@@ -99,9 +103,24 @@ NO_HEIGHT = "give size.height in metres: Tapir 1.7.2 cannot read a part's own he
 
 _SCHEMA_HINT = "create_elements with items=[] shows the placement_schema"
 
+# Learning sends refSide false on every sample, so the combinations hold for it only.
+_REF_SIDE = ("the hinge and swing learned for the part hold for refSide false, and this "
+             "item sends refSide true: leave refSide out or send it false, or give "
+             "reflected and oSide instead of placement")
+
+# Radians a wall may bend and still count as straight.
+_STRAIGHT = 1e-9
+
 
 class _Skip(Exception):
     """The item cannot be placed from its placement; the message is the reason."""
+
+
+class Host(NamedTuple):
+    """A door's or window's wall, as placement reads it."""
+    begin: dict
+    end: dict
+    flipped: bool | None          # None when its details do not say
 
 
 def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
@@ -139,9 +158,9 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
         item, placement = items[index], items[index]["placement"]
         found: list[str] = []
         try:
-            fields = (_object_fields(record, item, placement, stories, found)
-                      if name in OBJECT_KINDS
-                      else _opening_fields(record, item, placement, walls))
+            fields, words = ((_object_fields(record, item, placement, stories, found), {})
+                             if name in OBJECT_KINDS
+                             else _opening_fields(record, item, placement, walls, found))
         except (_Skip, ValueError) as error:
             skipped[index] = str(error)
             continue
@@ -153,7 +172,7 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
         if state is not None:
             leaf_writes[index] = derived["leaves"] = {"state": state,
                                                       "parameters": record.leaf_states[state]}
-        placements.append({"index": index, "part": item["libraryPartName"],
+        placements.append({"index": index, "part": item["libraryPartName"], **words,
                            "derived": derived})
     return resolved, skipped, placements, leaf_writes, warnings
 
@@ -175,6 +194,8 @@ def _learned(name: str, item: dict, schema: dict, store: PartRecords,
                                   or not _is_number(item.get("centerOffset"))):
         raise _Skip("placement needs the item's ownerWallId and centerOffset (metres along "
                     "the wall from its begin point to the opening's centre)")
+    if name in OPENING_KINDS and item.get("refSide") is True:
+        raise _Skip(_REF_SIDE)
     record = _record_for(store, name, part, item["placement"].get("leaves"))
     guid, reason = parts.guid_of(part)
     if guid is None:
@@ -208,8 +229,11 @@ def _record_for(store: PartRecords, name: str, part: str, state: str | None) -> 
                     "follow its own A and B, so placement cannot place it; place it by "
                     "coordinates, angle, reflected and dimensions")
     if missing:
+        hidden = ("; if its learning image showed no opening lines, the plan hides them: "
+                  "ask the user to show them (Model View Options), then learn it again"
+                  if "combos" in missing else "")
         raise _Skip(f"the record of '{part}' lacks {_listed(missing)}: give them with "
-                    "record_library_part (learn_library_part shows the part again)")
+                    "record_library_part (learn_library_part shows the part again)" + hidden)
     states = record.leaf_states or {}
     if state is not None and state not in states:
         known = (f"recorded: {', '.join(sorted(states))}" if states
@@ -280,19 +304,34 @@ def _stories(conn: ArchicadConnection) -> tuple[int | None, dict[int, float]] | 
 
 
 def _opening_fields(record: PartRecord, item: dict, placement: dict,
-                    walls: dict[str, tuple[dict, dict] | str]) -> dict:
-    ends = walls[_wall_guid(item)]
-    if isinstance(ends, str):
-        raise _Skip(ends)
-    begin, end = ends
-    return opening_fields(record, begin, end, item["centerOffset"], placement["hinge_near"],
-                          placement["opens_toward"])
+                    walls: dict[str, Host | str], warnings: list[str]) -> tuple[dict, dict]:
+    host = walls[_wall_guid(item)]
+    if isinstance(host, str):
+        raise _Skip(host)
+    return _opening_placement(record, host, item["centerOffset"], placement, warnings)
+
+
+def _opening_placement(record: PartRecord, host: Host, center_offset: float,
+                       placement: dict, warnings: list[str]) -> tuple[dict, dict]:
+    """(reflected and oSide, the hinge and swing read in words). A wall flipped
+    otherwise than the one the part was learned in adds a warning."""
+    hinge, swing = hinge_and_swing(host.begin, host.end, center_offset,
+                                   placement["hinge_near"], placement["opens_toward"])
+    fields = combo_flags(record, hinge, swing)
+    learned = record.wall_flipped
+    if isinstance(host.flipped, bool) and isinstance(learned, bool) and host.flipped != learned:
+        warnings.append(f"stands in a wall with flipped {_said(host.flipped)}, and "
+                        f"'{record.name}' was learned in a wall with flipped "
+                        f"{_said(learned)}: its hinge and swing were seen in such a wall "
+                        "and may come out the other way here, so look with capture_window "
+                        "after placing")
+    return fields, {"hinge": hinge, "swing": swing}
 
 
 def _wall_ends(conn: ArchicadConnection, name: str,
-               walls: list[str]) -> dict[str, tuple[dict, dict] | str]:
-    """Wall GUID -> its (begin, end) points in plan, or why they are not known. `name`
-    is what stands in them, for the reason a host that is no wall gives."""
+               walls: list[str]) -> dict[str, Host | str]:
+    """Wall GUID -> the wall as placement reads it, or why it cannot be. `name` is what
+    stands in it, for the reason a host that is no wall gives."""
     guids = list(dict.fromkeys(walls))
     if not guids:
         return {}
@@ -306,7 +345,7 @@ def _wall_ends(conn: ArchicadConnection, name: str,
             for i, guid in enumerate(guids)}
 
 
-def _ends(name: str, guid: str, entry: object) -> tuple[dict, dict] | str:
+def _ends(name: str, guid: str, entry: object) -> Host | str:
     if not isinstance(entry, dict) or "error" in entry:
         error = entry.get("error") if isinstance(entry, dict) else None
         message = error.get("message") if isinstance(error, dict) else None
@@ -317,7 +356,12 @@ def _ends(name: str, guid: str, entry: object) -> tuple[dict, dict] | str:
     begin, end = details.get("begCoordinate"), details.get("endCoordinate")
     if not (_is_point(begin) and _is_point(end)):
         return f"wall {guid} has no begin and end point in its details"
-    return begin, end
+    arc = details.get("arcAngle")
+    if _is_number(arc) and abs(arc) > _STRAIGHT:
+        return (f"wall {guid} is curved (arcAngle {arc:g}): placement reads hinge and "
+                "swing along a straight wall, so give reflected and oSide instead")
+    flipped = details.get("flipped")
+    return Host(begin, end, flipped if isinstance(flipped, bool) else None)
 
 
 def _wall_guid(item: dict) -> str | None:
@@ -332,6 +376,10 @@ def _is_number(value: object) -> bool:
 
 def _is_point(value: object) -> bool:
     return isinstance(value, dict) and _is_number(value.get("x")) and _is_number(value.get("y"))
+
+
+def _said(flag: bool) -> str:
+    return "true" if flag else "false"
 
 
 def _listed(names: list[str]) -> str:

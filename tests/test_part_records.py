@@ -70,6 +70,17 @@ def test_an_opening_with_combos_and_leaf_states_reads_back(tmp_path):
     assert PartRecords(tmp_path / "r.json").get("Window 26") == window()
 
 
+def test_an_opening_keeps_the_flipped_of_the_wall_it_was_learned_in(tmp_path):
+    PartRecords(tmp_path / "r.json").save(window(wall_flipped=True))
+    kept = PartRecords(tmp_path / "r.json").get("Window 26")
+    assert kept.wall_flipped is True and kept.to_json()["wall_flipped"] is True
+
+
+def test_a_record_written_before_wall_flipped_reads_it_as_unknown():
+    older = {key: value for key, value in window().to_json().items() if key != "wall_flipped"}
+    assert PartRecord.from_json(older).wall_flipped is None
+
+
 def test_the_file_is_versioned_and_keyed_by_name(tmp_path):
     PartRecords(tmp_path / "r.json").save(bed())
     data = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))

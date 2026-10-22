@@ -57,7 +57,8 @@ class Fake:
     def __init__(self, boxes=None, boxes_of_model=None, model_elements=0, window="FloorPlan",
                  tapir_version="1.7.2", library=None, fail_create_at=None, gdl_fails=False,
                  refuse_parameters=(), keep=(), capture=True, create_raises=False,
-                 mirror_axis="x", act_story=0, stories=None, appear=(), rotation=0.0):
+                 mirror_axis="x", act_story=0, stories=None, appear=(), rotation=0.0,
+                 wall_flipped=True):
         self.draw = boxes or corner_boxes()
         self.mirror_axis = mirror_axis       # the local axis `reflected` negates
         self.model: dict[str, tuple] = {}
@@ -72,6 +73,9 @@ class Fake:
                         for i in range(3)] if stories is None else stories
         self.appear = list(appear)
         self.rotation = rotation             # the plan view's, in radians; None: not said
+        # A temporary wall's flipped: the Wall tool's default gave true live (probe);
+        # None leaves it out of the wall's details.
+        self.wall_flipped = wall_flipped
         self.window = window
         self.tapir_version = tapir_version
         self.library = dict(LIBRARY if library is None else library)
@@ -218,7 +222,12 @@ class Fake:
         for e in p["elements"]:
             guid = e["elementId"]["guid"]
             if guid in self.elements:
-                out.append({"type": self.elements[guid]["type"]})
+                entry = {"type": self.elements[guid]["type"]}
+                if entry["type"] == "Wall":
+                    entry["details"] = {"geometryType": "Straight", "arcAngle": 0}
+                    if self.wall_flipped is not None:
+                        entry["details"]["flipped"] = self.wall_flipped
+                out.append(entry)
             elif guid in self.model:
                 out.append({"type": self.model_types.get(guid, "Slab")})
             else:
@@ -400,6 +409,32 @@ def test_openings_stand_in_one_temporary_wall_one_per_combination(records):
     assert out["measured"] is None and out["next"] == ["combos", "leaves"]
     assert fake.remaining == [] and records.get("Door").kind == "door"
     assert any("Door tool now holds 'Door'" in w for w in out["warnings"])
+
+
+def test_openings_are_sampled_with_ref_side_false(records):
+    # The hinge and swing recorded hold for refSide false, so every sample sends it.
+    fake = Fake()
+    learn_library_part(fake.connection(), records, "Door", "door", [{"gs_leaf_1_open": 1}])
+    doors = fake.items("CreateDoors")
+    assert len(doors) == 5 and all(d["refSide"] is False for d in doors)
+
+
+@pytest.mark.parametrize("flipped", [True, False])
+def test_the_record_keeps_the_temporary_walls_flipped(records, flipped):
+    out = learn_library_part(Fake(wall_flipped=flipped).connection(), records, "Door", "door")
+    assert out["wall_flipped"] is flipped
+    assert records.get("Door").wall_flipped is flipped
+
+
+def test_a_wall_whose_flipped_cannot_be_read_is_a_warning(records):
+    out = learn_library_part(Fake(wall_flipped=None).connection(), records, "Door", "door")
+    assert "error" not in out and records.get("Door").wall_flipped is None
+    assert any("flipped" in w and "could not be read" in w for w in out["warnings"])
+
+
+def test_an_object_record_has_no_wall_flipped(records):
+    out = learn_library_part(Fake().connection(), records, "Bed Double 01", "object")
+    assert "wall_flipped" not in out and records.get("Bed Double 01").wall_flipped is None
 
 
 def test_windows_are_sampled_at_a_window_height_and_sill(records):

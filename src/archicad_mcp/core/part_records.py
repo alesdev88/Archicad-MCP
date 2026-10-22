@@ -60,11 +60,14 @@ class PartRecord:
     one_sided: bool | None = None
     height: float | None = None
     # Doors and windows: combo -> [hinge, swing], hinge "begin"/"end" and swing
-    # "left"/"right" along the wall.
+    # "left"/"right" along the wall, seen with refSide false (every sample sends it).
     combos: dict[str, list[str]] | None = None
     leaves: int | None = None
     # State name -> {GDL parameter name: value}, for the sashes that open.
     leaf_states: dict[str, dict] | None = None
+    # The `flipped` of the temporary wall the combos were seen in; None when it could
+    # not be read, or for a record kept before it was.
+    wall_flipped: bool | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
