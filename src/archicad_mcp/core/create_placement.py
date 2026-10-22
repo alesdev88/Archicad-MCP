@@ -48,8 +48,9 @@ OBJECT_PLACEMENT = {
     "properties": {
         "center": {"type": "object",
                    "description": ("The middle of the footprint in plan; z is the height "
-                                   "of the insertion point, as coordinates.z takes it "
-                                   "(default 0)."),
+                                   "of the insertion point above the floor of its story "
+                                   "(default 0): the item's floorIndex, else the story "
+                                   "the floor plan shows."),
                    "properties": {"x": _NUMBER, "y": _NUMBER, "z": _NUMBER},
                    "required": ["x", "y"], "additionalProperties": False},
         "size": {"type": "object",
@@ -126,12 +127,14 @@ def resolve_placements(conn: ArchicadConnection, name: str, items: list[dict],
             skipped[index] = str(skip)
     walls = (_wall_ends(conn, name, [items[i] for i in learned])
              if name in OPENING_KINDS else {})
+    stories = _stories(conn) if name in OBJECT_KINDS and learned else None
     placements: list[dict] = []
     leaf_writes: dict[int, dict] = {}
     for index, record in learned.items():
         item, placement = items[index], items[index]["placement"]
         try:
-            fields = (_object_fields(record, placement) if name in OBJECT_KINDS
+            fields = (_object_fields(record, item, placement, stories)
+                      if name in OBJECT_KINDS
                       else _opening_fields(record, item, placement, walls))
         except (_Skip, ValueError) as error:
             skipped[index] = str(error)
@@ -204,13 +207,47 @@ def _shape_problem(placement: object, schema: dict) -> str | None:
             "placement_schema")
 
 
-def _object_fields(record: PartRecord, placement: dict) -> dict:
+def _object_fields(record: PartRecord, item: dict, placement: dict,
+                   stories: tuple[int | None, dict[int, float]] | str) -> dict:
+    """Tapir's fields, on the floor of the item's story: Tapir reads coordinates.z as
+    absolute, and without floorIndex takes the story from it, so z 0 would put the part
+    on the ground floor whatever story the plan shows."""
     size = placement["size"]
     height = size.get("height", record.height)
     if height is None:
         raise _Skip(NO_HEIGHT)
-    return object_fields(record, placement["center"], size["length"], size["width"], height,
-                         placement["head"], placement.get("mirrored", False))
+    if isinstance(stories, str):
+        raise _Skip(stories)
+    active, levels = stories
+    story = item.get("floorIndex", active)
+    if story is None:
+        raise _Skip("Archicad did not say which story the floor plan shows, so the floor "
+                    "the part stands on is not known: give floorIndex on the item")
+    level = levels.get(story) if _is_number(story) else None
+    if level is None:
+        raise _Skip(f"Archicad gives no level for story {story}, so the floor the part "
+                    "stands on is not known")
+    center = placement["center"]
+    on_floor = {"x": center["x"], "y": center["y"], "z": level + center.get("z", 0.0)}
+    fields = object_fields(record, on_floor, size["length"], size["width"], height,
+                           placement["head"], placement.get("mirrored", False))
+    fields["floorIndex"] = story
+    return fields
+
+
+def _stories(conn: ArchicadConnection) -> tuple[int | None, dict[int, float]] | str:
+    """(the story the floor plan shows, each story's level by index), or why they are
+    not known. Read as learn_library_part reads them (part_learning._current_story)."""
+    try:
+        answer = conn.tapir("GetStories")
+    except APIErrorBase as exc:
+        return (f"the stories could not be read ({exc.message}), so the floor the part "
+                "stands on is not known")
+    levels = {s["index"]: float(s["level"]) for s in answer.get("stories") or []
+              if isinstance(s, dict) and _is_number(s.get("index"))
+              and _is_number(s.get("level"))}
+    active = answer.get("actStory")
+    return (active if _is_number(active) else None), levels
 
 
 def _opening_fields(record: PartRecord, item: dict, placement: dict,

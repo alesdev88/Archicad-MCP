@@ -41,8 +41,11 @@ class Plan:
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
                  unread=(), archicad=29, tapir_version="1.8.2", walls=None,
-                 parameter_error=None):
+                 parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0):
         self.types = dict(types or {})
+        # Story i is at levels[i]; the floor plan shows act_story (None: not said).
+        self.levels = list(levels)
+        self.act_story = act_story
         # GUID -> ((begin x, y), (end x, y)); each is a Wall.
         self.walls = dict(walls or {})
         self.types.update({g: "Wall" for g in self.walls})
@@ -98,6 +101,11 @@ class Plan:
             else {"error": {"code": -2130313112, "message": "not found"}}
             for e in p["elements"]]}
         tapir["SetGDLParametersOfElements"] = self._set_parameters
+        tapir["GetStories"] = lambda p: {
+            "firstStory": 0, "lastStory": len(self.levels) - 1, "actStory": self.act_story,
+            "skipNullFloor": False,
+            "stories": [{"index": i, "floorId": i + 1, "level": level, "height": 3.0,
+                         "name": f"Story {i}"} for i, level in enumerate(self.levels)]}
         tapir["GetFavoritesByType"] = lambda p: {
             "favorites": self.favorites.get(p["elementType"], [])}
         if self.library is not None:
@@ -593,7 +601,9 @@ def test_a_bed_by_footprint_becomes_tapir_fields(tmp_path):
     assert item["reflected"] is False
     # Length runs along the head (B for a +y head), width across it (A).
     assert item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.5}
-    derived = {k: item[k] for k in ("coordinates", "angle", "reflected", "dimensions")}
+    assert item["floorIndex"] == 0
+    derived = {k: item[k]
+               for k in ("coordinates", "angle", "reflected", "dimensions", "floorIndex")}
     assert dry["placements"] == [{"index": 0, "part": "Bed Double 01", "derived": derived}]
     assert dry["skipped"] == []
     assert not any("No dimensions" in w for w in dry["warnings"])
@@ -730,6 +740,8 @@ def test_a_door_by_hinge_point_and_swing_gets_reflected_and_oside(tmp_path):
     walls_read = [p for c, p in plan.core.calls if c == "GetDetailsOfElements"
                   and p["elements"] == [{"elementId": {"guid": W1}}]]
     assert walls_read
+    # A door stands on its wall's story: no story is read for it.
+    assert "GetStories" not in [command for command, _ in plan.core.calls]
 
 
 def test_a_door_in_a_wall_that_cannot_be_read_is_skipped(tmp_path):
@@ -838,7 +850,9 @@ def test_items_without_placement_are_unchanged(tmp_path):
     committed = create_elements(conn, "door", [door(W1, sillHeight=0.0)], dry_run=False,
                                 records=records)
     assert committed == {"dry_run": False, "created": 1, "elements": ["new-0"]}
-    assert "SetGDLParametersOfElements" not in [command for command, _ in plan.core.calls]
+    commands = [command for command, _ in plan.core.calls]
+    assert "SetGDLParametersOfElements" not in commands
+    assert "GetStories" not in commands
 
 
 def test_placement_and_the_name_check_share_one_library_listing(tmp_path):
@@ -877,3 +891,54 @@ def test_a_schema_problem_reply_keeps_the_placement_skips(tmp_path):
     assert [p["index"] for p in result["problems"]] == [1]
     assert [s["index"] for s in result["skipped"]] == [0]
     assert plan.sent("CreateObjects") == []
+
+
+def test_a_placed_object_goes_on_its_storys_floor(tmp_path):
+    # Without floorIndex Tapir takes the story from an absolute z: z 0 on the ground
+    # floor whatever story the plan shows. center.z is above the story's floor.
+    plan = Plan(library=["Bed Double 01"], act_story=1)
+    result = create_elements(plan.connection(), "object",
+                             [bed(), dict(bed(center={"x": 2.0, "y": 3.0, "z": 0.4}),
+                                          floorIndex=2)],
+                             records=store(tmp_path, bed_record()))
+    on_screen, upstairs = result["payload"]["objectsData"]
+    assert on_screen["floorIndex"] == 1
+    assert on_screen["coordinates"]["z"] == pytest.approx(3.0)
+    assert upstairs["floorIndex"] == 2
+    assert upstairs["coordinates"]["z"] == pytest.approx(6.4)
+    assert result["placements"][0]["derived"]["floorIndex"] == 1
+    stories_read = [command for command, _ in plan.core.calls if command == "GetStories"]
+    assert stories_read == ["GetStories"]
+
+
+@pytest.mark.parametrize("case, words", [
+    ("unanswered", "stories could not be read"),
+    ("no such story", "story 5"),
+    ("story not said", "which story the floor plan shows"),
+])
+def test_an_object_whose_story_is_not_known_is_skipped(tmp_path, case, words):
+    plan = Plan(library=["Bed Double 01"], act_story=None if case == "story not said" else 0)
+    conn = plan.connection()
+    if case == "unanswered":
+        del plan.core.tapir_responses["GetStories"]
+    item = dict(bed(), floorIndex=5) if case == "no such story" else bed()
+    result = create_elements(conn, "object", [item], records=store(tmp_path, bed_record()))
+    [skip] = result["skipped"]
+    assert words in skip["reason"]
+    assert result["ready"] == 0
+
+
+def test_an_error_during_a_leaves_write_keeps_the_created_elements(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    conn = plan.connection()
+
+    def broken(p):
+        raise RuntimeError("socket closed")
+
+    plan.core.tapir_responses["SetGDLParametersOfElements"] = broken
+    records = store(tmp_path, door_record(leaves=2, leaf_states=LEAVES))
+    result = create_elements(conn, "door", [placed_door(1.4, 2.0, "left open")],
+                             dry_run=False, records=records)
+    assert result["elements"] == ["new-0"]
+    [unset] = result["placed_not_set"]
+    assert "RuntimeError" in unset["message"] and "socket closed" in unset["message"]

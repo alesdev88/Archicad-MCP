@@ -448,7 +448,10 @@ def _write_leaves(conn: ArchicadConnection, leaf_writes: dict[int, dict],
         guid = by_index.get(str(index))
         if guid is None:
             continue  # not created
-        message = write_leaf_state(conn, guid, leaves["parameters"])
+        try:
+            message = write_leaf_state(conn, guid, leaves["parameters"])
+        except Exception as exc:  # whatever stops a write, the created GUIDs are replied
+            message = f"the write stopped on {type(exc).__name__}: {exc}"
         if message is not None:
             unset.append({"index": index, "guid": guid, "leaves": leaves["state"],
                           "parameters": leaves["parameters"], "message": message})
