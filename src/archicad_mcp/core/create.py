@@ -229,6 +229,12 @@ def _named(indices: list[int]) -> str:
     return f"{word} {shown}" + (f" and {more} more" if more > 0 else "")
 
 
+def closest_names(name: str, names: list[str]) -> str:
+    """'; closest: a, b, c' for the loaded part names nearest to name, or ''."""
+    close = difflib.get_close_matches(name, names, n=3, cutoff=0.6)
+    return f"; closest: {', '.join(close)}" if close else ""
+
+
 def _library_part_checks(conn: ArchicadConnection, items: list[dict],
                          skipped: dict[int, str]) -> tuple[dict[int, str], list[str]]:
     """Items whose libraryPartName no loaded part has, and warnings for names the
@@ -271,9 +277,7 @@ def _library_part_checks(conn: ArchicadConnection, items: list[dict],
                             f"'{spelt}': send that name, as Archicad may not match "
                             "another spelling.")
             continue
-        close = difflib.get_close_matches(name, ordered, n=3, cutoff=0.6)
-        hint = f"; closest: {', '.join(close)}" if close else ""
-        reason = f"no loaded library part named '{name}'{hint}"
+        reason = f"no loaded library part named '{name}'{closest_names(name, ordered)}"
         if complete:
             skips.update(dict.fromkeys(indices, reason))
         else:
