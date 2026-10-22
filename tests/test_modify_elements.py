@@ -461,6 +461,18 @@ def test_a_doors_centre_comes_from_its_details_unless_the_change_gives_one(tmp_p
     assert moved.item == {"centerOffset": 2.0, "reflected": False, "oSide": True}
 
 
+def test_a_centre_given_in_another_change_moves_the_hinge_too(tmp_path):
+    project, records = _door_project(tmp_path, center_offset=1.0)
+    # Moved to 3.0 by its own change, 2.5 m along the wall lies before the centre: the
+    # begin jamb, opening left (tt), as when both are in one change.
+    together = [{"guid": "DOOR-1", "centerOffset": 3.0, "placement": _swing(2.5, 2.0)}]
+    apart = [{"guid": "DOOR-1", "centerOffset": 3.0},
+             {"guid": "DOOR-1", "placement": _swing(2.5, 2.0)}]
+    for changes in (together, apart):
+        [planned] = plan_changes(project.connect(), changes, records=records).planned
+        assert planned.item == {"centerOffset": 3.0, "reflected": True, "oSide": True}
+
+
 def test_leaves_show_in_the_dry_run_and_nothing_is_written(tmp_path):
     project, records = _door_project(tmp_path, leaves=2, leaf_states=LEAVES)
     out = modify_elements(project.connect(),

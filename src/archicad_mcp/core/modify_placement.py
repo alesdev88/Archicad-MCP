@@ -4,9 +4,9 @@ The change takes the placement create_elements takes (core.create_placement), wo
 against the element as it stands. The part and its main GUID come from the element's own
 details (libPart; Tapir gives ownUnID as the main GUID, in the form
 GetAvailableLibraryParts lists it, so a record checks against it as it is). A door or
-window keeps the wall it stands in (its owner) and, unless the change gives one, its
-centerOffset. An object or lamp keeps its story and its height: placement moves and turns
-it in plan only, and modify completes coordinates.z from the current value.
+window keeps the wall it stands in (its owner) and, unless a change for it gives one,
+its centerOffset. An object or lamp keeps its story and its elevation: placement moves and
+turns it in plan only, and modify completes coordinates.z from the current value.
 
 The fields replace `placement` before the changes are merged, so modify plans them as any
 other field. A placement that cannot be worked out makes the whole call an error naming
@@ -39,10 +39,10 @@ _KINDS = {"Object": "object", "Lamp": "lamp", "Door": "door", "Window": "window"
 _SCHEMA_HINT = ("modify_elements takes the placement create_elements takes, whose "
                 "items=[] shows the placement_schema")
 _KEEPS_HEIGHT = ("placement.center takes x and y only: a placed object keeps its story and "
-                 "its height. To change the height, give story or coordinates in another "
-                 "modify_elements call")
-_KEEPS_STORY = ("placement keeps the element's story and height, and a story change would "
-                "fight its coordinates: give story in another modify_elements call")
+                 "its elevation. To change the elevation, give story or coordinates in "
+                 "another modify_elements call")
+_KEEPS_STORY = ("placement keeps the element's story and elevation, and a story change "
+                "would fight its coordinates: give story in another modify_elements call")
 
 
 @dataclass
@@ -59,6 +59,7 @@ class _Pending:
     kind: str
     record: PartRecord
     entry: dict
+    given: dict        # the element's fields merged across all its changes
 
 
 def resolve_placements(conn: ArchicadConnection, changes: list[dict],
@@ -95,18 +96,17 @@ def resolve_placements(conn: ArchicadConnection, changes: list[dict],
         except _Skip as problem:
             problems.append(f"change {number} ({guid}): {problem}")
             continue
-        pending.append(_Pending(number, guid, kind, record, entries[guid]))
+        pending.append(_Pending(number, guid, kind, record, entries[guid], given[guid]))
 
     openings = [p for p in pending if p.kind in OPENING_KINDS]
     names = " or ".join(sorted({p.kind for p in openings}))
     walls = _wall_ends(conn, names, [_owner(p.entry) for p in openings]) if openings else {}
     placed: dict[str, Placed] = {}
     for p in pending:
-        change = changes[p.number - 1]
-        placement = change["placement"]
+        placement = changes[p.number - 1]["placement"]
         try:
             fields = (_object_fields(p.record, placement, p.entry) if p.kind in OBJECT_KINDS
-                      else _opening_fields(p.record, placement, change, p.entry, walls))
+                      else _opening_fields(p.record, placement, p.given, p.entry, walls))
         except (_Skip, ValueError) as problem:
             problems.append(f"change {p.number} ({p.guid}): {problem}")
             continue
@@ -157,7 +157,7 @@ def _learned(placement: object, given: dict, entry: dict,
 
 def _object_fields(record: PartRecord, placement: dict, entry: dict) -> dict:
     """coordinates {x, y}, angle, reflected and dimensions: modify completes the z of
-    coordinates from the current origin, so the object keeps its story and height."""
+    coordinates from the current origin, so the object keeps its story and elevation."""
     size = placement["size"]
     height = size.get("height", record.height)
     if height is None:
@@ -172,15 +172,17 @@ def _object_fields(record: PartRecord, placement: dict, entry: dict) -> dict:
     return fields
 
 
-def _opening_fields(record: PartRecord, placement: dict, change: dict, entry: dict,
+def _opening_fields(record: PartRecord, placement: dict, given: dict, entry: dict,
                     walls: dict[str, tuple[dict, dict] | str]) -> dict:
+    """reflected and oSide, the hinge read against the centre the element will have: a
+    centerOffset from any of its changes, else the current one."""
     ends = walls[_owner(entry)]
     if isinstance(ends, str):
         raise _Skip(ends)
-    offset = change.get("centerOffset", (entry.get("details") or {}).get("centerOffset"))
+    offset = given.get("centerOffset", (entry.get("details") or {}).get("centerOffset"))
     if not _is_number(offset):
         raise _Skip("the hinge side needs centerOffset as a number (metres along the "
-                    "wall from its begin point to the opening's centre), in the change or "
+                    "wall from its begin point to the opening's centre), in a change or "
                     "in its details")
     begin, end = ends
     return opening_fields(record, begin, end, offset, placement["hinge_near"],

@@ -654,7 +654,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "placed object, lamp, door or window of a part learned with learn_library_part "
         "may take placement, as create_elements does (its items=[] shows the "
         "placement_schema), in place of the fields it works out: an object or lamp "
-        "keeps its story and height (center takes x and y only), a door or window its "
+        "keeps its story and elevation (center takes x and y only), a door or window its "
         "wall and centerOffset; leaves are written after the commit, and 'placed_not_set' "
         "names an element whose leaves were not set. A placement that cannot be worked "
         "out makes the whole call an error naming the change. A commit reads the "
