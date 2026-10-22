@@ -4,6 +4,7 @@ from fastmcp import Client
 
 import archicad_mcp.server as server_mod
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core.create_placement import OBJECT_PLACEMENT
 from archicad_mcp.core.part_records import PartRecord, PartRecords
 from archicad_mcp.server import build_server
 from tests.fixtures.learned_parts import bed_record
@@ -96,6 +97,27 @@ async def test_the_descriptions_carry_the_architects_rules_for_reading_a_sketch(
     assert "no samples" in learn
     # What the records file takes and what it never touches.
     assert "replaces" in record and "forget" in record and "never the model" in record
+
+
+async def test_the_descriptions_say_what_learning_cannot_do_on_tapir_1_7_2():
+    text = await _descriptions()
+    learn = text["learn_library_part"]
+    # A window without opening lines: show them, then learn it again.
+    assert "then learn the window again" in learn
+    # Leaves on 1.7.2, said plainly.
+    assert "cannot be read or written on doors and windows placed through the API" in learn
+    assert "placed_not_set" in learn
+    assert "rotated" in learn and "placed by coordinates" in learn
+
+
+async def test_one_head_convention_in_every_text_that_names_it():
+    text = await _descriptions()
+    rule = "the end that goes against the wall: a bed's pillow end, a chair's or sofa's back"
+    assert rule in text["record_library_part"]
+    assert rule in text["create_elements"]
+    assert rule.replace("the end", "The head is the end") in " ".join(
+        OBJECT_PLACEMENT["properties"]["head"]["description"].split())
+    assert "or the front points" not in OBJECT_PLACEMENT["properties"]["head"]["description"]
 
 
 async def _call(client, tool, args):

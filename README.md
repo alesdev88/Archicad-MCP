@@ -495,7 +495,10 @@ rule with no failures removes the highlight.
 `list_library_part_records`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
 `attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
 `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
-Every write is dry-run by default; delete and move also require `confirm=true`.
+Every write is dry-run by default, with two exceptions: `learn_library_part` runs at
+once (it places its samples and deletes them again in the same call), and
+`record_library_part` writes at once, but only the MCP's own learned-parts file,
+never the model. Delete and move also require `confirm=true`.
 A tool that needs a newer Tapir than the one installed refuses before sending
 anything, naming the version it needs and the one it found.
 No other Archicad MCP server does this: Graphisoft's own writes on the first
@@ -601,15 +604,24 @@ plan must be the active window; it is zoomed to the samples and stays zoomed, an
 door or window learned may leave the Door or Window tool holding that part. Then the
 agent looks at the image and tells `record_library_part` what it shows: a bed's head
 direction, a door's or window's hinge and swing for each way the part can be
-flipped, and how many leaves it has. On Tapir 1.7.2 the GDL parameters of doors and
-windows placed through the API usually cannot be read, so the values that open a
-leaf may have to come from a door placed by hand. If a window's capture shows no
-opening lines, the view settings hide them: show them, then learn the window again
-before recording hinge and swing. The records are one JSON file on this machine,
-shared by every project (`list_library_part_records` gives its path).
+flipped, and how many leaves it has. On Tapir 1.7.2 GDL parameters cannot be read or
+written on doors and windows placed through the API, so their samples show no leaf
+parameters and a placement's leaves end in `placed_not_set`. If a window's capture
+shows no opening lines, the view settings hide them: show them, then learn the window
+again before recording hinge and swing. The agent reads directions on screen, so
+learning refuses a rotated plan view. Each axis of an object's footprint is fitted
+against the size its plan box follows, the A and B its GDL reads back or the ones
+sent. A part whose plan size follows neither gets no footprint and is placed by
+coordinates: Chair 01's GDL forces A = B, and its plan depth grows faster than both
+the B sent and the B read back. Doors and windows are learned with `refSide` false
+in a straight wall, so placement skips one sent with `refSide` true or standing in a
+curved wall, and warns when its wall is flipped otherwise than the learning wall.
+The records are one JSON file on this machine, shared by every project
+(`list_library_part_records` gives its path).
 `record_library_part` writes only that file, never the model. Recording a flag pair
 or a leaf state again replaces it, and removing one means forgetting the part and
-learning it again. Needs Tapir 1.7.2.
+learning it again. Learning needs Tapir 1.7.2; recording and listing need no
+Archicad.
 
 Once a part is learned, `create_elements` and `modify_elements` take `placement`
 instead of Tapir's coordinates, angle, `reflected` and sizes: an object's footprint
@@ -627,8 +639,9 @@ a sketch, so the agent follows them without being told:
   "Double Window").
 - Width is a check. A window about 1.2 m wide is a single or a double window, never
   a multi-sash one. When the count and the width disagree, the agent asks.
-- The head of a bed is the end with the pillows, or with the duvet's turned-back
-  edge. When the sketch shows neither, the agent asks.
+- A part's head is the end that goes against the wall: a bed's pillow end, a chair's
+  or sofa's back, not its front. The head of a bed is the end with the pillows, or
+  with the duvet's turned-back edge. When the sketch shows neither, the agent asks.
 - After placing, the agent looks with `capture_window` and corrects with
   `modify_elements` before reporting done.
 

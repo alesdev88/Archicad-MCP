@@ -63,8 +63,9 @@ OBJECT_PLACEMENT = {
                                  "height (default: the height recorded for the part)."),
                  "properties": {"length": _LENGTH, "width": _LENGTH, "height": _LENGTH},
                  "required": ["length", "width"], "additionalProperties": False},
-        "head": _point("The way the head (a bed's pillow end) or the front points, as a "
-                       "plan direction; only its direction counts."),
+        "head": _point("The way the head points, as a plan direction; only its direction "
+                       "counts. The head is the end that goes against the wall: a bed's "
+                       "pillow end, a chair's or sofa's back, not its front."),
         "mirrored": {"type": "boolean",
                      "description": "Mirrored, as the sketch draws it (default false)."},
     },

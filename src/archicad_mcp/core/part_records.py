@@ -27,7 +27,8 @@ KINDS = ("object", "lamp", "door", "window")
 # (t for true, f for false).
 COMBOS = ("ff", "tf", "ft", "tt")
 
-# The direction a bed's head points, in the part's own axes.
+# The direction a part's head points, in its own axes. The head is the end that goes
+# against the wall: a bed's pillow end, a chair's or sofa's back.
 HEADS = ("+x", "-x", "+y", "-y")
 
 _VERSION = 1
