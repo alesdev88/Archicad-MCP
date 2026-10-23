@@ -183,6 +183,24 @@ def get_element_ids_of_type(conn: ArchicadConnection, element_type: str) -> list
     return [g for g in guids if types.get(g) == element_type]
 
 
+def owned_objects(conn: ArchicadConnection, object_guids: list[str]) -> set[str]:
+    """Those of `object_guids` (typed Object) that are parts of another element.
+
+    Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): Tapir's GetAllElements listed 70
+    GDL parts owned by one stair (its grid, break marks, ...); the official API typed
+    them Object, and GetElementsByType Object left every one of them out. So an
+    Object the type listing leaves out is a part. None without Tapir, which is the
+    only source of such parts, or when the listing fails.
+    """
+    if not object_guids or not conn.tapir_available():
+        return set()
+    try:
+        placed = {g.upper() for g in get_element_ids_of_type(conn, "Object")}
+    except APIErrorBase:
+        return set()
+    return {g for g in object_guids if g.upper() not in placed}
+
+
 def get_selected_element_ids(conn: ArchicadConnection) -> list[str]:
     """The current selection. Official GetSelectedElements returns [] for a
     selected marker (a CutPlane, say) or a native MEP route; Tapir's returns

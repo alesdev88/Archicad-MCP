@@ -526,6 +526,37 @@ complete. A commit reads the status back rather than trusting the answer.
   `Editable` and `Locked` answers, and Archicad's refusal of an edit without
   the reservation. Unit-tested against the shapes in Tapir's source.
 
+## Creating elements: what Tapir's schemas leave out
+
+Found drawing a whole basement into a test project on 23.10.2026 (Archicad 29
+build 5101, Tapir 1.7.2). `create_elements` now replies these as `notes` with
+the item schema (`items=[]`) and warns where it can check them.
+
+- **Heights.** A column's `coordinates.z`, a slab's `level`, and a beam's and a
+  stair's `zCoordinate` are absolute elevations even when `floorIndex` is given;
+  a wall's `zCoordinate` is the offset above that story. A column sent with z 0
+  on a story at -2.80 stood from 0.00 to 2.60. The dry run warns when such a
+  height lies off the story it names.
+- **Sides.** With `referenceLineLocation` Outside a wall's body lies to the left
+  of begin to end, so an outer outline drawn clockwise ends up outside the
+  building. A door with `oSide` false swings to the right of its wall's
+  direction; flipping `oSide` also moves the hinge to the other jamb, and
+  `reflected` moves it back. A window with `oSide` false has its outside on the
+  right.
+- **Stairs.** `baseLinePoints` is the stair's left edge and the flight lies
+  `flightWidth` to its right. A U given as its centre line overlaps itself and
+  Archicad answers only "Failed to create new Stair"; the dry run now warns.
+  CreateStairs has no turn or winder setting, so a tight U (16 risers in
+  2.2 x 2.0 m) ran its top flight 1.65 m past the baseline and through the slab
+  above; this cannot be fixed here, and the create reports such a stair. Shape
+  it in Archicad's stair editing.
+- **Element IDs.** Doors and windows placed from a favourite took the
+  favourite's ID, and zones the tool's: 14 doors were all `DOO - 004`. The
+  create warns and points to `set_element_data` (`General_ElementID`).
+- **Counts.** Tapir's GetAllElements lists a stair's own GDL parts (its grid,
+  break marks, ...), which the official API types Object; `get_model_summary`
+  counts them apart as `owned_parts`.
+
 ## `publish` is unvalidated
 
 The test model had no publisher sets, so `publish` has never run end to end.

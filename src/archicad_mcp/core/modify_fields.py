@@ -363,7 +363,10 @@ def side_effects(command: str, fields: dict, entry: dict) -> list[str]:
     if command == "ModifyMeshes" and "polygonCoordinates" in fields \
             and "holes" not in fields:
         out.append("new polygonCoordinates without holes removes the holes")
-    if command in ("ModifyWalls", "ModifyColumns") and "height" in fields:
+    # Only a linked top is unlinked: a top already at relativeTopStory 0 keeps nothing
+    # to lose, and saying so for it is noise (live 23.10.2026, twelve walls).
+    if command in ("ModifyWalls", "ModifyColumns") and "height" in fields \
+            and details.get("relativeTopStory") != 0:
         out.append("height unlinks the top from its story (relativeTopStory becomes 0)")
     if command == "ModifyWalls" and "thickness" in fields \
             and details.get("geometryType") == "Trapezoid":
