@@ -151,6 +151,16 @@ _WINDOW_NOTES = (
     "With oSide false the window's outside (its outer sill) faces the right of the "
     "wall's begCoordinate -> endCoordinate.")
 
+# Live 23.10.2026 (AC 29, Test.pln): 12 zones from CreateZones showed no stamp, in the
+# app or a saved picture, even after UpdateZones; the office template's Model View
+# Options hid zone stamps, as zones there are labelled with the Label tool. Switched
+# on, every stamp was there, its parameters unchanged.
+_ZONE_NOTES = (
+    "A created zone has its stamp, but the stamp shows only where the Model View "
+    "Options show zone stamps: a template that hides them (an office that labels zones "
+    "with the Label tool) shows none, before or after UpdateZones. That is a view "
+    "setting, not a missing stamp.",)
+
 # How far a created stair may reach past its baseline and flights before it is
 # reported: the straight stair of 23.10.2026 reached 0.14 m past its baseline's end.
 STAIR_OVERRUN_TOLERANCE = 0.3
@@ -170,7 +180,7 @@ CREATE_TYPES: dict[str, CreateType] = {
     "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair",
                         notes=(*_STAIR_NOTES, _absolute_note("stair"))),
     "railing": CreateType("CreateRailings", "railingsData"),
-    "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone"),
+    "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone", notes=_ZONE_NOTES),
     "curtain_wall": CreateType("CreateCurtainWalls", "curtainWallsData",
                                favorite_type="CurtainWall"),
     "grid_element": CreateType("CreateGridElements", "gridElements"),
