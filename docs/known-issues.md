@@ -553,6 +553,10 @@ the item schema (`items=[]`) and warns where it can check them.
 - **Element IDs.** Doors and windows placed from a favourite took the
   favourite's ID, and zones the tool's: 14 doors were all `DOO - 004`. The
   create warns and points to `set_element_data` (`General_ElementID`).
+- **Zone stamps.** Zones from CreateZones showed no stamp, in the app or a
+  saved picture, even after UpdateZones. Not a fault: the template's Model View
+  Options hid zone stamps (that office labels zones with the Label tool), and
+  switched on, every stamp was there.
 - **Counts.** Tapir's GetAllElements lists a stair's own GDL parts (its grid,
   break marks, ...), which the official API types Object; `get_model_summary`
   counts them apart as `owned_parts`.

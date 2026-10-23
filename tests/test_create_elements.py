@@ -1194,3 +1194,12 @@ def test_created_elements_with_their_own_ids_are_not_reported():
     ids_read_as(plan, "SW - 006", "SW - 007")
     result = create_elements(conn, "wall", [WALL, WALL], dry_run=False)
     assert "warnings" not in result
+
+
+def test_the_zone_schema_reply_says_stamps_follow_the_model_view_options():
+    """Live 23.10.2026 (AC 29, Test.pln): 12 zones from CreateZones showed no stamp, in
+    the app or a saved picture, even after UpdateZones. The office template's Model
+    View Options hide zone stamps (zones are labelled with the Label tool); switched
+    on, every stamp was there, its 667 parameters unchanged."""
+    notes = " ".join(create_elements(Plan().connection(), "zone", [])["notes"])
+    assert "Model View Options" in notes and "Label" in notes
