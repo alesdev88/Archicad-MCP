@@ -464,6 +464,14 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _classification_edit.import_definitions(
             _conn(port), kind, xml_path, conflict, item_conflict, dry_run)
 
+    from archicad_mcp.core.part_records import PartRecords
+
+    # The one store of learned library parts. The file is read when a tool first
+    # needs it, never here, so an unreadable file stops no server start: it comes
+    # back as the tool's error. create_elements, modify_elements and the learning
+    # tools share it.
+    records = PartRecords()
+
     from archicad_mcp.core import create as _create
     from archicad_mcp.core import mutate as _mutate
     from archicad_mcp.core import selection as _selection
@@ -489,15 +497,37 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "ahead. Warns when the active window is wrong for the type, when an object "
         "or lamp has no dimensions (it would take the tool's current size, not the "
         "library part's), when it sends offset or useFixedAngle (Archicad "
-        "discards them), and when a door or window has no sillHeight (it would "
-        "take the tool's sill). Pass dry_run=false to create: returns created GUIDs, plus "
+        "discards them), when a door or window has no sillHeight (it would "
+        "take the tool's sill), and when one placed by libraryPartName leaves the Door "
+        "or Window tool holding that part. Learn a part once with learn_library_part "
+        "before placing it by placement; a learned part is then placed with no "
+        "samples. An object, lamp, door or window of such a part may give placement "
+        "instead: an object's footprint centre, size (length along the head, width "
+        "across it) and head direction (the head is the end that goes against the "
+        "wall: a bed's pillow end, a chair's or sofa's back), for coordinates, angle, "
+        "reflected and dimensions; a door's or window's hinge_near and opens_toward "
+        "points, for reflected and oSide, and leaves (a recorded leaf state, written "
+        "right after the create). items=[] shows its placement_schema; 'placements' "
+        "lists what each one derived, and for a door or window the hinge and swing it "
+        "read. Reading a sketch: choose the part from what it draws, the "
+        "lines dividing a window give its sashes and the arcs give which sash or leaf "
+        "opens and where it is hinged; prefer the plain generic part (\"Window\", "
+        "\"Door\", \"Double Window\") when the sketch says no more. Width is a check: "
+        "a window about 1.2 m wide is a single or a double window, never a multi-sash "
+        "one; when the count and the width disagree, ask. A bed's head is the end with "
+        "the pillows, or with the duvet's turned-back edge; when the sketch shows "
+        "neither, ask. After placing, look (capture_window) and correct with "
+        "modify_elements before reporting done. Pass dry_run=false to create: returns "
+        "created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
-        "index -> GUID) when not every item was created."),
+        "index -> GUID) when not every item was created, and 'placed_not_set' for an "
+        "element placed whose leaves Archicad refused."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
                         port: int | None = None) -> dict:
-        return _create.create_elements(_conn(port), element_type, items, dry_run)
+        return _create.create_elements(_conn(port), element_type, items, dry_run,
+                                       records=records)
 
     from archicad_mcp.core import swept_beam as _swept
 
@@ -633,14 +663,23 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "are completed from the current values. Elements Archicad would refuse "
         "(another view's, hidden or locked layer, not reserved in Teamwork, inside a "
         "hotlinked module, locked) are skipped with the reason, never unlocked. A "
-        "commit reads the elements back: 'modified' counts what landed, 'failed' "
+        "placed object, lamp, door or window of a part learned with learn_library_part "
+        "may take placement, as create_elements does (its items=[] shows the "
+        "placement_schema), in place of the fields it works out: an object or lamp "
+        "keeps its story and elevation (center takes x and y only), a door or window its "
+        "wall and centerOffset; leaves are written after the commit, and 'placed_not_set' "
+        "names an element whose leaves were not set. A placement that cannot be worked "
+        "out makes the whole call an error naming the change. After a placement, look "
+        "(capture_window) and correct with this tool before reporting done; "
+        "create_elements has the rules for reading a sketch. A commit reads the "
+        "elements back: 'modified' counts what landed, 'failed' "
         "groups Archicad's refusals, 'not_applied' lists fields Archicad answered "
         "success for but did not change."),
         **_tool_meta("Modify elements", read_only=False, destructive=True))
     @_guarded
     def modify_elements(changes: list[dict], dry_run: bool = True,
                         port: int | None = None) -> dict:
-        return _modify.modify_elements(_conn(port), changes, dry_run)
+        return _modify.modify_elements(_conn(port), changes, dry_run, records=records)
 
     from archicad_mcp.core import favorites as _favorites
 
@@ -765,6 +804,82 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         if png is None:
             return result
         return [Image(data=png, format="png"), result]
+
+    from archicad_mcp.core import part_learning as _part_learning
+
+    @mcp.tool(description=(
+        "Learn a library part once, before placing it by placement; a learned part is "
+        "then placed with no samples. Places samples of the part named name (kind: "
+        "object, lamp, door or window) in a row just past the right edge of the model, "
+        "on the story the floor plan shows, measures their footprints, shows them in "
+        "one floor plan image, deletes every sample again in the same call and stores "
+        "the measurement. The reply lists 'samples' left to right as the image shows "
+        "them, the first sample's GDL parameters, warnings, and 'next', the fields "
+        "still to give record_library_part. variants: optional sets of GDL parameter "
+        "values (parameter name to value), each placed as one more sample, such as a "
+        "leaf or one of a window's sashes opened. On Tapir 1.7.2 GDL parameters cannot "
+        "be read or written on doors and windows placed through the API, so a door's or "
+        "window's samples show no parameters and a placement's leaves end in "
+        "placed_not_set. When a window's capture shows no opening lines, the view "
+        "settings hide them: ask the user to show them, then learn the window again, "
+        "before recording hinge and swing. A part whose plan size does not follow its "
+        "own A and B gets no footprint (the reply's note says so) and is placed by "
+        "coordinates. Lengths are metres. The floor plan must be the active window, "
+        "with its view not rotated. It zooms the plan to the samples and leaves it "
+        "zoomed, since Tapir cannot set the zoom back; a door or window learned may "
+        "leave the Door or Window tool holding the part. Needs Tapir 1.7.2."),
+              **_tool_meta("Learn a library part", read_only=False, destructive=True))
+    @_guarded
+    def learn_library_part(name: str, kind: str, variants: list[dict] | None = None,
+                           port: int | None = None):
+        result = _part_learning.learn_library_part(
+            _tapir_conn(port, "learn_library_part"), records, name, kind, variants)
+        png = result.pop("png", None)
+        if png is None:
+            return result
+        return [Image(data=png, format="png"), result]
+
+    @mcp.tool(description=(
+        "Record what you judged from learn_library_part's image, in the part's stored "
+        "record. Objects and lamps: head ('+x', '-x', '+y' or '-y', the part's own "
+        "axis its head points along), one_sided (true or false) and height (metres). "
+        "The head is the end that goes against the wall: a bed's pillow end, a chair's "
+        "or sofa's back, not its front. A bed's head is the end with the pillows, or "
+        "with the duvet's turned-back edge; when the image shows neither, ask. Doors "
+        "and windows (learned with refSide false): combos, which "
+        "maps a flag pair (reflected then oSide, t for true and f for false: 'ff', "
+        "'tf', 'ft' or 'tt') to [hinge, swing], hinge 'begin' or 'end' of the wall's "
+        "own direction and swing 'left' or 'right' of it; leaves (a whole number, at "
+        "least 1); and leaf_states, which maps a state name to GDL parameter values. "
+        "The lines dividing a window give its sashes, the arcs give which sash or "
+        "leaf opens and where it is hinged. combos and leaf_states merge by key: "
+        "recording a key again replaces it, and removing one takes forget and a new "
+        "learn; every other field replaces its value. One refused value saves "
+        "nothing. Returns the record and 'missing', the fields still needed before "
+        "the part can be placed from it. forget=true removes the part's record, which "
+        "can be learned again, and takes no other field. The part must have been "
+        "learned first. Writes only the MCP's own learned-parts file, never the "
+        "model, and needs no Archicad."),
+              **_tool_meta("Record a learned library part", read_only=False,
+                           destructive=False))
+    @_guarded
+    def record_library_part(name: str, head: str | None = None,
+                            one_sided: bool | None = None, height: float | None = None,
+                            combos: dict | None = None, leaves: int | None = None,
+                            leaf_states: dict | None = None, forget: bool = False) -> dict:
+        return _part_learning.record_library_part(records, name, head, one_sided, height,
+                                                  combos, leaves, leaf_states, forget)
+
+    @mcp.tool(description=(
+        "List the learned library parts, all or only those in names, each with its "
+        "stored fields and 'missing', the fields still needed before it can be placed "
+        "from. 'not_recorded' names any part asked for that has no record. Also "
+        "returns the path of the records file. Reads only that local file and needs "
+        "no Archicad."),
+              **_tool_meta("List learned library parts", read_only=True, destructive=False))
+    @_guarded
+    def list_library_part_records(names: list[str] | None = None) -> dict:
+        return _part_learning.list_library_part_records(records, names)
 
     from archicad_mcp.core import collisions as _collisions
 

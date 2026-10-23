@@ -18,9 +18,10 @@ class Window:
     """Answers SaveCurrentWindowAsImage the way Tapir does: writes the file it is given."""
 
     def __init__(self, size=(800, 600), write=True, window="FloorPlan", missing=(),
-                 content=None):
+                 content=None, view=None):
         self.size, self.write, self.window, self.content = size, write, window, content
         self.missing = set(missing)
+        self.view = view or {}       # zoom and rotation, as a 2D window's reply carries them
         self.sent: list[dict] = []
 
     def save(self, params):
@@ -29,7 +30,7 @@ class Window:
             Path(params["imageFilePath"]).write_bytes(self.content)
         elif self.write:
             Image.new("RGB", self.size, "white").save(params["imageFilePath"], "PNG")
-        return {"imageFilePath": params["imageFilePath"]}
+        return {"imageFilePath": params["imageFilePath"], **self.view}
 
     def core(self) -> FakeCore:
         official = dict(api_replays.OFFICIAL)
@@ -57,6 +58,16 @@ def test_the_window_comes_back_as_a_png_of_its_size():
     [sent] = window.sent
     assert sent["format"] == "png" and sent["entireDrawing"] is False
     assert Path(sent["imageFilePath"]).is_absolute()
+
+
+def test_the_zoom_and_rotation_of_a_2d_window_come_back_with_it():
+    # Probe (c), 22.10.2026: the reply carries the zoom and the rotation (radians).
+    zoom = {"xMin": 1.0, "yMin": 2.0, "xMax": 11.0, "yMax": 8.0}
+    result = capture_window(Window(view={"zoom": zoom, "rotation": 0.5}).connection())
+    assert result["zoom"] == zoom and result["rotation"] == 0.5
+    # The 3D window's reply has neither, and the result says nothing of them.
+    plain = capture_window(Window(window="3DModel").connection())
+    assert "zoom" not in plain and "rotation" not in plain
 
 
 def test_the_image_file_does_not_outlive_the_call():

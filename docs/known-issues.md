@@ -382,6 +382,27 @@ are `null` even though the instance is otherwise fine.
   by its foot-left corner, with the pillows towards +Y. "Placed against the
   wall" by its insertion point, the bed ran through the wall; `capture_window`
   showed it, and a move of the bed's length fixed it.
+- **GDL parameters cannot be read or written on doors and windows placed through
+  the API** (live 22.10.2026, Archicad 29, MCP-Test). `GetGDLParametersOfElements`
+  answers "Failed to get parameters of element with guid ...!" and
+  `SetGDLParametersOfElements` "Failed to change parameters of element with guid
+  ..." for every API-placed door and window, right after the create, seconds later
+  and after a `ModifyDoors` change that went through; objects answer both. So a
+  learned door or window shows no parameters, and a placement's `leaves` always end
+  in `placed_not_set`. A door placed by hand was not tried.
+- **"Double Window" draws at least 1.5 m wide** (live 22.10.2026). Sent 1.0, 1.2,
+  1.5 and 2.0 m wide, its plan boxes were 1.5, 1.5, 1.5 and 2.0 m, while
+  `GetDetailsOfElements` kept the width sent. A sketch's 1.2 m double window comes
+  out 1.5 m with this part; learning does not measure opening widths, so only the
+  look after placing shows it. "Window" at 1.0 m drew 1.0 m.
+- **A part's GDL A and B may not be its drawn size** (live 22.10.2026). Chair 01's
+  parameter script forces A = B, B winning: sent 2.0 x 1.5 it reads back A 1.5,
+  B 1.5 and draws 2.0 x 2.0, its plan width following the A sent and its depth
+  max(A, B) sent. Bed Double 01 clamps B to at least 1.2, and there the read-back
+  is the drawn size. Learning fits each axis of a footprint against whichever of
+  the read-back and the sent size its plan box follows, and keeps no footprint
+  when an axis follows neither, so Chair 01 is placed by coordinates, not by
+  `placement`.
 - Verified on 1.7.2: doors and windows by `libraryPartName`, door and window
   width and sill changes through `modify_elements`, a Swept Beam grown from 3 to
   5 nodes (its arrays read back at 5), a Road Marking, a curtain wall, a grid

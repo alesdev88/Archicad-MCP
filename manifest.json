@@ -203,6 +203,18 @@
       "description": "See what the current Archicad window shows as an image, to check placements by eye."
     },
     {
+      "name": "learn_library_part",
+      "description": "Place samples of a library part past the model, measure them, show them in one floor plan image and delete them again."
+    },
+    {
+      "name": "record_library_part",
+      "description": "Record what the learning image shows (head direction, hinge and swing, leaves) in the part's stored record."
+    },
+    {
+      "name": "list_library_part_records",
+      "description": "List the learned library parts and the fields each still needs."
+    },
+    {
       "name": "apply_favorites",
       "description": "Make existing elements match a favourite, or list the favourites that fit. Dry-run by default."
     },

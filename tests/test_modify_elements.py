@@ -1,8 +1,13 @@
 """modify_elements planning and dry run, against a fake Tapir built from the
 answers recorded on MCP-Test (tests/fixtures/modify_elements)."""
 import copy
+import math
+
+import pytest
 
 from archicad_mcp.core.modify import modify_elements, plan_changes
+from archicad_mcp.core.part_records import PartRecords
+from tests.fixtures.learned_parts import LEAVES, bed_record, door_record, store
 from tests.fixtures.modify_project import ModifyProject
 
 SLAB = "05C7A02F-4251-6F40-8407-67893BEFF6AC"     # SLA - 001, story 0, layer 33
@@ -11,7 +16,7 @@ OBJECT = "5349C8FC-A4BF-3548-A614-77BEB2CE4261"   # FU - 003, story 0, layer 3
 MESH = "D4DB880C-8083-F749-B27F-0886B2D6044B"     # TR - 005, story 1, layer 45
 SLAB_B = "SLAB-B"                                 # SLA - 101, Basic, story 0, layer 33
 
-WRITES = ("Modify", "SetDetails", "Move", "SetSuspend", "Lock", "Unlock")
+WRITES = ("Modify", "SetDetails", "Move", "SetSuspend", "Lock", "Unlock", "SetGDL")
 
 
 def _dry(project, changes):
@@ -318,3 +323,329 @@ def test_thickness_on_a_composite_slab_is_refused():
                                   "buildingMaterialId": "Concrete"}])
     assert "Basic" in _reason(out, SLAB) and "Composite" in _reason(out, SLAB)
     assert _planned(out, SLAB2)["changes"]["thickness"] == {"current": 0.3, "new": 0.25}
+
+
+# ---------- placement: a placed learned part corrected by what the sketch shows ----------
+
+BED_PART = "B5D0A1C2-7E4F-4C11-9A3B-0D6E2F8A1B01"     # main GUID of "Bed Double 01"
+DOOR_PART = "D0E2C4A6-1B3D-4F5A-8C7E-9A0B1C2D3E01"    # main GUID of "Door"
+# WALL-1 runs from (0, 0) to (5, 0): left of it is +y.
+
+
+def _bed_project(tmp_path, **record):
+    """OBJECT as a placed Bed Double 01 (at (3.68, 0), story 0, angle 0, 1 x 1 x 1.89)."""
+    project = ModifyProject()
+    project.set_part(OBJECT, "Bed Double 01", BED_PART)
+    return project, store(tmp_path, bed_record(guid=BED_PART, **record))
+
+
+def _bed(head=None, **placement) -> dict:
+    """2 m long and 1.6 m wide, centred on (2, 3), the head pointing -y."""
+    shown = {"center": {"x": 2.0, "y": 3.0},
+             "size": {"length": 2.0, "width": 1.6, "height": 0.5},
+             "head": head or {"x": 0.0, "y": -1.0}}
+    shown.update(placement)
+    return shown
+
+
+def _door_project(tmp_path, center_offset=1.0, **record):
+    """DOOR-1 as a placed "Door" in WALL-1, its centre 1 m along the wall, hinged at
+    the end jamb and opening left (reflected false, oSide true: ft), with refSide false
+    as a door placed through the API reads it (Probe results (d))."""
+    project = ModifyProject()
+    project.set_part("DOOR-1", "Door", DOOR_PART)
+    project.elements["DOOR-1"]["details"]["centerOffset"] = center_offset
+    project.elements["DOOR-1"]["details"]["refSide"] = False
+    return project, store(tmp_path, door_record(guid=DOOR_PART, **record))
+
+
+def _swing(hinge_x: float, toward_y: float, **placement) -> dict:
+    return {"hinge_near": {"x": hinge_x, "y": 0.0}, "opens_toward": {"x": 1.0, "y": toward_y},
+            **placement}
+
+
+def _writes(project) -> list[str]:
+    return [name for name in project.command_names() if name.startswith(WRITES)]
+
+
+def test_a_placed_bed_turned_by_its_head_shows_new_coordinates_and_angle(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    entry = _planned(out, OBJECT)
+    changes = entry["changes"]
+    # The head (local +y) turns to plan -y: half a turn.
+    assert changes["angle"]["current"] == 0
+    assert changes["angle"]["new"] == pytest.approx(math.pi)
+    # Half a turn about the foot end: the insertion point goes half the length north
+    # of the centre, so the bed covers x 1.2 to 2.8, y 2 to 4, its head at y 2.
+    assert changes["coordinates"]["current"] == {"x": 3.676672178, "y": 0, "z": 0}
+    assert changes["coordinates"]["new"] == pytest.approx({"x": 2.0, "y": 4.0, "z": 0})
+    assert changes["dimensions"] == {"current": {"x": 1, "y": 1, "z": 1.89},
+                                     "new": {"x": 1.6, "y": 2.0, "z": 0.5}}
+    assert changes["reflected"] == {"current": False, "new": False}
+    assert entry["placement"] == {"part": "Bed Double 01"}
+    assert "skipped" not in out and "warnings" not in out
+    assert _writes(project) == []
+
+
+def test_a_placed_object_keeps_its_story_and_elevation(tmp_path):
+    project, records = _bed_project(tmp_path)
+    project.elements[OBJECT]["floorIndex"] = 1
+    project.elements[OBJECT]["details"]["origin"]["z"] = 3.4     # 0.4 m above story 1
+    changes = [{"guid": OBJECT, "placement": _bed()}]
+    [planned] = plan_changes(project.connect(), changes, records=records).planned
+    assert planned.item["coordinates"]["z"] == 3.4
+    assert planned.story is None
+    out = modify_elements(project.connect(), changes, records=records)
+    assert "story" not in _planned(out, OBJECT)["changes"]
+    assert not _warnings(out, OBJECT)      # no "moves from story 1 to story ..."
+
+
+def test_a_height_in_the_centre_is_refused(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(),
+                          [{"guid": OBJECT, "placement": _bed(center={"x": 2, "y": 3, "z": 0.4})}],
+                          records=records)
+    [error] = out.values()
+    assert error.startswith(f"change 1 ({OBJECT}): placement.center takes x and y only")
+    assert "story" in error and "coordinates" in error
+    assert _writes(project) == []
+
+
+def test_the_height_falls_back_to_the_record_then_the_element(tmp_path):
+    no_height = {"length": 2.0, "width": 1.6}
+    project, records = _bed_project(tmp_path, height=0.45)
+    [planned] = plan_changes(project.connect(), [{"guid": OBJECT,
+                                                  "placement": _bed(size=no_height)}],
+                             records=records).planned
+    assert planned.item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.45}
+
+    project, records = _bed_project(tmp_path / "current")
+    [planned] = plan_changes(project.connect(), [{"guid": OBJECT,
+                                                  "placement": _bed(size=no_height)}],
+                             records=records).planned
+    assert planned.item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 1.89}
+
+    del project.elements[OBJECT]["details"]["dimensions"]
+    out = modify_elements(project.connect(), [{"guid": OBJECT,
+                                               "placement": _bed(size=no_height)}],
+                          records=records)
+    assert out == {"error": f"change 1 ({OBJECT}): give size.height in metres: Tapir 1.7.2 "
+                            "cannot read a part's own height"}
+
+
+def test_a_footprint_off_the_size_asked_warns_and_one_of_no_width_is_an_error(tmp_path):
+    headboard = {"xMin": [-0.5, 0], "xMax": [0.5, 0], "yMin": [0, 0], "yMax": [1, 0.1]}
+    project, records = _bed_project(tmp_path, footprint=headboard)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    [warning] = _warnings(out, OBJECT)
+    assert warning.startswith("covers 2.10 m along its head and 1.60 m across")
+
+    flat = {"xMin": [-1, 0.5], "xMax": [1, -0.5], "yMin": [-1, 0.5], "yMax": [1, -0.5]}
+    project, records = _bed_project(tmp_path / "flat", footprint=flat)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed(
+        size={"length": 0.5, "width": 0.5, "height": 0.9})}], records=records)
+    assert out["error"].startswith(f"change 1 ({OBJECT}): the footprint recorded for "
+                                   "'Bed Double 01' covers 0.00 x 0.00 m")
+
+
+def test_a_door_hinged_at_the_other_jamb_flips_reflected(tmp_path):
+    project, records = _door_project(tmp_path)
+    # The hinge moves to the begin jamb, still opening left: tt.
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    entry = _planned(out, "DOOR-1")
+    assert entry["changes"] == {"reflected": {"current": False, "new": True},
+                                "oSide": {"current": True, "new": True}}
+    assert entry["placement"] == {"part": "Door", "hinge": "begin", "swing": "left"}
+    # The wall is the door's owner, read for its begin and end points.
+    assert {"elements": [{"elementId": {"guid": "WALL-1"}}]} in project.sent(
+        "GetDetailsOfElements")
+    assert _writes(project) == []
+
+
+def test_a_door_with_ref_side_true_cannot_be_placed(tmp_path):
+    project, records = _door_project(tmp_path)
+    project.elements["DOOR-1"]["details"]["refSide"] = True
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    [error] = out.values()
+    assert error.startswith("change 1 (DOOR-1): ") and "refSide true" in error
+    assert "refSide false" in error and "reflected and oSide" in error
+    # Nor can a change that turns it to refSide true.
+    project, records = _door_project(tmp_path / "turned")
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "refSide": True,
+                                               "placement": _swing(0.6, 2.0)}], records=records)
+    assert "refSide true" in out["error"]
+    assert _writes(project) == []
+
+
+def test_a_door_in_a_wall_flipped_otherwise_than_where_it_was_learned_warns(tmp_path):
+    # WALL-1 has flipped false.
+    project, records = _door_project(tmp_path, wall_flipped=True)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    [warning] = _warnings(out, "DOOR-1")
+    assert warning.startswith("stands in a wall with flipped false, and 'Door' was learned "
+                              "in a wall with flipped true")
+    project, records = _door_project(tmp_path / "same", wall_flipped=False)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    assert not _warnings(out, "DOOR-1")
+
+
+def test_a_door_in_a_curved_wall_cannot_be_placed(tmp_path):
+    project, records = _door_project(tmp_path)
+    project.elements["WALL-1"]["details"]["arcAngle"] = 1.2
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    assert out["error"].startswith("change 1 (DOOR-1): wall WALL-1 is curved")
+
+
+def test_a_hinge_point_at_the_doors_centre_makes_the_call_an_error(tmp_path):
+    project, records = _door_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(1.0, 2.0)}],
+                          records=records)
+    assert out["error"].startswith("change 1 (DOOR-1): placement.hinge_near")
+
+
+def test_a_doors_centre_comes_from_its_details_unless_the_change_gives_one(tmp_path):
+    project, records = _door_project(tmp_path, center_offset=3.0)
+    # 2.5 m along the wall lies before the centre at 3.0: the begin jamb, opening left.
+    [kept] = plan_changes(project.connect(), [{"guid": "DOOR-1", "placement": _swing(2.5, 2.0)}],
+                          records=records).planned
+    assert (kept.item["reflected"], kept.item["oSide"]) == (True, True)
+    # Moved to 2.0, the same point lies past the centre: the end jamb.
+    [moved] = plan_changes(project.connect(), [{"guid": "DOOR-1", "centerOffset": 2.0,
+                                                "placement": _swing(2.5, 2.0)}],
+                           records=records).planned
+    assert moved.item == {"centerOffset": 2.0, "reflected": False, "oSide": True}
+
+
+def test_a_centre_given_in_another_change_moves_the_hinge_too(tmp_path):
+    project, records = _door_project(tmp_path, center_offset=1.0)
+    # Moved to 3.0 by its own change, 2.5 m along the wall lies before the centre: the
+    # begin jamb, opening left (tt), as when both are in one change.
+    together = [{"guid": "DOOR-1", "centerOffset": 3.0, "placement": _swing(2.5, 2.0)}]
+    apart = [{"guid": "DOOR-1", "centerOffset": 3.0},
+             {"guid": "DOOR-1", "placement": _swing(2.5, 2.0)}]
+    for changes in (together, apart):
+        [planned] = plan_changes(project.connect(), changes, records=records).planned
+        assert planned.item == {"centerOffset": 3.0, "reflected": True, "oSide": True}
+
+
+def test_leaves_show_in_the_dry_run_and_nothing_is_written(tmp_path):
+    project, records = _door_project(tmp_path, leaves=2, leaf_states=LEAVES)
+    out = modify_elements(project.connect(),
+                          [{"guid": "DOOR-1", "placement": _swing(0.6, -2.0, leaves="left open")}],
+                          records=records)
+    assert _planned(out, "DOOR-1")["placement"] == {
+        "part": "Door", "hinge": "begin", "swing": "right",
+        "leaves": {"state": "left open", "parameters": LEAVES["left open"]}}
+    assert project.parameter_writes == [] and _writes(project) == []
+
+
+def test_an_element_of_an_unlearned_part_makes_the_call_an_error(tmp_path):
+    project, _ = _bed_project(tmp_path)
+    changes = [{"guid": SLAB_B, "thickness": 0.25}, {"guid": OBJECT, "placement": _bed()}]
+    for dry_run in (True, False):
+        out = modify_elements(project.connect(), changes, dry_run=dry_run,
+                              records=store(tmp_path / "empty"))
+        assert list(out) == ["error"]
+        assert out["error"].startswith(f"change 2 ({OBJECT}): 'Bed Double 01' has not been "
+                                       "learned")
+        assert "learn_library_part" in out["error"]
+    assert _writes(project) == []
+
+
+def test_a_record_for_another_part_makes_the_call_an_error(tmp_path):
+    project = ModifyProject()
+    project.set_part(OBJECT, "Bed Double 01", BED_PART)
+    records = store(tmp_path, bed_record(guid="lib-1"))
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    assert "lib-1" in out["error"] and BED_PART in out["error"]
+    assert "(learn_library_part)" in out["error"]
+
+
+def test_a_record_that_lacks_fields_makes_the_call_an_error(tmp_path):
+    project, records = _bed_project(tmp_path, head=None)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    assert "lacks head" in out["error"] and "record_library_part" in out["error"]
+
+
+def test_every_change_that_cannot_be_placed_is_named(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(), [
+        {"guid": OBJECT, "placement": _bed(size={"length": 2.0})},
+        {"guid": SLAB, "placement": _bed()},
+        {"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}], records=records)
+    shape, slab, door = out["error"].split("\n")
+    assert shape.startswith(f"change 1 ({OBJECT}): placement/size")
+    assert "width" in shape and "placement_schema" in shape
+    assert slab == (f"change 2 ({SLAB}): placement places an object, lamp, door or window; "
+                    "this element is a Slab")
+    assert door.startswith("change 3 (DOOR-1): ") and "'Door 29' has not been learned" in door
+
+
+def test_a_field_placement_sets_given_too_makes_the_call_an_error(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": _bed(),
+                                               "coordinates": {"x": 0}}], records=records)
+    assert out == {"error": f"change 1 ({OBJECT}): placement sets coordinates; leave one out"}
+    # Another change for the same element counts too.
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "angle": 0.5, "layer": "Shell"},
+                                              {"guid": OBJECT, "placement": _bed()}],
+                          records=records)
+    assert out == {"error": f"change 2 ({OBJECT}): placement sets angle; leave one out"}
+    door, door_records = _door_project(tmp_path / "door")
+    out = modify_elements(door.connect(), [{"guid": "DOOR-1", "oSide": False,
+                                            "placement": _swing(0.6, 2.0)}],
+                          records=door_records)
+    assert out == {"error": "change 1 (DOOR-1): placement sets oSide; leave one out"}
+
+
+def test_a_story_change_with_an_objects_placement_makes_the_call_an_error(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "story": 1,
+                                               "placement": _bed()}], records=records)
+    assert out["error"].startswith(f"change 1 ({OBJECT}): placement keeps the element's story")
+
+
+def test_a_door_whose_wall_cannot_be_read_makes_the_call_an_error(tmp_path):
+    project, records = _door_project(tmp_path)
+    project.elements["DOOR-1"]["details"]["ownerElementId"] = {"guid": "WALL-GONE"}
+    out = modify_elements(project.connect(), [{"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}],
+                          records=records)
+    assert out["error"].startswith("change 1 (DOOR-1): wall WALL-GONE could not be read")
+
+
+def test_two_placements_for_one_element_must_agree(tmp_path):
+    project, records = _door_project(tmp_path, leaves=2, leaf_states=LEAVES)
+    same = {"guid": "DOOR-1", "placement": _swing(0.6, 2.0)}
+    [planned] = plan_changes(project.connect(), [same, dict(same)], records=records).planned
+    assert planned.item == {"reflected": True, "oSide": True}
+    out = modify_elements(project.connect(),
+                          [same, {"guid": "door-1",
+                                  "placement": _swing(0.6, 2.0, leaves="left open")}],
+                          records=records)
+    assert out["error"].startswith("change 2 (DOOR-1): ")
+    assert "another placement" in out["error"]
+
+
+def test_a_placement_on_an_element_not_found_is_skipped_as_not_found(tmp_path):
+    project, records = _bed_project(tmp_path)
+    out = modify_elements(project.connect(), [{"guid": "NOPE", "placement": _bed()}],
+                          records=records)
+    assert "not found" in _reason(out, "NOPE")
+
+
+def test_changes_without_placement_never_read_the_records(tmp_path):
+    broken = tmp_path / "library-parts.json"
+    broken.write_text("{not json", encoding="utf-8")
+    out = modify_elements(ModifyProject().connect(), [{"guid": SLAB_B, "thickness": 0.25}],
+                          records=PartRecords(broken))
+    assert out["planned_count"] == 1

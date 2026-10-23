@@ -8,6 +8,9 @@ their missing fields, a morph rotation about the wrong axis. Planning reads
 every element first, so the dry run shows current -> new in the frame the
 write uses, and names each element Archicad would refuse and why before
 anything is sent. The design is docs/superpowers/specs/2026-10-19-modify-elements-design.md.
+
+A change may give `placement` for a placed learned part instead of the Tapir fields
+it works out (core.modify_placement); planning turns it into those fields first.
 """
 from __future__ import annotations
 
@@ -31,7 +34,9 @@ from archicad_mcp.core.editability import (
 )
 from archicad_mcp.core.element_data import cap_list
 from archicad_mcp.core.element_kinds import tapir_version as _version
+from archicad_mcp.core.modify_placement import resolve_placements
 from archicad_mcp.core.mutate import _group
+from archicad_mcp.core.part_records import PartRecords
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, element_payload
 from archicad_mcp.gateway.registry import build_registry
 
@@ -55,6 +60,9 @@ class Planned:
     display: dict[str, dict] = field(default_factory=dict)
     expected: dict[str, object] = field(default_factory=dict)
     level_shift: float = 0.0
+    part: str | None = None        # the learned part a placement was worked out from
+    leaves: dict | None = None     # its leaf state {"state", "parameters"}, set after the commit
+    opening: dict = field(default_factory=dict)    # a door's hinge and swing, in words
 
 
 @dataclass
@@ -356,10 +364,13 @@ def _groups(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
     return out
 
 
-def plan_changes(conn: ArchicadConnection, changes) -> Plan | dict:
+def plan_changes(conn: ArchicadConnection, changes,
+                 records: PartRecords | None = None) -> Plan | dict:
     """Read, resolve and check every change; nothing is written.
 
-    Returns a Plan, or {"error"} for a malformed call or a missing or old Tapir.
+    Returns a Plan, or {"error"} for a malformed call, a missing or old Tapir, or a
+    placement that cannot be worked out. `records` is the learned-parts store a
+    placement reads (None: the default one).
     """
     merged = _merge_changes(changes)
     if isinstance(merged, str):
@@ -378,6 +389,13 @@ def plan_changes(conn: ArchicadConnection, changes) -> Plan | dict:
                          f"{_version_text(tapir)}. Releases: {RELEASES}"}
     plan.tapir = tapir
     entries = _read_details(conn, guids)
+    placed = {}
+    if any("placement" in change for change in changes):
+        resolved = resolve_placements(conn, changes, by_guid, entries, records)
+        if isinstance(resolved, str):
+            return {"error": resolved}
+        changes, placed = resolved
+        by_guid, conflicts = _merge_changes(changes)
     kinds, window = classify(conn, guids)
     # From the floor plan the details read finds other views' elements too.
     window = add_elsewhere(conn, [g for g in guids if g in entries and g not in kinds],
@@ -411,12 +429,17 @@ def plan_changes(conn: ArchicadConnection, changes) -> Plan | dict:
             except _Skip as skip:
                 plan.skipped[guid] = str(skip)
                 continue
+            if guid in placed:
+                planned.part, planned.leaves = placed[guid].part, placed[guid].leaves
+                planned.opening = placed[guid].opening
             plan.planned.append(planned)
             typed_fields[guid] = {k: v for k, v in fields.items()
                                   if k not in mf.COMMON_FIELDS}
 
     for p in plan.planned:
         warnings = _element_warnings(p, typed_fields[p.guid], ctx)
+        if p.guid in placed:
+            warnings += placed[p.guid].warnings
         if warnings:
             plan.warnings[p.guid] = warnings
     plan.groups = _groups(conn, [p.guid for p in plan.planned])
@@ -450,6 +473,10 @@ def _view(p: Planned) -> dict:
     if p.id:
         view["id"] = p.id
     view["changes"] = p.display
+    if p.part is not None:
+        view["placement"] = {"part": p.part, **p.opening}
+        if p.leaves is not None:
+            view["placement"]["leaves"] = p.leaves
     return view
 
 
@@ -470,8 +497,9 @@ def report_dry_run(plan: Plan) -> dict:
     return out
 
 
-def modify_elements(conn: ArchicadConnection, changes, dry_run: bool = True) -> dict:
-    plan = plan_changes(conn, changes)
+def modify_elements(conn: ArchicadConnection, changes, dry_run: bool = True,
+                    records: PartRecords | None = None) -> dict:
+    plan = plan_changes(conn, changes, records)
     if isinstance(plan, dict):
         return plan
     if dry_run:

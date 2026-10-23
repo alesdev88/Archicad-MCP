@@ -41,6 +41,8 @@ WRITERS = {
     "edit_property_definitions", "edit_classifications", "import_definitions",
     "edit_attributes",
     "create_swept_beam", "create_road_marking", "modify_elements", "apply_favorites",
+    # Samples placed in the model and deleted again; the records file on disk.
+    "learn_library_part", "record_library_part",
     # Writes the .pln: File > Revert can no longer go back past it.
     "save_project", "show_elements", "export_ifc",
     # Writes into Archicad's Add-Ons folder: outside the project, still a file
@@ -52,8 +54,11 @@ WRITERS = {
 # file on disk. Everything else in WRITERS is destructive. A Teamwork
 # reservation is team-visible state, not project data, and is undone by a
 # release; it is confirm-gated in the tool instead.
+# record_library_part writes only the MCP's own learned-parts file, never the model,
+# and a forgotten record can be learned again.
 NON_DESTRUCTIVE_WRITERS = {"highlight_failures", "set_selection", "clear_selection",
-                           "reserve_elements", "release_elements", "show_elements"}
+                           "reserve_elements", "release_elements", "show_elements",
+                           "record_library_part"}
 
 
 async def _tools(mode: str):

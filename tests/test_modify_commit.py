@@ -5,8 +5,13 @@ SetDetailsOfElements answers doors and windows first, a story change keeps the
 height above the story, a draw order step can do nothing and still answer
 success.
 """
+import math
+
+import pytest
+
 from archicad_mcp.core.modify import Planned, modify_elements
 from archicad_mcp.core.modify_commit import setdetails_order
+from tests.fixtures.learned_parts import LEAVES, bed_record, door_record, store
 from tests.fixtures.modify_project import ModifyProject
 
 SLAB = "05C7A02F-4251-6F40-8407-67893BEFF6AC"
@@ -215,3 +220,113 @@ def test_commit_with_everything_skipped_sends_nothing():
     out = _commit(project, [{"guid": "NOPE", "layer": "Finish - Floor"}])
     assert out["modified"] == 0 and out["skipped"][0]["guids"] == ["NOPE"]
     assert not [n for n in project.command_names() if n.startswith(WRITES)]
+
+
+# ---------- placement: the fields it works out, and the leaves written after ----------
+
+BED_PART = "B5D0A1C2-7E4F-4C11-9A3B-0D6E2F8A1B01"
+DOOR_PART = "D0E2C4A6-1B3D-4F5A-8C7E-9A0B1C2D3E01"
+# Hinged at WALL-1's begin jamb (the door's centre is 1 m along it), opening left.
+TO_BEGIN_LEFT = {"hinge_near": {"x": 0.6, "y": 0.0}, "opens_toward": {"x": 1.0, "y": 2.0}}
+
+
+def _door(tmp_path):
+    """DOOR-1 as a placed "Door", with refSide false as a door placed through the API
+    reads it (Probe results (d))."""
+    project = ModifyProject()
+    project.set_part("DOOR-1", "Door", DOOR_PART)
+    project.elements["DOOR-1"]["details"]["centerOffset"] = 1.0
+    project.elements["DOOR-1"]["details"]["refSide"] = False
+    return project, store(tmp_path, door_record(guid=DOOR_PART, leaves=2, leaf_states=LEAVES))
+
+
+def _with_leaves(state="left open") -> list[dict]:
+    return [{"guid": "DOOR-1", "placement": {**TO_BEGIN_LEFT, "leaves": state}}]
+
+
+def test_a_placed_bed_lands_turned_on_its_story_and_height(tmp_path):
+    project = ModifyProject()
+    project.set_part(OBJECT, "Bed Double 01", BED_PART)
+    project.elements[OBJECT]["floorIndex"] = 1
+    project.elements[OBJECT]["details"]["origin"]["z"] = 3.4
+    placement = {"center": {"x": 2.0, "y": 3.0}, "head": {"x": 0.0, "y": -1.0},
+                 "size": {"length": 2.0, "width": 1.6, "height": 0.5}}
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": placement}],
+                          dry_run=False, records=store(tmp_path, bed_record(guid=BED_PART)))
+    assert out == {"dry_run": False, "requested": 1, "modified": 1}
+    assert "SetDetailsOfElements" not in project.command_names()
+    bed = project.elements[OBJECT]
+    assert bed["floorIndex"] == 1
+    assert bed["details"]["origin"] == pytest.approx({"x": 2.0, "y": 4.0, "z": 3.4})
+    assert bed["details"]["angle"] == pytest.approx(math.pi)
+
+
+def test_leaves_are_written_after_the_commit(tmp_path):
+    project, records = _door(tmp_path)
+    out = modify_elements(project.connect(), _with_leaves(), dry_run=False, records=records)
+    assert project.parameter_writes == [{"elementsWithGDLParameters": [
+        {"elementId": {"guid": "DOOR-1"},
+         "gdlParameters": [{"name": "gs_leaf_1_open", "value": 1},
+                           {"name": "gs_leaf_2_open", "value": 0}]}]}]
+    names = project.command_names()
+    readback = len(names) - 1 - names[::-1].index("GetDetailsOfElements")
+    assert names.index("ModifyDoors") < readback < names.index("SetGDLParametersOfElements")
+    assert out["modified"] == 1
+    assert out["unverified"] == {"leaves": 1}      # GDL parameters are not read back
+    assert "placed_not_set" not in out
+    door = project.elements["DOOR-1"]["details"]
+    assert (door["reflected"], door["oSide"]) == (True, True)
+
+
+def _refuse(project):
+    project.parameter_error = {"code": -2130313215, "message": "Failed to change the parameters"}
+
+
+def _time_out(project):
+    project.raise_on = {"SetGDLParametersOfElements"}
+
+
+def _crash(project):
+    def boom(params):
+        raise RuntimeError("the fake broke")
+    project.core.tapir_responses["SetGDLParametersOfElements"] = boom
+
+
+@pytest.mark.parametrize("make_it_fail, message", [
+    (_refuse, "Failed to change the parameters"),
+    (_time_out, "SetGDLParametersOfElements timed out"),
+    (_crash, "the write stopped on RuntimeError: the fake broke"),
+])
+def test_a_refused_leaves_write_is_reported_under_placed_not_set(tmp_path, make_it_fail,
+                                                                 message):
+    project, records = _door(tmp_path)
+    conn = project.connect()
+    make_it_fail(project)
+    out = modify_elements(conn, _with_leaves(), dry_run=False, records=records)
+    [unset] = out["placed_not_set"]
+    assert unset == {"guid": "DOOR-1", "leaves": "left open",
+                     "parameters": LEAVES["left open"], "message": unset["message"]}
+    assert message in unset["message"]
+    assert out["modified"] == 1                    # the hinge and swing landed
+    assert "unverified" not in out
+    # Nothing else is sent to the door after the refusal.
+    assert project.command_names()[-1] == "SetGDLParametersOfElements"
+
+
+def test_leaves_are_not_written_when_the_doors_change_fails(tmp_path):
+    project, records = _door(tmp_path)
+    project.fail = {("ModifyDoors", "DOOR-1"): {"code": 9, "message": "refused"}}
+    out = modify_elements(project.connect(), _with_leaves(), dry_run=False, records=records)
+    assert "SetGDLParametersOfElements" not in project.command_names()
+    [unset] = out["placed_not_set"]
+    assert unset["guid"] == "DOOR-1" and unset["message"].startswith("not written")
+    assert out["failed"][0]["sample"] == [{"guid": "DOOR-1", "command": "ModifyDoors"}]
+
+
+def test_leaves_are_not_written_after_the_run_stopped(tmp_path):
+    project, records = _door(tmp_path)
+    project.raise_on = {"ModifyDoors"}
+    out = modify_elements(project.connect(), _with_leaves(), dry_run=False, records=records)
+    assert "SetGDLParametersOfElements" not in project.command_names()
+    [unset] = out["placed_not_set"]
+    assert "the run stopped" in unset["message"]

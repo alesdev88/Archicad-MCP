@@ -3,13 +3,17 @@
 The fake below answers like Tapir 1.5.x: Create* commands return one entry per
 item, either {"elementId": {"guid"}} or {"error": {"code", "message"}}.
 """
+import math
+
 import pytest
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.create import CREATE_TYPES, create_elements
+from archicad_mcp.core.part_records import PartRecords
 from archicad_mcp.gateway.registry import DEFINITIONS_DIR, _load_js_json, build_registry
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
+from tests.fixtures.learned_parts import LEAVES, bed_record, door_record, store
 
 WALL = {"begCoordinate": {"x": 0, "y": 0}, "endCoordinate": {"x": 5, "y": 0},
         "height": 3.0, "thickness": 0.2}
@@ -33,12 +37,25 @@ SIZE = {"dimensions": {"x": 0.5, "y": 0.5, "z": 0.9}}
 
 class Plan:
     """Element types by GUID, which elements Archicad would refuse, the favourites,
-    the loaded library parts."""
+    the loaded library parts, the walls' begin and end points."""
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
-                 unread=(), archicad=29, tapir_version="1.8.2"):
+                 unread=(), archicad=29, tapir_version="1.8.2", walls=None,
+                 parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0,
+                 wall_details=None):
         self.types = dict(types or {})
+        # Story i is at levels[i]; the floor plan shows act_story (None: not said).
+        self.levels = list(levels)
+        self.act_story = act_story
+        # GUID -> ((begin x, y), (end x, y)); each is a Wall. wall_details adds to a
+        # wall's details (flipped, arcAngle).
+        self.walls = dict(walls or {})
+        self.wall_details = dict(wall_details or {})
+        self.types.update({g: "Wall" for g in self.walls})
+        # SetGDLParametersOfElements answers every element with this error when set.
+        self.parameter_error = parameter_error
+        self.parameter_writes: list[dict] = []
         self.elsewhere = set(elsewhere)  # exist, but in another view's database
         self.refused = set(refused)
         self.favorites = dict(favorites or {})
@@ -83,10 +100,16 @@ class Plan:
             if e["elementId"]["guid"] in self.types
             and e["elementId"]["guid"] not in self.refused]}
         tapir["GetDetailsOfElements"] = lambda p: {"detailsOfElements": [
-            {"type": self.types[e["elementId"]["guid"]], "floorIndex": 0, "layerIndex": 1}
+            self._details(e["elementId"]["guid"])
             if e["elementId"]["guid"] in self.types
             else {"error": {"code": -2130313112, "message": "not found"}}
             for e in p["elements"]]}
+        tapir["SetGDLParametersOfElements"] = self._set_parameters
+        tapir["GetStories"] = lambda p: {
+            "firstStory": 0, "lastStory": len(self.levels) - 1, "actStory": self.act_story,
+            "skipNullFloor": False,
+            "stories": [{"index": i, "floorId": i + 1, "level": level, "height": 3.0,
+                         "name": f"Story {i}"} for i, level in enumerate(self.levels)]}
         tapir["GetFavoritesByType"] = lambda p: {
             "favorites": self.favorites.get(p["elementType"], [])}
         if self.library is not None:
@@ -101,6 +124,23 @@ class Plan:
             tapir[spec.command] = self._creator(spec.command)
         self.core = FakeCore(official=official, tapir=tapir)
         return ArchicadConnection(19723, core=self.core)
+
+    def _details(self, guid):
+        entry = {"type": self.types[guid], "floorIndex": 0, "layerIndex": 1}
+        if guid in self.walls:
+            (bx, by), (ex, ey) = self.walls[guid]
+            entry["details"] = {"begCoordinate": {"x": bx, "y": by},
+                                "endCoordinate": {"x": ex, "y": ey},
+                                **self.wall_details.get(guid, {})}
+        return entry
+
+    def _set_parameters(self, p):
+        self.parameter_writes.append(p)
+        entries = p["elementsWithGDLParameters"]
+        if self.parameter_error is not None:
+            return {"executionResults": [{"success": False, "error": self.parameter_error}
+                                         for _ in entries]}
+        return {"executionResults": [{"success": True} for _ in entries]}
 
     def _creator(self, command):
         def create(p):
@@ -494,3 +534,481 @@ def test_an_opening_from_a_favourite_takes_its_sill_from_the_favourite():
     result = create_elements(plan.connection(), "door",
                              [door(W1, favoriteName="Entrance 1000")])
     assert result["warnings"] == []
+
+
+# Placing a learned part by what the sketch shows. The fake library gives its parts
+# the GUIDs lib-1, lib-2, ... in the order listed; a record must carry the same one
+# (tests/fixtures/learned_parts.py).
+
+# The opening's centre is door()'s centerOffset, 1.0 m along this wall from its begin.
+WALL_ALONG_X = ((0.0, 0.0), (5.0, 0.0))
+
+
+def bed(part="Bed Double 01", **placement) -> dict:
+    """A bed 2 m long and 1.6 m wide centred on (2, 3), its head pointing +x."""
+    shown = {"center": {"x": 2.0, "y": 3.0}, "size": {"length": 2.0, "width": 1.6, "height": 0.5},
+             "head": {"x": 1.0, "y": 0.0}}
+    shown.update(placement)
+    return {"libraryPartName": part, "placement": shown}
+
+
+def placed_door(hinge_x: float, toward_y: float, leaves: str | None = None, **extra) -> dict:
+    """A door in W1, hinged at the jamb nearer x = hinge_x, opening toward y = toward_y."""
+    placement = {"hinge_near": {"x": hinge_x, "y": 0.0}, "opens_toward": {"x": 1.0, "y": toward_y}}
+    if leaves is not None:
+        placement["leaves"] = leaves
+    return door(W1, libraryPartName="Door", sillHeight=0.0, placement=placement, **extra)
+
+
+def test_a_bed_by_footprint_becomes_tapir_fields(tmp_path):
+    plan = Plan(library=["Bed Double 01"])
+    conn = plan.connection()
+    records = store(tmp_path, bed_record())
+
+    dry = create_elements(conn, "object", [bed()], records=records)
+
+    [item] = dry["payload"]["objectsData"]
+    assert "placement" not in item
+    assert item["libraryPartName"] == "Bed Double 01"
+    # The head (local +y) turns to plan +x: three quarter turns counter-clockwise.
+    assert item["angle"] == pytest.approx(3 * math.pi / 2)
+    # The foot end sits at the insertion point, half the length west of the centre.
+    assert item["coordinates"] == pytest.approx({"x": 1.0, "y": 3.0, "z": 0.0})
+    assert item["reflected"] is False
+    # Length runs along the head (B for a +y head), width across it (A).
+    assert item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.5}
+    assert item["floorIndex"] == 0
+    derived = {k: item[k]
+               for k in ("coordinates", "angle", "reflected", "dimensions", "floorIndex")}
+    assert dry["placements"] == [{"index": 0, "part": "Bed Double 01", "derived": derived}]
+    assert dry["skipped"] == []
+    assert not any("No dimensions" in w for w in dry["warnings"])
+
+    committed = create_elements(conn, "object", [bed()], dry_run=False, records=records)
+    assert plan.sent("CreateObjects") == [{"objectsData": [item]}]
+    assert committed["created"] == 1
+    assert committed["placements"] == dry["placements"]
+
+
+def test_a_mirrored_bed_says_so(tmp_path):
+    plan = Plan(library=["Bed Double 01"])
+    result = create_elements(plan.connection(), "object", [bed(mirrored=True)],
+                             records=store(tmp_path, bed_record()))
+    [item] = result["payload"]["objectsData"]
+    assert item["reflected"] is True
+
+
+def test_placement_without_a_record_is_skipped_with_the_next_step(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    records = store(tmp_path, bed_record(name="Chair 01", guid="lib-2", head=None))
+    result = create_elements(plan.connection(), "object", [bed(), bed("Chair 01")],
+                             dry_run=False, records=records)
+    never, unfinished = result["skipped"]
+    assert never["index"] == 0
+    assert "'Bed Double 01' has not been learned" in never["reason"]
+    assert "learn_library_part" in never["reason"]
+    assert unfinished["index"] == 1
+    assert "head" in unfinished["reason"] and "record_library_part" in unfinished["reason"]
+    assert result["created"] == 0
+    assert plan.sent("CreateObjects") == []
+
+
+def test_a_record_for_another_guid_is_skipped(tmp_path):
+    plan = Plan(library=["Bed Double 01"])
+    records = store(tmp_path, bed_record(guid="6B4F1A52-0C3E-4D1B-9A77-2E5C8D90F311"))
+    result = create_elements(plan.connection(), "object", [bed()], records=records)
+    [skip] = result["skipped"]
+    assert "6B4F1A52-0C3E-4D1B-9A77-2E5C8D90F311" in skip["reason"]
+    assert "lib-1" in skip["reason"]
+    assert "learn_library_part" in skip["reason"]
+    assert result["ready"] == 0
+    assert "placements" not in result
+
+
+def test_a_learned_part_that_is_not_loaded_is_skipped_with_close_names(tmp_path):
+    plan = Plan(library=["Bed Double 02"])
+    result = create_elements(plan.connection(), "object", [bed()],
+                             records=store(tmp_path, bed_record()))
+    [skip] = result["skipped"]
+    assert "no loaded library part named 'Bed Double 01'" in skip["reason"]
+    assert "Bed Double 02" in skip["reason"]
+
+
+def test_an_unlisted_library_cannot_confirm_the_record(tmp_path):
+    plan = Plan()  # GetAvailableLibraryParts goes unanswered
+    result = create_elements(plan.connection(), "object", [bed()],
+                             records=store(tmp_path, bed_record()))
+    [skip] = result["skipped"]
+    assert "could not be listed" in skip["reason"]
+
+
+def test_placement_and_coordinates_together_are_skipped(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Door"], walls={W1: WALL_ALONG_X})
+    conn = plan.connection()
+    records = store(tmp_path, bed_record())
+    objects = create_elements(conn, "object",
+                              [dict(bed(), coordinates={"x": 0, "y": 0, "z": 0}),
+                               dict(bed(), angle=0.0, dimensions={"x": 1, "y": 2, "z": 0.5})],
+                              records=records)
+    assert [s["reason"] for s in objects["skipped"]] == [
+        "placement sets coordinates; leave one out",
+        "placement sets angle and dimensions; leave one out"]
+    doors = create_elements(conn, "door", [placed_door(1.4, 2.0, oSide=True)],
+                            records=store(tmp_path, door_record(guid="lib-2")))
+    assert [s["reason"] for s in doors["skipped"]] == ["placement sets oSide; leave one out"]
+
+
+def test_a_malformed_placement_is_skipped_with_where_it_goes_wrong(tmp_path):
+    plan = Plan(library=["Bed Double 01"])
+    result = create_elements(plan.connection(), "object",
+                             [bed(size={"length": 2.0}), bed(heading={"x": 1, "y": 0})],
+                             records=store(tmp_path, bed_record()))
+    missing_width, unknown_key = result["skipped"]
+    assert "placement/size" in missing_width["reason"] and "width" in missing_width["reason"]
+    assert "heading" in unknown_key["reason"]
+    assert "placement_schema" in missing_width["reason"]
+
+
+def test_placement_needs_a_library_part_name(tmp_path):
+    plan = Plan(library=["Bed Double 01"])
+    item = bed()
+    del item["libraryPartName"]
+    result = create_elements(plan.connection(), "object", [item],
+                             records=store(tmp_path, bed_record()))
+    [skip] = result["skipped"]
+    assert "libraryPartName" in skip["reason"]
+    assert "problems" not in result
+
+
+def test_object_without_height_falls_back_to_the_record_then_skips(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    records = store(tmp_path, bed_record(height=0.45),
+                    bed_record(name="Chair 01", guid="lib-2"))
+    no_height = {"length": 2.0, "width": 1.6}
+    result = create_elements(plan.connection(), "object",
+                             [bed(size=no_height), bed("Chair 01", size=no_height)],
+                             records=records)
+    [item] = result["payload"]["objectsData"]
+    assert item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.45}
+    [skip] = result["skipped"]
+    assert skip["index"] == 1
+    assert skip["reason"] == ("give size.height in metres: Tapir 1.7.2 cannot read a "
+                              "part's own height")
+
+
+def test_a_footprint_of_no_width_is_skipped_and_one_off_the_size_asked_warns(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    # A headboard 0.1 m past B; Chair 01 fitted against its read-back (2A - 1 wide).
+    headboard = bed_record(footprint={"xMin": [-0.5, 0], "xMax": [0.5, 0],
+                                      "yMin": [0, 0], "yMax": [1, 0.1]})
+    flat = bed_record(name="Chair 01", guid="lib-2",
+                      footprint={"xMin": [-1, 0.5], "xMax": [1, -0.5],
+                                 "yMin": [-1, 0.5], "yMax": [1, -0.5]})
+    small = {"length": 0.5, "width": 0.5, "height": 0.9}
+    result = create_elements(plan.connection(), "object", [bed(), bed("Chair 01", size=small)],
+                             records=store(tmp_path, headboard, flat))
+    [skip] = result["skipped"]
+    assert skip["index"] == 1
+    assert "'Chair 01' covers 0.00 x 0.00 m at A 0.5, B 0.5" in skip["reason"]
+    [warning] = [w for w in result["warnings"] if w.startswith("Item 0")]
+    assert warning.startswith("Item 0 ('Bed Double 01') covers 2.10 m along its head and "
+                              "1.60 m across")
+    assert result["ready"] == 1
+
+
+def test_a_part_whose_plan_size_does_not_follow_its_size_is_placed_by_coordinates(tmp_path):
+    plan = Plan(library=["Chair 01"])
+    records = store(tmp_path, bed_record(name="Chair 01", footprint=None))
+    result = create_elements(plan.connection(), "object", [bed("Chair 01")], records=records)
+    [skip] = result["skipped"]
+    assert "plan size does not follow its own A and B" in skip["reason"]
+    assert "coordinates, angle, reflected and dimensions" in skip["reason"]
+
+
+def test_a_door_by_hinge_point_and_swing_gets_reflected_and_oside(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    records = store(tmp_path, door_record())
+    result = create_elements(plan.connection(), "door",
+                             [placed_door(1.4, 2.0), placed_door(0.6, 2.0),
+                              placed_door(0.6, -2.0)],
+                             records=records)
+    first, second, third = result["payload"]["doorsData"]
+    # Hinged past the centre (the end jamb), opening to the left of the wall: ft.
+    assert first == door(W1, libraryPartName="Door", sillHeight=0.0,
+                         reflected=False, oSide=True)
+    # The begin jamb, opening left: tt.
+    assert (second["reflected"], second["oSide"]) == (True, True)
+    # The begin jamb, opening right: ff.
+    assert (third["reflected"], third["oSide"]) == (False, False)
+    # The hinge and swing read from the two points, in words.
+    assert result["placements"][0] == {"index": 0, "part": "Door", "hinge": "end",
+                                       "swing": "left",
+                                       "derived": {"reflected": False, "oSide": True}}
+    assert [(p["hinge"], p["swing"]) for p in result["placements"][1:]] == [
+        ("begin", "left"), ("begin", "right")]
+    walls_read = [p for c, p in plan.core.calls if c == "GetDetailsOfElements"
+                  and p["elements"] == [{"elementId": {"guid": W1}}]]
+    assert walls_read
+    # A door stands on its wall's story: no story is read for it.
+    assert "GetStories" not in [command for command, _ in plan.core.calls]
+
+
+def test_a_door_sent_with_ref_side_true_and_a_placement_is_skipped(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door",
+                             [placed_door(1.4, 2.0, refSide=True),
+                              placed_door(1.4, 2.0, refSide=False)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert skip["index"] == 0
+    assert "refSide true" in skip["reason"] and "refSide false" in skip["reason"]
+    assert result["payload"]["doorsData"][0]["refSide"] is False
+
+
+def test_a_door_in_a_wall_flipped_otherwise_than_where_it_was_learned_warns(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X, W2: WALL_ALONG_X}, library=["Door"],
+                wall_details={W1: {"flipped": False}, W2: {"flipped": True}})
+    other_wall = placed_door(1.4, 2.0)
+    other_wall["ownerWallId"] = {"guid": W2}
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0), other_wall],
+                             records=store(tmp_path, door_record(wall_flipped=True)))
+    [warning] = [w for w in result["warnings"] if "flipped" in w]
+    assert warning.startswith("Item 0 ('Door') stands in a wall with flipped false")
+    assert "learned in a wall with flipped true" in warning and "capture_window" in warning
+    # A record learned before the wall's flipped was kept warns of nothing.
+    unknown = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                              records=store(tmp_path / "old", door_record()))
+    assert not any("flipped" in w for w in unknown["warnings"])
+
+
+def test_a_door_in_a_curved_wall_is_skipped(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"],
+                wall_details={W1: {"arcAngle": 0.8}})
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert f"wall {W1} is curved" in skip["reason"]
+    assert "reflected and oSide" in skip["reason"]
+
+
+@pytest.mark.parametrize("hinge_x, toward_y, words", [(1.02, 2.0, "hinge_near"),
+                                                      (1.4, 0.01, "opens_toward")])
+def test_a_door_whose_points_name_no_jamb_or_side_is_skipped(tmp_path, hinge_x, toward_y,
+                                                             words):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door", [placed_door(hinge_x, toward_y)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert words in skip["reason"]
+
+
+def test_a_record_without_combos_says_hidden_opening_lines_need_showing(tmp_path):
+    # Live 22.10.2026: MCP-Test's plan drew no window opening lines, so no combos could
+    # be recorded; the user has to show them before learning again.
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record(combos=None)))
+    [skip] = result["skipped"]
+    assert "lacks combos" in skip["reason"]
+    assert "no opening lines" in skip["reason"] and "ask the user to show them" in skip["reason"]
+    assert "learn it again" in skip["reason"]
+
+
+def test_a_door_in_a_wall_that_cannot_be_read_is_skipped(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    item = placed_door(1.4, 2.0)
+    item["ownerWallId"] = {"guid": GONE}
+    result = create_elements(plan.connection(), "door", [item, placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record()))
+    [skip] = result["skipped"]
+    assert skip["index"] == 0 and GONE in skip["reason"]
+    assert result["ready"] == 1
+
+
+def test_an_unknown_leaf_state_is_skipped_with_the_recorded_ones(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    records = store(tmp_path, door_record(leaves=2, leaf_states=LEAVES))
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0, "both open")],
+                             records=records)
+    [skip] = result["skipped"]
+    assert "'both open'" in skip["reason"] and "left open" in skip["reason"]
+
+
+def test_leaves_are_written_after_the_create(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    conn = plan.connection()
+    records = store(tmp_path, door_record(leaves=2, leaf_states=LEAVES))
+    item = placed_door(1.4, 2.0, "left open")
+
+    dry = create_elements(conn, "door", [item], records=records)
+    assert dry["placements"][0]["derived"]["leaves"] == {"state": "left open",
+                                                         "parameters": LEAVES["left open"]}
+    assert "leaves" not in dry["payload"]["doorsData"][0]
+    assert plan.parameter_writes == []
+
+    result = create_elements(conn, "door", [item], dry_run=False, records=records)
+    assert plan.parameter_writes == [{"elementsWithGDLParameters": [
+        {"elementId": {"guid": "new-0"},
+         "gdlParameters": [{"name": "gs_leaf_1_open", "value": 1},
+                           {"name": "gs_leaf_2_open", "value": 0}]}]}]
+    commands = [command for command, _ in plan.core.calls]
+    assert commands.index("SetGDLParametersOfElements") > commands.index("CreateDoors")
+    assert result["created"] == 1
+    assert "placed_not_set" not in result
+
+
+@pytest.mark.parametrize("answer, message", [
+    ("refused", "Failed to change the parameters"),
+    ("raises", "no canned response for SetGDLParametersOfElements"),
+])
+def test_a_refused_leaves_write_keeps_the_door_and_reports_it(tmp_path, answer, message):
+    error = {"code": -2130313215, "message": "Failed to change the parameters"}
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"],
+                parameter_error=error if answer == "refused" else None)
+    conn = plan.connection()
+    if answer == "raises":
+        del plan.core.tapir_responses["SetGDLParametersOfElements"]
+    records = store(tmp_path, door_record(leaves=2, leaf_states=LEAVES))
+    result = create_elements(conn, "door", [placed_door(1.4, 2.0, "left open")],
+                             dry_run=False, records=records)
+    assert result["created"] == 1
+    assert result["elements"] == ["new-0"]
+    [unset] = result["placed_not_set"]
+    assert unset["index"] == 0 and unset["guid"] == "new-0"
+    assert unset["leaves"] == "left open"
+    assert unset["parameters"] == LEAVES["left open"]
+    assert message in unset["message"]
+    assert "DeleteElements" not in [command for command, _ in plan.core.calls]
+
+
+@pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
+def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
+    # Live 22.10.2026 (Tapir 1.7.2): CreateDoors and CreateWindows set the tool to the
+    # part named and never set it back.
+    plan = Plan(types={W1: "Wall"}, library=["Door 26", "Door 27"])
+    conn = plan.connection()
+    items = [door(W1, libraryPartName="Door 26", sillHeight=0.0),
+             door(W1, libraryPartName="Door 27", sillHeight=0.0)]
+    dry = create_elements(conn, element_type, items)
+    [warning] = dry["warnings"]
+    assert f"the {tool} will hold 'Door 27'" in warning
+    committed = create_elements(conn, element_type, items, dry_run=False)
+    [warning] = committed["warnings"]
+    assert f"the {tool} now holds 'Door 27'" in warning
+    plain = create_elements(conn, element_type, [door(W1, sillHeight=0.0)])
+    assert plain["warnings"] == []
+
+
+def test_a_placed_door_warns_about_the_tool_too(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
+                             records=store(tmp_path, door_record()))
+    assert any("the Door tool will hold 'Door'" in w for w in result["warnings"])
+
+
+def test_items_without_placement_are_unchanged(tmp_path):
+    # The store is never read without a placement: a broken file stops nothing.
+    broken = tmp_path / "library-parts.json"
+    broken.write_text("not json", encoding="utf-8")
+    records = PartRecords(broken)
+    plan = Plan(types={W1: "Wall"}, library=["Chair 01"])
+    conn = plan.connection()
+    with_store = create_elements(conn, "object", [chair(**SIZE)], records=records)
+    assert with_store == create_elements(conn, "object", [chair(**SIZE)])
+    assert with_store["payload"] == {"objectsData": [chair(**SIZE)]}
+    assert "placements" not in with_store
+    committed = create_elements(conn, "door", [door(W1, sillHeight=0.0)], dry_run=False,
+                                records=records)
+    assert committed == {"dry_run": False, "created": 1, "elements": ["new-0"]}
+    commands = [command for command, _ in plan.core.calls]
+    assert "SetGDLParametersOfElements" not in commands
+    assert "GetStories" not in commands
+
+
+def test_placement_and_the_name_check_share_one_library_listing(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    create_elements(plan.connection(), "object", [bed(), chair(**SIZE)],
+                    records=store(tmp_path, bed_record()))
+    listings = [command for command, _ in plan.core.calls
+                if command == "GetAvailableLibraryParts"]
+    assert listings == ["GetAvailableLibraryParts"]
+
+
+def test_placement_on_another_type_is_a_schema_problem(tmp_path):
+    plan = Plan()
+    result = create_elements(plan.connection(), "wall", [dict(WALL, placement={})],
+                             records=store(tmp_path))
+    assert "placement" in result["problems"][0]["message"]
+
+
+def test_empty_items_show_the_placement_schema():
+    conn = Plan().connection()
+    objects = create_elements(conn, "object", [])["placement_schema"]
+    assert set(objects["properties"]) == {"center", "size", "head", "mirrored"}
+    assert set(objects["properties"]["size"]["properties"]) == {"length", "width", "height"}
+    assert create_elements(conn, "lamp", [])["placement_schema"] == objects
+    openings = create_elements(conn, "door", [])["placement_schema"]
+    assert set(openings["properties"]) == {"hinge_near", "opens_toward", "leaves"}
+    assert create_elements(conn, "window", [])["placement_schema"] == openings
+    assert "placement_schema" not in create_elements(conn, "wall", [])
+
+
+def test_a_schema_problem_reply_keeps_the_placement_skips(tmp_path):
+    plan = Plan(library=["Bed Double 01", "Chair 01"])
+    result = create_elements(plan.connection(), "object",
+                             [bed(), chair(**SIZE, colour="red")], dry_run=False,
+                             records=store(tmp_path))
+    assert [p["index"] for p in result["problems"]] == [1]
+    assert [s["index"] for s in result["skipped"]] == [0]
+    assert plan.sent("CreateObjects") == []
+
+
+def test_a_placed_object_goes_on_its_storys_floor(tmp_path):
+    # Without floorIndex Tapir takes the story from an absolute z: z 0 on the ground
+    # floor whatever story the plan shows. center.z is above the story's floor.
+    plan = Plan(library=["Bed Double 01"], act_story=1)
+    result = create_elements(plan.connection(), "object",
+                             [bed(), dict(bed(center={"x": 2.0, "y": 3.0, "z": 0.4}),
+                                          floorIndex=2)],
+                             records=store(tmp_path, bed_record()))
+    on_screen, upstairs = result["payload"]["objectsData"]
+    assert on_screen["floorIndex"] == 1
+    assert on_screen["coordinates"]["z"] == pytest.approx(3.0)
+    assert upstairs["floorIndex"] == 2
+    assert upstairs["coordinates"]["z"] == pytest.approx(6.4)
+    assert result["placements"][0]["derived"]["floorIndex"] == 1
+    stories_read = [command for command, _ in plan.core.calls if command == "GetStories"]
+    assert stories_read == ["GetStories"]
+
+
+@pytest.mark.parametrize("case, words", [
+    ("unanswered", "stories could not be read"),
+    ("no such story", "story 5"),
+    ("story not said", "which story the floor plan shows"),
+])
+def test_an_object_whose_story_is_not_known_is_skipped(tmp_path, case, words):
+    plan = Plan(library=["Bed Double 01"], act_story=None if case == "story not said" else 0)
+    conn = plan.connection()
+    if case == "unanswered":
+        del plan.core.tapir_responses["GetStories"]
+    item = dict(bed(), floorIndex=5) if case == "no such story" else bed()
+    result = create_elements(conn, "object", [item], records=store(tmp_path, bed_record()))
+    [skip] = result["skipped"]
+    assert words in skip["reason"]
+    assert result["ready"] == 0
+
+
+def test_an_error_during_a_leaves_write_keeps_the_created_elements(tmp_path):
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    conn = plan.connection()
+
+    def broken(p):
+        raise RuntimeError("socket closed")
+
+    plan.core.tapir_responses["SetGDLParametersOfElements"] = broken
+    records = store(tmp_path, door_record(leaves=2, leaf_states=LEAVES))
+    result = create_elements(conn, "door", [placed_door(1.4, 2.0, "left open")],
+                             dry_run=False, records=records)
+    assert result["elements"] == ["new-0"]
+    [unset] = result["placed_not_set"]
+    assert "RuntimeError" in unset["message"] and "socket closed" in unset["message"]

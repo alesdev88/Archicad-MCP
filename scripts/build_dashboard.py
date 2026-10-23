@@ -21,6 +21,7 @@ from pathlib import Path
 
 from archicad_mcp.core.create import CREATE_TYPES
 from archicad_mcp.gateway.registry import build_registry
+from archicad_mcp.tapir_requirements import TOOL_COMMANDS
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "api-dashboard.html"
@@ -151,6 +152,10 @@ WRAPPED_BY: dict[str, list[str]] = {
 # cannot drift; CreateObjects keeps its entry above, which names more tools.
 for _spec in CREATE_TYPES.values():
     WRAPPED_BY.setdefault(_spec.command, ["create_elements"])
+# learn_library_part places, reads, captures and deletes samples; its gate lists the
+# commands, so the dashboard reads them from there.
+for _command in TOOL_COMMANDS["learn_library_part"]:
+    WRAPPED_BY.setdefault(_command, []).append("learn_library_part")
 
 # The dedicated high-level MCP tools, transcribed from server.py. "mode" is which
 # server mode exposes the tool; "mutates" flags tools that can change the model.
@@ -205,6 +210,12 @@ TOOLS: list[dict] = [
      "desc": "Show elements to the user: open the story or view (section, layout, ...) that holds them, select, highlight and zoom. Reads the selection back; guids=[] clears the highlight."},
     {"name": "capture_window", "cat": "Elements", "mode": "full",
      "desc": "See what the current window shows (floor plan, section, 3D, layout) as an image, to check placements by eye. Needs Tapir 1.7.2."},
+    {"name": "learn_library_part", "cat": "Elements", "mode": "full", "mutates": True,
+     "desc": "Place samples of a library part past the model, measure them, show them in one floor plan image, delete them again and store the measurement. Needs Tapir 1.7.2."},
+    {"name": "record_library_part", "cat": "Elements", "mode": "full", "mutates": True,
+     "desc": "Record what the image shows (a bed's head direction, a door's hinge and swing per flag combination, its leaves) in the part's stored record. Writes only the local records file."},
+    {"name": "list_library_part_records", "cat": "Elements", "mode": "full",
+     "desc": "List the learned library parts, with the fields each still needs before it can be placed from."},
     {"name": "find_collisions", "cat": "Elements", "mode": "full",
      "desc": "Find clashes between two groups of elements (GUIDs or element types) or within one, with volume and surface tolerances. Returns pairs with types, IDs and story, and counts by type pair."},
     # Teamwork

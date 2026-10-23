@@ -13,6 +13,10 @@ A command can also stop the run (a dropped connection, Archicad answering
 judged only against the command that carried it, what landed before the stop
 is reported as partly applied, and if even the readback fails the sent
 elements are listed as unconfirmed rather than lost behind an error.
+
+A placement's leaves go last, after the readback: SetGDLParametersOfElements for
+each element whose other writes all went through. A refusal leaves the element as
+it is and names it under placed_not_set; GDL parameters are not read back.
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ from archicad_mcp.core.element_data import (
 )
 from archicad_mcp.core.modify import Plan, Planned, _grouped_warnings, _read_details
 from archicad_mcp.core.mutate import _group
+from archicad_mcp.core.part_placement import write_leaf_state
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK
 
 _ERRORS = (APIErrorBase, ArchicadUnavailableError)
@@ -290,6 +295,32 @@ def _judge(run: _Run, p: Planned, read: dict, levels: dict[int, float],
         verdict.modified += 1
 
 
+def _write_leaves(run: _Run, plan: Plan) -> tuple[list[dict], int]:
+    """(the elements whose leaves were not set, how many were). Only an element whose
+    other writes all went through gets its leaves, and nothing follows a refusal."""
+    unset, written = [], 0
+    for p in plan.planned:
+        if p.leaves is None:
+            continue
+        if run.stopped is not None:
+            message = ("not written: the run stopped before the leaves "
+                       f"({error_fields(run.stopped)['message']})")
+        elif p.guid not in run.sent or run.failed_guid(p.guid) or p.guid in run.not_sent:
+            message = ("not written: the element's other changes did not all go through "
+                       "(see failed and not_sent)")
+        else:
+            try:
+                message = write_leaf_state(run.conn, p.guid, p.leaves["parameters"])
+            except Exception as exc:  # whatever stops a write, the report still comes back
+                message = f"the write stopped on {type(exc).__name__}: {exc}"
+            if message is None:
+                written += 1
+                continue
+        unset.append({"guid": p.guid, "leaves": p.leaves["state"],
+                      "parameters": p.leaves["parameters"], "message": message})
+    return unset, written
+
+
 def commit(conn: ArchicadConnection, plan: Plan) -> dict:
     run = _Run(conn)
     mates = _group_mates(conn, plan)
@@ -329,6 +360,7 @@ def commit(conn: ArchicadConnection, plan: Plan) -> dict:
         if rest:
             result["unconfirmed"]["not_shown"] = rest
         after = mates_after = None
+    unset, leaves_written = _write_leaves(run, plan)
 
     if after is not None:
         verdict = _Verdict()
@@ -345,12 +377,16 @@ def commit(conn: ArchicadConnection, plan: Plan) -> dict:
             result["partly_applied"] = {"count": len(verdict.partly), "guids": shown}
             if rest:
                 result["partly_applied"]["not_shown"] = rest
+        if leaves_written:
+            verdict.unverified["leaves"] = leaves_written
         if verdict.unverified:
             result["unverified"] = dict(sorted(verdict.unverified.items()))
     if run.failed:
         result["failed"] = group_failures(run.failed, detail_key="command")
     if run.not_sent:
         result["not_sent"] = _group(run.not_sent)
+    if unset:
+        result["placed_not_set"] = unset
     if mates_after:
         changed = [g for g in mates
                    if not _same(mates_before.get(g, {}), mates_after.get(g, {}))]

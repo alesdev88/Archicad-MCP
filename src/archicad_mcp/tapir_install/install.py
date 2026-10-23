@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from archicad_mcp.data_dir import data_root
 from archicad_mcp.tapir_install.detect import TAPIR_SUBFOLDER, main_binary
 from archicad_mcp.tapir_install.plan import MOVABLE, Row
 from archicad_mcp.tapir_install.release import InstallError, check_mac_zip
@@ -40,14 +41,7 @@ class Outcome:
 
 
 def backup_root(platform: str | None = None) -> Path:
-    platform = platform or sys.platform
-    if platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    elif platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    else:
-        base = Path.home() / ".local" / "share"
-    return base / "archicad-mcp" / "tapir-backups"
+    return data_root(platform) / "tapir-backups"
 
 
 def _extract(src: Path, dest: Path) -> None:
