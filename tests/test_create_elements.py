@@ -1043,3 +1043,154 @@ def test_an_error_during_a_leaves_write_keeps_the_created_elements(tmp_path):
     assert result["elements"] == ["new-0"]
     [unset] = result["placed_not_set"]
     assert "RuntimeError" in unset["message"] and "socket closed" in unset["message"]
+
+
+# Heights Tapir reads as absolute. Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln, the
+# basement at -2.80): a column with z 0 and floorIndex -1 stood from 0.00 to 2.60, not
+# on the story; a slab's level, a beam's and a stair's zCoordinate were absolute too.
+# A wall's zCoordinate is the offset above floorIndex, as Tapir's schema says.
+
+SQUARE = [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]
+BASEMENT = (-2.8, 0.0)  # story 0 of the fake at -2.80, story 1 at 0.00
+
+
+def column(z, floor=0):
+    return {"coordinates": {"x": 0, "y": 0, "z": z}, "floorIndex": floor}
+
+
+def absolute_warnings(result):
+    return [w for w in result["warnings"] if "absolute" in w]
+
+
+def test_a_column_z_outside_the_story_it_names_warns_that_z_is_absolute():
+    result = create_elements(Plan(levels=BASEMENT).connection(), "column",
+                             [column(-2.8), column(0.5)])
+    [warning] = absolute_warnings(result)
+    assert "item 1" in warning and "item 0" not in warning
+    assert "-2.80" in warning  # the story level the z has to build on
+
+
+def test_a_slab_level_at_the_top_of_its_story_is_not_warned():
+    slab = {"level": 0.2, "floorIndex": 0, "polygonCoordinates": SQUARE}
+    result = create_elements(Plan(levels=BASEMENT).connection(), "slab", [slab])
+    assert absolute_warnings(result) == []
+
+
+@pytest.mark.parametrize("element_type, item", [
+    ("beam", {"begCoordinate": {"x": 0, "y": 0}, "endCoordinate": {"x": 3, "y": 0},
+              "zCoordinate": 3.5, "floorIndex": 0}),
+    ("stair", {"baseLinePoints": [{"x": 0, "y": 0}, {"x": 4, "y": 0}],
+               "zCoordinate": 0.5, "floorIndex": 0}),
+])
+def test_beam_and_stair_heights_are_checked_as_absolute(element_type, item):
+    result = create_elements(Plan(levels=BASEMENT).connection(), element_type, [item])
+    [warning] = absolute_warnings(result)
+    assert "item 0" in warning
+
+
+def test_a_wall_z_is_an_offset_above_its_story_and_is_not_warned():
+    wall = dict(WALL, floorIndex=0, zCoordinate=0.5)
+    result = create_elements(Plan(levels=BASEMENT).connection(), "wall", [wall])
+    assert absolute_warnings(result) == []
+
+
+def test_the_item_schema_reply_says_a_column_z_is_absolute():
+    result = create_elements(Plan().connection(), "column", [])
+    assert any("absolute" in note for note in result["notes"])
+
+
+# Stairs. Live 23.10.2026 (AC 29, Tapir 1.7.2): baseLinePoints is the stair's left
+# edge and the flight lies flightWidth to its right. A U given as its centre line
+# made the flights overlap, and Archicad answered only "Failed to create new Stair";
+# the same U as its outer edge was created, but Archicad laid the risers out at its
+# own going and the top flight ran 1.65 m past the baseline's end.
+
+U_AS_CENTRE_LINE = [(7.3, 4.82), (5.615, 4.82), (5.615, 5.92), (7.3, 5.92)]
+U_AS_OUTER_EDGE = [(7.3, 4.39), (5.19, 4.39), (5.19, 6.4), (7.3, 6.4)]
+
+
+def stair(points, width=0.86):
+    return {"baseLinePoints": [{"x": x, "y": y} for x, y in points], "zCoordinate": 0.0,
+            "floorIndex": 0, "flightWidth": width}
+
+
+def boxes(*extents):
+    return {"boundingBoxes3D": [{"boundingBox3D": dict(zip(
+        ("xMin", "xMax", "yMin", "yMax", "zMin", "zMax"), extent))} for extent in extents]}
+
+
+def test_a_stair_whose_flights_overlap_is_warned_before_it_is_sent():
+    result = create_elements(Plan().connection(), "stair",
+                             [stair(U_AS_OUTER_EDGE), stair(U_AS_CENTRE_LINE)])
+    [warning] = [w for w in result["warnings"] if "overlap" in w]
+    assert "item 1" in warning and "item 0" not in warning
+    assert "left edge" in warning
+
+
+def test_a_stair_that_runs_past_its_baseline_is_reported_after_the_create():
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((5.19, 8.95, 4.39, 6.4, -0.15, 2.8))
+    result = create_elements(conn, "stair", [stair(U_AS_OUTER_EDGE)], dry_run=False)
+    [warning] = [w for w in result["warnings"] if "past" in w]
+    assert "item 0" in warning and "1.65" in warning
+
+
+def test_a_stair_within_its_baseline_and_flights_is_not_reported():
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((5.19, 7.4, 4.39, 6.4, -0.15, 2.8))
+    result = create_elements(conn, "stair", [stair(U_AS_OUTER_EDGE)], dry_run=False)
+    assert "warnings" not in result
+
+
+def test_the_stair_schema_reply_says_the_baseline_is_the_left_edge():
+    result = create_elements(Plan().connection(), "stair", [])
+    assert any("left edge" in note for note in result["notes"])
+
+
+# Sides. Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
+# clockwise with referenceLineLocation Outside stood outside the outline; doors with
+# oSide false swung to the right of their wall's direction, and flipping oSide also
+# moved the hinge to the other jamb; windows with oSide false had their outer sill on
+# the right.
+
+@pytest.mark.parametrize("element_type, words", [
+    ("wall", ("Outside", "left", "counter-clockwise")),
+    ("door", ("oSide", "right", "reflected")),
+    ("window", ("oSide", "right", "outside")),
+])
+def test_the_schema_reply_says_which_side_things_go(element_type, words):
+    notes = " ".join(create_elements(Plan().connection(), element_type, [])["notes"])
+    assert all(word in notes for word in words)
+
+
+# Element IDs. Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): 14 doors all came in as
+# 'DOO - 004', 8 windows as 'WD - 002' and 12 zones as 'ZON - 003', while walls,
+# columns and slabs were numbered one by one.
+
+def ids_read_as(plan, *ids):
+    plan.core.official_responses["API.GetPropertyValuesOfElements"] = lambda p: {
+        "propertyValuesForElements": [
+            {"propertyValues": [{"propertyValue": {"type": "string", "status": "normal",
+                                                   "value": value}}]}
+            for _, value in zip(p["elements"], ids)]}
+
+
+def test_created_elements_that_share_an_id_are_reported():
+    plan = Plan(types={W1: "Wall"})
+    conn = plan.connection()
+    ids_read_as(plan, "DOO - 004", "DOO - 004", "DOO - 005")
+    items = [door(W1, sillHeight=0), door(W1, sillHeight=0, centerOffset=2.0),
+             door(W1, sillHeight=0, centerOffset=3.0)]
+    result = create_elements(conn, "door", items, dry_run=False)
+    [warning] = [w for w in result["warnings"] if "DOO - 004" in w]
+    assert "items 0, 1" in warning and "General_ElementID" in warning
+
+
+def test_created_elements_with_their_own_ids_are_not_reported():
+    plan = Plan()
+    conn = plan.connection()
+    ids_read_as(plan, "SW - 006", "SW - 007")
+    result = create_elements(conn, "wall", [WALL, WALL], dry_run=False)
+    assert "warnings" not in result

@@ -275,6 +275,30 @@ async def test_model_summary_flags_partial_coverage_without_tapir(monkeypatch):
     assert "Tapir" in payload["coverage_note"]
 
 
+
+async def test_model_summary_does_not_count_a_stairs_own_parts_as_objects(monkeypatch):
+    """Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): Tapir's GetAllElements listed 70
+    GDL parts owned by one stair (its grid, break marks, ...), which the official API
+    types Object, while GetElementsByType Object listed none of them."""
+    core = _install(monkeypatch, make_core())
+    owned, placed = ["part-1", "part-2"], "obj-1"
+    core.tapir_responses["GetAllElements"] = _elements(WHOLE_PLAN + owned + [placed])
+
+    def typed(p):
+        items = official_types(p)["typesOfElements"]
+        return {"typesOfElements": [
+            {"typeOfElement": {"elementId": el["elementId"], "elementType": "Object"}}
+            if el["elementId"]["guid"] in owned + [placed] else item
+            for el, item in zip(p["elements"], items)]}
+
+    core.official_responses["API.GetTypesOfElements"] = typed
+    core.tapir_responses["GetElementsByType"] = lambda p: (
+        _elements([placed]) if p["elementType"] == "Object" else elements_by_type(p))
+    payload = await call("get_model_summary")
+    assert payload["by_type"]["Object"] == 1
+    assert payload["owned_parts"] == {"Object": 2}
+    assert payload["element_count"] == 8
+
 # ---------- element types: what the official API cannot name ----------
 
 def _conn(core):

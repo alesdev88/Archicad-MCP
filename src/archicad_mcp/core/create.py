@@ -11,6 +11,7 @@ would accept. An object, lamp, door or window of a learned part may give
 from __future__ import annotations
 
 import difflib
+import math
 from dataclasses import dataclass
 
 import jsonschema
@@ -21,7 +22,13 @@ from archicad_mcp.core.create_placement import PLACEMENT_SCHEMAS, resolve_placem
 from archicad_mcp.core.editability import active_window, refusals
 from archicad_mcp.core.part_placement import write_leaf_state
 from archicad_mcp.core.part_records import PartRecords
-from archicad_mcp.extract import _fetch_types
+from archicad_mcp.core.favorites_commit import ELEMENT_ID
+from archicad_mcp.extract import (
+    PropertyFetchTooWideError,
+    _fetch_types,
+    element_payload,
+    fetch_property_values,
+)
 from archicad_mcp.gateway.registry import build_registry
 from archicad_mcp.tapir_requirements import (
     definitions_version,
@@ -85,20 +92,83 @@ class CreateType:
     # The oldest Archicad that creates the type. Tapir registers some of these
     # commands on older versions too and refuses them only once they are sent.
     archicad: int | None = None
+    # What Tapir's schema does not say about the fields, replied with the item schema.
+    notes: tuple[str, ...] = ()
 
 
 _WALL = frozenset({"Wall"})
 
+# Fields Tapir reads as an absolute elevation even when the item gives floorIndex.
+# Live 23.10.2026 (AC 29, Tapir 1.7.2, a basement at -2.80): a column with z 0 and
+# floorIndex -1 stood from 0.00 to 2.60; a slab's level and a beam's and a stair's
+# zCoordinate were absolute too. A wall's zCoordinate is the offset above floorIndex,
+# as Tapir's schema says. The flag: whether the top of the story still counts as on
+# it (a slab or a beam may hang from it, a column or a stair cannot stand there).
+_ABSOLUTE_Z = {"column": (("coordinates", "z"), False),
+               "slab": (("level",), True),
+               "beam": (("zCoordinate",), True),
+               "stair": (("zCoordinate",), False)}
+
+
+def _absolute_note(name: str) -> str:
+    field = ".".join(_ABSOLUTE_Z[name][0])
+    return (f"{field} is an absolute elevation, even when floorIndex is given: a {name} "
+            "on a story at -2.80 needs -2.80 plus its offset, not the offset alone.")
+
+
+# Live 23.10.2026 (AC 29, Tapir 1.7.2): a stair's baseLinePoints is its left edge and
+# the flight lies flightWidth to its right. A U given as its centre line made the
+# flights overlap, and Archicad answered only "Failed to create new Stair"; the same U
+# as its outer edge was created, but Archicad laid the risers out at its own going and
+# the top flight ran 1.65 m past the baseline's end (16 risers in a 2.2 x 2.0 m U).
+_STAIR_NOTES = (
+    "baseLinePoints is the stair's left edge, looking up the stair: the flight lies "
+    "flightWidth to its right. When a U turns towards its flights, the middle segment "
+    "must be at least twice flightWidth long, or the flights overlap and Archicad "
+    "answers only 'Failed to create new Stair'.",
+    "Archicad lays the risers out at its own going, and CreateStairs has no turn or "
+    "winder setting: a tight turn can push the top flight past the baseline's end. "
+    "create_elements reports a stair that does.")
+
+# Sides, live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
+# clockwise with referenceLineLocation Outside stood outside the outline; doors with
+# oSide false swung to the right of their wall's direction, and flipping oSide also
+# moved the hinge to the other jamb; windows with oSide false had their outer sill on
+# the right.
+_WALL_NOTES = (
+    "With referenceLineLocation 'Outside' the wall's body lies to the left of "
+    "begCoordinate -> endCoordinate: draw an outer wall outline counter-clockwise to "
+    "keep its outside face on the line.",
+    "zCoordinate is the offset above the story when floorIndex is given.")
+_OPENING_SIDE = "centerOffset runs from the wall's begCoordinate to the opening's centre."
+_DOOR_NOTES = (
+    _OPENING_SIDE,
+    "With oSide false the door swings to the right of the wall's begCoordinate -> "
+    "endCoordinate. oSide true swings it to the left and also moves the hinge to the "
+    "other jamb; reflected moves the hinge back.")
+_WINDOW_NOTES = (
+    _OPENING_SIDE,
+    "With oSide false the window's outside (its outer sill) faces the right of the "
+    "wall's begCoordinate -> endCoordinate.")
+
+# How far a created stair may reach past its baseline and flights before it is
+# reported: the straight stair of 23.10.2026 reached 0.14 m past its baseline's end.
+STAIR_OVERRUN_TOLERANCE = 0.3
+
 CREATE_TYPES: dict[str, CreateType] = {
     # Model elements
-    "wall": CreateType("CreateWalls", "wallsData", favorite_type="Wall"),
-    "beam": CreateType("CreateBeams", "beamsData", favorite_type="Beam"),
-    "column": CreateType("CreateColumns", "columnsData", favorite_type="Column"),
-    "slab": CreateType("CreateSlabs", "slabsData", favorite_type="Slab"),
+    "wall": CreateType("CreateWalls", "wallsData", favorite_type="Wall", notes=_WALL_NOTES),
+    "beam": CreateType("CreateBeams", "beamsData", favorite_type="Beam",
+                       notes=(_absolute_note("beam"),)),
+    "column": CreateType("CreateColumns", "columnsData", favorite_type="Column",
+                         notes=(_absolute_note("column"),)),
+    "slab": CreateType("CreateSlabs", "slabsData", favorite_type="Slab",
+                       notes=(_absolute_note("slab"),)),
     "roof": CreateType("CreateRoofs", "roofsData"),
     "morph": CreateType("CreateMorphs", "morphsData"),
     "mesh": CreateType("CreateMeshes", "meshesData", favorite_type="Mesh"),
-    "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair"),
+    "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair",
+                        notes=(*_STAIR_NOTES, _absolute_note("stair"))),
     "railing": CreateType("CreateRailings", "railingsData"),
     "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone"),
     "curtain_wall": CreateType("CreateCurtainWalls", "curtainWallsData",
@@ -108,9 +178,9 @@ CREATE_TYPES: dict[str, CreateType] = {
     "lamp": CreateType("CreateLamps", "lampsData", favorite_type="Lamp"),
     # Hosted in another element
     "door": CreateType("CreateDoors", "doorsData", favorite_type="Door",
-                       hosts=("ownerWallId",), host_types=_WALL),
+                       hosts=("ownerWallId",), host_types=_WALL, notes=_DOOR_NOTES),
     "window": CreateType("CreateWindows", "windowsData", favorite_type="Window",
-                         hosts=("ownerWallId",), host_types=_WALL),
+                         hosts=("ownerWallId",), host_types=_WALL, notes=_WINDOW_NOTES),
     "opening": CreateType("CreateOpenings", "openingsData", hosts=("ownerElementId",)),
     # MEP (Archicad 28 and later)
     "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData", archicad=28),
@@ -424,6 +494,173 @@ def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: Cre
             "tool right."]
 
 
+def _story_ranges(conn: ArchicadConnection) -> dict[int, tuple[float, float]]:
+    """Story index -> (level, top); none when Archicad does not say. A story without a
+    height ends where the next one starts; the topmost one without a height is left out."""
+    try:
+        answer = conn.tapir("GetStories")
+    except APIErrorBase:
+        return {}
+    stories = sorted((s for s in answer.get("stories") or []
+                      if isinstance(s, dict) and isinstance(s.get("index"), int)
+                      and isinstance(s.get("level"), (int, float))),
+                     key=lambda s: s["index"])
+    ranges = {}
+    for position, story in enumerate(stories):
+        level, height = float(story["level"]), story.get("height")
+        if isinstance(height, (int, float)):
+            ranges[story["index"]] = (level, level + height)
+        elif position + 1 < len(stories):
+            ranges[story["index"]] = (level, float(stories[position + 1]["level"]))
+    return ranges
+
+
+def _absolute_height_warnings(conn: ArchicadConnection, name: str, items: list[dict],
+                              ready: list[int]) -> list[str]:
+    """Items whose absolute height lies off the story their floorIndex names: most
+    likely an offset above the story, which Tapir would place that far above 0.00."""
+    if name not in _ABSOLUTE_Z:
+        return []
+    path, top_is_on = _ABSOLUTE_Z[name]
+    placed = []
+    for index in ready:
+        value: object = items[index]
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        floor = items[index].get("floorIndex")
+        if isinstance(floor, int) and isinstance(value, (int, float)):
+            placed.append((index, floor, float(value)))
+    ranges = _story_ranges(conn) if placed else {}
+    off = []
+    for index, floor, z in placed:
+        if floor not in ranges:
+            continue
+        level, top = ranges[floor]
+        above = z > top + 1e-6 if top_is_on else z >= top - 1e-6
+        if z < level - 1e-6 or above:
+            off.append(f"item {index}: {z:.2f} on story {floor}, which runs from "
+                       f"{level:.2f} to {top:.2f}")
+    if not off:
+        return []
+    field = ".".join(path)
+    shown = "; ".join(off[:INDICES_NAMED])
+    more = len(off) - INDICES_NAMED
+    return [f"{field} is an absolute elevation for a {name}, even with floorIndex, and it "
+            f"lies off the story it names ({shown}" + (f"; and {more} more" if more > 0 else "")
+            + f"). If it was meant as an offset above the story, send the story's level "
+            f"plus the offset."]
+
+
+def _flights(item: dict) -> list[list[tuple[float, float]]] | None:
+    """Each baseline segment's flight: the rectangle flightWidth to the right of it.
+    None when the item gives no width (a favourite's or the tool's applies) or bad points."""
+    width = item.get("flightWidth")
+    points = item.get("baseLinePoints")
+    if not isinstance(width, (int, float)) or not isinstance(points, list):
+        return None
+    try:
+        xy = [(float(p["x"]), float(p["y"])) for p in points]
+    except (KeyError, TypeError, ValueError):
+        return None
+    flights = []
+    for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
+        length = math.hypot(x1 - x0, y1 - y0)
+        if length < 1e-9:
+            return None
+        nx, ny = (y1 - y0) / length * width, -(x1 - x0) / length * width
+        flights.append([(x0, y0), (x1, y1), (x1 + nx, y1 + ny), (x0 + nx, y0 + ny)])
+    return flights
+
+
+def _overlap(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> bool:
+    """Whether two convex outlines share area; touching edges do not count."""
+    for outline in (a, b):
+        for (x0, y0), (x1, y1) in zip(outline, outline[1:] + outline[:1]):
+            length = math.hypot(x1 - x0, y1 - y0)
+            ax, ay = (y1 - y0) / length, (x0 - x1) / length
+            on_a = [ax * x + ay * y for x, y in a]
+            on_b = [ax * x + ay * y for x, y in b]
+            if max(on_a) <= min(on_b) + 1e-3 or max(on_b) <= min(on_a) + 1e-3:
+                return False
+    return True
+
+
+def _stair_overlap_warnings(name: str, items: list[dict], ready: list[int]) -> list[str]:
+    if name != "stair":
+        return []
+    crossing = []
+    for index in ready:
+        flights = _flights(items[index]) or []
+        if any(_overlap(flights[i], flights[j])
+               for i in range(len(flights)) for j in range(i + 2, len(flights))):
+            crossing.append(index)
+    if not crossing:
+        return []
+    return [f"The flights of {_named(crossing)} overlap: baseLinePoints is the stair's "
+            "left edge, looking up the stair, and each flight lies flightWidth to its "
+            "right. Archicad refuses such a stair with only 'Failed to create new Stair'. "
+            "Give the edge the flights turn away from, or a longer middle segment."]
+
+
+def _stair_overrun_warnings(conn: ArchicadConnection, items: list[dict],
+                            by_index: dict[str, str]) -> list[str]:
+    """Created stairs reaching past their baseline and flights by more than
+    STAIR_OVERRUN_TOLERANCE, measured on their 3D bounding boxes."""
+    measured = [(int(i), guid) for i, guid in by_index.items() if _flights(items[int(i)])]
+    if not measured or not conn.tapir_command_available("Get3DBoundingBoxes"):
+        return []
+    try:
+        answer = conn.tapir("Get3DBoundingBoxes",
+                            {"elements": element_payload([g for _, g in measured])})
+    except APIErrorBase:
+        return []
+    out = []
+    for (index, _), entry in zip(measured, answer.get("boundingBoxes3D") or []):
+        box = entry.get("boundingBox3D") if isinstance(entry, dict) else None
+        if not isinstance(box, dict):
+            continue
+        corners = [c for flight in _flights(items[index]) for c in flight]
+        xs, ys = [x for x, _ in corners], [y for _, y in corners]
+        reach = max(min(xs) - box.get("xMin", min(xs)), box.get("xMax", max(xs)) - max(xs),
+                    min(ys) - box.get("yMin", min(ys)), box.get("yMax", max(ys)) - max(ys))
+        if reach > STAIR_OVERRUN_TOLERANCE:
+            out.append(f"item {index}: {reach:.2f} m")
+    if not out:
+        return []
+    return [f"A created stair reaches past its baseline and flights ({'; '.join(out)}): "
+            "Archicad lays the risers out at its own going, and CreateStairs has no turn "
+            "or winder setting, so a tight turn pushes the top flight out. Check it in "
+            "plan before building on it: it can run through walls or the slab above."]
+
+
+def _shared_id_warnings(conn: ArchicadConnection, name: str,
+                        by_index: dict[str, str]) -> list[str]:
+    """Created elements that came in with one element ID. Live 23.10.2026 (AC 29, Tapir
+    1.7.2, Test.pln): 14 doors placed from a favourite all came in as 'DOO - 004' (a
+    favourite carries its ID), 8 windows as 'WD - 002' and 12 zones as 'ZON - 003',
+    while walls, columns and slabs were numbered one by one."""
+    if len(by_index) < 2:
+        return []
+    try:
+        values = fetch_property_values(conn, list(by_index.values()), [ELEMENT_ID])
+    except (APIErrorBase, PropertyFetchTooWideError):
+        return []
+    groups: dict[str, list[int]] = {}
+    for index, guid in by_index.items():
+        value = values.get(guid, {}).get(ELEMENT_ID)
+        if isinstance(value, str) and value:
+            groups.setdefault(value, []).append(int(index))
+    shared = [(value, sorted(indices)) for value, indices in groups.items()
+              if len(indices) > 1]
+    if not shared:
+        return []
+    shown = "; ".join(f"'{value}' on {_named(indices)}" for value, indices in shared)
+    return [f"Created {name}s share an element ID ({shown}): a favourite carries its own "
+            "ID, and Archicad does not number every type it creates through the API. A "
+            "schedule keyed on the ID merges them; give each its own with set_element_data "
+            f"({ELEMENT_ID})."]
+
+
 def _stale_tapir_warnings(conn: ArchicadConnection) -> list[str]:
     old = older_than_definitions(conn)
     if old is None:
@@ -492,7 +729,7 @@ def _write_leaves(conn: ArchicadConnection, leaf_writes: dict[int, dict],
     return unset
 
 
-def _commit(conn: ArchicadConnection, spec: CreateType, items: list[dict],
+def _commit(conn: ArchicadConnection, name: str, spec: CreateType, items: list[dict],
             ready: list[int], skipped: dict[int, str], warnings: list[str],
             placements: list[dict], leaf_writes: dict[int, dict]) -> dict:
     response = conn.tapir(spec.command, {spec.payload_key: [items[i] for i in ready]})
@@ -520,6 +757,9 @@ def _commit(conn: ArchicadConnection, spec: CreateType, items: list[dict],
     unset = _write_leaves(conn, leaf_writes, by_index)
     if unset:
         result["placed_not_set"] = unset
+    if spec.command == "CreateStairs":
+        warnings = warnings + _stair_overrun_warnings(conn, items, by_index)
+    warnings = warnings + _shared_id_warnings(conn, name, by_index)
     if warnings:
         result["warnings"] = warnings
     return result
@@ -544,6 +784,8 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     if not items:
         result = {"element_type": name, "command": spec.command,
                   "since_tapir": info.version, "item_schema": schema}
+        if spec.notes:
+            result["notes"] = list(spec.notes)
         if name in PLACEMENT_SCHEMAS:
             result["placement_schema"] = PLACEMENT_SCHEMAS[name]
         return result
@@ -583,12 +825,15 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                 + _object_warnings(name, items, ready)
                 + _tool_part_warnings(name, items, ready, dry_run)
                 + _part_name_parameter_warnings(conn, name, spec, items, ready)
+                + _absolute_height_warnings(conn, name, items, ready)
+                + _stair_overlap_warnings(name, items, ready)
                 + _stale_tapir_warnings(conn))
     if not dry_run:
         if not ready:
             return {"dry_run": False, "created": 0, "elements": [],
                     "skipped": _skipped_list(skipped), "warnings": warnings}
-        return _commit(conn, spec, items, ready, skipped, warnings, placements, leaf_writes)
+        return _commit(conn, name, spec, items, ready, skipped, warnings, placements,
+                       leaf_writes)
     result = {"dry_run": True, "element_type": name, "command": spec.command,
               "items": len(items), "ready": len(ready), "skipped": _skipped_list(skipped),
               "warnings": warnings, "active_window": window,

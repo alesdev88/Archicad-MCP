@@ -25,7 +25,7 @@ from archicad_mcp.connection import (
 from archicad_mcp.core import save as _save
 from archicad_mcp.core.project import scrub_credentials
 from archicad_mcp.core.query_schema import GroupSpec, groups_to_dicts
-from archicad_mcp.extract import build_snapshot, coverage_of
+from archicad_mcp.extract import build_snapshot, coverage_of, owned_objects
 from archicad_mcp.rules.engine import (
     collision_queries,
     data_needs,
@@ -173,7 +173,9 @@ def build_server(
                           "(can crash Archicad). Counts only, never element data. "
                           "'coverage' says what element_count spans: 'whole-plan' "
                           "with the Tapir add-on, 'model-elements-only' without it "
-                          "(then it is NOT a project total).",
+                          "(then it is NOT a project total). 'owned_parts' counts apart "
+                          "the GDL parts of stairs and other elements that Archicad "
+                          "types Object.",
               **_tool_meta("Summarize model contents", read_only=True, destructive=False))
     @_guarded
     def get_model_summary(include_layer_story: bool = False,
@@ -182,9 +184,15 @@ def build_server(
         needs = frozenset({"elements", "properties", "story"}) if include_layer_story \
             else frozenset({"elements"})
         snapshot = build_snapshot(conn, needs=needs)
-        by_type = Counter(e.element_type for e in snapshot.elements)
+        owned = owned_objects(conn, [e.guid for e in snapshot.elements
+                                     if e.element_type == "Object"])
+        by_type = Counter(e.element_type for e in snapshot.elements if e.guid not in owned)
         result = {"element_count": len(snapshot.elements),
                   "by_type": dict(by_type), **coverage_of(conn)}
+        if owned:
+            # GDL parts of a stair or another element, which the official API types
+            # Object: counted apart so by_type's Object is what was placed as one.
+            result["owned_parts"] = {"Object": len(owned)}
         if include_layer_story:
             by_layer = Counter(e.layer for e in snapshot.elements if e.layer)
             by_story = Counter(str(e.story) for e in snapshot.elements
@@ -488,7 +496,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "section_dimension; "
         "drawing (on a layout). Plurals and Tapir command names work too. Items use "
         "Tapir's field names and units (metres, radians): call with items=[] to get "
-        "the item schema for a type. DRY-RUN BY DEFAULT: every item is validated "
+        "the item schema for a type, with notes on what the schema leaves out (which "
+        "heights are absolute, which side a wall's body, a door's swing and a stair's "
+        "flight lie on). DRY-RUN BY DEFAULT: every item is validated "
         "against the schema (any problem: nothing is sent, problems listed by item "
         "index and field), a favoriteName and a libraryPartName must exist (closest "
         "names suggested), and hosts (a door's wall, the elements a dimension "
@@ -498,8 +508,10 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "or lamp has no dimensions (it would take the tool's current size, not the "
         "library part's), when it sends offset or useFixedAngle (Archicad "
         "discards them), when a door or window has no sillHeight (it would "
-        "take the tool's sill), and when one placed by libraryPartName leaves the Door "
-        "or Window tool holding that part. Learn a part once with learn_library_part "
+        "take the tool's sill), when one placed by libraryPartName leaves the Door "
+        "or Window tool holding that part, when an absolute height lies off the story "
+        "floorIndex names, when a stair's flights overlap, and, after the create, when "
+        "a stair runs past its baseline. Learn a part once with learn_library_part "
         "before placing it by placement; a learned part is then placed with no "
         "samples. An object, lamp, door or window of such a part may give placement "
         "instead: an object's footprint centre, size (length along the head, width "

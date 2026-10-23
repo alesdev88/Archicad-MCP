@@ -161,8 +161,6 @@ def test_side_effects():
     assert any("edge" in w for w in side_effects("ModifySlabs", {"holes": []}, SLAB))
     assert not any("removes the holes" in w for w in side_effects(
         "ModifySlabs", {"polygonOutline": outline, "holes": []}, SLAB))
-    assert any("relativeTopStory" in w
-               for w in side_effects("ModifyWalls", {"height": 3.0}, WALL))
     assert any("start thickness" in w
                for w in side_effects("ModifyWalls", {"thickness": 0.2}, WALL_TRAPEZOID))
     assert not side_effects("ModifyWalls", {"thickness": 0.2}, WALL)
@@ -212,3 +210,16 @@ def test_thickness_follows_the_structure():
     assert refusal("ModifyWalls", "thickness", {"thickness": 0.25}, WALL, NEW) is None
     assert "Basic" in refusal("ModifyWalls", "thickness",
                               {"thickness": 0.25, "compositeId": "X"}, WALL, NEW)
+
+
+def test_height_on_a_wall_whose_top_is_already_unlinked_says_nothing():
+    """Live 23.10.2026 (AC 29, Test.pln): twelve light-well walls created with an
+    explicit height (relativeTopStory 0) were warned that height unlinks their top."""
+    assert not any("relativeTopStory" in w
+                   for w in side_effects("ModifyWalls", {"height": 1.85}, WALL))
+
+
+def test_height_on_a_wall_linked_to_a_story_warns_that_it_unlinks_it():
+    linked = dict(WALL, details=dict(WALL["details"], relativeTopStory=1))
+    assert any("relativeTopStory" in w
+               for w in side_effects("ModifyWalls", {"height": 3.0}, linked))
