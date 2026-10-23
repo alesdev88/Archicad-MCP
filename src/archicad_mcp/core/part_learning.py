@@ -599,7 +599,8 @@ class _Learning:
                 why = (entry.get("error") or {}).get("message")
             self.warnings.append(
                 f"The {self.kind}'s GDL parameters could not be read, probably because "
-                "Tapir 1.7.2 refuses them for doors and windows placed through the API"
+                "Tapir 1.7.2 places doors and windows by part name with a parameter list "
+                "Archicad will not open (one placed from a favourite has no such fault)"
                 + (f" ({why})" if why else "") + ". Which sash or leaf a parameter opens "
                 "cannot be read from this sample.")
             return []

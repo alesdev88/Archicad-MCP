@@ -604,9 +604,12 @@ plan must be the active window; it is zoomed to the samples and stays zoomed, an
 door or window learned may leave the Door or Window tool holding that part. Then the
 agent looks at the image and tells `record_library_part` what it shows: a bed's head
 direction, a door's or window's hinge and swing for each way the part can be
-flipped, and how many leaves it has. On Tapir 1.7.2 GDL parameters cannot be read or
-written on doors and windows placed through the API, so their samples show no leaf
-parameters and a placement's leaves end in `placed_not_set`. If a window's capture
+flipped, and how many leaves it has. On Tapir 1.7.2 a door or window placed by part
+name, as the samples are, has GDL parameters that can be neither read nor written,
+and the Door or Window tool keeps that fault for later openings, hand-placed ones
+too; so the samples show no leaf parameters and a placement's leaves end in
+`placed_not_set`. The same part placed from a favourite has its parameters, and
+`create_elements` warns about doors and windows sent by part name. If a window's capture
 shows no opening lines, the view settings hide them: show them, then learn the window
 again before recording hinge and swing. The agent reads directions on screen, so
 learning refuses a rotated plan view. Each axis of an object's footprint is fitted

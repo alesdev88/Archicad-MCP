@@ -447,8 +447,8 @@ def test_windows_are_sampled_at_a_window_height_and_sill(records):
 def test_door_parameters_that_cannot_be_read_are_a_warning_not_an_error(records):
     out = learn_library_part(Fake().connection(), records, "Door", "door")
     assert "error" not in out and out["parameters"] == []
-    assert any("parameters could not be read, probably because Tapir 1.7.2 refuses them for "
-               "doors and windows placed through the API" in w for w in out["warnings"])
+    assert any("parameters could not be read, probably because Tapir 1.7.2 places doors and "
+               "windows by part name" in w for w in out["warnings"])
 
 
 def test_the_first_samples_parameters_come_back_by_name_type_and_value(records):

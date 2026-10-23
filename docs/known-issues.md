@@ -382,14 +382,22 @@ are `null` even though the instance is otherwise fine.
   by its foot-left corner, with the pillows towards +Y. "Placed against the
   wall" by its insertion point, the bed ran through the wall; `capture_window`
   showed it, and a move of the bed's length fixed it.
-- **GDL parameters cannot be read or written on doors and windows placed through
-  the API** (live 22.10.2026, Archicad 29, MCP-Test). `GetGDLParametersOfElements`
-  answers "Failed to get parameters of element with guid ...!" and
-  `SetGDLParametersOfElements` "Failed to change parameters of element with guid
-  ..." for every API-placed door and window, right after the create, seconds later
-  and after a `ModifyDoors` change that went through; objects answer both. So a
-  learned door or window shows no parameters, and a placement's `leaves` always end
-  in `placed_not_set`. A door placed by hand was not tried.
+- **A door or window placed by part name has GDL parameters that can be neither
+  read nor written, and its tool passes the fault on** (live 22 and 23.10.2026,
+  Archicad 29, MCP-Test). For `libraryPartName`, Tapir 1.7.2's `CreateDoors` and
+  `CreateWindows` build the Door or Window tool's parameter list from the bare part
+  (`ACAPI_LibraryPart_GetParams`) and create the opening from it; Archicad will not
+  open that list, so `GetGDLParametersOfElements` answers "Failed to get parameters
+  of element with guid ...!" and `SetGDLParametersOfElements` "Failed to change
+  parameters of element with guid ...". The tool keeps the list, so every later
+  opening from it, hand-placed ones included, has the same fault. A Double Window
+  with identical details placed through the API from a favourite read all 714
+  parameters and took writes; plain "Door" and "Window" placed from the favourites
+  "Generic Door" and "Generic Window" read 811 and 658. One placement from a
+  favourite, or the part picked again in the tool's settings, puts the tool right;
+  openings already placed keep the fault. `create_elements` warns about doors and
+  windows sent by `libraryPartName`, and a learned door or window shows no
+  parameters, so a placement's `leaves` end in `placed_not_set`.
 - **"Double Window" draws at least 1.5 m wide** (live 22.10.2026). Sent 1.0, 1.2,
   1.5 and 2.0 m wide, its plan boxes were 1.5, 1.5, 1.5 and 2.0 m, while
   `GetDetailsOfElements` kept the width sent. A sketch's 1.2 m double window comes

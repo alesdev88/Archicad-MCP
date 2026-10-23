@@ -390,6 +390,40 @@ def _tool_part_warnings(name: str, items: list[dict], ready: list[int],
             "back by hand if that is not wanted."]
 
 
+def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: CreateType,
+                                  items: list[dict], ready: list[int]) -> list[str]:
+    """A door or window placed by libraryPartName cannot have its GDL parameters read or
+    written, nor can any later one from its tool: live 23.10.2026, Tapir 1.7.2 builds the
+    tool's parameter list from the bare part, Archicad will not open it, and hand-placed
+    openings inherit it. The same part placed from a favourite read and wrote them all."""
+    tool = _TOOL_SILL.get(name)
+    named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
+    if tool is None or not named:
+        return []
+    try:
+        favorites = conn.tapir("GetFavoritesByType",
+                               {"elementType": spec.favorite_type}).get("favorites")
+    except APIErrorBase:
+        favorites = None  # unreadable: suggest favoriteName without a list
+    if isinstance(favorites, list) and favorites:
+        shown = ", ".join(str(f) for f in favorites[:INDICES_NAMED])
+        more = len(favorites) - INDICES_NAMED
+        listed = f"; the {spec.favorite_type} favourites here: {shown}" + (
+            f" and {more} more" if more > 0 else "")
+    elif isinstance(favorites, list):
+        listed = (f"; no {spec.favorite_type} favourites are saved in this project, so save "
+                  f"one from a {name} whose part was picked in the {tool} settings")
+    else:
+        listed = ""
+    return [f"{_named(named)}: a {name} placed by libraryPartName gets a GDL parameter list "
+            "Archicad will not open (Tapir 1.7.2), so its parameters, the opening types of "
+            "its sashes or leaves among them, can be neither read nor written, and the "
+            f"{tool} keeps that list: every later {name} from the {tool}, hand-placed ones "
+            f"too, has the same fault. Send favoriteName instead{listed}. One {name} placed "
+            f"from a favourite, or the part picked again in the {tool} settings, puts the "
+            "tool right."]
+
+
 def _stale_tapir_warnings(conn: ArchicadConnection) -> list[str]:
     old = older_than_definitions(conn)
     if old is None:
@@ -548,6 +582,7 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                    for text in texts]
                 + _object_warnings(name, items, ready)
                 + _tool_part_warnings(name, items, ready, dry_run)
+                + _part_name_parameter_warnings(conn, name, spec, items, ready)
                 + _stale_tapir_warnings(conn))
     if not dry_run:
         if not ready:
