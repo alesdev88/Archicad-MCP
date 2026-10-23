@@ -105,7 +105,8 @@ async def test_the_descriptions_say_what_learning_cannot_do_on_tapir_1_7_2():
     # A window without opening lines: show them, then learn it again.
     assert "then learn the window again" in learn
     # Leaves on 1.7.2, said plainly.
-    assert "cannot be read or written on doors and windows placed through the API" in learn
+    assert "placed by part name" in learn and "neither read nor written" in learn
+    assert "placed from a favourite has them" in learn
     assert "placed_not_set" in learn
     assert "rotated" in learn and "placed by coordinates" in learn
 

@@ -890,13 +890,44 @@ def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
     items = [door(W1, libraryPartName="Door 26", sillHeight=0.0),
              door(W1, libraryPartName="Door 27", sillHeight=0.0)]
     dry = create_elements(conn, element_type, items)
-    [warning] = dry["warnings"]
+    [warning] = [w for w in dry["warnings"] if "will hold" in w]
     assert f"the {tool} will hold 'Door 27'" in warning
     committed = create_elements(conn, element_type, items, dry_run=False)
-    [warning] = committed["warnings"]
+    [warning] = [w for w in committed["warnings"] if "now holds" in w]
     assert f"the {tool} now holds 'Door 27'" in warning
     plain = create_elements(conn, element_type, [door(W1, sillHeight=0.0)])
     assert plain["warnings"] == []
+
+
+@pytest.mark.parametrize("element_type, tool, favorite_type",
+                         [("door", "Door tool", "Door"), ("window", "Window tool", "Window")])
+def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_type, tool,
+                                                                         favorite_type):
+    # Live 23.10.2026 (Tapir 1.7.2): an opening placed by libraryPartName gets a GDL
+    # parameter list Archicad will not open, and the tool keeps it, so later openings
+    # from the tool, hand-placed ones too, have the same fault. The same part placed
+    # from a favourite read and wrote all its parameters.
+    plan = Plan(types={W1: "Wall"}, library=["Door"],
+                favorites={favorite_type: ["Generic", "Internal"]})
+    items = [door(W1, libraryPartName="Door", sillHeight=0.0),
+             door(W1, favoriteName="Generic", sillHeight=0.0)]
+    result = create_elements(plan.connection(), element_type, items)
+    [warning] = [w for w in result["warnings"] if "favoriteName" in w]
+    assert warning.startswith("item 0:")
+    assert "can be neither read nor written" in warning
+    assert f"every later {element_type} from the {tool}" in warning
+    assert f"the {favorite_type} favourites here: Generic, Internal" in warning
+    from_favorite = create_elements(plan.connection(), element_type, items[1:])
+    assert not [w for w in from_favorite["warnings"] if "neither read nor written" in w]
+
+
+def test_the_parameter_warning_says_when_there_is_no_favourite_to_send():
+    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={})
+    result = create_elements(plan.connection(), "door",
+                             [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    [warning] = [w for w in result["warnings"] if "neither read nor written" in w]
+    assert "Send favoriteName instead" in warning
+    assert "no Door favourites are saved" in warning and "favourites here" not in warning
 
 
 def test_a_placed_door_warns_about_the_tool_too(tmp_path):
