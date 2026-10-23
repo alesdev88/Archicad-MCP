@@ -50,8 +50,8 @@ for your platform from the
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.10.0-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.10.0-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.11.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.11.0-darwin-arm64.mcpb` |
 
 There is no Intel macOS bundle. `cryptography`, which this server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
@@ -90,7 +90,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 2. Install the server from PyPI
 uv tool install archicad-mcp-server
 #    or pin this exact release instead:
-#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.10.0/archicad_mcp_server-0.10.0-py3-none-any.whl
+#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 which archicad-mcp        # ~/.local/bin/archicad-mcp
@@ -123,7 +123,7 @@ winget install --id=astral-sh.uv -e
 # 2. Install the server from PyPI
 uv tool install archicad-mcp-server
 #    or pin this exact release instead:
-#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.10.0/archicad_mcp_server-0.10.0-py3-none-any.whl
+#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
 
 # 3. Note the path (you need it for the config below)
 where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
@@ -153,7 +153,7 @@ Claude Code inherits your shell's `PATH`, so the bare command name works:
 ```bash
 uv tool install archicad-mcp-server
 # or pin this exact release instead:
-# uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.10.0/archicad_mcp_server-0.10.0-py3-none-any.whl
+# uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
@@ -758,7 +758,7 @@ instead of at a wheel, or append a tag to build a released version from source:
 
 ```bash
 uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.10.0   # a release
+uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.11.0   # a release
 ```
 
 Live tests need a running Archicad. Open a **small, non-sensitive** test model
@@ -823,8 +823,8 @@ pushed tag has to be deleted before it can be corrected, and both PyPI and the
 registry refuse a version they already hold:
 
 ```bash
-uv run python scripts/check_release_version.py v0.10.0
-git tag v0.10.0 && git push origin v0.10.0
+uv run python scripts/check_release_version.py v0.11.0
+git tag v0.11.0 && git push origin v0.11.0
 ```
 
 A cross-built Windows bundle cannot be executed by the machine that built it,
