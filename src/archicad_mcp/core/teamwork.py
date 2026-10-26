@@ -20,10 +20,12 @@ Tapir answers every GUID uppercase whatever case it was sent in (live
 19.10.2026), so membership is compared on g.upper() and the results keep the
 caller's spelling.
 
-There is no read that says who holds an element without trying to reserve
-it: ACAPI_Teamwork_GetLockableStatus covers lockable sets (attributes), not
-elements. So the dry run can report not-found and already-mine, and must say
-that reserved-by-other is only learned by attempting.
+Up to Tapir 1.7.2 there is no read that says who holds an element without
+trying to reserve it: ACAPI_Teamwork_GetLockableStatus covers lockable sets
+(attributes), not elements. So that dry run can report not-found and
+already-mine, and must say that reserved-by-other is only learned by
+attempting. Tapir 1.7.3's GetReservationStatusOfElements reads the holder, so
+there the dry run names who holds each element as well.
 
 Non-element lockable object sets (attribute types, property and
 classification definitions, favourites, project info, ...) go through Tapir
@@ -95,6 +97,28 @@ def _partition(conn: ArchicadConnection, guids: list[str]) -> tuple[list[str], l
     return known, not_found, [g for g in known if g.upper() in mine]
 
 
+def _held_by_others(conn: ArchicadConnection, guids: list[str]) -> list[dict] | None:
+    """The elements another user holds, with that user, or None when this Tapir cannot
+    say without attempting (GetReservationStatusOfElements came in 1.7.3)."""
+    if not guids or not conn.tapir_command_available("GetReservationStatusOfElements"):
+        return None
+    held = []
+    try:
+        for start in range(0, len(guids), FILTER_CHUNK):
+            chunk = guids[start:start + FILTER_CHUNK]
+            statuses = conn.tapir("GetReservationStatusOfElements",
+                                  {"elements": element_payload(chunk)}).get(
+                                      "reservationStatuses", [])
+            for guid, status in zip(chunk, statuses):
+                if status.get("status") == "Locked":
+                    user = status.get("reservedBy") or {}
+                    held.append({"guid": guid, "user": user.get("userName"),
+                                 "user_id": user.get("userId")})
+    except APIErrorBase:
+        return None
+    return held
+
+
 def _execution_error(response: dict, what: str) -> dict | None:
     result = response.get("executionResult") or {}
     if result and not result.get("success", True):
@@ -109,8 +133,14 @@ def _reserve_guids(conn: ArchicadConnection, guids: list[str], confirm: bool) ->
     base = {"requested": len(_unique(guids)), "not_found": not_found,
             "already_mine": already_mine}
     if not confirm:
-        return {"dry_run": True, **base, "would_attempt": candidates,
-                "note": _ATTEMPT_NOTE}
+        held = _held_by_others(conn, candidates)
+        if held is None:
+            return {"dry_run": True, **base, "would_attempt": candidates,
+                    "note": _ATTEMPT_NOTE}
+        taken = {h["guid"] for h in held}
+        return {"dry_run": True, **base,
+                "would_attempt": [g for g in candidates if g not in taken],
+                "held_by_others": held}
     if not candidates:
         return {"dry_run": False, **base, "reserved": [], "reserved_by_others": [],
                 "indirectly_reserved": []}

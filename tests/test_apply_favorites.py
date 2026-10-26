@@ -64,8 +64,24 @@ ATTRIBUTES = {
 }
 
 
+# Tapir 1.7.3 keepFields names, as the details read holds them
+KEPT_AT_TOP = ("id", "layerIndex")
+SETTINGS = {
+    "Entrance Door": {"favorite": "Entrance Door", "elementType": "Door",
+                      "folder": ["Doors", "External"],
+                      "libPart": {"name": "Entrance Door", "ownUnID": {"guid": "C"},
+                                  "parentUnID": {"guid": "D"}},
+                      "parameters": [], "marker": {"libPart": {
+                          "name": "Door Marker", "ownUnID": {"guid": "E"},
+                          "parentUnID": {"guid": "F"}}, "parameters": []}},
+    "Partition Wall": {"favorite": "Partition Wall", "elementType": "Wall", "folder": [],
+                       "parameters": []},
+}
+
+
 class Project:
-    def __init__(self, elements=None, elsewhere=(), fail_apply=None):
+    def __init__(self, elements=None, elsewhere=(), fail_apply=None, version=None):
+        self.version = version               # GetAddOnVersion; None answers nothing
         self.elements = copy.deepcopy(elements if elements is not None else
                                       {WALL: WALL_DETAILS, DOOR: DOOR_DETAILS})
         self.elsewhere = set(elsewhere)      # passes IsEditable, not in this database
@@ -123,6 +139,7 @@ class Project:
                 continue
             change = APPLIED.get(name, {})
             entry = self.elements[guid]
+            before = copy.deepcopy(entry)
             for key, value in change.items():
                 if key == "details":
                     for k, v in value.items():
@@ -132,6 +149,11 @@ class Project:
                             entry["details"][k] = copy.deepcopy(v)
                 else:
                     entry[key] = value
+            for kept in params.get("keepFields", []):   # Tapir 1.7.3 copies them back
+                source, target = (before, entry) if kept in KEPT_AT_TOP else \
+                    (before["details"], entry["details"])
+                if kept in source:
+                    target[kept] = copy.deepcopy(source[kept])
             results.append({"success": True})
         return {"executionResults": results}
 
@@ -160,6 +182,10 @@ class Project:
             "SetDetailsOfElements": self._set_details,
             "GetAttributesByType": lambda p: {"attributes": ATTRIBUTES.get(p["attributeType"], [])},
             "GetLayers": lambda p: {"layers": [{"index": i} for i in LAYERS]},
+            **({"GetAddOnVersion": {"version": self.version},
+                "GetFavoriteSettings": lambda p: {"favoriteSettings": [
+                    SETTINGS.get(n, {"error": {"code": -1, "message": "no favorite"}})
+                    for n in p["favorites"]]}} if self.version else {}),
         }
 
 
@@ -236,6 +262,54 @@ def test_warnings_per_type():
 def test_bad_keep():
     result = run(Project(), [WALL], "Partition Wall", keep=["height"])
     assert "modify_elements" in result["error"]
+    result = run(Project(version="1.7.3"), [WALL], "Partition Wall", keep=["colour"])
+    assert "'colour'" in result["error"] and "'sillHeight'" in result["error"]
+
+
+def test_sizes_and_top_links_are_kept_from_tapir_1_7_3():
+    result = run(Project(version="1.7.2"), [WALL], "Partition Wall", keep=["height"])
+    assert "1.7.3" in result["error"] and "modify_elements" in result["error"]
+
+
+def test_on_1_7_3_tapir_keeps_the_fields_itself():
+    p = Project(version="1.7.3")
+    keep = ["id", "layer", "height", "topOffset", "relativeTopStory", "referenceLineLocation"]
+    result = run(p, [WALL], "Partition Wall", dry_run=False, keep=keep)
+    [sent] = p.sent("ApplyFavoritesToElements")
+    assert sent["keepFields"] == ["id", "layerIndex", "height", "topOffset",
+                                  "relativeTopStory", "referenceLineLocation"]
+    assert not p.sent("API.SetPropertyValuesOfElements") and not p.sent("SetDetailsOfElements")
+    changed = result["changed"][WALL]
+    assert not {"id", "layer", "details.height", "details.relativeTopStory",
+                "details.referenceLineLocation"} & set(changed)
+    assert changed["details.structureType"] == {"current": "Basic", "new": "Composite"}
+
+
+def test_warnings_leave_out_what_is_kept():
+    p = Project(version="1.7.3")
+    wall = warnings_of(run(p, [WALL], "Partition Wall",
+                           keep=["id", "height", "topOffset", "relativeTopStory",
+                                 "referenceLineLocation"]), WALL)
+    assert any("structure" in w for w in wall)
+    assert not any("height" in w or "reference line" in w for w in wall)
+    door = warnings_of(run(p, [DOOR], "Entrance Door",
+                           keep=["id", "width", "height", "sillHeight"]), DOOR)
+    assert any("library part" in w for w in door)
+    assert not any("sill" in w or "width" in w for w in door)
+
+
+def test_a_kept_height_alone_says_the_top_link_moves_it():
+    wall = warnings_of(run(Project(version="1.7.3"), [WALL], "Partition Wall",
+                           keep=["id", "height"]), WALL)
+    assert any("relativeTopStory" in w and "topOffset" in w for w in wall)
+
+
+def test_the_dry_run_shows_what_the_favourite_holds():
+    result = run(Project(version="1.7.3"), [DOOR], "Entrance Door")
+    assert result["favorite_settings"] == {"folder": "Doors/External",
+                                           "library_part": "Entrance Door",
+                                           "marker": "Door Marker"}
+    assert "favorite_settings" not in run(Project(), [DOOR], "Entrance Door")
 
 
 def test_to_defaults_dry_run():

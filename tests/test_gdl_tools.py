@@ -550,9 +550,11 @@ def test_deploy_reloads_places_renders_and_deletes(ws):
     conn = FakeConn()
     payload, png = gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
                                             keep=False, embed=False)
+    # the window is read before the database check (GetContainingDatabases answers
+    # from the floor plan only); this fake names none, so the listing decides
     assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
                                "GetElementPreviewImage", "FilterElements",
-                               "GetAllElements", "DeleteElements",
+                               "GetCurrentWindowType", "GetAllElements", "DeleteElements",
                                "GetDetailsOfElements"]
     assert png == PNG
     assert payload["kept"] is False

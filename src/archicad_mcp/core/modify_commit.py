@@ -38,7 +38,7 @@ from archicad_mcp.extract import PROPERTY_FETCH_CHUNK
 _ERRORS = (APIErrorBase, ArchicadUnavailableError)
 SET_DETAILS = "SetDetailsOfElements"
 MOVE = "MoveElements"
-_COMMON = ("story", "layer", "draw_order")
+_COMMON = ("story", "layer", "draw_order", "id")
 
 
 def setdetails_order(planned: list[Planned]) -> list[Planned]:
@@ -58,6 +58,8 @@ def _setdetails_item(p: Planned) -> dict:
         details["layerIndex"] = p.layer
     if p.draw_order is not None:
         details["drawIndex"] = p.draw_order
+    if p.element_id is not None:
+        details["id"] = p.element_id
     return {"elementId": {"guid": p.guid}, "details": details}
 
 
@@ -215,6 +217,8 @@ def _read_field(p: Planned, name: str, entry: dict):
         return entry.get("layerIndex")
     if name == "draw_order":
         return entry.get("drawIndex")
+    if name == "id":
+        return entry.get("id") or ""
     return mf.current_value(p.command, name, entry)
 
 
@@ -327,7 +331,8 @@ def commit(conn: ArchicadConnection, plan: Plan) -> dict:
     mates_before = _read_details(conn, mates) if mates else {}
 
     common = [p for p in plan.planned
-              if p.story is not None or p.layer is not None or p.draw_order is not None]
+              if p.story is not None or p.layer is not None or p.draw_order is not None
+              or p.element_id is not None]
     run.batches(SET_DETAILS, setdetails_order(common),
                 lambda batch: {"elementsWithDetails": [_setdetails_item(p) for p in batch]})
     _move_back(run, plan)

@@ -3,7 +3,8 @@
 An Object, a Door and a Wall, with properties, classifications, GDL and marker
 parameters and IFC properties. Writes change the model the way Archicad does,
 including its traps: a single GDL Angle arrives in degrees and is stored in
-radians, an Angle array and a marker Angle are stored as sent, and one
+radians (Tapir 1.7.3 takes it in radians), an Angle array and a marker Angle
+are stored as sent, and one
 parameter's "Parameter Script" caps the value written to it.
 """
 from __future__ import annotations
@@ -189,6 +190,9 @@ class FakeModel:
                 for e in p["elements"]]},
             "SetGDLParametersOfElements": self._counted(
                 "SetGDLParametersOfElements", self._set_gdl),
+            # Tapir 1.7.3; the fake's parts have no parameter that depends on another
+            "RunParameterScriptOfElements": lambda p: {"executionResults": [
+                {"success": True} for _ in p["elements"]]},
             "GetMarkerParametersOfElements": lambda p: {"markerParametersOfElements": [
                 {"libPart": {"name": "Marker"},
                  "parameters": copy.deepcopy(self.markers[e["elementId"]["guid"]])}
@@ -232,7 +236,8 @@ class FakeModel:
             for change in item["gdlParameters"]:
                 target = params[change["name"]]
                 value = change["value"]
-                if target["type"] == "Angle" and "dimension1" not in target:
+                if (target["type"] == "Angle" and "dimension1" not in target
+                        and tuple(map(int, self.tapir_version.split("."))) < (1, 7, 3)):
                     value = math.radians(value)       # ChangeAParameter takes degrees
                 if target["name"] == "gs_capped":
                     value = min(value, 1.0)           # the Parameter Script caps it

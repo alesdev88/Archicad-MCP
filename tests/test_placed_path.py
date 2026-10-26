@@ -80,6 +80,14 @@ def test_an_unknown_version_keeps_whole_array_writes():
     assert pp.tapir_version(conn) is None and pp.writes_items(conn) is False
 
 
+def test_tapir_1_7_3_takes_gdl_angles_in_radians():
+    # Tapir #1405: from 1.7.3 SetGDLParametersOfElements turns radians into the
+    # degrees ChangeAParameter takes, so the radians Get reads go back as they are.
+    for raw, radians in (("1.7.2", False), ("1.7.3", True), ("1.8.0", True)):
+        assert pp.angles_in_radians(_conn({"GetAddOnVersion": {"version": raw}})) is radians
+    assert pp.angles_in_radians(_conn({})) is False
+
+
 def test_resize_writes_reset_the_path_then_add_one_node_per_extend_write():
     assert pp.resize_writes({"extEnd": 3.0}, 5) == [
         {"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0},

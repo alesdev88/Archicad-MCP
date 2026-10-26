@@ -31,7 +31,9 @@ from archicad_mcp.extract import (
 )
 from archicad_mcp.gateway.registry import build_registry
 from archicad_mcp.tapir_requirements import (
+    _key,
     definitions_version,
+    installed_version,
     older_than_definitions,
     require_tapir_command,
 )
@@ -671,6 +673,31 @@ def _shared_id_warnings(conn: ArchicadConnection, name: str,
             f"({ELEMENT_ID})."]
 
 
+# The Create* commands whose items take the Element ID as `id` from Tapir 1.7.3
+# (#906, CreateElementsCommandBase); doors, windows, openings, roofs and morphs do not.
+ELEMENT_ID_TAPIR = (1, 7, 3)
+ELEMENT_ID_COMMANDS = frozenset({
+    "CreateArcs", "CreateBeams", "CreateCircles", "CreateColumns", "CreateCurtainWalls",
+    "CreateHatches", "CreateHotspots", "CreateLabels", "CreateLamps", "CreateLevelDimensions",
+    "CreateLineElements", "CreateMeshes", "CreateObjects", "CreatePolylines", "CreateSlabs",
+    "CreateSplines", "CreateStairs", "CreateTexts", "CreateWalls", "CreateZones"})
+
+
+def _element_id_skips(conn: ArchicadConnection, spec: CreateType, items: list[dict],
+                      skipped: dict[int, str]) -> dict[int, str]:
+    """Items with an id this Tapir would refuse: it takes one from 1.7.3."""
+    with_id = [i for i, item in enumerate(items) if "id" in item and i not in skipped]
+    if not with_id or spec.command not in ELEMENT_ID_COMMANDS:
+        return {}
+    version = installed_version(conn)
+    if version is not None and _key(version) >= ELEMENT_ID_TAPIR:
+        return {}
+    reason = (f"Tapir {version or '(version unknown)'} creates no element with an id; "
+              "Tapir 1.7.3 does. Leave 'id' out and set it after with set_element_data "
+              "(General_ElementID)")
+    return dict.fromkeys(with_id, reason)
+
+
 def _stale_tapir_warnings(conn: ArchicadConnection) -> list[str]:
     old = older_than_definitions(conn)
     if old is None:
@@ -823,6 +850,7 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     for index, reason in _favorite_skips(conn, name, spec, items).items():
         skipped.setdefault(index, reason)
     skipped.update(_host_skips(conn, name, spec, items, skipped))
+    skipped.update(_element_id_skips(conn, spec, items, skipped))
     library_skips, library_warnings = _library_part_checks(library, items, skipped)
     skipped.update(library_skips)
     window = active_window(conn)

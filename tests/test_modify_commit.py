@@ -330,3 +330,13 @@ def test_leaves_are_not_written_after_the_run_stopped(tmp_path):
     assert "SetGDLParametersOfElements" not in project.command_names()
     [unset] = out["placed_not_set"]
     assert "the run stopped" in unset["message"]
+
+
+def test_an_element_id_goes_through_setdetails_from_tapir_1_7_3():
+    project = ModifyProject(version="1.7.3")
+    out = _commit(project, [{"guid": SLAB, "id": "SLA - 101"}])
+    assert out == {"dry_run": False, "requested": 1, "modified": 1}
+    [sent] = [p for n, p in project.core.calls if n == "SetDetailsOfElements"]
+    assert sent["elementsWithDetails"] == [{"elementId": {"guid": SLAB},
+                                            "details": {"id": "SLA - 101"}}]
+    assert project.elements[SLAB]["id"] == "SLA - 101"

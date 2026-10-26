@@ -412,12 +412,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "on a hidden or locked layer, inside a hotlinked module, locked with Edit > "
         "Locking, or not reserved in Teamwork); 'not_sent' and 'stopped' if a batch "
         "was refused outright after earlier batches landed; 'unconfirmed' if the "
-        "read after the write failed."),
+        "read after the write failed. run_parameter_script=true (Tapir 1.7.3) runs "
+        "the Parameter Script of every element whose GDL write went through, before "
+        "the read back, so parameters that depend on the written ones update as they "
+        "would after an edit in the settings dialog; 'parameter_script' reports the "
+        "run. Off by default: a part's script can reset what was just written."),
               **_tool_meta("Write element data", read_only=False, destructive=True))
     @_guarded
     def set_element_data(changes: list[dict], dry_run: bool = True,
+                         run_parameter_script: bool = False,
                          port: int | None = None) -> dict:
-        return _element_data.set_element_data(_conn(port), changes, dry_run)
+        return _element_data.set_element_data(_conn(port), changes, dry_run,
+                                              run_parameter_script)
 
     from archicad_mcp.core import classification_edit as _classification_edit
     from archicad_mcp.core import definition_edit as _definition_edit
@@ -504,7 +510,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "names suggested), and hosts (a door's wall, the elements a dimension "
         "measures, a label's parent) must exist, be the right type and be "
         "editable; items failing those are skipped with the reason and the rest go "
-        "ahead. Warns when the active window is wrong for the type, when an object "
+        "ahead. Most types take the Element ID as 'id' from Tapir 1.7.3 (doors, windows, "
+        "openings, roofs and morphs do not); on an older Tapir such an item is skipped. "
+        "Warns when the active window is wrong for the type, when an object "
         "or lamp has no dimensions (it would take the tool's current size, not the "
         "library part's), when it sends offset or useFixedAngle (Archicad "
         "discards them), when a door or window has no sillHeight (it would "
@@ -665,7 +673,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "...fields}. Any element: story (index, ground floor 0, or a story name; the "
         "element keeps its height above the story and moves with it unless "
         "keep_elevation=true), layer (name), draw_order (1 to 14, 0 = the type's "
-        "default). Walls, beams, slabs, columns, windows, doors, morphs, multi-plane "
+        "default), id (the Element ID; Tapir 1.7.3 and newer, otherwise set_element_data "
+        "General_ElementID). Walls, beams, slabs, columns, windows, doors, morphs, multi-plane "
         "roofs, meshes, objects, lamps, texts and labels also take the fields of "
         "Tapir's Modify<Type> command by its own names (describe_api_command "
         "ModifyWalls lists them), e.g. height, thickness, sillHeight, lightIsOn. "
@@ -709,7 +718,13 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "checked live. Plan positions stay. Stairs, railings and "
         "curtain walls get only their own settings, not their parts'. keep (default "
         "[\"id\"]) writes each element's own Element ID back after the favourite, "
-        "and \"layer\" its own layer; use modify_elements for heights and sizes. "
+        "and \"layer\" its own layer. From Tapir 1.7.3 Tapir keeps them itself, and "
+        "keep also takes \"width\", \"height\" and \"sillHeight\" (doors, windows), "
+        "\"referenceLineLocation\" (walls) and \"height\", \"topOffset\" and "
+        "\"relativeTopStory\" (walls, columns; keep the three together), so e.g. only "
+        "the library part or the wall type changes; on older Tapir use modify_elements "
+        "for heights and sizes. On Tapir 1.7.3 the dry run also names the favourite's "
+        "library part, marker and folder (favorite_settings). "
         "settings, classifications, categories and properties choose what the "
         "favourite applies; classifications are added per system and property values "
         "overwrite. Pass dry_run=false to apply: returns applied, changed (per element "
@@ -932,8 +947,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "Reserve elements, and non-element object sets, in a Teamwork project so "
         "you can edit them (Tapir). CONFIRM-GATED: without confirm=true it only "
         "reports what it can learn without touching the server: not_found, "
-        "already_mine, and would_attempt. Whether another user holds an element is "
-        "only learned by attempting, because Archicad exposes no read for it. With "
+        "already_mine, and would_attempt. On Tapir 1.7.3 it also reads who holds an "
+        "element (held_by_others, with the user's name); on older Tapir that is only "
+        "learned by attempting, because Archicad exposes no read for it. With "
         "confirm=true returns reserved, reserved_by_others (with the user's name), "
         "already_mine, not_found, and indirectly_reserved: elements Archicad pulled "
         "into your workspace that you did not ask for, such as a door's wall. "

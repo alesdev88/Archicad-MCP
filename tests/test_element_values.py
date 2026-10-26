@@ -125,6 +125,11 @@ def test_a_single_gdl_angle_goes_to_tapir_in_degrees():
     assert ev.to_tapir(_entry("Angle"), math.pi / 2, "gdl") == pytest.approx(90.0)
 
 
+def test_from_tapir_1_7_3_a_single_gdl_angle_goes_in_radians():
+    # Tapir #1405 turns it into degrees for ChangeAParameter itself.
+    assert ev.to_tapir(_entry("Angle"), math.pi / 2, "gdl", radians=True) == math.pi / 2
+
+
 def test_angle_arrays_and_marker_angles_go_in_radians():
     # Whole arrays and marker values are written straight into the parameter
     # list, which holds radians.

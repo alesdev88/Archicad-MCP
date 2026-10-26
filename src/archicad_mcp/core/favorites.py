@@ -13,6 +13,12 @@ takes over, the commit diffs a details read before and after, and the
 Element ID is written back by default: a favourite's ID is a template value,
 and forty doors with one ID break the numbering.
 The design is docs/superpowers/specs/2026-10-19-collisions-favorites-design.md.
+
+Tapir 1.7.3 (#905) takes keepFields: it copies the named fields of the target
+back itself after the favourite, sizes and top links included, so `keep` grows
+to those fields there and the write-back after the call finds nothing left to
+do. GetFavoriteSettings (1.7.3) lets the dry run name the favourite's library
+part, marker and folder.
 """
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ from dataclasses import dataclass, field
 
 from multiconn_archicad.errors import APIErrorBase
 
-from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.attributes import layer_table
 from archicad_mcp.core.editability import NOT_FOUND, _details, reason_text, refusals
 from archicad_mcp.core.element_data import cap_list
@@ -29,30 +35,43 @@ from archicad_mcp.core.modify import _grouped_warnings
 from archicad_mcp.core.mutate import _group
 from archicad_mcp.core.query_schema import element_type_names
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK
+from archicad_mcp.tapir_requirements import _key, installed_version
 
 KEEPABLE = ("id", "layer")
 DEFAULT_KEEP = ("id",)
+# keep -> Tapir's keepFields name. Up to 1.7.2 only KEEPABLE, written back after the call.
+TAPIR_KEEPS = {"id": "id", "layer": "layerIndex", "width": "width", "height": "height",
+               "sillHeight": "sillHeight", "referenceLineLocation": "referenceLineLocation",
+               "topOffset": "topOffset", "relativeTopStory": "relativeTopStory"}
+KEEP_FIELDS_TAPIR = (1, 7, 3)
+TOP_LINK = ("height", "topOffset", "relativeTopStory")
 FLAGS = {"settings": "applySettings", "classifications": "applyClassifications",
          "categories": "applyCategories", "properties": "applyProperties"}
 
 OPENING_TYPES = frozenset({"Door", "Window", "Skylight"})
 HIERARCHICAL_TYPES = frozenset({"Stair", "Railing", "CurtainWall"})
-_TYPE_WARNINGS = {
-    "Wall": ("takes the favourite's height and top link, reference line, structure "
-             "and thickness, not only its materials and pens; its plan position stays"),
-    "Column": "takes the favourite's height and top link; its plan position stays",
-}
 # Every type the live check did not cover: the wall shows the favourite can
 # carry more than its description says, so the dry run must not imply less.
 _UNCHECKED_WARNING = ("may also take the favourite's size, thickness, height or "
                       "elevation (not checked live for this type); the commit reports "
                       "every field it changed")
-_OPENING_WARNING = ("takes the favourite's library part, width, height and sill "
-                    "height; it stays at its place in the wall")
 _HIERARCHICAL_WARNING = ("gets only its own settings: Tapir leaves the settings of its "
                          "parts (treads, posts, panels) alone so it does not move")
 _LAYER_WARNING = "takes the favourite's layer"
 _ID_WARNING = "takes the favourite's Element ID (keep=[\"id\"] writes its own back)"
+_HEIGHT_ALONE_WARNING = ("a kept height alone is recomputed by Archicad while the "
+                         "favourite's relativeTopStory links the top to a story: keep "
+                         "height, relativeTopStory and topOffset together")
+
+
+def _listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def keeps_fields(conn: ArchicadConnection) -> bool:
+    """Whether this Tapir copies kept fields back itself (keepFields, 1.7.3 and newer)."""
+    version = installed_version(conn)
+    return version is not None and _key(version) >= KEEP_FIELDS_TAPIR
 
 
 def _all_types() -> list[str]:
@@ -112,6 +131,8 @@ class FavoritePlan:
     keep: tuple[str, ...] = DEFAULT_KEEP
     window: str | None = None
     layers: dict[int, str] = field(default_factory=dict)
+    tapir_keeps: bool = False      # send keep as keepFields (Tapir 1.7.3)
+    settings: dict = field(default_factory=dict)   # GetFavoriteSettings, shown
 
 
 def _clean_guids(guids: list[str] | None) -> list[str]:
@@ -132,10 +153,22 @@ def _unknown(favorite: str, index: dict[str, list[str]]) -> dict:
 
 def _warnings(element_type: str, keep: tuple[str, ...]) -> list[str]:
     out = []
-    if element_type in _TYPE_WARNINGS:
-        out.append(_TYPE_WARNINGS[element_type])
+    top_link = [] if set(TOP_LINK) <= set(keep) else ["height and top link"]
+    if element_type == "Wall":
+        takes = top_link + [f for f, k in (("reference line", "referenceLineLocation"),)
+                            if k not in keep] + ["structure", "thickness"]
+        out.append(f"takes the favourite's {_listed(takes)}, not only its materials and "
+                   "pens; its plan position stays")
+    elif element_type == "Column":
+        if top_link:
+            out.append("takes the favourite's height and top link; its plan position stays")
     elif element_type in OPENING_TYPES:
-        out.append(_OPENING_WARNING)
+        sizes = [(n, k) for n, k in (("width", "width"), ("height", "height"),
+                                     ("sill height", "sillHeight"))
+                 if element_type != "Skylight" or k != "sillHeight"]
+        takes = ["library part"] + [n for n, k in sizes if k not in keep]
+        out.append(f"takes the favourite's {_listed(takes)}; it stays at its place in "
+                   "the wall")
     elif element_type in HIERARCHICAL_TYPES:
         out.append(_HIERARCHICAL_WARNING)
     else:
@@ -144,6 +177,28 @@ def _warnings(element_type: str, keep: tuple[str, ...]) -> list[str]:
         out.append(_LAYER_WARNING)
     if "id" not in keep:
         out.append(_ID_WARNING)
+    if element_type in ("Wall", "Column") and "height" in keep and top_link:
+        out.append(_HEIGHT_ALONE_WARNING)
+    return out
+
+
+def _settings(conn: ArchicadConnection, favorite: str) -> dict:
+    """What the favourite holds that the dry run can name: its folder, library part
+    and marker. Empty without GetFavoriteSettings (Tapir 1.7.3) or when it fails."""
+    if not conn.tapir_command_available("GetFavoriteSettings"):
+        return {}
+    try:
+        [item] = conn.tapir("GetFavoriteSettings",
+                            {"favorites": [favorite]}).get("favoriteSettings") or [{}]
+    except (APIErrorBase, ArchicadUnavailableError, ValueError):
+        return {}
+    out = {}
+    if item.get("folder"):
+        out["folder"] = "/".join(item["folder"])
+    if (item.get("libPart") or {}).get("name"):
+        out["library_part"] = item["libPart"]["name"]
+    if ((item.get("marker") or {}).get("libPart") or {}).get("name"):
+        out["marker"] = item["marker"]["libPart"]["name"]
     return out
 
 
@@ -151,7 +206,7 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
          flags: dict[str, bool], keep: tuple[str, ...]) -> FavoritePlan | dict:
     """Read and check every element; nothing is written."""
     p = FavoritePlan(favorite=favorite, favorite_types=[], requested=len(guids),
-                     flags=flags, keep=keep)
+                     flags=flags, keep=keep, tapir_keeps=keeps_fields(conn))
     refused, p.window = refusals(conn, guids) if guids else ({}, None)
     p.skipped.update(refused)
     entries = _read(conn, [g for g in guids if g not in refused], ["type", "id", "layerIndex"])
@@ -184,6 +239,7 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
         p.warnings[g] = _warnings(element_type, keep)
     if not p.favorite_types:
         p.favorite_types = holders
+    p.settings = _settings(conn, favorite)
     return p
 
 
@@ -213,6 +269,8 @@ def _favorite_fields(p: FavoritePlan) -> dict:
 def report_dry_run(p: FavoritePlan) -> dict:
     out: dict = {"dry_run": True, **_favorite_fields(p), "requested": p.requested,
                  "planned_count": len(p.planned)}
+    if p.settings:
+        out["favorite_settings"] = p.settings
     shown, rest = cap_list(p.planned)
     if shown:
         out["planned"] = [_planned_view(e, p.layers) for e in shown]
@@ -260,11 +318,17 @@ def apply_favorites(conn: ArchicadConnection, guids: list[str] | None,
                     properties: bool = True, keep: list[str] | None = None,
                     to_defaults: bool = False, dry_run: bool = True) -> dict:
     keep_set = tuple(DEFAULT_KEEP if keep is None else dict.fromkeys(keep))
-    bad = [k for k in keep_set if k not in KEEPABLE]
+    bad = [k for k in keep_set if k not in TAPIR_KEEPS]
     if bad:
-        return {"error": f"keep takes {', '.join(repr(k) for k in KEEPABLE)}; "
-                         f"{', '.join(repr(k) for k in bad)} cannot be kept here. Change "
-                         "heights, sizes and other fields back with modify_elements."}
+        return {"error": f"keep takes {', '.join(repr(k) for k in TAPIR_KEEPS)}; "
+                         f"{', '.join(repr(k) for k in bad)} cannot be kept. Change other "
+                         "fields back with modify_elements."}
+    newer = [k for k in keep_set if k not in KEEPABLE]
+    if newer and not keeps_fields(conn):
+        return {"error": f"Keeping {', '.join(repr(k) for k in newer)} needs Tapir 1.7.3 or "
+                         f"newer (Tapir copies them back itself); this Tapir keeps "
+                         f"{', '.join(repr(k) for k in KEEPABLE)} only. Update Tapir, or "
+                         "change heights and sizes back with modify_elements."}
     targets = _clean_guids(guids)
     if to_defaults:
         if targets:

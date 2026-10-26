@@ -1203,3 +1203,14 @@ def test_the_zone_schema_reply_says_stamps_follow_the_model_view_options():
     on, every stamp was there, its 667 parameters unchanged."""
     notes = " ".join(create_elements(Plan().connection(), "zone", [])["notes"])
     assert "Model View Options" in notes and "Label" in notes
+
+
+def test_an_element_id_on_create_waits_for_tapir_1_7_3():
+    # Tapir #906: the Create* commands take an id from 1.7.3; 1.7.2 refuses the field.
+    item = dict(WALL, id="W-01")
+    old = create_elements(Plan(tapir_version="1.7.2").connection(), "wall", [item, WALL])
+    assert [s["index"] for s in old["skipped"]] == [0]
+    assert "1.7.3" in old["skipped"][0]["reason"]
+    assert "set_element_data" in old["skipped"][0]["reason"]
+    new = create_elements(Plan(tapir_version="1.7.3").connection(), "wall", [item])
+    assert new["ready"] == 1 and new["payload"]["wallsData"][0]["id"] == "W-01"

@@ -46,10 +46,14 @@ class Project:
     def __init__(self, floor_plan=(), layout=(), section=(), window="FloorPlan",
                  locked=(), teamwork=False, mine=None, hidden=(),
                  details_take_fields=True, hotlinked=(), on_locked_layer=(),
-                 element_locked=()):
+                 element_locked=(), sub_objects=(), containing=False):
         self.databases = {"FloorPlan": set(floor_plan), "Layout": set(layout),
                           "Section": set(section)}
         self.window = window
+        # Zone stamps, stair parts: Tapir 1.7.3 GetAllElements leaves them out
+        # unless the IncludeSubElemObjects filter is given (#1471).
+        self.sub_objects = set(sub_objects)
+        self.containing = containing                 # Tapir 1.7.3 GetContainingDatabases
         self.hotlinked = set(hotlinked)              # inside a hotlinked module
         self.on_locked_layer = set(on_locked_layer)
         self.element_locked = set(element_locked)    # Edit > Locking
@@ -85,6 +89,20 @@ class Project:
         [name] = p["filters"]
         return {"elements": [e for e in p["elements"]
                              if tests[name](e["elementId"]["guid"])]}
+
+    def listing(self, p):
+        listed = self.active if "IncludeSubElemObjects" in (p or {}).get("filters", []) \
+            else self.active - self.sub_objects
+        return {"elements": [{"elementId": {"guid": g}} for g in sorted(listed)]}
+
+    def containing_databases(self, p):
+        out = []
+        for e in p["elements"]:
+            guid = e["elementId"]["guid"]
+            kind = next((k for k, members in self.databases.items() if guid in members), None)
+            out.append({"databaseId": {"guid": f"db-{kind}"}, "windowType": kind, "name": ""}
+                       if kind else {"error": {"code": -1, "message": "not found"}})
+        return {"databases": out}
 
     def types(self, p):
         return {"typesOfElements": [
@@ -151,8 +169,7 @@ class Project:
         official["API.GetPropertyValuesOfElements"] = self.property_values
         tapir = dict(api_replays.TAPIR)
         tapir.update({
-            "GetAllElements": lambda p: {"elements": [
-                {"elementId": {"guid": g}} for g in sorted(self.active)]},
+            "GetAllElements": self.listing,
             "GetAttributesByType": load("layers_by_type.json"),
             "GetLayers": layers_answer(locked={LOCKED_LAYER}),
             "FilterElements": self.filter_elements,
@@ -160,6 +177,7 @@ class Project:
             "DeleteElements": self.delete,
             "MoveElements": self.move,
             "GetCurrentWindowType": lambda p: {"currentWindowType": self.window},
+            **({"GetContainingDatabases": self.containing_databases} if self.containing else {}),
             "GetProjectInfo": {**api_replays.TAPIR["GetProjectInfo"],
                                "isTeamwork": self.teamwork},
         })
@@ -391,6 +409,38 @@ def test_the_database_check_is_one_listing_of_the_active_database():
     move_elements(project.connect(), ["a", "b", "text"], VECTOR, confirm=True)
     assert len(project.sent("GetAllElements")) == 1
     assert project.sent("GetDetailsOfElements") == []
+
+
+def test_the_floor_plan_asks_where_the_elements_are_instead_of_listing():
+    # Tapir 1.7.3 GetContainingDatabases names each element's database directly.
+    project = Project(floor_plan=["a", "b"], section=["text"], layout=["t2"], containing=True)
+    out = move_elements(project.connect(), ["a", "b", "text", "t2"], VECTOR, confirm=True)
+    assert out["moved"] == 2 and project.moved == ["a", "b"]
+    group = _only_group(out, "not_moved")
+    assert group["guids"] == ["text", "t2"]
+    assert group["reason"].startswith("in another view's database")
+    assert project.sent("GetAllElements") == []
+    [params] = project.sent("GetContainingDatabases")
+    assert len(params["elements"]) == 4
+
+
+def test_a_zone_stamp_is_not_taken_for_another_views_element():
+    # Tapir 1.7.3 GetAllElements leaves sub-element objects out by default.
+    for containing in (True, False):
+        project = Project(floor_plan=["a", "stamp"], sub_objects=["stamp"],
+                          containing=containing)
+        out = move_elements(project.connect(), ["a", "stamp"], VECTOR, confirm=True)
+        assert out == {"requested": 2, "moved": 2}, containing
+
+
+def test_another_view_active_still_checks_against_its_listing():
+    # GetContainingDatabases cannot say which section is active, so a section
+    # window keeps the listing of its own database.
+    project = Project(floor_plan=["a"], section=["text"], window="Section", containing=True)
+    out = move_elements(project.connect(), ["text"], VECTOR, confirm=True)
+    assert out == {"requested": 1, "moved": 1}
+    assert project.sent("GetContainingDatabases") == []
+    assert project.sent("GetAllElements") == [{"filters": ["IncludeSubElemObjects"]}]
 
 
 def test_an_empty_listing_refuses_nothing():

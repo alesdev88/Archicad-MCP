@@ -242,6 +242,24 @@ def test_item_writes_send_arcs_in_degrees():
     assert "A" not in _params(r) and "extStart" not in _params(r)
 
 
+def test_stripe_angles_go_in_degrees_up_to_1_7_2_and_in_radians_from_1_7_3():
+    # Tapir #1405: from 1.7.3 SetGDLParametersOfElements takes Angle values in radians
+    for version, sent in (("1.7.1", 45.0), ("1.7.2", 45.0), ("1.7.3", math.radians(45))):
+        conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": {"version": version}})
+        r = rm.create_road_marking(conn, points=PTS, stripes={"1": {"angle": 45}})
+        assert _params(r)["s1Angle"] == pytest.approx(sent), version
+
+
+def test_from_1_7_3_item_writes_send_arcs_in_radians():
+    arc = {"type": "Arc", "floorIndex": 0, "details": {"origin": {"x": 0, "y": 0}, "radius": 10.0,
+                                                       "begAngle": 0.0, "endAngle": math.pi / 3,
+                                                       "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details({"a-1": arc}), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": {"version": "1.7.3"}})
+    r = rm.create_road_marking(conn, source_guid="a-1")
+    assert _params(r)["segArc"][0] == pytest.approx(math.pi / 3)
+
+
 def test_a_new_marking_is_read_after_placing_for_its_grip_state():
     conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": V172,
                   "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},

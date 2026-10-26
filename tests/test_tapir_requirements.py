@@ -65,8 +65,11 @@ def test_pinned_release_meets_every_release_backed_minimum():
         minimum, _ = req.tool_minimum(tool)
         if minimum is not None:
             assert pinned >= _v(minimum), tool
-    synced = json.loads((DEFS / "tapir_version.json").read_text())["version"]
-    assert pinned >= _v(synced)
+    # Definitions generated from Tapir main run ahead of the pin until that Tapir is
+    # released; check_release_version.py holds the release meanwhile.
+    synced = json.loads((DEFS / "tapir_version.json").read_text())
+    if synced["source"] == "release":
+        assert pinned >= _v(synced["version"])
 
 
 def test_tool_minimum_picks_the_newest_command():
@@ -164,6 +167,15 @@ def test_version_corrections_still_correct_the_definitions():
 def test_every_reader_of_the_registry_sees_the_corrected_version():
     # describe_api_command and the dashboard read the registry, as the gates do.
     assert build_registry()["SaveCurrentWindowAsImage"].version == "1.7.2"
+
+
+def test_commands_labelled_1_7_2_but_first_in_1_7_3_are_corrected():
+    # Tapir main registers them as 1.7.2; the 1.7.2 release has none of them.
+    registry = build_registry()
+    for name in ("GetContainingDatabases", "GetReservationStatusOfElements", "MirrorElements"):
+        assert registry[name].version == "1.7.3", name
+    for name in ("GetFavoriteSettings", "RunParameterScriptOfElements"):
+        assert registry[name].version == "1.7.3", name
 
 
 def test_outdated_refusal_and_instance_hint_say_replace():

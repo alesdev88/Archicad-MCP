@@ -15,7 +15,14 @@ from multiconn_archicad.errors import APIErrorBase
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.core.attributes import tapir_attributes
 from archicad_mcp.core.element_data import cap_list, error_fields, group_failures
-from archicad_mcp.core.favorites import FLAGS, FavoritePlan, _favorite_fields, _notes, _read
+from archicad_mcp.core.favorites import (
+    FLAGS,
+    TAPIR_KEEPS,
+    FavoritePlan,
+    _favorite_fields,
+    _notes,
+    _read,
+)
 from archicad_mcp.core.modify_fields import ATTRIBUTE_FIELDS
 from archicad_mcp.core.mutate import _group
 from archicad_mcp.extract import PROPERTY_FETCH_CHUNK, resolve_property_ids
@@ -204,6 +211,9 @@ def commit(conn: ArchicadConnection, p: FavoritePlan) -> dict:
     payload = {"favoritesToApply": [{"elementId": {"guid": g}, "favorite": p.favorite}
                                     for g in guids],
                **{FLAGS[k]: v for k, v in p.flags.items()}}
+    if p.tapir_keeps and p.keep:
+        # Tapir copies these back itself; _restore then finds nothing left to write
+        payload["keepFields"] = [TAPIR_KEEPS[k] for k in p.keep]
     stopped = None
     try:
         response = conn.tapir("ApplyFavoritesToElements", payload) or {}

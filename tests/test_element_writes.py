@@ -293,6 +293,15 @@ def test_angles_reach_tapir_in_the_unit_each_write_path_takes():
     assert sent["mAngle"] == pytest.approx(math.pi)          # marker: radians
 
 
+def test_from_tapir_1_7_3_a_single_gdl_angle_goes_in_radians():
+    model = FakeModel(tapir_version="1.7.3")
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:gs_angle", "value": math.pi / 2}])
+    assert out == {"dry_run": False, "applied": 1}
+    [gdl] = model.calls("SetGDLParametersOfElements")
+    [sent] = gdl["elementsWithGDLParameters"][0]["gdlParameters"]
+    assert sent == {"name": "gs_angle", "value": pytest.approx(math.pi / 2)}
+
+
 def test_kinds_are_sent_classifications_first():
     model = FakeModel()
     _commit(model, list(reversed(_EVERY_KIND)))
@@ -447,6 +456,17 @@ def test_angle_arrays_wait_for_their_unit_to_be_verified():
     assert "Angle array" in _skips(out)[(OBJ, "gdl:gs_arr")]
 
 
+def test_angle_arrays_are_written_in_radians_from_1_7_3():
+    # Live 26.10.2026 (Tapir main 1.7.3, AC29 and AC30): a Swept Beam's segArc
+    # written as a list in radians read back as sent.
+    model = FakeModel(tapir_version="1.7.3")
+    out = _commit(model, [{"guid": OBJ, "property": "gdl:gs_arr", "value": [0.3, 0.4]}])
+    assert out == {"dry_run": False, "applied": 1}
+    [gdl] = model.calls("SetGDLParametersOfElements")
+    assert gdl["elementsWithGDLParameters"][0]["gdlParameters"] == [
+        {"name": "gs_arr", "value": [0.3, 0.4]}]
+
+
 # ---------- malformed and duplicate changes, after review ----------
 
 @pytest.mark.parametrize("change", [
@@ -483,3 +503,52 @@ def test_a_failed_readback_is_not_reported_as_a_stopped_run():
     out = _commit(model, [{"guid": DOOR, "property": "marker:iNumber", "value": "002"}])
     assert "stopped" not in out
     assert out["unconfirmed"]["error"] == {"code": 4001, "message": "Invalid program status"}
+
+
+# ---------- the parameter script, on request (Tapir 1.7.3) ----------
+
+_GDL_AND_PROPERTY = [{"guid": OBJ, "property": "gdl:A", "value": 1.2},
+                     {"guid": OBJ, "property": "Office/Status", "value": "new"}]
+
+
+def test_the_parameter_script_runs_after_the_gdl_writes_when_asked():
+    model = FakeModel(tapir_version="1.7.3")
+    out = set_element_data(model.conn(), _GDL_AND_PROPERTY, dry_run=False,
+                           run_parameter_script=True)
+    assert out["applied"] == 2 and out["parameter_script"] == {"ran": 1}
+    [run] = model.calls("RunParameterScriptOfElements")
+    assert run == {"elements": [{"elementId": {"guid": OBJ}}]}
+    order = [c for c, _ in model.core.calls]
+    script = order.index("RunParameterScriptOfElements")
+    assert order.index("SetGDLParametersOfElements") < script
+    assert script < len(order) - 1 - order[::-1].index("GetGDLParametersOfElements")
+
+
+def test_the_dry_run_says_which_elements_the_script_would_run_on():
+    out = set_element_data(FakeModel(tapir_version="1.7.3").conn(), _GDL_AND_PROPERTY,
+                           run_parameter_script=True)
+    assert out["parameter_script"] == {"elements": 1}
+
+
+def test_a_tapir_without_the_command_does_not_run_it_and_says_so():
+    model = FakeModel(tapir_version="1.7.2", unavailable={"RunParameterScriptOfElements"})
+    out = set_element_data(model.conn(), _GDL_AND_PROPERTY, dry_run=False,
+                           run_parameter_script=True)
+    assert out["applied"] == 2 and "1.7.3" in out["parameter_script"]["not_run"]
+    assert model.calls("RunParameterScriptOfElements") == []
+
+
+def test_the_parameter_script_is_not_run_unless_asked():
+    model = FakeModel(tapir_version="1.7.3")
+    out = set_element_data(model.conn(), _GDL_AND_PROPERTY, dry_run=False)
+    assert "parameter_script" not in out and model.calls("RunParameterScriptOfElements") == []
+
+
+def test_a_refused_parameter_script_run_is_grouped():
+    model = FakeModel(tapir_version="1.7.3")
+    model.core.tapir_responses["RunParameterScriptOfElements"] = lambda p: {
+        "executionResults": [{"success": False, "error": {"code": -1, "message": "no part"}}]}
+    out = set_element_data(model.conn(), _GDL_AND_PROPERTY, dry_run=False,
+                           run_parameter_script=True)
+    assert out["parameter_script"]["ran"] == 0
+    assert out["parameter_script"]["failed"][0]["message"] == "no part"

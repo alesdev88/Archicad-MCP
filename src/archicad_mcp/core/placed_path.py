@@ -18,11 +18,12 @@ from multiconn_archicad.errors import ArchicadAPIError
 
 from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core import swept_path as sp
+from archicad_mcp.core.element_values import RADIANS_TAPIR
 
 # From Tapir 1.7.2 (#558) SetGDLParametersOfElements writes an array item by item through
 # ACAPI_LibraryPart_ChangeAParameter: it refuses a list of another size, runs the part's
 # Parameter Script after every item (so the parts' node merge reacts to each one) and takes
-# angle items in degrees. Up to 1.7.1 a list replaced the array as sent: any size, no
+# angle items in degrees (radians from 1.7.3). Up to 1.7.1 a list replaced the array as sent: any size, no
 # script, angles in radians (docs/superpowers/specs/2026-10-19-tapir-1.7.2-array-writes.md).
 ITEM_WRITES = (1, 7, 2)
 MERGE_GAP = 0.01  # both parts merge consecutive nodes closer than this in plan
@@ -220,6 +221,13 @@ def writes_items(conn) -> bool:
     """Whether this Tapir writes arrays item by item (1.7.2 and newer)."""
     version = tapir_version(conn)
     return version is not None and version >= ITEM_WRITES
+
+
+def angles_in_radians(conn) -> bool:
+    """Whether this Tapir takes every GDL Angle in radians, as Get reads them (1.7.3 and
+    newer, Tapir #1405). Before, single angles and array items went in degrees."""
+    version = tapir_version(conn)
+    return version is not None and version >= RADIANS_TAPIR
 
 
 def gdl_parameters(conn, guid: str) -> dict:
