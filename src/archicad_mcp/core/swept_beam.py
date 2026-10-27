@@ -99,15 +99,24 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     loaded = pp.library_part_loaded(conn, LIBRARY_PART)
     if not loaded:
         warnings.append(NOT_LOADED)
+    current = None
+    profiles = None
     if update_guid is not None:
         origin, angle = pp.existing_frame(conn, update_guid, LIBRARY_PART)
+        # the beam's own segment profiles, kept while the node count holds
+        current = pp.gdl_parameters(conn, update_guid)
+        profiles, lost = _kept_profiles(current, len(path.nodes))
+        if lost:
+            warnings.append(f"The new path has {len(path.nodes)} nodes instead of "
+                            f"{len(current.get('nodeX') or [])}, so every segment goes back to "
+                            f"Profile 1 ({lost} were on Profile 2 or 3).")
     else:
         origin, angle = path.nodes[0], 0.0
     local = pp.to_local(path.nodes, origin, angle)
     items = pp.writes_items(conn)
     if items:
         pp.check_plan_gaps(local, LIBRARY_PART)
-    params = (_node_params(local, path.arcs, path_tolerance, items, radians)
+    params = (_node_params(local, path.arcs, path_tolerance, items, radians, profiles)
               + profile_params + cut_params)
     report = {
         "dry_run": dry_run,
@@ -129,7 +138,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
     if items:
         # no resizing: reset the path, grow it to the node count, then write every item
-        current = pp.gdl_parameters(conn, guid)
+        if current is None:
+            current = pp.gdl_parameters(conn, guid)
         params = (pp.resize_writes(current, len(local)) + params
                   + _kept_cuts(current, {p["name"] for p in params}, radians))
     pp.write_parameters(conn, guid, params, LIBRARY_PART)
@@ -201,6 +211,22 @@ def _kept_cuts(current: dict, written: set[str], radians: bool = False) -> list[
             for name, _ in CUT_LIMITS.values() if name not in written]
 
 
+def _kept_profiles(current: dict, n: int) -> tuple[list[int], int]:
+    """A placed beam's segment profiles (slots 1 to 3) for a new path of n nodes,
+    and how many segments on Profile 2 or 3 go back to Profile 1.
+
+    The profiles stay while the node count does: padded with 1, values outside
+    1 to 3 read as 1, and a beam from before profiles per segment reads as all 1.
+    With another node count every segment goes back to Profile 1; the count
+    leaves out the last item, which belongs to no segment."""
+    old = current.get("segProfile") or []
+    m = len(current.get("nodeX") or [])
+    if m == n:
+        kept = [int(v) if 1 <= int(v) <= 3 else 1 for v in old[:n]]
+        return kept + [1] * (n - len(kept)), 0
+    return [1] * n, sum(1 for v in old[:max(0, m - 1)] if int(v) in (2, 3))
+
+
 def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
     """Reference line placement. On an update, a value left as None is kept."""
     out = []
@@ -222,7 +248,7 @@ def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
 
 
 def _node_params(local, arcs, tol: float, items: bool = False,
-                 radians: bool = False) -> list[dict]:
+                 radians: bool = False, profiles: list[int] | None = None) -> list[dict]:
     """Node arrays and grip helpers for SetGDLParametersOfElements.
 
     Whole arrays (Tapir up to 1.7.1) take angle items in radians (single angles
@@ -234,6 +260,8 @@ def _node_params(local, arcs, tol: float, items: bool = False,
     1.7.3) and follow pp.resize_writes, which leaves the add-node grips balanced,
     so the extension pairs are not written (a lone extEnd write would be a drag);
     x and y go in the order pp.parked_xy gives.
+
+    profiles are the segment profile slots (all 1 when None, a new beam).
     """
     n = len(local)
 
@@ -259,6 +287,9 @@ def _node_params(local, arcs, tol: float, items: bool = False,
         {"name": "sagDone", "value": [0.0] * n},
         {"name": "insL", "value": [0.0] * n},
         {"name": "insDone", "value": [0.0] * n},
+        {"name": "segProfile", "value": list(profiles) if profiles else [1] * n},
+        {"name": "segProfGrip", "value": [0.0] * n},
+        {"name": "segProfDone", "value": [0.0] * n},
     ] + ext + [
         {"name": "pathTolerance", "value": tol},
         {"name": "A", "value": length},

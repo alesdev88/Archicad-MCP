@@ -136,6 +136,7 @@ def test_update_uses_the_existing_frame():
         "libPart": {"name": "Swept Beam"}, "origin": {"x": 10, "y": 0, "z": 1},
         "angle": math.pi / 2}}
     tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0]),
              "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
     conn = _conn(tapir)
     pts = [{"x": 10, "y": 0, "z": 1}, {"x": 10, "y": 3, "z": 1}]
@@ -179,6 +180,7 @@ def test_update_keeps_the_section_unless_the_call_sets_it():
     beam = {"type": "Object", "floorIndex": 0, "details": {
         "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
     tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0]),
              "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
     conn = _conn(tapir)
     pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
@@ -263,6 +265,7 @@ def test_update_keeps_the_end_cuts_unless_the_call_sets_them():
     beam = {"type": "Object", "floorIndex": 0, "details": {
         "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
     tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0]),
              "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
     conn = _conn(tapir)
     pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
@@ -304,6 +307,7 @@ def test_update_keeps_the_reference_line_unless_the_call_sets_it():
     beam = {"type": "Object", "floorIndex": 0, "details": {
         "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
     tapir = {"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0]),
              "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
     conn = _conn(tapir)
     pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
@@ -444,3 +448,62 @@ def test_a_vertical_piece_is_refused_before_anything_is_placed():
     result = sb.create_swept_beam(conn, points=pts, dry_run=False)
     assert "Nodes 2 and 3 are 0.0 mm apart in plan" in result["error"]
     assert all(cmd != "CreateObjects" for cmd, _ in conn._core.calls)
+
+
+# ---------------------------------------------------------------- profiles per segment
+
+BEAM = {"type": "Object", "floorIndex": 0, "details": {
+    "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+
+
+def test_new_beams_put_every_segment_on_profile_1_with_balanced_profile_grips():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 4, "z": 0}]
+    params = _params(sb.create_swept_beam(conn, points=pts))
+    assert params["segProfile"] == [1, 1, 1]
+    assert params["segProfGrip"] == params["segProfDone"] == [0.0, 0.0, 0.0]
+
+
+def test_kept_profiles_pad_clamp_and_count_what_goes_back():
+    assert sb._kept_profiles({"nodeX": [0, 1, 2], "segProfile": [2, 7]}, 3) == ([2, 1, 1], 0)
+    assert sb._kept_profiles({"nodeX": [0, 1], "segProfile": [3.0, 1.0]}, 2) == ([3, 1], 0)
+    # the last item belongs to no segment
+    assert sb._kept_profiles({"nodeX": [0, 1, 2], "segProfile": [2, 1, 3]}, 4) == ([1, 1, 1, 1], 1)
+    # a beam from before profiles per segment
+    assert sb._kept_profiles({"nodeX": [0, 1]}, 2) == ([1, 1], 0)
+
+
+def test_an_update_keeps_the_segment_profiles_when_the_node_count_holds():
+    conn = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
+                  "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0, 3.0], segProfile=[1, 2, 1]),
+                  "SetGDLParametersOfElements": OK})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 4, "z": 0}]
+    result = sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    assert _written(conn)["segProfile"] == [1, 2, 1]
+    assert result["warnings"] == []
+
+
+def test_an_update_with_another_node_count_says_which_segments_go_back_to_profile_1():
+    conn = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
+                  "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0, 3.0], segProfile=[2, 3, 1])})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 4, "z": 0},
+           {"x": 0, "y": 4, "z": 0}]
+    result = sb.create_swept_beam(conn, points=pts, update_guid="b-1")
+    assert _params(result)["segProfile"] == [1, 1, 1, 1]
+    assert ("The new path has 4 nodes instead of 3, so every segment goes back to Profile 1 "
+            "(2 were on Profile 2 or 3).") in result["warnings"]
+
+
+def test_item_writes_put_the_kept_profiles_back_after_the_reset():
+    conn = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V172, "SetGDLParametersOfElements": OK,
+                  "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0, 6.0], extEnd=0.0,
+                                                     segProfile=[1, 3, 1])})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 6, "y": 1, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    params = [p for c, p in conn._core.calls if c == "SetGDLParametersOfElements"][0][
+        "elementsWithGDLParameters"][0]["gdlParameters"]
+    names = [p["name"] for p in params]
+    assert names.index("aDone") < names.index("segProfile")
+    assert {"name": "segProfile", "value": [1, 3, 1]} in params
+    assert [c for c, _ in conn._core.calls].count("GetGDLParametersOfElements") == 1

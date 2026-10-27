@@ -32,7 +32,11 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
   added that far past the end, following the end's direction and slope.
 - Delete a node: drag it onto its neighbour.
 - Too many grips: the Grips checkboxes on the Path page switch the node,
-  curve, add-node and end cut grips on or off, in any mix.
+  curve, add-node and end cut grips on or off, in any mix; "Profile grips"
+  on the Segments page does the same for the profile grips.
+- Change a segment's profile: drag the grip two thirds along the segment
+  any distance; the segment moves to the next profile (see Profiles per
+  segment).
 - Heights: set Slope (%) on the Path page and close the dialog: the node
   heights follow the slope from node 1 along the plan length. Then drag
   single nodes in 3D; "Re-apply slope" puts them back on the slope.
@@ -74,6 +78,27 @@ On the Profile page choose "Profile attribute" and pick any profile. Its
 components keep their building materials in sections. If the profile is
 missing in a project, the beam falls back to the rectangle.
 
+## Profiles per segment
+
+One beam can carry up to three profiles, for an edge that is detailed
+differently on one side. On the Segments page pick Profile 1, 2 and 3 (2 and
+3 start empty) and set each segment to 1, 2 or 3 in the list. On the beam,
+each segment has a grip two thirds along it, in plan and in 3D: drag it any
+distance and the segment moves to the next profile, 1, 2, 3 and round,
+skipping a slot that is empty or repeats an earlier profile. The grips show
+only once two different profiles are set, so a beam with one profile looks
+as before.
+
+Where the profile changes at a corner, both sides keep the mitre; elsewhere
+the two pieces meet square on the node. A segment set to an empty slot shows
+Profile 1. Left face and Right face hold each segment's own face on the
+reference line, so profiles of different widths keep that face in line. The
+Rectangle section, the origin shift, Flip and the surface override stay one
+setting for the whole beam; draw the three profiles round the same reference
+point in Profile Manager so they line up. Inserting a node keeps the
+segment's profile on both halves, a node added past an end continues the end
+segment's profile, and a merged node leaves the longer segment's profile.
+
 ## From a curve (MCP)
 
 `create_swept_beam` turns a Morph line, Polyline, Line or Arc, or 3D points
@@ -83,7 +108,9 @@ reports how many nodes it made and how far they are from the source.
 end cuts in degrees, and `ref_line` ("left face", "centre", "right face") with
 `ref_offset` places the beam off the curve; rewriting a beam with
 `update_guid` keeps its profile, end cuts and reference line unless the call
-sets them.
+sets them. It keeps the segment profiles too when the new path has as many
+nodes as the beam; otherwise every segment goes back to Profile 1, and the
+result's warnings say how many were on Profile 2 or 3.
 
 With Tapir 1.7.2 or newer, which cannot resize an array parameter, the tool
 resets the beam's path, grows it to the node count with the add-node grip and
