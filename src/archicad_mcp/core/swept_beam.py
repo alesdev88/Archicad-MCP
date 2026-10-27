@@ -109,7 +109,7 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         if lost:
             warnings.append(f"The new path has {len(path.nodes)} nodes instead of "
                             f"{len(current.get('nodeX') or [])}, so every segment goes back to "
-                            f"Profile 1 ({lost} were on Profile 2 or 3).")
+                            f"Profile 1 ({lost} {'was' if lost == 1 else 'were'} on Profile 2 or 3).")
     else:
         origin, angle = path.nodes[0], 0.0
     local = pp.to_local(path.nodes, origin, angle)

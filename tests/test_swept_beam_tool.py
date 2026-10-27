@@ -492,6 +492,10 @@ def test_an_update_with_another_node_count_says_which_segments_go_back_to_profil
     assert _params(result)["segProfile"] == [1, 1, 1, 1]
     assert ("The new path has 4 nodes instead of 3, so every segment goes back to Profile 1 "
             "(2 were on Profile 2 or 3).") in result["warnings"]
+    one = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
+                 "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0, 3.0], segProfile=[1, 3, 1])})
+    assert any(w.endswith("(1 was on Profile 2 or 3).")
+               for w in sb.create_swept_beam(one, points=pts, update_guid="b-1")["warnings"])
 
 
 def test_item_writes_put_the_kept_profiles_back_after_the_reset():
