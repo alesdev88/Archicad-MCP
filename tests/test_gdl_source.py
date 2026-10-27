@@ -361,7 +361,7 @@ def test_swept_beam_has_three_profile_slots_and_segment_arrays():
     src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
     params = {p.name: p for p in src.params}
     order = [p.name for p in src.params]
-    assert src.version == "0.2.0"
+    assert src.version in ("0.2.0", "0.3.0")
     assert (params["beamProfile"].type, params["beamProfile"].default) == ("profile", 1)
     assert params["beamProfile"].description == "Profile 1"
     for name in ("beamProfile2", "beamProfile3"):
@@ -384,3 +384,14 @@ def test_swept_beam_param_script_shifts_the_profile_arrays_with_the_others():
         assert text.count(f"{name}[k + 1] = {name}[k]") == text.count("il[k + 1] = il[k]")
         assert text.count(f"{name}[k] = {name}[k + 1]") == text.count("il[k] = il[k + 1]")
     assert '"segProfGrip", "segProfDone"' in text  # hidden in the dialog's parameter list
+
+
+def test_swept_beam_segment_numbers_and_none_segments():
+    # segment labels in plan and a None choice that leaves a gap (0.3.0)
+    root = Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam"
+    src = source.load_source(root)
+    params = {p.name: p for p in src.params}
+    assert src.version == "0.3.0"
+    assert params["showSegNumbers"].type == "boolean" and params["showSegNumbers"].default is False
+    param = (root / "scripts" / "param.gdl").read_text(encoding="utf-8")
+    assert 'VALUES{2} "segProfile" 1, "Profile 1", 2, "Profile 2", 3, "Profile 3", 0, "None"' in param

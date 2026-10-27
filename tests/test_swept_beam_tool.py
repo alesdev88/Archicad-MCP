@@ -473,6 +473,9 @@ def test_kept_profiles_pad_clamp_and_count_what_goes_back():
     assert sb._kept_profiles({"nodeX": [0, 1, 2], "segProfile": [2, 1, 3]}, 4) == ([1, 1, 1, 1], 1)
     # a beam from before profiles per segment
     assert sb._kept_profiles({"nodeX": [0, 1]}, 2) == ([1, 1], 0)
+    # None (0) is a choice of its own: kept, and counted when it goes back
+    assert sb._kept_profiles({"nodeX": [0, 1, 2], "segProfile": [0, 1]}, 3) == ([0, 1, 1], 0)
+    assert sb._kept_profiles({"nodeX": [0, 1, 2], "segProfile": [0, 2, 1]}, 4) == ([1, 1, 1, 1], 2)
 
 
 def test_an_update_keeps_the_segment_profiles_when_the_node_count_holds():
@@ -493,10 +496,10 @@ def test_an_update_with_another_node_count_says_which_segments_go_back_to_profil
     result = sb.create_swept_beam(conn, points=pts, update_guid="b-1")
     assert _params(result)["segProfile"] == [1, 1, 1, 1]
     assert ("The new path has 4 nodes instead of 3, so every segment goes back to Profile 1 "
-            "(2 were on Profile 2 or 3).") in result["warnings"]
+            "(2 were on Profile 2, 3 or None).") in result["warnings"]
     one = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
                  "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0, 3.0], segProfile=[1, 3, 1])})
-    assert any(w.endswith("(1 was on Profile 2 or 3).")
+    assert any(w.endswith("(1 was on Profile 2, 3 or None).")
                for w in sb.create_swept_beam(one, points=pts, update_guid="b-1")["warnings"])
 
 

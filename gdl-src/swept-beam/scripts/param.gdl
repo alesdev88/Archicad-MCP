@@ -18,7 +18,7 @@ VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
 VALUES "gs_ui_current_page" 1, 2, 3, 4, 5
 ! applies to every item of the array
-VALUES{2} "segProfile" 1, "Profile 1", 2, "Profile 2", 3, "Profile 3"
+VALUES{2} "segProfile" 1, "Profile 1", 2, "Profile 2", 3, "Profile 3", 0, "None"
 VALUES "refLine" "Left face", "Centre", "Right face"
 ! the plan cuts have no range here: a grip drag can arrive as 350 for -10,
 ! and the Master Script folds and limits them
@@ -28,13 +28,13 @@ VALUES "cutEndTilt" RANGE [-85, 85]
 ! rising beam; the 3D script has its own node grips
 PARAMETERS AC_show2DHotspotsIn3D = 0
 HIDEPARAMETER "B", "ZZYZX", "aDone", "slopeDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "segProfGrip", "segProfDone", "gs_ui_current_page", "sb_version"
-IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile", "beamProfile2", "beamProfile3", "segProfile", "gripProfiles"
+IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile", "beamProfile2", "beamProfile3"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
 IF NOT (showPlanFill) THEN HIDEPARAMETER "planFill", "fillFgPen", "fillBgPen"
 ! beams placed before the switch store 0 (none), which the picker shows as MISSING
 IF showPlanFill AND planFill < 1 THEN PARAMETERS planFill = 1
-IF NOT (showNodeHeights) THEN HIDEPARAMETER "textPen", "textSizeMm"
+IF NOT (showNodeHeights) AND NOT (showSegNumbers) THEN HIDEPARAMETER "textPen", "textSizeMm"
 
 EPS = 0.0001
 GRIP_EPS = 0.0005
@@ -85,10 +85,11 @@ FOR i = 1 TO n
     IF i <= VARDIM1 (insL) THEN il[i] = insL[i]
     idn[i] = 0
     IF i <= VARDIM1 (insDone) THEN idn[i] = insDone[i]
-    ! the segment's profile slot, 1 past the array's end or out of range
+    ! the segment's profile slot, 0 for None, 1 past the array's end or out
+    ! of range
     spf[i] = 1
     IF i <= VARDIM1 (segProfile) THEN spf[i] = INT (segProfile[i])
-    IF spf[i] < 1 OR spf[i] > 3 THEN spf[i] = 1
+    IF spf[i] < 0 OR spf[i] > 3 THEN spf[i] = 1
     spg[i] = 0
     IF i <= VARDIM1 (segProfGrip) THEN spg[i] = segProfGrip[i]
     spd[i] = 0
@@ -200,18 +201,24 @@ FOR j = 1 TO n - 1
 NEXT j
 
 ! profile grips: a drag of any length steps the segment to the next slot that
-! holds a profile of its own (slotOn, Master Script), 1, 2, 3 and round; a
-! segment on a slot that is off steps from the slot it shows as (slotShow).
-! With only Profile 1 on, the drag changes nothing.
+! holds a profile of its own (slotOn, Master Script), then None (0, a gap),
+! then round to 1; a segment on a slot that is off steps from the slot it
+! shows as (slotShow). With only Profile 1 on, the drag toggles it and None.
 FOR j = 1 TO n - 1
     IF ABS (spg[j] - spd[j]) > GRIP_EPS THEN
-        stCur = slotShow[spf[j]]
+        stCur = spf[j]
+        IF stCur > 0 THEN stCur = slotShow[stCur]
         stNext = stCur
         stTries = 0
-        WHILE stTries < 3 DO
-            stNext = stNext MOD 3 + 1
+        WHILE stTries < 4 DO
+            stNext = stNext + 1
+            IF stNext > 3 THEN stNext = 0
             stTries = stTries + 1
-            IF slotOn[stNext] THEN stTries = 3
+            IF stNext = 0 THEN
+                stTries = 4
+            ELSE
+                IF slotOn[stNext] THEN stTries = 4
+            ENDIF
         ENDWHILE
         spf[j] = stNext
         spd[j] = spg[j]

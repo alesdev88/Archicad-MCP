@@ -32,39 +32,6 @@ NEXT jS
 ! so the plan looks as before. Taken at the path's height: rolled sections and
 ! tilted end faces are approximated ----
 IF nPath > 1 THEN
-    ! each sample takes its segment's width; at a node where the width
-    ! changes the band steps there, with a point for either side: on the
-    ! mitre line at a corner, square to the path elsewhere ("fpPoint")
-    nFp = 0
-    FOR iP = 1 TO nPath
-        jFp = sampSeg[iP]
-        IF jFp > 1 AND iP = nodePath[jFp] THEN
-            IF ABS (segUHi[jFp - 1] - segUHi[jFp]) > EPS THEN
-                jSide = jFp - 1
-                GOSUB "fpRight"
-            ENDIF
-        ENDIF
-        jSide = jFp
-        GOSUB "fpRight"
-    NEXT iP
-    FOR iP = nPath TO 1 STEP -1
-        jFp = sampSeg[iP]
-        jSide = jFp
-        GOSUB "fpLeft"
-        IF jFp > 1 AND iP = nodePath[jFp] THEN
-            IF ABS (segULo[jFp - 1] - segULo[jFp]) > EPS THEN
-                jSide = jFp - 1
-                GOSUB "fpLeft"
-            ENDIF
-        ENDIF
-    NEXT iP
-    iP = 1
-    uLo = segULo[1]
-    uHi = segUHi[1]
-    fpU = uHi
-    GOSUB "fpPoint"
-    PUT fpx, fpy, -1
-    nFp = nFp + 1
     IF showPlanFill AND planFill > 0 THEN
         SET FILL planFill
     ELSE
@@ -74,7 +41,27 @@ IF nPath > 1 THEN
         DEFINE EMPTY_FILL "Swept Beam empty fill"
         SET FILL "Swept Beam empty fill"
     ENDIF
-    POLY2_B{5} nFp, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
+    ! one band per piece between None segments (gaps): segments pS to pE
+    pS = 1
+    WHILE pS <= nNode - 1 DO
+        IF segAttr[pS] < 0 THEN
+            pS = pS + 1
+        ELSE
+            pE = pS
+            pGo = 1
+            WHILE pGo DO
+                pGo = 0
+                IF pE < nNode - 1 THEN
+                    IF segAttr[pE + 1] >= 0 THEN
+                        pE = pE + 1
+                        pGo = 1
+                    ENDIF
+                ENDIF
+            ENDWHILE
+            GOSUB "fpPiece"
+            pS = pE + 1
+        ENDIF
+    ENDWHILE
 ENDIF
 
 IF nPath < 2 THEN
@@ -124,6 +111,41 @@ IF showNodeHeights THEN
         DEL 2
         IF SYMB_MIRRORED THEN DEL 1
     NEXT iN
+ENDIF
+
+! segment labels at the middle of each segment (on the arc for a curved one):
+! the number, with its profile ("3: P2") when the section is a Profile
+! attribute, and "3: None" for a gap; horizontal on screen like the heights
+IF showSegNumbers AND nNode > 1 THEN
+    DEFINE STYLE "sbSegments" "Arial", MAX (0.5, textSizeMm), 5, 0
+    SET STYLE "sbSegments"
+    PEN textPen
+    viewRot = 0
+    rq = REQUEST ("view_rotangle", "", viewRot)
+    FOR jS = 1 TO nNode - 1
+        lbX = (nodeX[jS] + nodeX[jS + 1]) / 2
+        lbY = (nodeY[jS] + nodeY[jS + 1]) / 2
+        IF segIsArc[jS] THEN
+            lbVx = nodeX[jS] - segCx[jS]
+            lbVy = nodeY[jS] - segCy[jS]
+            lbTh = segAng[jS] / 2
+            lbX = segCx[jS] + lbVx * COS (lbTh) - lbVy * SIN (lbTh)
+            lbY = segCy[jS] + lbVx * SIN (lbTh) + lbVy * COS (lbTh)
+        ENDIF
+        lbText = STR (jS, 1, 0)
+        IF profileMode = "Profile attribute" THEN lbText = lbText + ": P" + STR (segSlot[jS], 1, 0)
+        IF segSlot[jS] = 0 THEN lbText = STR (jS, 1, 0) + ": None"
+        ADD2 lbX, lbY
+        IF SYMB_MIRRORED THEN
+            ROT2 SYMB_ROTANGLE - viewRot
+            MUL2 -1, 1
+        ELSE
+            ROT2 viewRot - SYMB_ROTANGLE
+        ENDIF
+        TEXT2 0, 0, lbText
+        DEL 2
+        IF SYMB_MIRRORED THEN DEL 1
+    NEXT jS
 ENDIF
 
 ! ---- grips, each group switched on or off by its Grips checkbox ----
@@ -195,15 +217,18 @@ NEXT jS
 ! profile grips: two thirds along each segment (Master Script), sliding along
 ! it like the insert grip; a drag of any length steps the segment to the next
 ! profile (Parameter Script). Only with two or more profiles of their own
-IF gripProfiles AND profileMode = "Profile attribute" AND nSlotsOn >= 2 THEN
+IF gripProfiles THEN
     FOR jS = 1 TO nNode - 1
         IF jS <= VARDIM1 (segProfGrip) AND jS <= VARDIM1 (segProfDone) THEN
+            segName = "Rectangle"
+            IF profileMode = "Profile attribute" THEN segName = "Profile " + STR (segSlot[jS], 1, 0)
+            IF segSlot[jS] = 0 THEN segName = "None"
             gbx = pgX[jS] - pgTx[jS] * segProfDone[jS]
             gby = pgY[jS] - pgTy[jS] * segProfDone[jS]
             hId = 500000 + jS * 10
             HOTSPOT2 gbx, gby, hId, segProfGrip[jS], 1 + 128
             HOTSPOT2 gbx - pgTx[jS], gby - pgTy[jS], hId + 1, segProfGrip[jS], 3
-            HOTSPOT2 gbx + pgTx[jS] * segProfGrip[jS], gby + pgTy[jS] * segProfGrip[jS], hId + 2, segProfGrip[jS], 2, segProfGrip[jS], "Segment " + STR (jS, 1, 0) + ": Profile " + STR (segSlot[jS], 1, 0) + ", drag to switch"
+            HOTSPOT2 gbx + pgTx[jS] * segProfGrip[jS], gby + pgTy[jS] * segProfGrip[jS], hId + 2, segProfGrip[jS], 2, segProfGrip[jS], "Segment " + STR (jS, 1, 0) + ": " + segName + ", drag to switch"
         ENDIF
     NEXT jS
 ENDIF
@@ -254,9 +279,12 @@ IF gripCuts AND nNode > 1 THEN
     gqy = -goy * SIN (cutStartPlan) + gox * COS (cutStartPlan)
     gpx = nodeX[1] - goy * gM
     gpy = nodeY[1] + gox * gM
-    HOTSPOT2 gpx, gpy, 390100, cutStartPlan, 6
-    HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390101, cutStartPlan, 4 + 128
-    HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    ! an end whose segment is None has no cut grips
+    IF segAttr[1] >= 0 THEN
+        HOTSPOT2 gpx, gpy, 390100, cutStartPlan, 6
+        HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390101, cutStartPlan, 4 + 128
+        HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
+    ENDIF
     ! end: left looking out of the end is left looking along the path (-U)
     gW = (segUHi[nNode - 1] - segULo[nNode - 1]) / 2
     IF gW < 0.01 THEN gW = 0.1
@@ -275,9 +303,11 @@ IF gripCuts AND nNode > 1 THEN
     gqy = -goy * SIN (cutEndPlan) + gox * COS (cutEndPlan)
     gpx = nodeX[nNode] + goy * gM
     gpy = nodeY[nNode] - gox * gM
-    HOTSPOT2 gpx, gpy, 390110, cutEndPlan, 6
-    HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390111, cutEndPlan, 4 + 128
-    HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    IF segAttr[nNode - 1] >= 0 THEN
+        HOTSPOT2 gpx, gpy, 390110, cutEndPlan, 6
+        HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390111, cutEndPlan, 4 + 128
+        HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
+    ENDIF
 ENDIF
 END
 
@@ -305,6 +335,57 @@ END
     IF refLine = "Right face" THEN refU = -refOffset - uHi
     uLo = uLo + refU
     uHi = uHi + refU
+RETURN
+
+"fpPiece":
+    ! the band of segments pS to pE. Each sample takes its segment's width; at
+    ! a node where the width changes the band steps there, with a point for
+    ! either side: on the mitre line at a corner, square to the path elsewhere
+    ! ("fpPoint"). A piece ending beside a gap ends square on the node
+    ! (fpOnly: 1 at its first sample, 2 at its last)
+    fiA = nodePath[pS]
+    fiB = nodePath[pE + 1]
+    nFp = 0
+    FOR iP = fiA TO fiB
+        jFp = sampSeg[iP]
+        IF iP = fiB THEN jFp = pE
+        fpOnly = 0
+        IF iP = fiA THEN fpOnly = 1
+        IF iP = fiB THEN fpOnly = 2
+        IF jFp > pS AND iP = nodePath[jFp] THEN
+            IF ABS (segUHi[jFp - 1] - segUHi[jFp]) > EPS THEN
+                jSide = jFp - 1
+                GOSUB "fpRight"
+            ENDIF
+        ENDIF
+        jSide = jFp
+        GOSUB "fpRight"
+    NEXT iP
+    FOR iP = fiB TO fiA STEP -1
+        jFp = sampSeg[iP]
+        IF iP = fiB THEN jFp = pE
+        fpOnly = 0
+        IF iP = fiA THEN fpOnly = 1
+        IF iP = fiB THEN fpOnly = 2
+        jSide = jFp
+        GOSUB "fpLeft"
+        IF jFp > pS AND iP = nodePath[jFp] THEN
+            IF ABS (segULo[jFp - 1] - segULo[jFp]) > EPS THEN
+                jSide = jFp - 1
+                GOSUB "fpLeft"
+            ENDIF
+        ENDIF
+    NEXT iP
+    iP = fiA
+    fpOnly = 1
+    jSide = pS
+    uLo = segULo[pS]
+    uHi = segUHi[pS]
+    fpU = uHi
+    GOSUB "fpPoint"
+    PUT fpx, fpy, -1
+    nFp = nFp + 1
+    POLY2_B{5} nFp, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
 RETURN
 
 "fpRight":
@@ -353,6 +434,17 @@ RETURN
             fd2y = pathY[iP + 1] - pathY[iP]
             fl1 = SQR (fd1x * fd1x + fd1y * fd1y)
             fl2 = SQR (fd2x * fd2x + fd2y * fd2y)
+            ! a piece ending beside a gap uses only its own direction, square
+            IF fpOnly = 1 THEN
+                fd1x = fd2x
+                fd1y = fd2y
+                fl1 = fl2
+            ENDIF
+            IF fpOnly = 2 THEN
+                fd2x = fd1x
+                fd2y = fd1y
+                fl2 = fl1
+            ENDIF
             ! a piece with no plan length (vertical) takes its neighbour's direction
             IF fl1 < EPS THEN
                 fd1x = fd2x

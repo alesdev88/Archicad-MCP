@@ -34,9 +34,11 @@ part, so the same file works in Archicad 27, 28, 29 and 30.
 - Too many grips: the Grips checkboxes on the Path page switch the node,
   curve, add-node and end cut grips on or off, in any mix; "Profile grips"
   on the Segments page does the same for the profile grips.
-- Change a segment's profile: drag the grip two thirds along the segment
-  any distance; the segment moves to the next profile (see Profiles per
-  segment).
+- Change a segment's profile, or leave it out: drag the grip two thirds
+  along the segment any distance; the segment moves to the next profile,
+  then None (see Profiles per segment).
+- Find a segment: "Show segment numbers" on the Floor plan page labels each
+  segment in plan with its number and profile ("3: P2", "3: None").
 - Heights: set Slope (%) on the Path page and close the dialog: the node
   heights follow the slope from node 1 along the plan length. Then drag
   single nodes in 3D; "Re-apply slope" puts them back on the slope.
@@ -84,10 +86,14 @@ One beam can carry up to three profiles, for an edge that is detailed
 differently on one side. On the Segments page pick Profile 1, 2 and 3 (2 and
 3 start empty) and set each segment to 1, 2 or 3 in the list. On the beam,
 each segment has a grip two thirds along it, in plan and in 3D: drag it any
-distance and the segment moves to the next profile, 1, 2, 3 and round,
-skipping a slot that is empty or repeats an earlier profile. The grips show
-only once two different profiles are set, so a beam with one profile looks
-as before.
+distance and the segment moves to the next profile, 1, 2, 3, None and
+round, skipping a slot that is empty or repeats an earlier profile. None
+leaves a gap: nothing is drawn there, and the pieces beside it end square on
+the node. None works with the Rectangle section too, where the grip switches
+between the rectangle and None. "Profile grips" on the Segments page hides
+the grips. "Show segment numbers" on the Floor plan page labels every
+segment at its middle with its number and profile, in the text pen and size
+of the node heights, so a long beam's segments can be found in the list.
 
 Where the profile changes at a corner, both sides keep the mitre; elsewhere
 the two pieces meet square on the node. A segment set to an empty slot shows

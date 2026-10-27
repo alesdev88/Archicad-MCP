@@ -69,18 +69,20 @@ IF profileMode = "Profile attribute" THEN
     UI_INFIELD "beamProfile2", 278, 68, 146, 19
     UI_OUTFIELD "Profile 3", 18, 94, 245, 18
     UI_INFIELD "beamProfile3", 278, 92, 146, 19
-    UI_OUTFIELD "Profile grips", 18, 118, 245, 18
-    UI_INFIELD "gripProfiles", 278, 116, 20, 19
-    ! one row per segment, set to Profile 1, 2 or 3; scrolls on a long beam
-    UI_LISTFIELD 1, 12, 142, 420, 96, 0, "Segment", "Profile"
-    FOR jS = 1 TO MIN (VARDIM1 (nodeX) - 1, VARDIM1 (segProfile))
-        UI_LISTITEM{2} jS, 1, segProfile[jS], 0, "", "Segment " + STR (jS, 1, 0)
-    NEXT jS
 ELSE
     UI_STYLE 1, 2
-    UI_OUTFIELD "Profiles per segment need the section source Profile attribute (Profile page).", 18, 50, 406, 20
+    UI_OUTFIELD "Rectangle section: every segment is the rectangle, or None for a gap.", 18, 50, 406, 20
+    UI_OUTFIELD "Profiles 2 and 3 need the section source Profile attribute (Profile page).", 18, 72, 406, 20
     UI_STYLE 0, 0
 ENDIF
+UI_OUTFIELD "Profile grips", 18, 118, 245, 18
+UI_INFIELD "gripProfiles", 278, 116, 20, 19
+! one row per segment, set to Profile 1, 2, 3 or None (a gap); scrolls on a
+! long beam; "Show segment numbers" (Floor plan page) labels them in plan
+UI_LISTFIELD 1, 12, 142, 420, 96, 0, "Segment", "Profile"
+FOR jS = 1 TO MIN (VARDIM1 (nodeX) - 1, VARDIM1 (segProfile))
+    UI_LISTITEM{2} jS, 1, segProfile[jS], 0, "", "Segment " + STR (jS, 1, 0)
+NEXT jS
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
@@ -100,18 +102,20 @@ IF showAxis THEN
 ENDIF
 UI_OUTFIELD "Show node heights", 18, 118, 245, 18
 UI_INFIELD "showNodeHeights", 278, 116, 146, 19
-IF showNodeHeights THEN
-    UI_OUTFIELD "Text pen / size (mm)", 18, 142, 245, 18
-    UI_INFIELD "textPen", 278, 140, 70, 19
-    UI_INFIELD "textSizeMm", 354, 140, 70, 19
+UI_OUTFIELD "Show segment numbers", 18, 142, 245, 18
+UI_INFIELD "showSegNumbers", 278, 140, 146, 19
+IF showNodeHeights OR showSegNumbers THEN
+    UI_OUTFIELD "Text pen / size (mm)", 18, 166, 245, 18
+    UI_INFIELD "textPen", 278, 164, 70, 19
+    UI_INFIELD "textSizeMm", 354, 164, 70, 19
 ENDIF
-UI_OUTFIELD "Show plan fill", 18, 166, 245, 18
-UI_INFIELD "showPlanFill", 278, 164, 20, 19
+UI_OUTFIELD "Show plan fill", 18, 190, 245, 18
+UI_INFIELD "showPlanFill", 278, 188, 20, 19
 IF showPlanFill THEN
-    UI_INFIELD "planFill", 304, 164, 120, 19
-    UI_OUTFIELD "Fill pen / background", 18, 190, 245, 18
-    UI_INFIELD "fillFgPen", 278, 188, 70, 19
-    UI_INFIELD "fillBgPen", 354, 188, 70, 19
+    UI_INFIELD "planFill", 304, 188, 120, 19
+    UI_OUTFIELD "Fill pen / background", 18, 214, 245, 18
+    UI_INFIELD "fillFgPen", 278, 212, 70, 19
+    UI_INFIELD "fillBgPen", 354, 212, 70, 19
 ENDIF
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20

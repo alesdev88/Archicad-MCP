@@ -197,14 +197,17 @@ NEXT iE
 
 ! ---- profiles per segment (spec 2026-10-27) ----
 ! slotOn: the slots that hold a profile of their own. Slot 1 always; 2 and 3
-! when set (0 is none) and not the same profile as a slot before them. The
-! profile grip steps only onto these, and the grips show with two or more.
+! with the section source Profile attribute, when set (0 is none) and not the
+! same profile as a slot before them. The profile grip steps only onto these
+! and None (segProfile 0, a gap).
 DIM slotOn[3]
 slotOn[1] = 1
 slotOn[2] = 0
-IF beamProfile2 > 0 AND beamProfile2 <> beamProfile THEN slotOn[2] = 1
 slotOn[3] = 0
-IF beamProfile3 > 0 AND beamProfile3 <> beamProfile AND beamProfile3 <> beamProfile2 THEN slotOn[3] = 1
+IF profileMode = "Profile attribute" THEN
+    IF beamProfile2 > 0 AND beamProfile2 <> beamProfile THEN slotOn[2] = 1
+    IF beamProfile3 > 0 AND beamProfile3 <> beamProfile AND beamProfile3 <> beamProfile2 THEN slotOn[3] = 1
+ENDIF
 nSlotsOn = slotOn[1] + slotOn[2] + slotOn[3]
 ! slotShow: the slot a segment on each slot shows as, the earliest slot with
 ! the same profile (an empty slot shows Profile 1)
@@ -217,28 +220,37 @@ IF slotOn[3] THEN slotShow[3] = 3
 IF slotOn[3] = 0 AND slotOn[2] AND beamProfile3 = beamProfile2 THEN slotShow[3] = 2
 
 ! segAttr: the profile attribute each segment is swept in, 0 for the
-! rectangle; an empty slot means Profile 1. segSlot: the slot the segment
-! shows as (slotShow), for the grips' descriptions. A beam from before this change
+! rectangle, -1 for None (a gap, nothing drawn); an empty slot means Profile
+! 1. segSlot: the slot the segment shows as (slotShow), 0 for None, for the
+! grips' descriptions and the plan labels. A beam from before this change
 ! runs this script before its Parameter Script pads segProfile, so the reads
 ! are guarded. nodeBreak: a node where the profile changes, which ends a run
-! in the 3D script as a kink does.
-DIM segAttr[], segSlot[], nodeBreak[]
+! in the 3D script as a kink does; nodeGap: a node beside a None segment,
+! where the pieces end square on the node.
+DIM segAttr[], segSlot[], nodeBreak[], nodeGap[]
 FOR iS = 1 TO MAX (1, nNode - 1)
     sSlot = 1
     IF iS <= VARDIM1 (segProfile) THEN sSlot = INT (segProfile[iS])
-    IF sSlot < 1 OR sSlot > 3 THEN sSlot = 1
+    IF sSlot < 0 OR sSlot > 3 THEN sSlot = 1
     segAttr[iS] = 0
     IF profileMode = "Profile attribute" THEN
         segAttr[iS] = beamProfile
         IF sSlot = 2 AND beamProfile2 > 0 THEN segAttr[iS] = beamProfile2
         IF sSlot = 3 AND beamProfile3 > 0 THEN segAttr[iS] = beamProfile3
     ENDIF
-    segSlot[iS] = slotShow[sSlot]
+    segSlot[iS] = 0
+    IF sSlot = 0 THEN
+        segAttr[iS] = -1
+    ELSE
+        segSlot[iS] = slotShow[sSlot]
+    ENDIF
 NEXT iS
 FOR iN = 1 TO nNode
     nodeBreak[iN] = 0
+    nodeGap[iN] = 0
     IF iN > 1 AND iN < nNode THEN
         IF segAttr[iN - 1] <> segAttr[iN] THEN nodeBreak[iN] = 1
+        IF segAttr[iN - 1] < 0 OR segAttr[iN] < 0 THEN nodeGap[iN] = 1
     ENDIF
 NEXT iN
 
@@ -279,6 +291,8 @@ FOR iN = 2 TO nNode - 1
         ! square to their own directions otherwise, which leaves a wedge
         kLimit = COS (1)
         IF nodeBreak[iN] THEN kLimit = COS (0.01)
+        ! beside a gap the pieces end square on the node, never on a mitre
+        IF nodeGap[iN] THEN kLimit = -2
         IF kCos < kLimit THEN
             nodeKink[iN] = 1
             kinkTurn[iN] = ACS (MAX (-1, MIN (1, kCos)))
