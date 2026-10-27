@@ -353,3 +353,34 @@ def test_swept_beam_size_defaults_are_one_metre():
     src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
     defaults = {p.name: p.default for p in src.params}
     assert defaults["A"] == defaults["B"] == defaults["aDone"] == 1.0
+
+
+def test_swept_beam_has_three_profile_slots_and_segment_arrays():
+    # a profile per segment (spec 2026-10-27): Profile 2 and 3 start empty
+    # (0), so a placed beam picks them up without an attribute nobody chose
+    src = source.load_source(Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam")
+    params = {p.name: p for p in src.params}
+    order = [p.name for p in src.params]
+    assert src.version == "0.2.0"
+    assert (params["beamProfile"].type, params["beamProfile"].default) == ("profile", 1)
+    assert params["beamProfile"].description == "Profile 1"
+    for name in ("beamProfile2", "beamProfile3"):
+        assert (params[name].type, params[name].default) == ("profile", 0)
+    assert order.index("beamProfile2") == order.index("beamProfile") + 1
+    assert order.index("beamProfile3") == order.index("beamProfile2") + 1
+    assert (params["segProfile"].type, params["segProfile"].default) == ("integer", [1, 1])
+    for name in ("segProfGrip", "segProfDone"):
+        assert params[name].type == "length" and params[name].default == [0.0, 0.0]
+        assert params[name].hidden
+    assert params["gripProfiles"].type == "boolean" and params["gripProfiles"].default is True
+
+
+def test_swept_beam_param_script_shifts_the_profile_arrays_with_the_others():
+    # every insert, prepend and merge moves the segment profiles and their grip
+    # pair with the other per-segment arrays, so a choice stays on its segment
+    text = (Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam"
+            / "scripts" / "param.gdl").read_text(encoding="utf-8")
+    for name in ("spf", "spg", "spd"):
+        assert text.count(f"{name}[k + 1] = {name}[k]") == text.count("il[k + 1] = il[k]")
+        assert text.count(f"{name}[k] = {name}[k + 1]") == text.count("il[k] = il[k + 1]")
+    assert '"segProfGrip", "segProfDone"' in text  # hidden in the dialog's parameter list

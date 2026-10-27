@@ -1,4 +1,5 @@
-! Swept Beam, User Interface Script: four pages (spec 1.6, end cuts on page 4)
+! Swept Beam, User Interface Script: five pages (spec 1.6; profiles per segment
+! on page 3, spec 2026-10-27; end cuts on page 5)
 
 UI_DIALOG "Swept Beam"
 UI_CURRENT_PAGE gs_ui_current_page
@@ -36,7 +37,7 @@ UI_SEPARATOR 12, 34, 432, 34
 UI_OUTFIELD "Section source", 18, 44, 245, 18
 UI_INFIELD "profileMode", 278, 42, 146, 19
 IF profileMode = "Profile attribute" THEN
-    UI_OUTFIELD "Profile", 18, 68, 245, 18
+    UI_OUTFIELD "Profile 1", 18, 68, 245, 18
     UI_INFIELD "beamProfile", 278, 66, 146, 19
 ENDIF
 UI_OUTFIELD "Rectangle width (also the fallback)", 18, 92, 245, 18
@@ -56,7 +57,34 @@ IF overrideSurface THEN UI_INFIELD "surfaceOverride", 304, 210, 120, 19
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
-UI_PAGE 3, -1, "Floor plan"
+UI_PAGE 3, -1, "Segments"
+UI_STYLE 2, 1
+UI_OUTFIELD "Segments", 12, 10, 420, 22
+UI_STYLE 0, 0
+UI_SEPARATOR 12, 34, 432, 34
+IF profileMode = "Profile attribute" THEN
+    UI_OUTFIELD "Profile 1", 18, 46, 245, 18
+    UI_INFIELD "beamProfile", 278, 44, 146, 19
+    UI_OUTFIELD "Profile 2", 18, 70, 245, 18
+    UI_INFIELD "beamProfile2", 278, 68, 146, 19
+    UI_OUTFIELD "Profile 3", 18, 94, 245, 18
+    UI_INFIELD "beamProfile3", 278, 92, 146, 19
+    UI_OUTFIELD "Profile grips", 18, 118, 245, 18
+    UI_INFIELD "gripProfiles", 278, 116, 20, 19
+    ! one row per segment, set to Profile 1, 2 or 3; scrolls on a long beam
+    UI_LISTFIELD 1, 12, 142, 420, 96, 0, "Segment", "Profile"
+    FOR jS = 1 TO MIN (VARDIM1 (nodeX) - 1, VARDIM1 (segProfile))
+        UI_LISTITEM{2} jS, 1, segProfile[jS], 0, "", "Segment " + STR (jS, 1, 0)
+    NEXT jS
+ELSE
+    UI_STYLE 1, 2
+    UI_OUTFIELD "Profiles per segment need the section source Profile attribute (Profile page).", 18, 50, 406, 20
+    UI_STYLE 0, 0
+ENDIF
+UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
+UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
+
+UI_PAGE 4, -1, "Floor plan"
 UI_STYLE 2, 1
 UI_OUTFIELD "Floor plan", 12, 10, 420, 22
 UI_STYLE 0, 0
@@ -88,7 +116,7 @@ ENDIF
 UI_BUTTON UI_PREV, "< Back", 12, 244, 72, 20
 UI_BUTTON UI_NEXT, "Next >", 352, 244, 72, 20
 
-UI_PAGE 4, -1, "Ends"
+UI_PAGE 5, -1, "Ends"
 UI_STYLE 2, 1
 UI_OUTFIELD "Ends", 12, 10, 420, 22
 UI_STYLE 0, 0

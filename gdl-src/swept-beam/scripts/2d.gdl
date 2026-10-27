@@ -5,29 +5,26 @@
 
 planMethod = 2 + 32
 
-! the section's extent beside the axis, positive to the right looking along
-! the path (with Flip the section's sides swap), with the reference line
-! shift, as the 3D script works it out; used by the footprint fill and the
-! end cut grips
-uLo = -rectW / 2 - profileOffsetU
-uHi = rectW / 2 - profileOffsetU
-IF profileMode = "Profile attribute" THEN
-    rqB = REQUEST ("Profile_default_boundingbox", beamProfile, gbXmin, gbYmin, gbXmax, gbYmax)
-    IF rqB > 0 THEN
-        uLo = gbXmin - profileOffsetU
-        uHi = gbXmax - profileOffsetU
+! each segment's section extent beside the axis (segULo, segUHi; see
+! "segExtent"), used by the footprint fill and the end cut grips; sampSeg:
+! the segment each path sample belongs to, a node's sample to the segment it
+! starts
+DIM segULo[], segUHi[], sampSeg[]
+FOR jS = 1 TO MAX (1, nNode - 1)
+    eAttr = segAttr[jS]
+    IF jS = 1 THEN
+        GOSUB "segExtent"
+    ELSE
+        IF eAttr <> segAttr[jS - 1] THEN GOSUB "segExtent"
     ENDIF
-ENDIF
-IF flipProfile THEN
-    uTmp = uLo
-    uLo = -uHi
-    uHi = -uTmp
-ENDIF
-refU = refOffset
-IF refLine = "Left face" THEN refU = refOffset - uLo
-IF refLine = "Right face" THEN refU = -refOffset - uHi
-uLo = uLo + refU
-uHi = uHi + refU
+    segULo[jS] = uLo
+    segUHi[jS] = uHi
+NEXT jS
+FOR jS = 1 TO nNode - 1
+    FOR iP = nodePath[jS] TO nodePath[jS + 1]
+        sampSeg[iP] = jS
+    NEXT iP
+NEXT jS
 
 ! ---- footprint fill: the band the beam covers in plan, closed on the end
 ! cuts. A fill makes the whole symbol clickable, not only its lines (as in the
@@ -35,20 +32,39 @@ uHi = uHi + refU
 ! so the plan looks as before. Taken at the path's height: rolled sections and
 ! tilted end faces are approximated ----
 IF nPath > 1 THEN
-    fpU = uHi
+    ! each sample takes its segment's width; at a node where the width
+    ! changes the band steps there, with a point for either side: on the
+    ! mitre line at a corner, square to the path elsewhere ("fpPoint")
+    nFp = 0
     FOR iP = 1 TO nPath
-        GOSUB "fpPoint"
-        PUT fpx, fpy, 1
+        jFp = sampSeg[iP]
+        IF jFp > 1 AND iP = nodePath[jFp] THEN
+            IF ABS (segUHi[jFp - 1] - segUHi[jFp]) > EPS THEN
+                jSide = jFp - 1
+                GOSUB "fpRight"
+            ENDIF
+        ENDIF
+        jSide = jFp
+        GOSUB "fpRight"
     NEXT iP
-    fpU = uLo
     FOR iP = nPath TO 1 STEP -1
-        GOSUB "fpPoint"
-        PUT fpx, fpy, 1
+        jFp = sampSeg[iP]
+        jSide = jFp
+        GOSUB "fpLeft"
+        IF jFp > 1 AND iP = nodePath[jFp] THEN
+            IF ABS (segULo[jFp - 1] - segULo[jFp]) > EPS THEN
+                jSide = jFp - 1
+                GOSUB "fpLeft"
+            ENDIF
+        ENDIF
     NEXT iP
-    fpU = uHi
     iP = 1
+    uLo = segULo[1]
+    uHi = segUHi[1]
+    fpU = uHi
     GOSUB "fpPoint"
     PUT fpx, fpy, -1
+    nFp = nFp + 1
     IF showPlanFill AND planFill > 0 THEN
         SET FILL planFill
     ELSE
@@ -58,7 +74,7 @@ IF nPath > 1 THEN
         DEFINE EMPTY_FILL "Swept Beam empty fill"
         SET FILL "Swept Beam empty fill"
     ENDIF
-    POLY2_B{5} 2 * nPath + 1, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
+    POLY2_B{5} nFp, 2, 0, 0, fillFgPen, fillBgPen, 0, 0, 1, 0, 0, 1, 0, GET (NSP)
 ENDIF
 
 IF nPath < 2 THEN
@@ -176,6 +192,22 @@ FOR jS = 1 TO nNode - 1
     ENDIF
 NEXT jS
 
+! profile grips: two thirds along each segment (Master Script), sliding along
+! it like the insert grip; a drag of any length steps the segment to the next
+! profile (Parameter Script). Only with two or more profiles of their own
+IF gripProfiles AND profileMode = "Profile attribute" AND nSlotsOn >= 2 THEN
+    FOR jS = 1 TO nNode - 1
+        IF jS <= VARDIM1 (segProfGrip) AND jS <= VARDIM1 (segProfDone) THEN
+            gbx = pgX[jS] - pgTx[jS] * segProfDone[jS]
+            gby = pgY[jS] - pgTy[jS] * segProfDone[jS]
+            hId = 500000 + jS * 10
+            HOTSPOT2 gbx, gby, hId, segProfGrip[jS], 1 + 128
+            HOTSPOT2 gbx - pgTx[jS], gby - pgTy[jS], hId + 1, segProfGrip[jS], 3
+            HOTSPOT2 gbx + pgTx[jS] * segProfGrip[jS], gby + pgTy[jS] * segProfGrip[jS], hId + 2, segProfGrip[jS], 2, segProfGrip[jS], "Segment " + STR (jS, 1, 0) + ": Profile " + STR (segSlot[jS], 1, 0) + ", drag to switch"
+        ENDIF
+    NEXT jS
+ENDIF
+
 ! add-node grips past the ends, along the end directions
 IF gripAdd AND nNode > 1 THEN
     geX = eTx[nNode - 1]
@@ -203,9 +235,10 @@ ENDIF
 ! from the pivot, and along a cut turned by the angle the corner is
 ! gW / cos (angle) away.
 IF gripCuts AND nNode > 1 THEN
-    gW = (uHi - uLo) / 2
+    ! each end on its own segment's section
+    gW = (segUHi[1] - segULo[1]) / 2
     IF gW < 0.01 THEN gW = 0.1
-    gM = (uLo + uHi) / 2
+    gM = (segULo[1] + segUHi[1]) / 2
     ! start: left looking out of the start is right looking along the path (+U)
     gC = COS (cutStartPlan)
     IF ABS (gC) < 0.17 THEN
@@ -225,6 +258,9 @@ IF gripCuts AND nNode > 1 THEN
     HOTSPOT2 gpx - goy * gW, gpy + gox * gW, 390101, cutStartPlan, 4 + 128
     HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390102, cutStartPlan, 5, cutStartPlan, "Start cut in plan"
     ! end: left looking out of the end is left looking along the path (-U)
+    gW = (segUHi[nNode - 1] - segULo[nNode - 1]) / 2
+    IF gW < 0.01 THEN gW = 0.1
+    gM = (segULo[nNode - 1] + segUHi[nNode - 1]) / 2
     gC = COS (cutEndPlan)
     IF ABS (gC) < 0.17 THEN
         IF gC >= 0 THEN
@@ -244,6 +280,52 @@ IF gripCuts AND nNode > 1 THEN
     HOTSPOT2 gpx + gqx * gW / gC, gpy + gqy * gW / gC, 390112, cutEndPlan, 5, cutEndPlan, "End cut in plan"
 ENDIF
 END
+
+"segExtent":
+    ! the section's extent beside the axis for profile attribute eAttr (0:
+    ! the rectangle, also the fallback), positive to the right looking along
+    ! the path (with Flip the section's sides swap), with the reference line
+    ! shift, as the 3D script works it out
+    uLo = -rectW / 2 - profileOffsetU
+    uHi = rectW / 2 - profileOffsetU
+    IF eAttr > 0 THEN
+        rqB = REQUEST ("Profile_default_boundingbox", eAttr, gbXmin, gbYmin, gbXmax, gbYmax)
+        IF rqB > 0 THEN
+            uLo = gbXmin - profileOffsetU
+            uHi = gbXmax - profileOffsetU
+        ENDIF
+    ENDIF
+    IF flipProfile THEN
+        uTmp = uLo
+        uLo = -uHi
+        uHi = -uTmp
+    ENDIF
+    refU = refOffset
+    IF refLine = "Left face" THEN refU = refOffset - uLo
+    IF refLine = "Right face" THEN refU = -refOffset - uHi
+    uLo = uLo + refU
+    uHi = uHi + refU
+RETURN
+
+"fpRight":
+    ! the footprint point at sample iP on the right edge of segment jSide
+    uLo = segULo[jSide]
+    uHi = segUHi[jSide]
+    fpU = uHi
+    GOSUB "fpPoint"
+    PUT fpx, fpy, 1
+    nFp = nFp + 1
+RETURN
+
+"fpLeft":
+    ! the same on the left edge
+    uLo = segULo[jSide]
+    uHi = segUHi[jSide]
+    fpU = uLo
+    GOSUB "fpPoint"
+    PUT fpx, fpy, 1
+    nFp = nFp + 1
+RETURN
 
 "fpPoint":
     ! the footprint's point at path sample iP, fpU to the right of the path:

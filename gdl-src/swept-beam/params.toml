@@ -116,6 +116,12 @@ default = true
 description = "End cut grips"
 
 [[param]]
+name = "gripProfiles"
+type = "boolean"
+default = true
+description = "Profile grips"
+
+[[param]]
 name = "refLine"
 type = "string"
 default = "Centre"
@@ -177,6 +183,19 @@ default = 0.0
 description = "End grip applied (helper)"
 hidden = true
 [[param]]
+name = "segProfGrip"
+type = "length"
+default = [0.0, 0.0]
+description = "Profile grip (helper)"
+hidden = true
+[[param]]
+name = "segProfDone"
+type = "length"
+default = [0.0, 0.0]
+description = "Profile grip applied (helper)"
+hidden = true
+
+[[param]]
 name = "cutStartPlan"
 type = "angle"
 default = 0.0
@@ -210,7 +229,29 @@ description = "Section source"
 name = "beamProfile"
 type = "profile"
 default = 1
-description = "Profile"
+description = "Profile 1"
+
+[[param]]
+name = "beamProfile2"
+type = "profile"
+# 0 is none: a beam placed before profiles per segment picks the slot up empty,
+# not on an attribute nobody chose; an empty slot means Profile 1
+default = 0
+description = "Profile 2"
+
+[[param]]
+name = "beamProfile3"
+type = "profile"
+default = 0
+description = "Profile 3"
+
+[[param]]
+name = "segProfile"
+type = "integer"
+# per segment like segArc: which slot (1, 2 or 3) the segment from this node
+# to the next uses; the last item belongs to no segment
+default = [1, 1]
+description = "Segment profile"
 
 [[param]]
 name = "rectW"

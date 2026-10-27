@@ -16,7 +16,9 @@ VALUES "pathTolerance" RANGE [0.0005, 0.05]
 VALUES "rectW" RANGE (0, ]
 VALUES "rectH" RANGE (0, ]
 VALUES "textSizeMm" RANGE (0, ]
-VALUES "gs_ui_current_page" 1, 2, 3, 4
+VALUES "gs_ui_current_page" 1, 2, 3, 4, 5
+! applies to every item of the array
+VALUES{2} "segProfile" 1, "Profile 1", 2, "Profile 2", 3, "Profile 3"
 VALUES "refLine" "Left face", "Centre", "Right face"
 ! the plan cuts have no range here: a grip drag can arrive as 350 for -10,
 ! and the Master Script folds and limits them
@@ -25,8 +27,8 @@ VALUES "cutEndTilt" RANGE [-85, 85]
 ! the plan grips drawn at the base level in 3D would lie on the ground under a
 ! rising beam; the 3D script has its own node grips
 PARAMETERS AC_show2DHotspotsIn3D = 0
-HIDEPARAMETER "B", "ZZYZX", "aDone", "slopeDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "gs_ui_current_page", "sb_version"
-IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile"
+HIDEPARAMETER "B", "ZZYZX", "aDone", "slopeDone", "segSag", "sagDone", "insL", "insDone", "extStart", "extStartDone", "extEnd", "extEndDone", "segProfGrip", "segProfDone", "gs_ui_current_page", "sb_version"
+IF profileMode <> "Profile attribute" THEN HIDEPARAMETER "beamProfile", "beamProfile2", "beamProfile3", "segProfile", "gripProfiles"
 IF NOT (overrideSurface) THEN HIDEPARAMETER "surfaceOverride"
 IF NOT (showAxis) THEN HIDEPARAMETER "axisPen", "axisLineType"
 IF NOT (showPlanFill) THEN HIDEPARAMETER "planFill", "fillFgPen", "fillBgPen"
@@ -38,7 +40,7 @@ EPS = 0.0001
 GRIP_EPS = 0.0005
 
 ! ---- 1. copy and repair: every array gets the length of nodeX ----
-DIM nx[], ny[], nz[], nr[], na[], sg[], sgd[], il[], idn[]
+DIM nx[], ny[], nz[], nr[], na[], sg[], sgd[], il[], idn[], spf[], spg[], spd[]
 n = VARDIM1 (nodeX)
 IF n < 1 THEN
     n = 2
@@ -83,6 +85,14 @@ FOR i = 1 TO n
     IF i <= VARDIM1 (insL) THEN il[i] = insL[i]
     idn[i] = 0
     IF i <= VARDIM1 (insDone) THEN idn[i] = insDone[i]
+    ! the segment's profile slot, 1 past the array's end or out of range
+    spf[i] = 1
+    IF i <= VARDIM1 (segProfile) THEN spf[i] = INT (segProfile[i])
+    IF spf[i] < 1 OR spf[i] > 3 THEN spf[i] = 1
+    spg[i] = 0
+    IF i <= VARDIM1 (segProfGrip) THEN spg[i] = segProfGrip[i]
+    spd[i] = 0
+    IF i <= VARDIM1 (segProfDone) THEN spd[i] = segProfDone[i]
 NEXT i
 eSd = extStartDone
 eEd = extEndDone
@@ -108,6 +118,9 @@ IF ABS (A - aDone) > 0.0005 AND A > EPS AND GLOB_MODPAR_NAME <> "A" THEN
         sgd[i] = 0
         il[i] = 0
         idn[i] = 0
+        spf[i] = 1
+        spg[i] = 0
+        spd[i] = 0
     NEXT i
     nx[1] = 0
     nx[2] = A
@@ -186,6 +199,25 @@ FOR j = 1 TO n - 1
     ENDIF
 NEXT j
 
+! profile grips: a drag of any length steps the segment to the next slot that
+! holds a profile of its own (slotOn, Master Script), 1, 2, 3 and round; a
+! segment on a slot that is off steps from the slot it shows as (slotShow).
+! With only Profile 1 on, the drag changes nothing.
+FOR j = 1 TO n - 1
+    IF ABS (spg[j] - spd[j]) > GRIP_EPS THEN
+        stCur = slotShow[spf[j]]
+        stNext = stCur
+        stTries = 0
+        WHILE stTries < 3 DO
+            stNext = stNext MOD 3 + 1
+            stTries = stTries + 1
+            IF slotOn[stNext] THEN stTries = 3
+        ENDWHILE
+        spf[j] = stNext
+        spd[j] = spg[j]
+    ENDIF
+NEXT j
+
 ! insert grip: slid along segment j from its home one third along, it inserts
 ! a node at that point of the segment, on the arc if the segment is one. On an
 ! arc the grip slides along the tangent at its home, so a slide d is the arc
@@ -227,6 +259,9 @@ IF jIns > 0 THEN
             sgd[k + 1] = sgd[k]
             il[k + 1] = il[k]
             idn[k + 1] = idn[k]
+            spf[k + 1] = spf[k]
+            spg[k + 1] = spg[k]
+            spd[k + 1] = spd[k]
         NEXT k
         nx[jIns + 1] = newX
         ny[jIns + 1] = newY
@@ -238,6 +273,10 @@ IF jIns > 0 THEN
         sgd[jIns + 1] = 0
         il[jIns + 1] = 0
         idn[jIns + 1] = 0
+        ! both halves keep the split segment's profile
+        spf[jIns + 1] = spf[jIns]
+        spg[jIns + 1] = 0
+        spd[jIns + 1] = 0
         n = n + 1
         na[n] = 0
     ENDIF
@@ -259,10 +298,16 @@ IF ABS (extEnd - eEd) > GRIP_EPS THEN
         na[n] = 0
         sgd[n] = sg[n]
         idn[n] = il[n]
+        ! the new last segment continues the old last one's profile
+        spf[n] = spf[n - 1]
+        spd[n] = spg[n]
         sg[n + 1] = 0
         sgd[n + 1] = 0
         il[n + 1] = 0
         idn[n + 1] = 0
+        spf[n + 1] = 1
+        spg[n + 1] = 0
+        spd[n + 1] = 0
         n = n + 1
         na[n] = 0
     ENDIF
@@ -284,6 +329,9 @@ IF ABS (extStart - eSd) > GRIP_EPS THEN
             sgd[k + 1] = sgd[k]
             il[k + 1] = il[k]
             idn[k + 1] = idn[k]
+            spf[k + 1] = spf[k]
+            spg[k + 1] = spg[k]
+            spd[k + 1] = spd[k]
         NEXT k
         nx[1] = nx[2] - tanSx * extDist
         ny[1] = ny[2] - tanSy * extDist
@@ -294,6 +342,10 @@ IF ABS (extStart - eSd) > GRIP_EPS THEN
         sgd[1] = 0
         il[1] = 0
         idn[1] = 0
+        ! the new first segment continues the old first one's profile
+        spf[1] = spf[2]
+        spg[1] = 0
+        spd[1] = 0
         n = n + 1
         na[n] = 0
     ENDIF
@@ -310,7 +362,10 @@ IF (GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME
             IF jDel > 1 AND jDel < n THEN
                 lenA = SQR ((nx[jDel] - nx[jDel - 1])^2 + (ny[jDel] - ny[jDel - 1])^2)
                 lenB = SQR ((nx[jDel + 1] - nx[jDel])^2 + (ny[jDel + 1] - ny[jDel])^2)
-                IF lenB > lenA THEN na[jDel - 1] = na[jDel]
+                IF lenB > lenA THEN
+                    na[jDel - 1] = na[jDel]
+                    spf[jDel - 1] = spf[jDel]
+                ENDIF
             ENDIF
             FOR k = jDel TO n - 1
                 nx[k] = nx[k + 1]
@@ -322,6 +377,9 @@ IF (GLOB_MODPAR_NAME = "nodeX" OR GLOB_MODPAR_NAME = "nodeY" OR GLOB_MODPAR_NAME
                 sgd[k] = sgd[k + 1]
                 il[k] = il[k + 1]
                 idn[k] = idn[k + 1]
+                spf[k] = spf[k + 1]
+                spg[k] = spg[k + 1]
+                spd[k] = spd[k + 1]
             NEXT k
             n = n - 1
             na[n] = 0
@@ -333,7 +391,7 @@ ENDIF
 
 ! ---- 3. write back, with arrays of exactly n items ----
 ! extStart and extEnd are never written: they are what a grip drag changes.
-DIM ox[], oy[], oz[], orl[], oa[], osg[], osd[], oil[], oidn[]
+DIM ox[], oy[], oz[], orl[], oa[], osg[], osd[], oil[], oidn[], ospf[], ospg[], ospd[]
 FOR i = 1 TO n
     ox[i] = nx[i]
     oy[i] = ny[i]
@@ -344,10 +402,13 @@ FOR i = 1 TO n
     osd[i] = sgd[i]
     oil[i] = il[i]
     oidn[i] = idn[i]
+    ospf[i] = spf[i]
+    ospg[i] = spg[i]
+    ospd[i] = spd[i]
 NEXT i
 PARAMETERS slopeDone = slopeDoneOut
 IF freshBeam THEN PARAMETERS cutStartPlan = 0, cutStartTilt = 0, cutEndPlan = 0, cutEndTilt = 0
-PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
+PARAMETERS nodeX = ox, nodeY = oy, nodeZ = oz, nodeRoll = orl, segArc = oa, segSag = osg, sagDone = osd, insL = oil, insDone = oidn, segProfile = ospf, segProfGrip = ospg, segProfDone = ospd, extStartDone = eSd, extEndDone = eEd, A = newA, aDone = aDoneOut
 END
 
 ! ---- subroutines ----
