@@ -29,8 +29,8 @@ nothing else to install.
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.11.0-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.11.0-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.12.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.12.0-darwin-arm64.mcpb` |
 
 **Claude Code** (needs [uv](https://docs.astral.sh/uv/)):
 
