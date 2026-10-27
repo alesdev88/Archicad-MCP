@@ -266,3 +266,34 @@ server over stdio. An L-shaped beam (4 m east, then 3 m north) with
    any sideways offset. Fixed in both scripts.
 2. After the fix: south of the first leg (to the right), 40 cm clear; with Flip
    ticked the beam stays put, and a hatch fills the beam, not the path.
+
+## Profiles per segment, 2026-10-27
+
+Checked with the 0.2.0 part (spec `2026-10-27-swept-beam-segment-profiles-design.md`)
+in MCP-Test (Archicad 29, Tapir 1.7.3), MCP-Test_30 (Archicad 30, Tapir 1.7.3) and
+MCP-Test_27 (Archicad 27, Tapir 1.7.1).
+
+- Beams placed with 0.1.0 (a rectangle beam, and a profiled one with five nodes, an
+  arc, a rise and an end cut) read back with identical parameters after the update,
+  and their 3D and plan previews (`GetElementPreviewImage`) are pixel identical.
+  `segProfile` comes back padded to the node count, all 1.
+- Tapir writes the integer array `segProfile` both as a whole array (1.7.1) and item
+  by item (1.7.3).
+- `VALUES{2}` on the integer array works: the Segments list shows the rows as
+  "Profile 1", "Profile 2", "Profile 3", and `UI_LISTITEM{2}` with `segProfile[j]`
+  edits each row (Archicad 27, Aleš). No fallback needed.
+- The profile grip in plan and in 3D commits its helper on a real drag and steps the
+  segment (Archicad 27, Aleš).
+- A merge in the middle of the path cannot be driven through Tapir 1.7.2 or newer:
+  it writes every item of `nodeX` and `nodeY`, the merge drops a node part way, the
+  next item fails ("Failed to change item 7,1 of array parameter nodeY") and Archicad
+  rolls the whole call back. A merge at the last node works, since its item is
+  written last. Mid-path merges were checked by hand.
+- Mitred corners with different profiles on each side stay clean on a 15 % slope
+  (no loose pieces, gate D); a profile change on a straight run and where a line meets
+  a tangent arc meets square with no gap; Left face, Right face and Flip keep that
+  face on the node line for profiles of different widths; the plan fill steps with
+  the width.
+- A new beam in a project shows the hidden `sb_version` stored in the project's
+  object defaults (0.1.0 on new 0.2.0 beams in MCP-Test and MCP-Test_30); the
+  geometry is the new part's.
