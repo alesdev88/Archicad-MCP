@@ -373,3 +373,14 @@ def test_swept_beam_has_three_profile_slots_and_segment_arrays():
         assert params[name].type == "length" and params[name].default == [0.0, 0.0]
         assert params[name].hidden
     assert params["gripProfiles"].type == "boolean" and params["gripProfiles"].default is True
+
+
+def test_swept_beam_param_script_shifts_the_profile_arrays_with_the_others():
+    # every insert, prepend and merge moves the segment profiles and their grip
+    # pair with the other per-segment arrays, so a choice stays on its segment
+    text = (Path(__file__).resolve().parent.parent / "gdl-src" / "swept-beam"
+            / "scripts" / "param.gdl").read_text(encoding="utf-8")
+    for name in ("spf", "spg", "spd"):
+        assert text.count(f"{name}[k + 1] = {name}[k]") == text.count("il[k + 1] = il[k]")
+        assert text.count(f"{name}[k] = {name}[k + 1]") == text.count("il[k] = il[k + 1]")
+    assert '"segProfGrip", "segProfDone"' in text  # hidden in the dialog's parameter list
