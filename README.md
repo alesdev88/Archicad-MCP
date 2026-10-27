@@ -1,883 +1,117 @@
 # Archicad MCP
 
-An MCP server for **Archicad 29** on macOS and Windows. It connects Claude
-Desktop, Claude Code, ChatGPT, or any MCP client to a *running* Archicad instance and
-does two jobs:
+Connects Claude, ChatGPT or any MCP client to a running **Archicad 29** (30 works
+too) on macOS and Windows. You ask in plain language; the server does it through
+Archicad's JSON API and the
+[Tapir](https://github.com/ENZYME-APD/tapir-archicad-automation) add-on.
 
-1. **Delivery-readiness QA.** Your office standards, written as YAML rules and
-   run against the open model. Returns pass/fail, a score, and the GUIDs of the
-   elements that failed.
-2. **Full API access.** Curated tools for querying, editing, and creating
-   elements, plus a gateway to every official JSON API and
-   [Tapir](https://github.com/ENZYME-APD/tapir-archicad-automation) command.
+- **Check a model against office standards.** YAML rules run against the open
+  model: pass or fail, a score, and the failing elements, highlighted or turned
+  into issues.
+- **Find, read and change elements.** Criteria queries, properties,
+  classifications, GDL and IFC data, favourites, attributes, clash checks.
+- **Create elements.** Walls, slabs, columns, doors and windows, zones, stairs,
+  dimensions and 30-odd more types.
+- **Everything else.** About 500 official and Tapir commands through one gateway.
 
 > [!WARNING]
-> **Save before you read properties.** `GetPropertyValuesOfElements` can crash
-> Archicad 29, even for a single property on a single element, taking unsaved
-> work with it. This is an Archicad-side fault the server can trigger but cannot
-> prevent. It affects `audit_delivery_readiness`, `run_rule`, `get_element_data`,
-> and `set_element_data`. Ask the client to run `save_project` first. See
-> [Known issues](docs/known-issues.md) before you point this at a model you care
-> about.
+> **Save before reading properties.** Archicad 29 can crash on a property read,
+> even of one element, taking unsaved work with it. The server cannot prevent it.
+> Ask the client to run `save_project` first, and see
+> [Known issues](docs/known-issues.md).
 
-## Requirements
+## Install
 
-- **Archicad 29**, running, with a project open. The JSON API talks to the live app.
-- **Nothing else, if you install the extension.** The `.mcpb` carries its own
-  Python interpreter and every dependency, so there is nothing to install first
-  and nothing to download on first launch. The manual install paths below do
-  need **[uv](https://docs.astral.sh/uv/)**, which fetches a suitable Python
-  (3.12+) for you.
-- **[Tapir add-on](https://github.com/ENZYME-APD/tapir-archicad-automation)**,
-  optional but recommended, and installed for you: run
-  `archicad-mcp install-tapir`, or ask the client to run the `install_tapir`
-  tool (see [Install Tapir](#install-tapir)). Required for element creation,
-  issues, IFC checks, highlighting, and publishing. The installer puts the
-  pinned Tapir **1.7.3** in place, checked by sha256. The bundled command
-  definitions are synced from Tapir **1.7.3**. On 1.7.3 and Archicad 29 and 30
-  the live suite, `create_elements`, `modify_elements`, `apply_favorites`,
-  `set_element_data`, `find_elements`, `create_swept_beam` and
-  `create_road_marking` have been exercised live (Tapir 1.7.3 takes GDL angles in
-  radians, which these tools follow); on 1.7.2 and Archicad 29 the same, plus
-  `capture_window`, and on Archicad 30 `create_elements` (the electrical types
-  too); the other tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
-  and the rest degrade instead of erroring.
-
-## Install as a Claude Desktop extension (recommended)
-
-One file, one click, no JSON editing, and no prerequisites. Download the bundle
-for your platform from the
-[latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest):
+**Claude Desktop:** download the bundle for your platform from the
+[latest release](https://github.com/alesdev88/Archicad-MCP/releases/latest) and
+drag it into **Settings > Extensions**. It carries its own Python, so there is
+nothing else to install.
 
 | Platform | File |
 |---|---|
 | Windows | `archicad-mcp-0.11.0-win32.mcpb` |
 | macOS (Apple silicon) | `archicad-mcp-0.11.0-darwin-arm64.mcpb` |
 
-There is no Intel macOS bundle. `cryptography`, which this server depends on
-through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
-only be produced by compiling on an Intel Mac. Intel Macs use the manual install
-below instead, where the build happens on the machine that will run it.
-
-Then in Claude Desktop open **Settings > Extensions** and drag it in.
-
-Mode, office rules folder, and the property-read ceiling then appear as form
-fields in the extension's settings, and the whole server gets an on/off switch.
-Leave a field empty and it falls back to the default in the table below.
-
-The bundle contains a complete CPython 3.12 and every dependency, so it starts
-immediately and works on a machine with no Python, no uv, and no internet
-access. That is why it is 42 MB on Windows and 54 MB on macOS: the alternative
-was asking every machine to install a package manager first.
-
-Deploying to a team? On a Team or Enterprise plan an owner can upload the bundle
-under **Organization settings > Connectors > Desktop**, which makes it a
-one-click install for everyone instead of a file to pass around.
-
-If you would rather wire it up by hand, or you are on Claude Code, use one of
-the sections below instead. Those install the server from PyPI, where it is
-published as `archicad-mcp-server` (the plain name was already taken by an
-unrelated project), so `uv tool upgrade archicad-mcp-server` moves you to the
-next release. Each section also shows the wheel URL of the current release, for
-when you want to pin exactly this version rather than whatever PyPI holds when
-you run the command.
-
-## Install on macOS
-
-```bash
-# 1. Install uv (skip if you already have it)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install the server from PyPI
-uv tool install archicad-mcp-server
-#    or pin this exact release instead:
-#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
-
-# 3. Note the path (you need it for the config below)
-which archicad-mcp        # ~/.local/bin/archicad-mcp
-```
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "archicad": {
-      "command": "/Users/YOU/.local/bin/archicad-mcp",
-      "args": ["--mode", "full"],
-      "env": { "ARCHICAD_MCP_RULES_DIR": "/Users/YOU/office-rules" }
-    }
-  }
-}
-```
-
-Use the **absolute path**. Claude Desktop does not inherit your shell's `PATH`,
-so a bare `"archicad-mcp"` usually fails to spawn. Restart Claude Desktop after
-editing the file.
-
-## Install on Windows
-
-```powershell
-# 1. Install uv (skip if you already have it)
-winget install --id=astral-sh.uv -e
-
-# 2. Install the server from PyPI
-uv tool install archicad-mcp-server
-#    or pin this exact release instead:
-#    uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
-
-# 3. Note the path (you need it for the config below)
-where.exe archicad-mcp    # %USERPROFILE%\.local\bin\archicad-mcp.exe
-```
-
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "archicad": {
-      "command": "C:\\Users\\YOU\\.local\\bin\\archicad-mcp.exe",
-      "args": ["--mode", "full"],
-      "env": { "ARCHICAD_MCP_RULES_DIR": "C:\\Users\\YOU\\office-rules" }
-    }
-  }
-}
-```
-
-Backslashes must be doubled in JSON, and the `.exe` matters. Restart Claude
-Desktop after editing the file.
-
-## Install for Claude Code
-
-Claude Code inherits your shell's `PATH`, so the bare command name works:
+**Claude Code** (needs [uv](https://docs.astral.sh/uv/)):
 
 ```bash
 uv tool install archicad-mcp-server
-# or pin this exact release instead:
-# uv tool install https://github.com/alesdev88/Archicad-MCP/releases/download/v0.11.0/archicad_mcp_server-0.11.0-py3-none-any.whl
 claude mcp add archicad -- archicad-mcp --mode full
 ```
 
-## Use with ChatGPT
+**Tapir:** most tools need the Tapir add-on in Archicad. Ask the client to
+**install Tapir**, or run `archicad-mcp install-tapir`. It puts the pinned Tapir
+1.7.3 into Archicad's Add-Ons folder, checked by sha256, and never replaces an
+existing one unless told to. Restart Archicad afterwards.
 
-ChatGPT only talks to *remote* MCP servers over HTTPS. It cannot spawn a local
-server the way Claude Desktop does, and this server has to run on the machine
-that runs Archicad, because it reaches Archicad on localhost. So the recipe is:
-serve over HTTP on the Archicad machine, tunnel that to a public HTTPS URL, and
-register the URL as a custom connector.
-
-> [!CAUTION]
-> Whoever reaches that URL drives your open Archicad model: every property is
-> readable, and in `full` mode elements can be edited, deleted, and published.
-> ChatGPT custom connectors authenticate with OAuth or not at all, so this
-> server adds no token of its own. Put access control in front of the tunnel
-> (Cloudflare Access, ngrok's OAuth or IP restrictions), prefer `--mode
-> verdicts`, and stop the server when you are done.
-
-The `--transport` flag is newer than the first release. If `archicad-mcp --help`
-does not list it, install from `main` as described under
-[Development](#development).
-
-```bash
-# 1. On the Archicad machine, serve over HTTP. Binds to localhost only.
-archicad-mcp --mode verdicts --transport http --http-port 8000
-
-# 2. In a second terminal, tunnel it. One of:
-cloudflared tunnel --url http://localhost:8000
-ngrok http 8000
-```
-
-The tunnel prints a public URL. The MCP endpoint is that URL plus `/mcp`.
-
-3. In ChatGPT on the web, open **Settings > Connectors > Advanced** and turn
-   on **Developer mode**. Then **Settings > Connectors > Create**: name it
-   `Archicad`, paste `https://<your-tunnel>/mcp` as the URL, tick *I trust this
-   provider*, and create it. Developer mode needs a Plus, Pro, Business,
-   Enterprise, or Edu account; without it ChatGPT rejects any server that lacks
-   `search` and `fetch` tools.
-4. In a new chat, open **+ > More > Developer mode** and enable the Archicad
-   connector. This is per chat.
-
-Then ask it to **list Archicad instances**, as under [Check it works](#check-it-works).
-The crash warning at the top applies to every client, ChatGPT included.
-
-**Codex instead of ChatGPT.** OpenAI's Codex CLI runs stdio servers directly,
-so there is no tunnel and nothing leaves the machine:
-
-```bash
-codex mcp add archicad -- archicad-mcp --mode full
-```
-
-## Install Tapir
-
-Tapir is a C++ add-on that runs inside Archicad, so it has to sit in Archicad's
-Add-Ons folder; a server outside Archicad cannot carry its commands. The server
-installs it for you:
-
-```bash
-archicad-mcp install-tapir --dry-run
-```
-
-That lists every Archicad on the computer and the Tapir each one has, downloads
-the pinned Tapir release for each listed Archicad version (also where a Tapir is
-already there, to tell whether it is the same file), checks each file's sha256
-against the value committed in this repository, and says what it would do. Without `--dry-run` it shows the same plan and asks before writing
-anything. Restart Archicad afterwards.
-
-The Claude Desktop extension puts no command on your PATH, so from there ask
-Claude to install Tapir: the `install_tapir` tool does the same, as a dry run
-first and with `confirm=true` to write.
-
-| Flag | What it does |
-|---|---|
-| `--archicad 30` | Only this Archicad version (repeatable). |
-| `--dry-run` | Download and check, write nothing. |
-| `--replace` | Replace an existing Tapir (see below). |
-| `--yes` | Answer the prompts, for scripts. Never implies `--replace`. |
-| `--from-file PATH` | A release file you downloaded yourself (with one `--archicad`); still checked. |
-| `--latest` | The newest Tapir release instead of the pinned one, checked against GitHub's sha256. |
-| `--add-ons-folder PATH` | An Add-Ons folder it does not find on its own (with one `--archicad`). |
-
-**An existing Tapir is never touched by default.** It is listed with its path,
-its date, and whether it is byte-identical to the pinned release, and skipped.
-With `--replace` (or `replace_existing=true`) it is moved, never deleted, to
-`~/Library/Application Support/archicad-mcp/tapir-backups/AC<version>-<date>/`
-(`%LOCALAPPDATA%\archicad-mcp\tapir-backups\` on Windows), with a `backup.json`
-saying where each piece came from. A custom Tapir build loses its own commands
-when it is replaced. A Tapir that Archicad loads from another folder through
-Add-On Manager cannot be moved aside, so it is left alone even then; remove it
-in Add-On Manager first.
-
-Tapir goes into `Add-Ons/Tapir/`, where Tapir's own installer puts it, so
-Tapir's **Check for Updates** keeps working afterwards.
-
-**When the Add-Ons folder needs administrator rights:** on macOS the system
-password dialog appears. On Windows, where Archicad lives under Program Files,
-nothing changes and the result gives the exact command to run from a terminal
-opened as administrator (for the extension, its own bundled Python running
-`-m archicad_mcp.tapir_install`), plus the steps to hand to IT. The Windows path
-is covered by unit tests only so far.
-
-**By hand:** download `TapirAddOn_AC<version>_Mac.zip` or
-`TapirAddOn_AC<version>_Win.apx` for your Archicad version from the
-[Tapir 1.7.2 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.2),
-unzip it (macOS) or copy it (Windows) into `Add-Ons/Tapir/` inside the Archicad
-folder, and restart Archicad.
+Intel Macs, a hand-written Claude Desktop config, ChatGPT, Codex and all the
+settings: [Install](docs/install.md).
 
 ## Check it works
 
-With Archicad open, ask the client to **list Archicad instances**. The
-`list_instances` tool reports the port, version, open project, and whether Tapir
-answered, which is the fastest way to tell a config problem from a connection
-problem. When Tapir is missing, or lacks commands a tool needs, the instance
-carries a `tapir_hint` naming the exact file and the install command. If nothing is found, see
-[Known issues: connection](docs/known-issues.md#connection).
+With Archicad open, ask the client to **list Archicad instances**. It shows the
+port, Archicad version, open project and Tapir version, and what to install when
+something is missing. If the client shows no tools at all, see
+[Check it works](docs/install.md#check-it-works).
 
-If the client shows no tools at all, the server never started, and asking it
-anything will not tell you why. Read the log instead. The server writes what it
-found to stderr on startup, which Claude Desktop captures:
+## What you can ask
 
-```bash
-tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs on Windows
-```
-
-```
-archicad-mcp: mode=full, 12 rules loaded
-archicad-mcp: Archicad 29 (build 5101) on port 19723, project 'Sample', Tapir 1.5.9
-```
-
-That line distinguishes the three failures that look identical from the chat
-window: the server not spawning (no line at all), Archicad not running (the
-line says so, and says tools connect on demand once you start it), and the
-Tapir add-on missing (the line names which tools degrade and the install
-command).
-
-## Configuration
-
-| Flag | Env var | Default | What it does |
-|---|---|---|---|
-| `--mode` | `ARCHICAD_MCP_MODE` | `full` | `full` or `verdicts` (see below) |
-| `--rules-dir` | `ARCHICAD_MCP_RULES_DIR` | bundled examples | Directory of YAML rule files |
-| `--port` | n/a | auto-detect `19723`-`19743` | Pin when several Archicads run at once |
-| `--transport` | `ARCHICAD_MCP_TRANSPORT` | `stdio` | `stdio` for Claude Desktop, Claude Code, Codex; `http` (Streamable HTTP at `/mcp`) for ChatGPT and other remote clients |
-| `--host` | n/a | `127.0.0.1` | Bind address, `--transport http` only |
-| `--http-port` | n/a | `8000` | Listen port, `--transport http` only. Not the Archicad port |
-| n/a | `ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS` | `5000` | Refuse property fetches spanning more elements than this |
-
-### Modes
-
-| `--mode` | Tools exposed |
+| Area | Tools |
 |---|---|
-| `full` (default) | Everything: QA, core, and the API gateway. |
-| `verdicts` | The 9 QA tools only: rule ids, counts, and failing GUIDs, with no project name from `list_instances`. Element counts still reach the model, layer names included if you pass `include_layer_story=true`. |
+| QA | `audit_delivery_readiness`, `run_rule`, `list_rules`, `verify_ifc_export_readiness`, `highlight_failures`, `create_issues_from_failures` |
+| Find and read | `find_elements`, `search_definitions`, `get_element_data`, `get_model_summary`, `get_project_info`, `list_attributes`, `find_collisions` |
+| Change | `set_element_data`, `modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `edit_attributes`, `edit_property_definitions`, `edit_classifications` |
+| Create | `create_elements` (40 types), `create_swept_beam`, `create_road_marking`, and `learn_library_part` for placing furniture, doors and windows from a sketch |
+| Look | `show_elements`, `capture_window`, the selection tools |
+| Issues and output | Issue Manager and BCF, `export_ifc`, `publish`, `save_project` |
+| Teamwork | `reserve_elements`, `release_elements` |
+| Schedules | `read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`, through Scheme Settings' XML (Archicad has no schedule API) |
+| Library parts | mesh models (OBJ, 3DS) to GDL objects: `build_gdl_object`, `deploy_gdl_object` |
+| Gateway | `list_api_commands`, `describe_api_command`, `execute_read_api_command`, `execute_write_api_command` |
 
-## Rules
+Every tool in detail, with what it checks and what it needs: [Tools](docs/tools.md).
 
-The server loads rules from **one directory**, and where that directory is set
-depends on how the server was installed. Nothing else is read: the bundled
-examples load only when no directory is set.
+**Safe by default.** Changes to elements, data and definitions are a dry run
+first, showing current and new values. Delete and move also need `confirm=true`.
+Elements Archicad would refuse (another view's, a hidden or locked layer, a
+hotlinked module, not reserved in Teamwork) are skipped with the reason, never
+unlocked. A commit reads back what it wrote and reports what did not land.
 
-| Install | Where to set the rules directory |
-|---|---|
-| Claude Desktop extension (`.mcpb`) | Claude Desktop > Settings > Extensions > Archicad > **Office rules folder**. This fills `ARCHICAD_MCP_RULES_DIR` for you; the field is empty after install and stays empty until you set it. |
-| `uv tool install` + Claude Desktop config | `"env": { "ARCHICAD_MCP_RULES_DIR": "/absolute/path/to/office-rules" }` on the server entry in `claude_desktop_config.json`, as in the examples above. |
-| `uv tool install` + Claude Code | `claude mcp add archicad -e ARCHICAD_MCP_RULES_DIR=/absolute/path/to/office-rules -- archicad-mcp --mode full`, or edit the entry's `env` in `~/.claude.json`. |
-| Any shell | `archicad-mcp --rules-dir /absolute/path/to/office-rules`, or export `ARCHICAD_MCP_RULES_DIR`. The flag wins over the variable. |
+## Office rules
 
-Use an absolute path. A relative one resolves against whatever working
-directory the client happened to spawn the server in.
-
-Check what actually loaded before trusting an audit. The startup line in the
-log says where the rules came from and how many there are:
-
-```
-archicad-mcp: mode=full, 1 rule loaded from /Users/YOU/office-rules
-archicad-mcp: mode=full, 3 bundled example rules loaded (no rules directory set)
-```
-
-and `list_rules` returns the same `source` plus every rule id and any file that
-failed to parse. A low count with the right directory usually means the file
-holds templates that are still commented out, which is how the starter file
-ships. The count is of rules, not files.
-
-A rule file is a YAML **list** of rules:
+Rules are YAML files in a folder you point the server at (the extension's
+**Office rules folder** setting, or `ARCHICAD_MCP_RULES_DIR`):
 
 ```yaml
 - id: walls-fire-rating
   type: property-required
-  property: "OFFICE/Fire Rating"   # user properties are "Group/Name"
+  property: "OFFICE/Fire Rating"
   applies_to: { element_type: Wall }
   severity: error
-  tags: [ifc-delivery]
 ```
 
-Six rule types ship built in (`property-required`, `classification-required`,
-`layer-compliance`, `zone-number-required`, `ifc-property-required`,
-`no-collisions`), and custom
-checks go in a `custom_rules.py` beside the YAML. Without a rules directory, the
-bundled examples load so you have something to run.
-
-Keep real office standards **outside this repo**, in a local rules directory.
-
-Full reference: **[docs/rules.md](docs/rules.md)**.
-
-## Schedules
-
-Archicad exposes **no API for schedules at all**. Not the JSON API, not Tapir,
-and per Graphisoft not the C++ API either. What it does support is the XML
-round trip built into Scheme Settings, and that is what these tools work
-through:
-
-1. In Archicad: Document > Schedules > Scheme Settings, select a scheme, **Export**
-2. Edit it: `read_schedule_scheme` to see what it does, `edit_schedule_scheme`
-   to apply a YAML spec, `validate_schedule_scheme` to check its bindings
-   against the open project
-3. In Archicad: Scheme Settings > **Import**
-
-A scheme spec looks like this:
-
-```yaml
-- id: door-schedule
-  template: exports/door-scheme.xml
-  name: "Door Schedule"
-  columns:
-    - caption: "Quantity"
-      bind: { builtin: Quantity }
-    - caption: "Fire Resistance"
-      bind: { gdl_param: "Fire Rating" }
-      width: 40
-```
-
-A column binds three ways:
-
-- `bind: { property: "<GUID>" }`, which needs no connection to Archicad, or a
-  `"Group/Name"` string, which `edit_schedule_scheme` resolves by connecting
-  to Archicad and looking the name up. A spec that only uses GUIDs (plus
-  `gdl_param` and `builtin` bindings, below) runs fully offline; a spec with
-  even one named property needs Archicad open with the project that defines
-  it.
-- `bind: { gdl_param: "<parameter name>" }`, a library part parameter by name
-- `bind: { builtin: Quantity }` for the few named built-ins, or
-  `bind: { builtin: { param_type: 0, param_index: -1561 } }` for any other
-  built-in by its raw numbers
-
-The named table deliberately holds only `Quantity`: the codes behind it are
-undocumented and are being mapped empirically, one confirmed example at a
-time. The raw-numbers form is what lets a scheme still be fully expressed
-even when a built-in has no name yet, and this is not a rare corner case: on
-a real 27-column door schedule, 2 columns need it.
-
-A column can also carry `width: <number>`, which sets its cell width to
-match. This is a no-op, reported as such, when the column already has that
-width. Only the portrait width is guaranteed: the landscape width field is
-updated too when a column already has one, but is never created on a column
-that lacks it, since that has not been confirmed as a field Archicad itself
-writes for every scheme, and the change log says so plainly rather than
-guessing.
-
-Criteria are read and preserved but not yet editable: the numeric codes behind
-them are undocumented and are being mapped in
-[docs/scheme-criteria-codes.md](docs/scheme-criteria-codes.md).
-
-### Limitations
-
-- **Criteria are read and preserved but cannot yet be edited.** See
-  [docs/scheme-criteria-codes.md](docs/scheme-criteria-codes.md) for what is
-  confirmed about the codes behind them so far, and what is still unknown.
-- **Every edit needs two manual steps in Archicad**, Export before and
-  Import after, because no API reaches schedules.
-- **Whether re-importing an edited scheme updates it in place or creates a
-  numbered duplicate is not yet confirmed.** Graphisoft's documentation says
-  duplicate names are auto-numbered, but real exports carry stable scheme
-  IDs, which suggests an in-place match may be possible. Test on a scratch
-  project before relying on either behaviour.
-- **`edit_schedule_scheme` refuses any file that would not survive a no-op
-  save unchanged.** This protects the parts of the format the server does
-  not model.
-
-## Library parts
-
-Mesh models (OBJ, 3DS) become placeable Archicad library parts without opening
-the GDL editor. The pipeline parses the mesh (units, pivots, welding),
-optionally decimates dense meshes through a background Blender, writes the HSF
-source, compiles it with the LP_XMLConverter bundled inside Archicad, and
-deploys over the same connection the server uses. Finish variants become
-dropdowns in Object Settings. See **[the GDL pipeline guide](docs/gdl-pipeline.md)**.
-
-There are two ways in.
-
-**From an MCP client**, using `list_gdl_sources`, `inspect_gdl_source`,
-`build_gdl_object` and `deploy_gdl_object`. Set the **GDL workspace folder** in
-the extension settings, and add that same folder to Archicad once via File >
-Libraries and Objects > Library Manager. Source meshes and textures go in it by
-hand; everything the tools write lands there too. Building needs no project
-open. Deploying reloads libraries, places the object, renders it and returns the
-image, then deletes the instance it placed unless you pass `keep=true`.
-
-That render is the point. Archicad silently drops defective 3D bodies while
-every offline validator passes them, so looking at the picture is the only
-automated check that catches it.
-
-This route runs inside the server process, so it works from clients whose agent
-has no shell on the machine running Archicad, which includes any sandboxed one.
-
-**From a shell**, using the `archicad-gdl` command:
-
-```bash
-archicad-gdl build chair.3ds --name "My Chair" --config assets.json
-archicad-gdl deploy "build/My Chair.gsm" --place 0 0 --preview check.png
-```
-
-The command line tool comes with the `uv tool install` paths above and not with
-the Claude Desktop extension, which bundles an interpreter for its own use
-rather than putting anything on your PATH.
-
-## Tools
-
-**QA (both modes):** `list_instances`, `get_model_summary`, `list_rules`,
-`run_rule`, `audit_delivery_readiness`, `verify_ifc_export_readiness`,
-`highlight_failures`, `create_issues_from_failures`, `save_project`
-
-`save_project` is File > Save behind a `confirm=true`, for the moment before a
-property read that could crash Archicad. A refused save is explained: a project
-made in an older Archicad needs File > Save As once (an Archicad 27 file in
-Archicad 28 was refused this way), as does one never saved, and the tool does no
-Save As itself. `file_updated` says whether the file on disk changed. On a
-Teamwork project it saves your local copy and sends nothing; that is Graphisoft's
-documented behaviour of File > Save in Teamwork, not tried live here. In
-verdicts mode it leaves the project name and location out of its answer.
-`highlight_failures` zooms to the failures as well as highlighting them, and a
-rule with no failures removes the highlight.
-
-**Core (full mode):** `find_elements`, `search_definitions`, `get_element_data`,
-`set_element_data`, `create_elements`, `create_swept_beam`, `create_road_marking`,
-`modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `get_selection`, `set_selection`, `clear_selection`,
-`show_elements`, `capture_window`, `learn_library_part`, `record_library_part`,
-`list_library_part_records`, `find_collisions`, `get_project_info`, `list_attributes`, `edit_attributes`, `list_issues`, `create_issue`, `add_issue_comment`,
-`attach_elements_to_issue`, `export_issues_bcf`, `import_issues_bcf`, `export_ifc`, `publish`,
-`read_schedule_scheme`, `edit_schedule_scheme`, `validate_schedule_scheme`.
-Every write is dry-run by default, with two exceptions: `learn_library_part` runs at
-once (it places its samples and deletes them again in the same call), and
-`record_library_part` writes at once, but only the MCP's own learned-parts file,
-never the model. Delete and move also require `confirm=true`.
-A tool that needs a newer Tapir than the one installed refuses before sending
-anything, naming the version it needs and the one it found.
-No other Archicad MCP server does this: Graphisoft's own writes on the first
-call, so an agent pointed at a live project has no rehearsal step there.
-
-`create_elements` places any of the 40 element types Tapir can create: walls,
-beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
-walls, grid elements, objects, lamps, doors and windows in walls, openings, MEP
-routes and elements, electrical panels, devices and circuits (Archicad 30),
-sections, interior elevations, hotlink instances, 2D lines to texts and labels,
-keynote labels, dimensions (associative, level, wall thickness, on a section)
-and drawings on a layout. Items use Tapir's own fields; `items=[]` returns a type's item
-schema. The dry run validates every item, checks that a named favourite and a
-named library part exist (with the closest names when they do not), and checks
-hosts (a door's wall, the elements a dimension measures) for existence, type
-and editability, so an item that would fail is skipped with its reason instead
-of sent. Tapir starts every object from the Object tool's current settings, so
-the dry run warns about an object or lamp without `dimensions` (it would take
-the size the tool is set to, not the library part's own) and about `offset`
-and `useFixedAngle`, which Archicad discards, and about a door or window
-without `sillHeight`, which takes the Door or Window tool's sill. Model elements are placed from
-the floor plan or the 3D window; 2D elements go into whichever drawing window
-is active.
-
-`find_elements` is a criteria query in the shape of Archicad's Find & Select:
-groups of property comparisons, AND or OR within a group, OR between groups,
-an element-type filter per group, 22 operators including string matching,
-classification branch tests and the four senses of "empty". `search_definitions`
-is the discovery step before it: fuzzy, accent-insensitive search over property
-and attribute definitions that returns the exact property address the other
-tools accept and whether the value can be written. Both are documented in
-[the query guide](docs/query.md).
-
-`modify_elements` changes elements that already exist: story, layer and draw
-order for any element, and for walls, beams, slabs, columns, doors, windows,
-morphs, multi-plane roofs, meshes, objects, lamps, texts and labels the fields
-of Tapir's own Modify command (height, thickness, sill height, sizes, attributes
-by name). The dry run shows the current value next to the new one for every
-element. A story change moves the element with the story, as Archicad does;
-`keep_elevation` relinks it in place. Elements Archicad would refuse (hidden or
-locked layer, hotlinked module, locked, not reserved) are named and skipped,
-never unlocked. A commit reads the elements back, so a field Archicad answered
-success for but did not change shows up under `not_applied`. Needs Tapir 1.5.9
-or newer.
-
-`apply_favorites` makes existing elements match an office favourite, the way
-the Favorites palette does: "make these 40 doors Internal Door". Without a
-favourite it lists the ones that fit the elements' types. The dry run lists what
-it would change and skips elements of another type or ones Archicad would
-refuse. It also warns what a favourite takes over besides materials and pens,
-because Tapir's "never geometry" is not what Archicad does: live, a wall took the
-favourite's height, top link, reference line and layer, and doors and windows
-their library part, size and sill; plan positions stayed. For the types not
-checked live the dry run says so. Each element keeps its own
-Element ID by default (`keep`, which can also keep the layer), since a
-favourite's ID is a template value. A commit reads the elements back and
-reports, per element, every field that changed. Classifications, categories and
-property values are applied but not read back. `to_defaults=true` sets a tool's
-defaults instead. Needs Tapir 1.5.7.
-
-`get_element_data` and `set_element_data` read and write more than property
-values, through one address syntax: `classification:<System>` for an element's
-classification item, `gdl:<name>` for a GDL parameter of an object, lamp, door
-or window, `marker:<name>` for a door's or window's marker parameter (the door
-number on many office stamps), and `ifc:<Pset>.<Name>` for a local IFC property.
-One call can mix them with properties. The dry run shows current and new for
-every change and names the ones it would skip; a commit sends classifications
-first and reads everything back, so a GDL value a Parameter Script replaced
-shows up under `not_applied`. Lengths are in metres and angles in radians
-throughout; the tool converts where Tapir takes degrees. IFC writes work only in
-Archicad 27 and older, where Tapir supports them. See
-[Reading and writing element data](docs/element-data.md).
-
-`show_elements` is how an agent points at something. It finds the view that
-holds the elements: the floor plan with their story, or a section, elevation,
-detail, worksheet or layout (found through the Navigator, one database at a
-time). It opens that story or view, selects the elements, highlights them and
-zooms to them. Archicad answers success for selections and zooms it did not
-make, so the selection is read back (`selected`, `not_selectable`) and the story
-or window is checked after the switch. Elements on other stories or in other
-views are listed for another call. With the 3D window in front it stays in 3D,
-unless some are 2D elements (labels, dimensions, texts) that 3D does not draw.
-`guids=[]` removes the highlight and the selection. It changes only what is on
-screen. Needs Tapir 1.3.1; the story switch needs Tapir 1.7.0, and with an
-older Tapir the result says which story to open by hand.
-
-`capture_window` is how an agent looks. It saves what the current window shows
-(floor plan, section, 3D, layout) as a PNG and returns it as an image, so a
-placement can be checked by eye: which way a bed faces, which way a door opens.
-Call `show_elements` first to bring the elements into view; `entire_drawing`
-covers a 2D window's whole drawing instead of its current zoom. Images over
-1568 pixels are scaled down, and windows over 40 megapixels are refused. Needs Tapir 1.7.2.
-
-`learn_library_part`, `record_library_part` and `list_library_part_records` teach
-the server a library part once, so a sketch can be turned into a placement.
-Archicad's API does not say where a part's insertion point sits on its footprint,
-which end of a bed is its head, or what `reflected` and `oSide` do to a door's
-hinge and swing. `learn_library_part` places a few samples of the part (an object,
-lamp, door or window) in a row just past the right edge of the model, on the story
-the floor plan shows, measures their footprints, returns one floor plan image of
-them, left to right, and deletes every sample again in the same call. The floor
-plan must be the active window; it is zoomed to the samples and stays zoomed, and a
-door or window learned may leave the Door or Window tool holding that part. Then the
-agent looks at the image and tells `record_library_part` what it shows: a bed's head
-direction, a door's or window's hinge and swing for each way the part can be
-flipped, and how many leaves it has. On Tapir 1.7.2 a door or window placed by part
-name, as the samples are, has GDL parameters that can be neither read nor written,
-and the Door or Window tool keeps that fault for later openings, hand-placed ones
-too; so the samples show no leaf parameters and a placement's leaves end in
-`placed_not_set`. The same part placed from a favourite has its parameters, and
-`create_elements` warns about doors and windows sent by part name. If a window's capture
-shows no opening lines, the view settings hide them: show them, then learn the window
-again before recording hinge and swing. The agent reads directions on screen, so
-learning refuses a rotated plan view. Each axis of an object's footprint is fitted
-against the size its plan box follows, the A and B its GDL reads back or the ones
-sent. A part whose plan size follows neither gets no footprint and is placed by
-coordinates: Chair 01's GDL forces A = B, and its plan depth grows faster than both
-the B sent and the B read back. Doors and windows are learned with `refSide` false
-in a straight wall, so placement skips one sent with `refSide` true or standing in a
-curved wall, and warns when its wall is flipped otherwise than the learning wall.
-The records are one JSON file on this machine, shared by every project
-(`list_library_part_records` gives its path).
-`record_library_part` writes only that file, never the model. Recording a flag pair
-or a leaf state again replaces it, and removing one means forgetting the part and
-learning it again. Learning needs Tapir 1.7.2; recording and listing need no
-Archicad.
-
-Once a part is learned, `create_elements` and `modify_elements` take `placement`
-instead of Tapir's coordinates, angle, `reflected` and sizes: an object's footprint
-centre, size and head direction, or a door's or window's two points (near the hinge,
-and on the side it opens to) and which leaves open. The record turns them into
-Tapir's own fields, so nothing is sampled again; `create_elements` with `items=[]`
-shows the schema. The tool descriptions carry the architect's own rules for reading
-a sketch, so the agent follows them without being told:
-
-- Learn a part once before placing it by `placement`; a learned part is placed with
-  no samples.
-- Choose the part from what the sketch draws. The lines dividing a window give its
-  sashes, and the arcs give which sash or leaf opens and where it is hinged. When
-  the sketch says no more, take the plain generic part ("Window", "Door",
-  "Double Window").
-- Width is a check. A window about 1.2 m wide is a single or a double window, never
-  a multi-sash one. When the count and the width disagree, the agent asks.
-- A part's head is the end that goes against the wall: a bed's pillow end, a chair's
-  or sofa's back, not its front. The head of a bed is the end with the pillows, or
-  with the duvet's turned-back edge. When the sketch shows neither, the agent asks.
-- After placing, the agent looks with `capture_window` and corrects with
-  `modify_elements` before reporting done.
-
-`find_collisions` is a clash check between two groups of elements, or within
-one: each group is GUIDs (from `find_elements`, say) plus every element of the
-given types. It returns the colliding pairs with both elements' type and ID,
-counts by type pair, and every element involved, ready for `show_elements`. The
-volume tolerance (m3) ignores small overlaps; a surface tolerance (m2) also
-reports touching faces and open surfaces. Archicad leaves out what its own
-junctions clean up, such as crossing walls, and building materials set not to
-take part in collision detection, so an empty answer is not proof that nothing
-overlaps. Clashes can also be a QA rule, `no-collisions` (see Rules). Needs Tapir
-1.5.7; the rule needs only 1.2.2.
-
-`export_ifc` is the step after `verify_ifc_export_readiness`: it saves the
-project as `.ifc` or `.ifczip` with an export translator chosen by name (the
-preview translator by default) and one of Archicad's five element scopes. The
-dry run shows the translator, the path, the scope and every translator the
-project has. It never replaces an existing file without `overwrite=true`, and
-after the export it checks that the file is there. Archicad exports only from
-the floor plan or the 3D window, so from another window it brings the floor
-plan to the front first. It never opens or merges IFC. Needs Tapir 1.6.0.
-
-`edit_attributes` creates, changes and deletes attributes (layers, layer
-combinations, lines, fills, zone categories, pen tables, profiles, building
-materials, composites, surfaces) and sets their property values. Tapir's attribute
-commands create *or overwrite*, and an overwrite quietly drops what it is not sent
-(a composite's wall/slab/roof availability, for one). So a `create` never replaces
-an existing attribute (the dry run shows what would change and the `modify` to send
-instead), a `modify` names the attribute and keeps every field it does not change,
-and values Tapir would silently replace with a default (a misspelt line type, an
-unknown building material) are refused before anything is sent. A layer is deleted
-only when no element is on it, since Archicad deletes a layer's elements with it.
-Fields reference other attributes by name; `list_attributes(details=true)` shows
-current settings in the same form. Attribute writes cannot be undone in Archicad.
-Needs Tapir 1.5.4 or newer.
-
-**Teamwork (full mode):** `reserve_elements`, `release_elements`. Both are
-confirm-gated. A dry run reports what can be known without touching the
-server: unknown GUIDs and elements already in your workspace. Who holds the
-rest is only learned by attempting, because Archicad exposes no read for it;
-with `confirm=true` the result separates reserved, reserved by others (with the
-user's name), already mine, not found, and indirectly reserved. Verified live:
-reserving one door also pulled in its wall and the wall's other door, and the
-tool reported both. Sending and receiving stay in the gateway. Needs Tapir.
-Both also take `object_sets`, the non-element things Teamwork reserves: an
-attribute type (`Layers`, `Composites`, `Fills`, ...), `Properties` /
-`Classifications`, or any Archicad set name (`Favorites`, `ProjectInfo`, ...).
-For sets the dry run does say who holds them. Releasing a set sends its changes
-to the server, as Archicad does. In a Teamwork project the definition tools and
-`edit_attributes` refuse an edit whose set is not reserved (or a teammate holds)
-and name the exact call to reserve it, before anything is sent. Needs Tapir
-1.7.1. The set names come from the Archicad DevKit, except
-`ClassificationsAndProperties` (properties and classifications), which Archicad
-carries but does not document; all of them answered on the CVP Teamwork project
-(read only). Reserving, releasing and the refusal without a reservation have not
-been tried on a Teamwork project yet.
-
-**Definitions (full mode):** `edit_property_definitions`, `edit_classifications`,
-`import_definitions`. They edit property definitions and classification systems in
-place, instead of exporting XML from Property Manager or Classification Manager,
-editing it and importing it back. A property can be renamed, moved to another group,
-given a new default or expressions, made available for a classification branch
-(`System/Code/*`), and have its enum options renamed, removed, added or reordered.
-Classification items take a new code, name or description. Everything keeps its
-GUID, so values and classifications on elements survive, except where you remove
-an enum option (those elements show `<Undefined>`) or availability. All three are
-dry-run by default. They need a Tapir add-on that has `UpdateClassificationItems`
-(Tapir 1.6.0 or newer); with an older Tapir they refuse plainly and send nothing.
-
-**Setup (full mode):** `install_tapir`, the tool form of
-`archicad-mcp install-tapir` (see [Install Tapir](#install-tapir)). Dry run by
-default, `confirm=true` to write, `replace_existing=true` to replace a Tapir that
-is already there.
-
-**Gateway (full mode):** `list_api_commands`, `describe_api_command`,
-`execute_read_api_command`, `execute_write_api_command`. The complete official +
-Tapir command surface (389 commands with the 1.7.2 definitions), for anything the
-curated tools don't cover.
-
-**Library parts (full mode):** `list_gdl_sources`, `inspect_gdl_source`,
-`build_gdl_object`, `deploy_gdl_object`. Turn mesh models (OBJ, 3DS) into
-placeable Archicad library parts with finish variants, without opening the GDL
-editor. Requires the GDL workspace folder to be set and added as a linked
-library in Archicad once. See [the GDL pipeline guide](docs/gdl-pipeline.md).
-
-**Scripting (opt-in, full mode):** `run_script`, `apply_changeset`. `run_script`
-runs a short Python script next to Archicad and returns only what it returns;
-its writes are planned into a changeset instead of sent. `apply_changeset`
-writes that changeset after `confirm=true` and reads the values back. Off by
-default: enable with `--enable-scripts`, `ARCHICAD_MCP_SCRIPTS=1`, or **Enable
-scripts** in the extension settings. There is no sandbox. See
-[Scripting](docs/scripting.md).
-
-Reads and writes are separate tools throughout, and every tool declares whether
-it is read-only or destructive. Clients use those declarations to decide what to
-run without asking you: a read never prompts, a write always does. The gateway
-splits the command catalog the same way, 149 reads and 194 writes, classified by
-command name with anything unrecognised treated as a write. The write half also
-refuses to run without `confirm=true`, because it can reach `DeleteElements` and
-`QuitArchicad`.
-
-## Development
-
-```bash
-uv sync && uv run pytest          # offline suite
-```
-
-To install unreleased `main` rather than a release, point uv at the repository
-instead of at a wheel, or append a tag to build a released version from source:
-
-```bash
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git          # main
-uv tool install git+https://github.com/alesdev88/Archicad-MCP.git@v0.11.0   # a release
-```
-
-Live tests need a running Archicad. Open a **small, non-sensitive** test model
-and pin the port explicitly. Never run these against a client or teamwork
-project, and re-read the crash warning above first:
-
-```bash
-ARCHICAD_MCP_LIVE_PORT=<port> uv run pytest -m live -v
-```
-
-After a Tapir add-on update, refresh the bundled command schemas:
-
-```bash
-uv run python scripts/sync_tapir_defs.py
-```
-
-To move the installer to another Tapir release, pin it (this writes the sizes
-and sha256 hashes GitHub publishes for every add-on asset), review the diff, and
-check the new version live before releasing:
-
-```bash
-uv run python scripts/pin_tapir_release.py 1.7.3
-```
-
-Build the Claude Desktop extensions. One bundle per platform, both from this
-one machine (Node is needed, for the `mcpb` packer):
-
-```bash
-uv run python scripts/build_bundle.py --target all
-```
-
-Each bundle gets a relocatable CPython from
-[python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-with every locked dependency installed into its own site-packages, so it starts
-with no uv, no system Python and no network. The tree contains compiled wheels,
-which is why a bundle is platform-specific; the build is not, because
-`uv pip install --python-platform` resolves wheels for a named target. Source
-builds are refused outright: one would compile for *this* machine and put the
-result in a bundle labelled for another, which fails at import on the user's
-machine with nothing to explain why.
-
-That refusal is also why there is no Intel macOS bundle. The script self-tests
-the bundle it just built whenever the target is the machine building it, and
-says so when it cannot, which is every time you cross-build for Windows.
-
-The version is written in four places (`pyproject.toml`, `manifest.json`,
-`server.json`, and the download links in this README) and the test suite fails
-if they drift:
-
-```bash
-uv run python scripts/check_release_version.py
-```
-
-Releasing is a tag push. `.github/workflows/publish.yml` refuses the tag unless
-all four files and the tag itself agree, then builds both bundles, the wheel and
-the sdist, installs that wheel without `uv.lock` and starts it (a fresh install
-resolves the newest dependencies the version ranges allow, which the locked
-tests never see), attaches them to a GitHub release, publishes the wheel and sdist to
-PyPI as `archicad-mcp-server`, stamps each bundle's SHA-256 into `server.json`,
-and publishes that to the MCP registry. Run the check by hand first, because a
-pushed tag has to be deleted before it can be corrected, and both PyPI and the
-registry refuse a version they already hold:
-
-```bash
-uv run python scripts/check_release_version.py v0.11.0
-git tag v0.11.0 && git push origin v0.11.0
-```
-
-A cross-built Windows bundle cannot be executed by the machine that built it,
-so install one on Windows before trusting a release. The 0.2.1 bundle was
-checked that way and runs. Each new release should be tested on Windows before
-being used in production.
-
-`icon.png` is rasterised from `icon.svg`, so the mark stays editable as vector
-art: change the SVG, then redraw the PNG the bundle ships. Pillow does that
-rasterising. It used to be pulled in just for this step, but the GDL pipeline
-now needs it to downscale textures, so it is a project dependency and the
-script can use it directly:
-
-```bash
-uv run python scripts/make_icon.py
-```
+Six rule types are built in, and custom checks go in Python beside the YAML. Keep
+real office standards outside this repository. See [Writing rules](docs/rules.md).
 
 ## Docs
 
-- **[Known issues](docs/known-issues.md)**: the property-read crash, the element
-  ceiling, verified property names, and what is validated end-to-end.
-- **[Writing rules](docs/rules.md)**: every rule type, field, and the scoring model.
-- **[Reading and writing element data](docs/element-data.md)**: the addresses
-  `get_element_data` and `set_element_data` take, units, and the readback.
-- **[Schedule criteria codes](docs/scheme-criteria-codes.md)**: the empirical
-  `Param_Type` and `Relation_Index` table, and how to extend it.
-- **[GDL pipeline](docs/gdl-pipeline.md)**: mesh models to library parts with
-  finish dropdowns, and the GDL fine print the generator encodes.
-- **[Scripting](docs/scripting.md)**: `run_script` and `apply_changeset`, the
-  `ac` object a script sees, and the trust model behind the opt-in switch.
-- **[API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)**:
-  every one of the 389 reachable commands, grouped, showing which have a
-  dedicated tool and which are gateway-only. Generated rather than written;
-  refresh it with `uv run python scripts/build_dashboard.py` after a Tapir
-  definitions sync, and the push publishes it.
+- [Install](docs/install.md): every install route, Tapir, configuration
+- [Tools](docs/tools.md): every tool, what it checks and what it needs
+- [Known issues](docs/known-issues.md)
+- [Finding elements](docs/query.md) and
+  [reading and writing element data](docs/element-data.md)
+- [Writing rules](docs/rules.md)
+- [Schedules](docs/schedules.md)
+- [GDL pipeline](docs/gdl-pipeline.md) and [scripting](docs/scripting.md)
+- [API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html):
+  every reachable command, and which have a tool
+- [Development](docs/development.md): tests, Tapir, bundles, releasing
 
-## Privacy Policy
+## Privacy
 
-The server runs entirely on your machine and makes no outbound network
-connections. It talks to the Archicad JSON API on `127.0.0.1`, ports 19723 to
-19743, and to nothing else. There is no telemetry, no analytics, and no backend:
-the author receives nothing, including error reports.
-
-Model data the server reads is returned to the MCP client that asked for it,
-normally Claude Desktop, which sends it to Anthropic as part of your
-conversation under [Anthropic's Privacy
-Policy](https://www.anthropic.com/legal/privacy). Nothing is cached or retained
-by the server between requests. Two reductions are built in: `verdicts` mode
-keeps the project name out of what the model sees, and Teamwork credentials are
-stripped from every tool's reply before it returns.
-
-Full text: **[PRIVACY.md](PRIVACY.md)**.
+The server runs on your machine and talks only to Archicad on `127.0.0.1`. There
+is no telemetry and no backend. What it reads goes to the MCP client that asked,
+normally Claude, under that client's privacy terms. See [PRIVACY.md](PRIVACY.md).
 
 ## License
 
