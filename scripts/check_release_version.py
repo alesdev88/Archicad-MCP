@@ -166,6 +166,28 @@ def disagreements(versions: dict[str, str], tag: str | None = None) -> list[str]
     return [f"{where} says {version}" for where, version in sorted(stated.items())]
 
 
+def unreleased_tapir_definitions(root: Path = ROOT) -> str | None:
+    """Why the bundled Tapir definitions hold a release, or None.
+
+    sync_tapir_defs.py --from-checkout brings in the definitions of an unreleased
+    Tapir, so the tools can be built against commands merged since the last
+    release. Released like that, the MCP would offer commands install_tapir
+    cannot deliver: the pinned release lacks them.
+    """
+    synced = json.loads((root / "src" / "archicad_mcp" / "gateway" / "definitions"
+                         / "tapir_version.json").read_text(encoding="utf-8"))
+    pinned = json.loads((root / "src" / "archicad_mcp" / "tapir_install"
+                         / "tapir_release.json").read_text(encoding="utf-8"))
+    def key(version):
+        return tuple(int(part) for part in str(version).split(".") if part.isdigit())
+
+    if synced.get("source") == "release" and key(synced.get("version")) <= key(pinned["version"]):
+        return None
+    return (f"the Tapir definitions are {synced.get('source')} {synced.get('version')}, "
+            f"install_tapir pins {pinned['version']}: once that Tapir is released, run "
+            "scripts/sync_tapir_defs.py and scripts/pin_tapir_release.py")
+
+
 def main(argv: list[str]) -> int:
     if len(argv) > 1:
         print(__doc__)
@@ -179,6 +201,10 @@ def main(argv: list[str]) -> int:
             print(f"  {line}")
         print("Bring pyproject.toml, manifest.json, README.md, server.json, and "
               "the tag into agreement.")
+        return 1
+    held = unreleased_tapir_definitions() if tag is not None else None
+    if held:
+        print(f"Refusing to release: {held}.")
         return 1
     # Name the README reference count rather than just the file. A regex that
     # quietly stopped matching would otherwise pass by finding nothing, and a

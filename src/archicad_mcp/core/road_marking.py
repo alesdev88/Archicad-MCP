@@ -43,6 +43,8 @@ RANGES = {"Width": (0.01, None), "Dash": (0.01, None), "Gap": (0.0, None), "Angl
           "bayWidth": (0.3, None), "bayDepth": (0.3, None), "zoneWidth": (0.1, None),
           "barWidth": (0.01, None), "letterLength": (0.1, None), "letterWidth": (0.05, None),
           "letterGap": (0.0, None), "letterRepeat": (0.0, None), "thickness": (0.0005, 0.05)}
+# The single Angle parameters; the tool keeps them in degrees, the part reads them in radians
+ANGLES = tuple(f"s{k}Angle" for k in (1, 2, 3))
 ENUMS = {"Shape": VALUES["shapes"], "patternAlign": VALUES["aligns"], "bayLayout": VALUES["layouts"],
          "letterText": VALUES["letter_texts"], "letterAlign": VALUES["letter_aligns"]}
 
@@ -254,13 +256,16 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     origin, angle = frame if frame else (nodes[0], 0.0)
     local = pp.to_local(nodes, origin, angle)
     items = pp.writes_items(conn)
+    radians = pp.angles_in_radians(conn)
     if items:
         pp.check_plan_gaps(local, LIBRARY_PART)
     same_count = bool(update_guid) and len(nodes) == len(current["nodeX"]) and not items
-    params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items)
+    params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items,
+                         radians=radians)
     if want["markingType"] != current["markingType"]:
         params.append({"name": "markingType", "value": want["markingType"]})
-    params += [{"name": k, "value": want[k]} for k in TABLE["settings"] if not _same(want[k], state[k])]
+    params += [{"name": k, "value": _sent(k, want[k], radians)}
+               for k in TABLE["settings"] if not _same(want[k], state[k])]
     report = {"dry_run": dry_run, "marking": want["markingType"], "nodes": len(nodes),
               "arcs": sum(1 for a in arcs[:-1] if abs(a) > sp.ARC_EPS_DEG), **drape_report,
               "max_deviation_mm": round(path.max_deviation * 1000, 2),
@@ -307,9 +312,15 @@ def read_parameters(conn, guid: str) -> dict:
     """A placed marking's parameters by name, single angles in degrees (the API reads them
     back in radians)."""
     values = pp.gdl_parameters(conn, guid)
-    for k in (1, 2, 3):
-        values[f"s{k}Angle"] = math.degrees(float(values[f"s{k}Angle"]))
+    for name in ANGLES:
+        values[name] = math.degrees(float(values[name]))
     return values
+
+
+def _sent(name: str, value, radians: bool):
+    """A setting as SetGDLParametersOfElements takes it: the stripe angles are kept in
+    degrees and go in radians to Tapir 1.7.3 and newer."""
+    return math.radians(value) if radians and name in ANGLES else value
 
 
 def _surface_index(conn, value) -> int:
@@ -330,7 +341,7 @@ def _same(a, b) -> bool:
     return a == b
 
 
-def node_params(local, arcs, falls, tol, y_first=False, items=False) -> list[dict]:
+def node_params(local, arcs, falls, tol, y_first=False, items=False, radians=False) -> list[dict]:
     """The node arrays and grip helpers in write order, every grip helper equal to its
     marker so the Parameter Script reads no pending drag.
 
@@ -340,23 +351,23 @@ def node_params(local, arcs, falls, tol, y_first=False, items=False) -> list[dic
 
     Item writes (Tapir 1.7.2 and newer) follow pp.resize_writes, which sets A and aDone and
     leaves the add-node grips balanced, so neither pair is written here (a lone extEnd write
-    would be a drag); x and y go in the order pp.parked_xy gives, the arc angles in degrees."""
+    would be a drag); x and y go in the order pp.parked_xy gives, the arc angles in degrees
+    (in radians from Tapir 1.7.3)."""
     n = len(local)
 
     def r6(values):
         return [round(v, 6) + 0.0 for v in values]
 
     xs, ys = r6(p[0] for p in local), r6(p[1] for p in local)
+    arc_values = [round(a if items and not radians else math.radians(a), 9) + 0.0 for a in arcs]
     if items:
         head, xy = [], pp.parked_xy(xs, ys)
-        arc_values = [round(a, 9) + 0.0 for a in arcs]
         ext = []
     else:
         head = [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 1.0}]
         xy = [{"name": "nodeX", "value": xs}, {"name": "nodeY", "value": ys}]
         xy = xy[::-1] if y_first else xy
-        arc_values = [round(math.radians(a), 9) + 0.0 for a in arcs]
-        ext = [{"name": "extStart", "value": 0.0}, {"name": "extStartDone", "value": 0.0},
+        ext =[{"name": "extStart", "value": 0.0}, {"name": "extStartDone", "value": 0.0},
                {"name": "extEnd", "value": 0.0}, {"name": "extEndDone", "value": 0.0}]
     return (head + xy
             + [{"name": "nodeZ", "value": r6(p[2] for p in local)},

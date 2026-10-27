@@ -74,6 +74,26 @@ def test_refused_fields_name_the_reason(command, field, fields, entry_key, fragm
     assert fragment in refusal(command, field, fields, ENTRIES[entry_key], NEW)
 
 
+@pytest.mark.parametrize("command,field,fields,entry_key", [
+    # #1408: ModifyMeshes rebuilds the polygon from holes or arcs sent alone
+    ("ModifyMeshes", "holes", {"holes": []}, "mesh"),
+    ("ModifyMeshes", "polygonArcs", {"polygonArcs": []}, "mesh"),
+    # #1144: rotationDegreesZ turns the morph about the vertical axis through its origin
+    ("ModifyMorphs", "rotationDegreesZ", {"rotationDegreesZ": 90}, "morph"),
+])
+def test_tapir_1_7_3_takes_what_older_tapir_ignored_or_got_wrong(command, field, fields,
+                                                                entry_key):
+    assert refusal(command, field, fields, ENTRIES[entry_key], (1, 7, 3)) is None
+
+
+def test_from_1_7_3_new_mesh_coordinates_keep_the_holes():
+    coords = MESH["details"]["polygonCoordinates"]
+    assert any("removes the holes" in w
+               for w in side_effects("ModifyMeshes", {"polygonCoordinates": coords}, MESH, NEW))
+    assert not any("removes the holes" in w for w in side_effects(
+        "ModifyMeshes", {"polygonCoordinates": coords}, MESH, (1, 7, 3)))
+
+
 @pytest.mark.parametrize("command,field,fields,entry", [
     ("ModifySlabs", "thickness", {"thickness": 0.25}, SLAB_B),
     ("ModifySlabs", "holes", {"holes": []}, SLAB),          # slabs reuse the outline

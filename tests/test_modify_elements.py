@@ -102,7 +102,7 @@ def test_layer_only_change_on_a_type_without_a_command():
     out = _dry(ModifyProject(), [{"guid": "CW-1", "layer": "Shell - General"},
                                  {"guid": "HATCH-1", "thickness": 0.2}])
     assert _planned(out, "CW-1")["changes"]["layer"]["new"] == "Shell - General"
-    assert "only story, layer and draw_order" in _reason(out, "HATCH-1")
+    assert "only story, layer, draw_order and id" in _reason(out, "HATCH-1")
 
 
 def test_refusals_from_the_field_table():
@@ -649,3 +649,12 @@ def test_changes_without_placement_never_read_the_records(tmp_path):
     out = modify_elements(ModifyProject().connect(), [{"guid": SLAB_B, "thickness": 0.25}],
                           records=PartRecords(broken))
     assert out["planned_count"] == 1
+
+
+def test_an_element_id_is_planned_from_tapir_1_7_3():
+    out = _dry(ModifyProject(version="1.7.3"), [{"guid": SLAB, "id": "SLA - 101"}])
+    assert _planned(out, SLAB)["changes"]["id"] == {"current": "SLA - 001", "new": "SLA - 101"}
+    old = _dry(ModifyProject(version="1.7.2"), [{"guid": SLAB, "id": "SLA - 101"}])
+    assert "1.7.3" in _reason(old, SLAB) and "set_element_data" in _reason(old, SLAB)
+    bad = _dry(ModifyProject(version="1.7.3"), [{"guid": SLAB, "id": 101}])
+    assert "text" in _reason(bad, SLAB)

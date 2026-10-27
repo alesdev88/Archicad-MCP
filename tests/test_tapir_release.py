@@ -18,16 +18,16 @@ from archicad_mcp.tapir_install.release import (
 )
 
 
-def test_pinned_release_is_1_7_2_with_all_twelve_addon_assets():
+def test_pinned_release_is_1_7_3_with_all_twelve_addon_assets():
     rel = load_pinned()
-    assert rel.version == "1.7.2" and rel.tag == "1.7.2" and rel.pinned
+    assert rel.version == "1.7.3" and rel.tag == "1.7.3" and rel.pinned
     assert set(rel.assets) == {f"TapirAddOn_AC{v}_{p}" for v in range(25, 31)
                                for p in ("Mac.zip", "Win.apx")}
     a = rel.assets["TapirAddOn_AC30_Mac.zip"]
-    assert a.size == 2988141
-    assert a.sha256 == "b70e53adffd24857d5822550b01ca25fbc783c17390f52cbfa88bf523b0faf91"
-    assert a.url.endswith("/releases/download/1.7.2/TapirAddOn_AC30_Mac.zip")
-    assert release_page_url(rel).endswith("/releases/tag/1.7.2")
+    assert a.size == 3686558
+    assert a.sha256 == "1476bd5006d1aa716fbb97ae77cfdd0c0298bfe545726998ff5facd93dbcfb62"
+    assert a.url.endswith("/releases/download/1.7.3/TapirAddOn_AC30_Mac.zip")
+    assert release_page_url(rel).endswith("/releases/tag/1.7.3")
 
 
 def test_asset_name_per_platform():

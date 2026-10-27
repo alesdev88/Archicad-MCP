@@ -33,13 +33,14 @@ does two jobs:
   `archicad-mcp install-tapir`, or ask the client to run the `install_tapir`
   tool (see [Install Tapir](#install-tapir)). Required for element creation,
   issues, IFC checks, highlighting, and publishing. The installer puts the
-  pinned Tapir **1.7.2** in place, checked by sha256. The bundled command
-  definitions are synced from Tapir **1.7.2**. On 1.7.2 and Archicad 29 the
-  live suite, `create_elements` (doors and windows by part name and the new
-  types), `modify_elements`, `capture_window`, `create_swept_beam` and
-  `create_road_marking` have been exercised live, and on Archicad 30
-  `create_elements` (the electrical types too) and `capture_window`; the other
-  tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
+  pinned Tapir **1.7.3** in place, checked by sha256. The bundled command
+  definitions are synced from Tapir **1.7.3**. On 1.7.3 and Archicad 29 and 30
+  the live suite, `create_elements`, `modify_elements`, `apply_favorites`,
+  `set_element_data`, `find_elements`, `create_swept_beam` and
+  `create_road_marking` have been exercised live (Tapir 1.7.3 takes GDL angles in
+  radians, which these tools follow); on 1.7.2 and Archicad 29 the same, plus
+  `capture_window`, and on Archicad 30 `create_elements` (the electrical types
+  too); the other tools against 1.5.9 or later. A newer add-on than the definitions is fine. Without the add-on, the tools that need it say which file to install,
   and the rest degrade instead of erroring.
 
 ## Install as a Claude Desktop extension (recommended)
@@ -780,7 +781,7 @@ and sha256 hashes GitHub publishes for every add-on asset), review the diff, and
 check the new version live before releasing:
 
 ```bash
-uv run python scripts/pin_tapir_release.py 1.7.2
+uv run python scripts/pin_tapir_release.py 1.7.3
 ```
 
 Build the Claude Desktop extensions. One bundle per platform, both from this

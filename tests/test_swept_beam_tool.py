@@ -403,6 +403,41 @@ def test_an_update_writes_its_own_cuts_again_after_the_reset_squares_them():
                     ("cutStartTilt", 0.0), ("cutEndPlan", pytest.approx(-15.0))]
 
 
+# ---------------------------------------------------------------- Tapir 1.7.3 angles in radians
+
+V173 = {"version": "1.7.3"}
+
+
+def test_from_1_7_3_cuts_and_arcs_go_in_radians():
+    # Tapir #1405: SetGDLParametersOfElements takes Angle values in radians, as Get reads them
+    entry = {"type": "PolyLine", "floorIndex": 0, "details": {
+        "coordinates": [{"x": 0, "y": 0}, {"x": 2, "y": 2}, {"x": 5, "y": 2}],
+        "arcs": [{"begIndex": 0, "endIndex": 1, "arcAngle": math.pi / 2}], "zCoordinate": 0.0}}
+    conn = _conn({"GetDetailsOfElements": _details(entry), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V173})
+    params = _params(sb.create_swept_beam(conn, source_guid="p-1", cut_start_plan=30))
+    assert params["segArc"] == pytest.approx([math.pi / 2, 0.0, 0.0])
+    assert params["cutStartPlan"] == pytest.approx(math.radians(30))
+
+
+def test_from_1_7_3_an_update_writes_its_own_cuts_back_as_read():
+    beam = {"type": "Object", "floorIndex": 0, "details": {
+        "libPart": {"name": "Swept Beam"}, "origin": {"x": 0, "y": 0, "z": 0}, "angle": 0.0}}
+    current = _gdl(nodeX=[0.0, 3.0], extEnd=2.5, cutStartPlan=math.radians(20),
+                   cutStartTilt=0.0, cutEndPlan=math.radians(-15), cutEndTilt=math.radians(5))
+    conn = _conn({"GetDetailsOfElements": _details(beam), "GetAvailableLibraryParts": LIB,
+                  "GetAddOnVersion": V173, "GetGDLParametersOfElements": current,
+                  "SetGDLParametersOfElements": OK})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 6, "y": 1, "z": 0}]
+    sb.create_swept_beam(conn, points=pts, update_guid="b-1", cut_end_tilt=10, dry_run=False)
+    call = [p for c, p in conn._core.calls if c == "SetGDLParametersOfElements"][0]
+    params = call["elementsWithGDLParameters"][0]["gdlParameters"]
+    cuts = [(p["name"], p["value"]) for p in params if p["name"].startswith("cut")]
+    assert cuts == [("cutEndTilt", pytest.approx(math.radians(10))),
+                    ("cutStartPlan", pytest.approx(math.radians(20))), ("cutStartTilt", 0.0),
+                    ("cutEndPlan", pytest.approx(math.radians(-15)))]
+
+
 def test_a_vertical_piece_is_refused_before_anything_is_placed():
     conn = _conn({"GetAvailableLibraryParts": LIB, "GetAddOnVersion": V172})
     pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 2}]

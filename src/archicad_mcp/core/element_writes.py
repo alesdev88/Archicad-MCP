@@ -72,7 +72,9 @@ ARRAYS_UNSAFE = ("Tapir before 1.7.2 writes a whole GDL array without running th
                  "unreadable (Tapir issue #557); update Tapir once 1.7.2 is released")
 # 1.7.2 writes each array item through ChangeAParameter, which takes a single
 # Angle in degrees (live 19.10.2026); whether an indexed item does too is not
-# verified, so Angle arrays wait for that check.
+# verified, so Angle arrays wait for that check. 1.7.3 turns radians into
+# degrees itself for arrays too (#1405): a list in radians reads back as sent
+# (live 26.10.2026, AC29 and AC30).
 ANGLE_ARRAYS_UNVERIFIED = ("writing an Angle array is not verified on this Tapir yet "
                            "(item by item it may take degrees); not sent")
 # From Archicad 28 Tapir answers every SetIFCPropertiesOfElements with "not
@@ -112,6 +114,7 @@ class Plan:
     skipped: list[tuple[int, dict]] = field(default_factory=list)
     index: object = None                                     # ClassificationIndex
     systems: dict[str, str] = field(default_factory=dict)    # system GUID -> label
+    run_parameter_script: bool = False   # RunParameterScriptOfElements after GDL writes
 
     def skip(self, change: Change, reason: str) -> None:
         self.skipped.append((change.order, {"guid": change.guid,
@@ -299,7 +302,7 @@ def _plan_parameters(conn: ArchicadConnection, kind: str, changes: list[Change],
             if kind == GDL and ev.is_array(entry):
                 if version < ARRAY_FIX_TAPIR:
                     raise _Skip(ARRAYS_UNSAFE)
-                if entry.get("type") == "Angle":
+                if entry.get("type") == "Angle" and version < ev.RADIANS_TAPIR:
                     raise _Skip(ANGLE_ARRAYS_UNVERIFIED)
             if old_tapir and element_type in _SIZE_TYPES and entry["name"] in ("A", "B"):
                 raise _Skip(f"Tapir before {'.'.join(map(str, SIZE_FIX_TAPIR))} writes an "
@@ -313,7 +316,8 @@ def _plan_parameters(conn: ArchicadConnection, kind: str, changes: list[Change],
         except _Skip as skip:
             plan.skip(c, str(skip))
             continue
-        c.name, c.target, c.send = entry["name"], value, ev.to_tapir(entry, value, kind)
+        c.name, c.target = entry["name"], value
+        c.send = ev.to_tapir(entry, value, kind, radians=version >= ev.RADIANS_TAPIR)
         c.current, c.new = ev.read_value(entry), value
         attribute = ev.ATTRIBUTE_TYPES.get(entry.get("type"))
         if attribute and isinstance(c.value, str):
@@ -394,11 +398,42 @@ def skipped_entries(p: Plan) -> list[dict]:
     return [entry for _, entry in p.skipped]
 
 
+# Tapir 1.7.3: runs a placed part's whole Parameter Script, as Archicad does after a
+# change in the settings dialog. ChangeAParameter runs it per written value already,
+# with GLOB_MODPAR_NAME set; a full run updates what depends on other parameters, so
+# it is asked for, never automatic.
+RUN_SCRIPT = "RunParameterScriptOfElements"
+NO_RUN_SCRIPT = ("this Tapir has no RunParameterScriptOfElements (Tapir 1.7.3 does), so the "
+                 "parameter script was not run")
+
+
+def _script_guids(p: Plan) -> list[str]:
+    return list(dict.fromkeys(c.guid for c in p.changes if c.address.kind == GDL))
+
+
 def dry_run_result(p: Plan) -> dict:
     result = {"dry_run": True, "planned_changes": [planned_entry(c) for c in p.changes]}
     if p.skipped:
         result["skipped"] = skipped_entries(p)
+    if p.run_parameter_script and _script_guids(p):
+        result["parameter_script"] = {"elements": len(_script_guids(p))}
     return result
+
+
+def _run_parameter_script(conn: ArchicadConnection, guids: list[str]) -> dict:
+    """Run the parameter script of the elements whose GDL write went through."""
+    if not conn.tapir_command_available(RUN_SCRIPT):
+        return {"not_run": NO_RUN_SCRIPT}
+    items = [{"elementId": {"guid": g}} for g in guids]
+    sent = send_items(conn.tapir, RUN_SCRIPT, "elements", items, PARAMETER_CHUNK)
+    failed = [{"guid": g, "command": RUN_SCRIPT, **outcome}
+              for g, outcome in zip(guids, sent.outcomes) if isinstance(outcome, dict)]
+    out: dict = {"ran": sum(1 for o in sent.outcomes if o == "ok")}
+    if failed:
+        out["failed"] = group_failures(failed, detail_key="command")
+    if sent.stopped is not None:
+        out["stopped"] = error_fields(sent.stopped)
+    return out
 
 
 # ---------- the commit ----------
@@ -493,6 +528,14 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
             outcomes[c.order] = sent.outcomes[i]
         stopped = sent.stopped
 
+    script = None
+    if p.run_parameter_script:
+        written = [g for g in _script_guids(p)
+                   if any(outcomes.get(c.order) == "ok" for c in p.changes
+                          if c.guid == g and c.address.kind == GDL)]
+        if written:
+            script = _run_parameter_script(conn, written)
+
     applied = 0
     not_applied: dict[str, list[dict]] = {}
     failed: list[dict] = []
@@ -551,4 +594,6 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
             result["unconfirmed"]["not_shown"] = rest
     if stopped is not None:
         result["stopped"] = error_fields(stopped)
+    if script is not None:
+        result["parameter_script"] = script
     return result

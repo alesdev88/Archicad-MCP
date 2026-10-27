@@ -8,6 +8,7 @@ from multiconn_archicad.errors import APIErrorBase, TapirCommandError
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
 from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
+from archicad_mcp.tapir_requirements import _key, installed_version
 
 # Verified against a live Archicad 29.0 model (2026-07-16):
 #   layer name  -> ModelView_LayerName  (NOT General_LayerName, which does not exist)
@@ -388,14 +389,48 @@ def _fetch_ifc(conn, guids: list[str]) -> dict[str, dict[str, object]] | None:
     return out
 
 
+# Tapir #917: FilterElements keeps the elements of the given stories (floorIndices).
+FLOOR_FILTER_TAPIR = (1, 7, 3)
+FLOOR_FILTER_CHUNK = 2000
+
+
+def _floor_indices_by_filter(conn, guids: list[str]) -> dict[str, int | None] | None:
+    """guid -> home-story index from one FilterElements per story and chunk, which
+    reads no details; None when this Tapir cannot (before 1.7.3) or the read fails."""
+    version = installed_version(conn)
+    if version is None or _key(version) < FLOOR_FILTER_TAPIR:
+        return None
+    out: dict[str, int | None] = dict.fromkeys(guids)
+    spelled = {g.upper(): g for g in guids}
+    try:
+        stories = [int(s["index"]) for s in conn.tapir("GetStories").get("stories", [])]
+        for index in stories:
+            for start in range(0, len(guids), FLOOR_FILTER_CHUNK):
+                chunk = guids[start:start + FLOOR_FILTER_CHUNK]
+                response = conn.tapir("FilterElements", {"elements": element_payload(chunk),
+                                                         "floorIndices": [index]})
+                for e in response.get("elements", []):
+                    guid = spelled.get(e["elementId"]["guid"].upper())
+                    if guid is not None:
+                        out[guid] = index
+    except (APIErrorBase, ArchicadUnavailableError, KeyError, TypeError, ValueError):
+        return None
+    return out
+
+
 def _fetch_floor_indices(conn, guids: list[str]) -> dict[str, int | None]:
     """guid -> home-story (floor) index, via Tapir GetDetailsOfElements.
 
     Archicad exposes no built-in story-number property; floorIndex on the
-    element detail is the reliable source. Returns {} if Tapir is unavailable.
+    element detail is the reliable source. From Tapir 1.7.3 FilterElements by
+    story gives it without a details read, so without the read ceiling.
+    Returns {} if Tapir is unavailable.
     """
     if not guids or not conn.tapir_available():
         return {}
+    by_filter = _floor_indices_by_filter(conn, guids)
+    if by_filter is not None:
+        return by_filter
     if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
         raise PropertyFetchTooWideError(
             f"Refusing to read element details across {len(guids)} elements "

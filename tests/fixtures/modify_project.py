@@ -272,6 +272,8 @@ class ModifyProject:
                 self._shift_absolute(entry, shift)
             if "layerIndex" in details:
                 entry["layerIndex"] = details["layerIndex"]
+            if "id" in details:                  # Tapir 1.7.3 (#906)
+                entry["id"] = details["id"]
             if "drawIndex" in details and guid not in self.ignore_draw:
                 entry["drawIndex"] = details["drawIndex"] or entry["drawIndex"]
             results.append({"success": True})

@@ -385,9 +385,10 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
 
 
 def set_element_data(conn: ArchicadConnection, changes: list[dict],
-                     dry_run: bool = True) -> dict:
+                     dry_run: bool = True, run_parameter_script: bool = False) -> dict:
     from archicad_mcp.core import element_writes  # imports this module
     plan = element_writes.plan(conn, changes)
+    plan.run_parameter_script = run_parameter_script
     if dry_run:
         return element_writes.dry_run_result(plan)
     return element_writes.commit(conn, plan)

@@ -138,6 +138,35 @@ def test_story_ordering():
     assert payload["guids"] == ["w-2"]
 
 
+def _filtering_conn():
+    """Tapir 1.7.3: FilterElements takes floorIndices (#917)."""
+    floors = {"w-1": 0, "w-2": 1, "z-1": 0}
+    tapir = dict(api_replays.TAPIR)
+    tapir["GetAddOnVersion"] = {"version": "1.7.3"}
+    tapir["GetStories"] = {"stories": [{"index": 0, "level": 0.0}, {"index": 1, "level": 3.0}]}
+    tapir["FilterElements"] = lambda p: {"elements": [
+        {"elementId": {"guid": e["elementId"]["guid"].upper()}} for e in p["elements"]
+        if floors[e["elementId"]["guid"]] in p["floorIndices"]]}
+    return ArchicadConnection(19723, core=FakeCore(official=dict(api_replays.OFFICIAL),
+                                                   tapir=tapir))
+
+
+def test_story_on_tapir_1_7_3_filters_per_story_without_reading_details():
+    conn = _filtering_conn()
+    payload = find_elements(conn, [{"element_types": ["Wall", "Zone"], "comparisons": [
+        prop("story", "greater_or_equal", 1)]}])
+    assert payload["guids"] == ["w-2"]
+    assert calls(conn, "GetDetailsOfElements") == []
+    assert [p["floorIndices"] for p in calls(conn, "FilterElements")] == [[0], [1]]
+
+
+def test_story_on_tapir_1_7_3_is_not_held_to_the_property_read_limit(monkeypatch):
+    monkeypatch.setattr(extract, "MAX_PROPERTY_FETCH_ELEMENTS", 1)
+    payload = find_elements(_filtering_conn(), [{"element_types": ["Wall"], "comparisons": [
+        prop("story", "equal", 0)]}])
+    assert payload["guids"] == ["w-1"]
+
+
 def test_story_without_tapir_matches_nothing_and_says_why():
     payload = find_elements(make_conn(tapir=False), [{"element_types": ["Wall"], "comparisons": [
         prop("story", "equal", 0)]}])

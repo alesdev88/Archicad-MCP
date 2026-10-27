@@ -54,6 +54,7 @@ class Planned:
     story: int | None = None
     layer: int | None = None
     draw_order: int | None = None
+    element_id: str | None = None  # a new Element ID
     keep_elevation: bool = False
     command: str | None = None
     item: dict = field(default_factory=dict)
@@ -275,13 +276,23 @@ def _plan_common(p: Planned, fields: dict, ctx: _Context) -> None:
         p.display["draw_order"] = {"current": entry.get("drawIndex"), "new": order}
         if order:
             p.expected["draw_order"] = order
+    if "id" in fields:
+        if not isinstance(fields["id"], str):
+            raise _Skip("id takes the Element ID as text")
+        if ctx.tapir < mf.ELEMENT_ID_TAPIR:
+            raise _Skip(f"the installed Tapir ({_version_text(ctx.tapir)}) cannot write the "
+                        "Element ID; Tapir 1.7.3 can. Set it with set_element_data "
+                        "(General_ElementID)")
+        p.element_id = fields["id"]
+        p.display["id"] = {"current": entry.get("id") or "", "new": p.element_id}
+        p.expected["id"] = p.element_id
 
 
 def _plan_typed(p: Planned, fields: dict, typed: dict, ctx: _Context) -> None:
     command = mf.TYPE_COMMANDS.get(p.type)
     if command is None:
-        raise _Skip(f"a {p.type} takes only story, layer and draw_order here; no Modify "
-                    "command covers its other fields")
+        raise _Skip(f"a {p.type} takes only story, layer, draw_order and id here; no "
+                    "Modify command covers its other fields")
     allowed = mf.allowed_fields(command)
     for name, value in typed.items():
         reason = mf.refusal(command, name, fields, p.entry, ctx.tapir)
@@ -341,7 +352,7 @@ def _element_warnings(p: Planned, typed: dict, ctx: _Context) -> list[str]:
             if new != old:
                 out.append(f"moves from story {old} to story {new}: Tapir takes the "
                            "story from the absolute z")
-        out.extend(mf.side_effects(p.command, typed, p.entry))
+        out.extend(mf.side_effects(p.command, typed, p.entry, ctx.tapir))
     if p.draw_order is not None and p.type in mf.OPENING_TYPES:
         out.append("draw_order on a door or window goes through its wall: 0 resets the "
                    "wall and every opening in it, a level above 7 lifts every opening "

@@ -76,7 +76,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         raise SweptBeamError("Give exactly one of source_guid or points.")
     if path_tolerance <= 0:
         raise SweptBeamError("path_tolerance must be a positive length in metres.")
-    cut_params = (_cut_params(cuts, keep_unset=update_guid is not None)
+    radians = pp.angles_in_radians(conn)
+    cut_params = (_cut_params(cuts, keep_unset=update_guid is not None, radians=radians)
                   + _ref_params(cuts, keep_unset=update_guid is not None))
     warnings: list[str] = []
     if source_guid is not None:
@@ -106,7 +107,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     items = pp.writes_items(conn)
     if items:
         pp.check_plan_gaps(local, LIBRARY_PART)
-    params = _node_params(local, path.arcs, path_tolerance, items) + profile_params + cut_params
+    params = (_node_params(local, path.arcs, path_tolerance, items, radians)
+              + profile_params + cut_params)
     report = {
         "dry_run": dry_run,
         "nodes": len(path.nodes),
@@ -129,7 +131,7 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         # no resizing: reset the path, grow it to the node count, then write every item
         current = pp.gdl_parameters(conn, guid)
         params = (pp.resize_writes(current, len(local)) + params
-                  + _kept_cuts(current, {p["name"] for p in params}))
+                  + _kept_cuts(current, {p["name"] for p in params}, radians))
     pp.write_parameters(conn, guid, params, LIBRARY_PART)
     report["element"] = guid
     report["updated" if update_guid else "created"] = True
@@ -171,9 +173,10 @@ def _profile_params(conn, profile, offset_u, offset_w, flip, keep_unset=False) -
                          '{"rectangle": {"width": w, "height": h, "building_material": "<name>"}}.')
 
 
-def _cut_params(cuts: dict, keep_unset: bool) -> list[dict]:
-    """End cut angles, in degrees: the API takes a single angle parameter in
-    degrees (gate A). On an update, a cut the call leaves as None is kept."""
+def _cut_params(cuts: dict, keep_unset: bool, radians: bool = False) -> list[dict]:
+    """End cut angles, given in degrees: Tapir up to 1.7.2 takes a single angle
+    parameter in degrees (gate A), 1.7.3 and newer in radians. On an update, a
+    cut the call leaves as None is kept."""
     out = []
     for arg, (name, limit) in CUT_LIMITS.items():
         value = cuts.get(arg)
@@ -185,14 +188,16 @@ def _cut_params(cuts: dict, keep_unset: bool) -> list[dict]:
         if abs(value) > limit:
             raise SweptBeamError(f"{arg} must be between -{limit:g} and {limit:g} degrees, "
                                  f"got {value:g}.")
-        out.append({"name": name, "value": value})
+        out.append({"name": name, "value": math.radians(value) if radians else value})
     return out
 
 
-def _kept_cuts(current: dict, written: set[str]) -> list[dict]:
+def _kept_cuts(current: dict, written: set[str], radians: bool = False) -> list[dict]:
     """The beam's own end cuts, written again after the path reset that squares them.
-    They read back in radians and are written in degrees."""
-    return [{"name": name, "value": round(math.degrees(float(current.get(name, 0.0))), 9) + 0.0}
+    They read back in radians and are written in degrees up to Tapir 1.7.2."""
+    def sent(value):
+        return value if radians else round(math.degrees(value), 9) + 0.0
+    return [{"name": name, "value": sent(float(current.get(name, 0.0)))}
             for name, _ in CUT_LIMITS.values() if name not in written]
 
 
@@ -216,7 +221,8 @@ def _ref_params(values: dict, keep_unset: bool) -> list[dict]:
     return out
 
 
-def _node_params(local, arcs, tol: float, items: bool = False) -> list[dict]:
+def _node_params(local, arcs, tol: float, items: bool = False,
+                 radians: bool = False) -> list[dict]:
     """Node arrays and grip helpers for SetGDLParametersOfElements.
 
     Whole arrays (Tapir up to 1.7.1) take angle items in radians (single angles
@@ -224,10 +230,10 @@ def _node_params(local, arcs, tol: float, items: bool = False) -> list[dict]:
     and A equal to aDone, so the Parameter Script reads no pending grip drag or
     length edit (gate C).
 
-    Item writes (Tapir 1.7.2 and newer) take angle items in degrees and follow
-    pp.resize_writes, which leaves the add-node grips balanced, so the extension
-    pairs are not written (a lone extEnd write would be a drag); x and y go in
-    the order pp.parked_xy gives.
+    Item writes (Tapir 1.7.2 and newer) take angle items in degrees (radians from
+    1.7.3) and follow pp.resize_writes, which leaves the add-node grips balanced,
+    so the extension pairs are not written (a lone extEnd write would be a drag);
+    x and y go in the order pp.parked_xy gives.
     """
     n = len(local)
 
@@ -237,13 +243,12 @@ def _node_params(local, arcs, tol: float, items: bool = False) -> list[dict]:
     length = round(sum(sp.segment_plan_length(local[i], local[i + 1], arcs[i])
                        for i in range(n - 1)), 6)
     xs, ys = r6(p[0] for p in local), r6(p[1] for p in local)
+    arc_values = [round(a if items and not radians else math.radians(a), 9) + 0.0 for a in arcs]
     if items:
         xy = pp.parked_xy(xs, ys)
-        arc_values = [round(a, 9) + 0.0 for a in arcs]
         ext = []
     else:
         xy = [{"name": "nodeX", "value": xs}, {"name": "nodeY", "value": ys}]
-        arc_values = [round(math.radians(a), 9) + 0.0 for a in arcs]
         ext = [{"name": name, "value": 0.0}
                for name in ("extStart", "extStartDone", "extEnd", "extEndDone")]
     return xy + [

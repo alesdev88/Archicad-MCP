@@ -6,11 +6,15 @@ path is not symmetric for one case: SetGDLParametersOfElements hands a single
 Angle to ACAPI_LibraryPart_ChangeAParameter, which takes degrees, while whole
 arrays and marker values go straight into the parameter list, which holds
 radians (docs/superpowers/specs/2026-09-29-swept-beam-findings.md). to_tapir()
-hides that.
+hides that. From Tapir 1.7.3 (#1405) SetGDLParametersOfElements turns radians
+into degrees itself, so every Angle goes as it reads.
 """
 from __future__ import annotations
 
 import math
+
+# The first Tapir whose SetGDLParametersOfElements takes Angle values in radians.
+RADIANS_TAPIR = (1, 7, 3)
 
 # Attribute-typed GDL parameters hold an attribute index; a write may name the
 # attribute instead. The values are Tapir GetAttributesByType's type names.
@@ -131,9 +135,10 @@ def fit(entry: dict, value, *, string_limit: int, arrays: bool,
     return (out[0] if columns == 1 else out), None
 
 
-def to_tapir(entry: dict, value, kind: str):
-    """The value as Tapir must receive it: a single GDL Angle in degrees."""
-    if kind == "gdl" and entry.get("type") == "Angle" and not is_array(entry):
+def to_tapir(entry: dict, value, kind: str, radians: bool = False):
+    """The value as Tapir must receive it: a single GDL Angle in degrees, unless
+    this Tapir takes radians (RADIANS_TAPIR)."""
+    if kind == "gdl" and entry.get("type") == "Angle" and not is_array(entry) and not radians:
         return math.degrees(value)
     return value
 

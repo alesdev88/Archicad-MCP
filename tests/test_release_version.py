@@ -1,9 +1,12 @@
+import json
+
 from scripts.check_release_version import (
     disagreements,
     normalise_tag,
     read_versions,
     readme_version_refs,
     server_json_versions,
+    unreleased_tapir_definitions,
 )
 
 
@@ -198,3 +201,24 @@ def test_server_json_description_fits_the_registry_limit():
     assert len(description) <= 100, (
         f"server.json description is {len(description)} characters; the registry "
         f"refuses anything over 100")
+
+
+def _tapir_files(root, synced: dict, pinned: str):
+    defs = root / "src" / "archicad_mcp" / "gateway" / "definitions"
+    defs.mkdir(parents=True)
+    (defs / "tapir_version.json").write_text(json.dumps(synced))
+    install = root / "src" / "archicad_mcp" / "tapir_install"
+    install.mkdir(parents=True)
+    (install / "tapir_release.json").write_text(json.dumps({"version": pinned, "tag": pinned}))
+
+
+def test_definitions_from_an_unreleased_tapir_hold_the_release(tmp_path):
+    # Definitions generated from Tapir main name commands install_tapir cannot deliver.
+    _tapir_files(tmp_path, {"version": "1.7.3", "source": "main-branch"}, "1.7.2")
+    problem = unreleased_tapir_definitions(tmp_path)
+    assert "main-branch" in problem and "1.7.3" in problem and "1.7.2" in problem
+
+
+def test_definitions_of_the_pinned_release_let_the_release_go(tmp_path):
+    _tapir_files(tmp_path, {"version": "1.7.2", "source": "release"}, "1.7.2")
+    assert unreleased_tapir_definitions(tmp_path) is None

@@ -102,6 +102,26 @@ def test_reserve_dry_run_derives_what_it_can_and_says_what_it_cannot():
     assert calls(conn, "ReserveElements") == []
 
 
+def _statuses(p):
+    out = []
+    for e in p["elements"]:
+        held = HELD_BY_OTHER.get(e["elementId"]["guid"].lower())
+        out.append({"status": "Locked", "reservedBy": {"userId": held[0], "userName": held[1]}}
+                   if held else {"status": "Free"})
+    return {"reservationStatuses": out}
+
+
+def test_reserve_dry_run_names_who_holds_what_on_tapir_1_7_3():
+    # GetReservationStatusOfElements reads the holder without attempting.
+    conn, _ = make(mine=["z-1"])
+    conn._core.tapir_responses["GetReservationStatusOfElements"] = _statuses
+    payload = reserve_elements(conn, ["w-1", "W-2", "z-1"])
+    assert payload["would_attempt"] == ["w-1"]
+    assert payload["held_by_others"] == [{"guid": "W-2", "user": "Someone Else", "user_id": 7}]
+    assert "note" not in payload
+    assert calls(conn, "ReserveElements") == []
+
+
 def test_reserve_commit_separates_the_four_outcomes():
     conn, ws = make(mine=["z-1"])
     payload = reserve_elements(conn, ["w-1", "w-2", "z-1", "ghost"], confirm=True)

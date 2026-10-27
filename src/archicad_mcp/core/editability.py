@@ -203,21 +203,44 @@ def _elsewhere(conn: ArchicadConnection, passed: list[str]) -> set[str]:
     From the floor plan every read reaches the other databases. Live on
     MCP-Test, 19.10.2026: IsEditable passed a layout Text and a section Text,
     GetDetailsOfElements found them, MoveElements answered success and moved
-    neither, DeleteElements left both. Tapir GetAllElements lists only the
-    active window's database, so membership in it is the check. An empty or
-    failed listing checks nothing: the active database holds the editable
-    elements, so it cannot be empty.
+    neither, DeleteElements left both. With the floor plan active, Tapir 1.7.3
+    GetContainingDatabases names each element's database. Otherwise Tapir
+    GetAllElements lists only the active window's database, so membership in it
+    is the check. An empty or failed listing checks nothing: the active
+    database holds the editable elements, so it cannot be empty.
     """
     if not passed or not conn.tapir_command_available("FilterElements"):
         return set()
+    if conn.tapir_command_available("GetContainingDatabases") \
+            and active_window(conn) == "FloorPlan":
+        found = _off_the_floor_plan(conn, passed)
+        if found is not None:
+            return found
     try:
-        listed = {e["elementId"]["guid"].upper()
-                  for e in conn.tapir("GetAllElements").get("elements", [])}
+        # Tapir 1.7.3 leaves zone stamps and stair parts out unless asked (#1471)
+        response = conn.tapir("GetAllElements", {"filters": ["IncludeSubElemObjects"]})
+        listed = {e["elementId"]["guid"].upper() for e in response.get("elements", [])}
     except APIErrorBase:
         return set()
     if not listed:
         return set()
     return {g for g in passed if g.upper() not in listed}
+
+
+def _off_the_floor_plan(conn: ArchicadConnection, guids: list[str]) -> set[str] | None:
+    """The elements GetContainingDatabases places outside the floor plan database,
+    or None when it cannot answer. One not found is left to classify()."""
+    found = set()
+    try:
+        for start in range(0, len(guids), FILTER_CHUNK):
+            chunk = guids[start:start + FILTER_CHUNK]
+            databases = conn.tapir("GetContainingDatabases",
+                                   {"elements": element_payload(chunk)}).get("databases", [])
+            found.update(g for g, db in zip(chunk, databases)
+                         if db.get("windowType") not in (None, "FloorPlan"))
+    except (APIErrorBase, ArchicadUnavailableError):
+        return None
+    return found
 
 
 def refusals(conn: ArchicadConnection,

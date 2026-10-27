@@ -49,8 +49,14 @@ LIST_KEYS: dict[str, str] = {
 MIN_TAPIR = (1, 5, 9)
 # Tapir #719 and #720: object dimensions in metres whatever useFixSize says.
 DIMENSIONS_FIXED_IN = (1, 6, 0)
+# Tapir #1408: ModifyMeshes rebuilds the polygon from any of its parts, keeping the
+# ones not sent (holes included). #1144: rotationDegreesZ turns a morph about the
+# vertical axis through its own origin.
+MESH_PARTS_FIXED_IN = MORPH_ROTATION_FIXED_IN = (1, 7, 3)
 
-COMMON_FIELDS = frozenset({"story", "layer", "draw_order", "keep_elevation"})
+COMMON_FIELDS = frozenset({"story", "layer", "draw_order", "keep_elevation", "id"})
+# Tapir #906: SetDetailsOfElements writes the Element ID.
+ELEMENT_ID_TAPIR = (1, 7, 3)
 
 # Types with no elevation of their own: keep_elevation means nothing for them.
 FLAT_TYPES = frozenset({
@@ -106,10 +112,6 @@ _REFUSED: dict[tuple[str, str], str] = {
     ("ModifyLamps", "offset"): _DISCARDED,
     ("ModifyLamps", "useFixedAngle"): _DISCARDED,
     ("ModifyLamps", "lightColor"): _DISCARDED,
-    ("ModifyMorphs", "rotationDegreesZ"): (
-        "Tapir's rotationDegreesZ turns the morph about the Y axis and around the "
-        "project origin (it mixes the x and z rows of the transformation); send "
-        "xAxis, yAxis and zAxis instead"),
     ("ModifyMeshes", "floorIndex"): _STORY_NOT_FLOOR,
     ("ModifyTexts", "floorIndex"): _STORY_NOT_FLOOR,
 }
@@ -242,8 +244,14 @@ def refusal(command: str, field: str, fields: dict, entry: dict,
         return _REFUSED[(command, field)]
     if command == "ModifyRoofs" and details.get("roofClass") == "SinglePlane":
         return "ModifyRoofs changes multi-plane roofs only; this is a single-plane roof"
+    if (command, field) == ("ModifyMorphs", "rotationDegreesZ") \
+            and tapir < MORPH_ROTATION_FIXED_IN:
+        return ("Tapir before 1.7.3 turns the morph about the Y axis and around the "
+                "project origin with rotationDegreesZ (it mixes the x and z rows of the "
+                "transformation, Tapir #1142); send xAxis, yAxis and zAxis instead")
     partner = _NEEDS_OUTLINE.get((command, field))
-    if partner is not None and partner not in fields:
+    if partner is not None and partner not in fields \
+            and not (command == "ModifyMeshes" and tapir >= MESH_PARTS_FIXED_IN):
         return f"Tapir ignores {field} unless {partner} is sent too"
     if field in _POSITIVE_ONLY.get(command, ()) and _number(fields.get(field)) \
             and fields[field] <= 0:
@@ -350,8 +358,9 @@ def home_story(z: float, stories: list[dict]) -> int:
     return home
 
 
-def side_effects(command: str, fields: dict, entry: dict) -> list[str]:
-    """Warnings for what a field changes besides itself."""
+def side_effects(command: str, fields: dict, entry: dict,
+                 tapir: tuple[int, int, int] = (0, 0, 0)) -> list[str]:
+    """Warnings for what a field changes besides itself, on the installed Tapir."""
     details = entry.get("details") or {}
     out = []
     if command == "ModifySlabs":
@@ -361,7 +370,7 @@ def side_effects(command: str, fields: dict, entry: dict) -> list[str]:
             out.append("a new outline or holes resets the edge angles to vertical and "
                        "the per-edge surfaces to the side surface")
     if command == "ModifyMeshes" and "polygonCoordinates" in fields \
-            and "holes" not in fields:
+            and "holes" not in fields and tapir < MESH_PARTS_FIXED_IN:
         out.append("new polygonCoordinates without holes removes the holes")
     # Only a linked top is unlinked: a top already at relativeTopStory 0 keeps nothing
     # to lose, and saying so for it is noise (live 23.10.2026, twelve walls).
