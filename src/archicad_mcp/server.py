@@ -1125,7 +1125,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
 
     @mcp.tool(description=(
-        "Install the pinned Tapir add-on (1.7.2) into Archicad's Add-Ons folder. "
+        "Install the pinned Tapir add-on (1.7.3) into Archicad's Add-Ons folder. "
         "Dry run by default: it finds every Archicad on this computer, downloads and "
         "checks the file (sha256) and says what it would do. confirm=true writes. "
         "Never replaces an existing Tapir unless replace_existing=true, and then "
