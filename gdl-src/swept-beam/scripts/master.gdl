@@ -268,20 +268,25 @@ IF beamProfile3 > 0 AND beamProfile3 <> beamProfile AND beamProfile3 <> beamProf
 nSlotsOn = slotOn[1] + slotOn[2] + slotOn[3]
 
 ! segAttr: the profile attribute each segment is swept in, 0 for the
-! rectangle; an empty slot means Profile 1. A beam from before this change
+! rectangle; an empty slot means Profile 1. segSlot: the slot the segment
+! shows as, 1 for a slot that is off (empty, or the same profile as an
+! earlier slot), for the grips' descriptions. A beam from before this change
 ! runs this script before its Parameter Script pads segProfile, so the reads
 ! are guarded. nodeBreak: a node where the profile changes, which ends a run
 ! in the 3D script as a kink does.
-DIM segAttr[], nodeBreak[]
+DIM segAttr[], segSlot[], nodeBreak[]
 FOR iS = 1 TO MAX (1, nNode - 1)
+    sSlot = 1
+    IF iS <= VARDIM1 (segProfile) THEN sSlot = INT (segProfile[iS])
+    IF sSlot < 1 OR sSlot > 3 THEN sSlot = 1
     segAttr[iS] = 0
     IF profileMode = "Profile attribute" THEN
         segAttr[iS] = beamProfile
-        sSlot = 1
-        IF iS <= VARDIM1 (segProfile) THEN sSlot = segProfile[iS]
         IF sSlot = 2 AND beamProfile2 > 0 THEN segAttr[iS] = beamProfile2
         IF sSlot = 3 AND beamProfile3 > 0 THEN segAttr[iS] = beamProfile3
     ENDIF
+    IF slotOn[sSlot] = 0 THEN sSlot = 1
+    segSlot[iS] = sSlot
 NEXT iS
 FOR iN = 1 TO nNode
     nodeBreak[iN] = 0
