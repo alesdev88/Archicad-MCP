@@ -201,12 +201,11 @@ NEXT j
 
 ! profile grips: a drag of any length steps the segment to the next slot that
 ! holds a profile of its own (slotOn, Master Script), 1, 2, 3 and round; a
-! segment on a slot that is off counts as on Profile 1. With only Profile 1
-! on, the drag changes nothing.
+! segment on a slot that is off steps from the slot it shows as (slotShow).
+! With only Profile 1 on, the drag changes nothing.
 FOR j = 1 TO n - 1
     IF ABS (spg[j] - spd[j]) > GRIP_EPS THEN
-        stCur = spf[j]
-        IF slotOn[stCur] = 0 THEN stCur = 1
+        stCur = slotShow[spf[j]]
         stNext = stCur
         stTries = 0
         WHILE stTries < 3 DO

@@ -27,6 +27,11 @@ REF_LINES = {"left face": "Left face", "centre": "Centre", "center": "Centre",
              "right face": "Right face"}
 CUT_LIMITS = {"cut_start_plan": ("cutStartPlan", 80.0), "cut_start_tilt": ("cutStartTilt", 85.0),
               "cut_end_plan": ("cutEndPlan", 80.0), "cut_end_tilt": ("cutEndTilt", 85.0)}
+# The arrays of profiles per segment (part 0.2.0); a project that still loads
+# an older part has none, and Tapir fails a whole write on an unknown name.
+PROFILE_ARRAYS = ("segProfile", "segProfGrip", "segProfDone")
+OLD_PART = (f"The '{LIBRARY_PART}' part loaded in this project has no profiles per segment "
+            "(build 0.1.0); reload libraries after installing the new build to use them.")
 NOT_LOADED = (f"'{LIBRARY_PART}' is not loaded in this project. Build it with "
               "'archicad-gdl build-source gdl-src/swept-beam --out <GDL workspace>' "
               "into the linked GDL workspace folder, then reload libraries.")
@@ -118,6 +123,8 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         pp.check_plan_gaps(local, LIBRARY_PART)
     params = (_node_params(local, path.arcs, path_tolerance, items, radians, profiles)
               + profile_params + cut_params)
+    if current is not None:
+        params = _fit_part(params, current, warnings)
     report = {
         "dry_run": dry_run,
         "nodes": len(path.nodes),
@@ -136,10 +143,11 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
     if not loaded:
         raise SweptBeamError(NOT_LOADED)
     guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
+    if current is None:
+        current = pp.gdl_parameters(conn, guid)
+        params = _fit_part(params, current, warnings)
     if items:
         # no resizing: reset the path, grow it to the node count, then write every item
-        if current is None:
-            current = pp.gdl_parameters(conn, guid)
         params = (pp.resize_writes(current, len(local)) + params
                   + _kept_cuts(current, {p["name"] for p in params}, radians))
     pp.write_parameters(conn, guid, params, LIBRARY_PART)
@@ -209,6 +217,15 @@ def _kept_cuts(current: dict, written: set[str], radians: bool = False) -> list[
         return value if radians else round(math.degrees(value), 9) + 0.0
     return [{"name": name, "value": sent(float(current.get(name, 0.0)))}
             for name, _ in CUT_LIMITS.values() if name not in written]
+
+
+def _fit_part(params: list[dict], current: dict, warnings: list[str]) -> list[dict]:
+    """params without the profile arrays when the placed part has none (OLD_PART)."""
+    if "segProfile" in current:
+        return params
+    if OLD_PART not in warnings:
+        warnings.append(OLD_PART)
+    return [p for p in params if p["name"] not in PROFILE_ARRAYS]
 
 
 def _kept_profiles(current: dict, n: int) -> tuple[list[int], int]:

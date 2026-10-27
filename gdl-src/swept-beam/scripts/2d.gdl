@@ -12,7 +12,11 @@ planMethod = 2 + 32
 DIM segULo[], segUHi[], sampSeg[]
 FOR jS = 1 TO MAX (1, nNode - 1)
     eAttr = segAttr[jS]
-    GOSUB "segExtent"
+    IF jS = 1 THEN
+        GOSUB "segExtent"
+    ELSE
+        IF eAttr <> segAttr[jS - 1] THEN GOSUB "segExtent"
+    ENDIF
     segULo[jS] = uLo
     segUHi[jS] = uHi
 NEXT jS

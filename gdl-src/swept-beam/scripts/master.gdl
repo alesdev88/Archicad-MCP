@@ -195,7 +195,55 @@ FOR iE = 1 TO 2
     IF eCos > 0.05 THEN ecTan[iE] = MIN (20, TAN (ACS (MIN (1, eCos))))
 NEXT iE
 
-! ---- kinks: nodes where the path changes direction by more than 1 degree ----
+! ---- profiles per segment (spec 2026-10-27) ----
+! slotOn: the slots that hold a profile of their own. Slot 1 always; 2 and 3
+! when set (0 is none) and not the same profile as a slot before them. The
+! profile grip steps only onto these, and the grips show with two or more.
+DIM slotOn[3]
+slotOn[1] = 1
+slotOn[2] = 0
+IF beamProfile2 > 0 AND beamProfile2 <> beamProfile THEN slotOn[2] = 1
+slotOn[3] = 0
+IF beamProfile3 > 0 AND beamProfile3 <> beamProfile AND beamProfile3 <> beamProfile2 THEN slotOn[3] = 1
+nSlotsOn = slotOn[1] + slotOn[2] + slotOn[3]
+! slotShow: the slot a segment on each slot shows as, the earliest slot with
+! the same profile (an empty slot shows Profile 1)
+DIM slotShow[3]
+slotShow[1] = 1
+slotShow[2] = 1
+IF slotOn[2] THEN slotShow[2] = 2
+slotShow[3] = 1
+IF slotOn[3] THEN slotShow[3] = 3
+IF slotOn[3] = 0 AND slotOn[2] AND beamProfile3 = beamProfile2 THEN slotShow[3] = 2
+
+! segAttr: the profile attribute each segment is swept in, 0 for the
+! rectangle; an empty slot means Profile 1. segSlot: the slot the segment
+! shows as (slotShow), for the grips' descriptions. A beam from before this change
+! runs this script before its Parameter Script pads segProfile, so the reads
+! are guarded. nodeBreak: a node where the profile changes, which ends a run
+! in the 3D script as a kink does.
+DIM segAttr[], segSlot[], nodeBreak[]
+FOR iS = 1 TO MAX (1, nNode - 1)
+    sSlot = 1
+    IF iS <= VARDIM1 (segProfile) THEN sSlot = INT (segProfile[iS])
+    IF sSlot < 1 OR sSlot > 3 THEN sSlot = 1
+    segAttr[iS] = 0
+    IF profileMode = "Profile attribute" THEN
+        segAttr[iS] = beamProfile
+        IF sSlot = 2 AND beamProfile2 > 0 THEN segAttr[iS] = beamProfile2
+        IF sSlot = 3 AND beamProfile3 > 0 THEN segAttr[iS] = beamProfile3
+    ENDIF
+    segSlot[iS] = slotShow[sSlot]
+NEXT iS
+FOR iN = 1 TO nNode
+    nodeBreak[iN] = 0
+    IF iN > 1 AND iN < nNode THEN
+        IF segAttr[iN - 1] <> segAttr[iN] THEN nodeBreak[iN] = 1
+    ENDIF
+NEXT iN
+
+! ---- kinks: nodes where the path changes direction by more than 1 degree
+! (any turn where the profile changes) ----
 ! The 3D script splits the sweep there and trims both sides with the mitre
 ! plane (normal kinkNx, kinkNy, kinkNz). The plane is vertical and bisects the
 ! two directions in plan, a plumb mitre cut: it projects to one line in plan,
@@ -227,7 +275,11 @@ FOR iN = 2 TO nNode - 1
         kby = kby / klb
         kbz = kbz / klb
         kCos = kax * kbx + kay * kby + kaz * kbz
-        IF kCos < COS (1) THEN
+        ! where the profile changes, any turn is a kink: the two runs end
+        ! square to their own directions otherwise, which leaves a wedge
+        kLimit = COS (1)
+        IF nodeBreak[iN] THEN kLimit = COS (0.01)
+        IF kCos < kLimit THEN
             nodeKink[iN] = 1
             kinkTurn[iN] = ACS (MAX (-1, MIN (1, kCos)))
             ksx = eTx[iN - 1] + sTx[iN]
@@ -252,46 +304,6 @@ FOR iN = 2 TO nNode - 1
                 ENDIF
             ENDIF
         ENDIF
-    ENDIF
-NEXT iN
-
-! ---- profiles per segment (spec 2026-10-27) ----
-! slotOn: the slots that hold a profile of their own. Slot 1 always; 2 and 3
-! when set (0 is none) and not the same profile as a slot before them. The
-! profile grip steps only onto these, and the grips show with two or more.
-DIM slotOn[3]
-slotOn[1] = 1
-slotOn[2] = 0
-IF beamProfile2 > 0 AND beamProfile2 <> beamProfile THEN slotOn[2] = 1
-slotOn[3] = 0
-IF beamProfile3 > 0 AND beamProfile3 <> beamProfile AND beamProfile3 <> beamProfile2 THEN slotOn[3] = 1
-nSlotsOn = slotOn[1] + slotOn[2] + slotOn[3]
-
-! segAttr: the profile attribute each segment is swept in, 0 for the
-! rectangle; an empty slot means Profile 1. segSlot: the slot the segment
-! shows as, 1 for a slot that is off (empty, or the same profile as an
-! earlier slot), for the grips' descriptions. A beam from before this change
-! runs this script before its Parameter Script pads segProfile, so the reads
-! are guarded. nodeBreak: a node where the profile changes, which ends a run
-! in the 3D script as a kink does.
-DIM segAttr[], segSlot[], nodeBreak[]
-FOR iS = 1 TO MAX (1, nNode - 1)
-    sSlot = 1
-    IF iS <= VARDIM1 (segProfile) THEN sSlot = INT (segProfile[iS])
-    IF sSlot < 1 OR sSlot > 3 THEN sSlot = 1
-    segAttr[iS] = 0
-    IF profileMode = "Profile attribute" THEN
-        segAttr[iS] = beamProfile
-        IF sSlot = 2 AND beamProfile2 > 0 THEN segAttr[iS] = beamProfile2
-        IF sSlot = 3 AND beamProfile3 > 0 THEN segAttr[iS] = beamProfile3
-    ENDIF
-    IF slotOn[sSlot] = 0 THEN sSlot = 1
-    segSlot[iS] = sSlot
-NEXT iS
-FOR iN = 1 TO nNode
-    nodeBreak[iN] = 0
-    IF iN > 1 AND iN < nNode THEN
-        IF segAttr[iN - 1] <> segAttr[iN] THEN nodeBreak[iN] = 1
     ENDIF
 NEXT iN
 

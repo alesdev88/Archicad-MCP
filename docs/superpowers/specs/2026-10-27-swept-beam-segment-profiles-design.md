@@ -66,8 +66,8 @@ changes.
   last item unused. Default 1.
 - A hidden value and marker pair of length arrays for the profile grip, the
   same pattern as `insL` / `insDone` (see the Parameter Script header).
-- A "Profiles" checkbox in the Grips row on the Path page, on by default,
-  like the other grip groups.
+- A "Profile grips" checkbox, on by default, like the other grip groups. (Built
+  on the Segments page: the Grips row on the Path page has no room left.)
 - Names are the builder's call, except that `beamProfile` must not change.
 
 ### Which section a segment gets

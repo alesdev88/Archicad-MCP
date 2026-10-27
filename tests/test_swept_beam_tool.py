@@ -100,6 +100,7 @@ def test_missing_library_part_warns_and_refuses():
 def test_commit_places_and_writes_parameters():
     tapir = {"GetAvailableLibraryParts": LIB,
              "CreateObjects": {"elements": [{"elementId": {"guid": "new-1"}}]},
+             "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0], segProfile=[1, 1]),
              "SetGDLParametersOfElements": {"executionResults": [{"success": True}]}}
     conn = _conn(tapir)
     pts = [{"x": 10, "y": 5, "z": 2}, {"x": 13, "y": 5, "z": 2.3}]
@@ -114,8 +115,9 @@ def test_commit_places_and_writes_parameters():
                          "segSag", "sagDone", "insL", "insDone"]
     values = {p["name"]: p["value"] for p in written["gdlParameters"]}
     # every grip helper pair starts equal, so no grip fires on the write (gate C)
-    for name in ("segSag", "sagDone", "insL", "insDone"):
+    for name in ("segSag", "sagDone", "insL", "insDone", "segProfGrip", "segProfDone"):
         assert values[name] == [0.0, 0.0]
+    assert values["segProfile"] == [1, 1]
     for name in ("extStart", "extStartDone", "extEnd", "extEndDone"):
         assert values[name] == 0.0
     assert values["A"] == values["aDone"] == pytest.approx(math.hypot(3, 0))
@@ -511,3 +513,22 @@ def test_item_writes_put_the_kept_profiles_back_after_the_reset():
     assert names.index("aDone") < names.index("segProfile")
     assert {"name": "segProfile", "value": [1, 3, 1]} in params
     assert [c for c, _ in conn._core.calls].count("GetGDLParametersOfElements") == 1
+
+
+def test_a_part_from_before_segment_profiles_gets_no_profile_arrays():
+    # a project still loading the 0.1.0 part has no such parameters, and Tapir
+    # would fail the whole write on an unknown name
+    profile_arrays = {"segProfile", "segProfGrip", "segProfDone"}
+    conn = _conn({"GetDetailsOfElements": _details(BEAM), "GetAvailableLibraryParts": LIB,
+                  "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0]),
+                  "SetGDLParametersOfElements": OK})
+    pts = [{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}]
+    result = sb.create_swept_beam(conn, points=pts, update_guid="b-1", dry_run=False)
+    assert not profile_arrays & set(_written(conn))
+    assert sb.OLD_PART in result["warnings"]
+    new = _conn({"GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,
+                 "CreateObjects": {"elements": [{"elementId": {"guid": "new-1"}}]},
+                 "GetGDLParametersOfElements": _gdl(nodeX=[0.0, 3.0])})
+    result = sb.create_swept_beam(new, points=pts, dry_run=False)
+    assert not profile_arrays & set(_written(new))
+    assert sb.OLD_PART in result["warnings"]

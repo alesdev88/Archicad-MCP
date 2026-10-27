@@ -43,13 +43,15 @@ FOR iN = 2 TO nNode
     ENDIF
 NEXT iN
 
-! how far the largest section reaches from the path, for carrying runs past a
-! kink and sizing the cut boxes there: the two sides of a kink can differ
-secExtent = 0
+! how far each run's section reaches from the path, for carrying runs past a
+! kink and sizing the cut boxes there; a kink takes the larger of its two
+! runs, so a beam with one profile sizes every kink as before
+DIM runExt[]
+loadedAttr = -1
 FOR iRun = 1 TO nRun
     secAttr = segAttr[runA[iRun]]
     GOSUB "loadSection"
-    secExtent = MAX (secExtent, SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2))
+    runExt[iRun] = SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2)
 NEXT iRun
 
 ! A run ends on a kink's mitre (cutAt, carried past the node), on an end cut
@@ -60,25 +62,33 @@ FOR iRun = 1 TO nRun
     nB = runB[iRun]
     secAttr = segAttr[nA]
     GOSUB "loadSection"
+    extA = runExt[iRun]
+    IF iRun > 1 THEN extA = MAX (extA, runExt[iRun - 1])
+    extB = runExt[iRun]
+    IF iRun < nRun THEN extB = MAX (extB, runExt[iRun + 1])
     nCut = 0
     IF nA > 1 AND nodeKink[nA] THEN
+        secExtent = extA
         cutNode = nA
         cutSgn = -1
         GOSUB "cutAt"
         nCut = nCut + 1
     ENDIF
     IF nA = 1 AND ecOn[1] THEN
+        secExtent = extA
         cutEndIdx = 1
         GOSUB "cutEnd"
         nCut = nCut + 1
     ENDIF
     IF nB < nNode AND nodeKink[nB] THEN
+        secExtent = extB
         cutNode = nB
         cutSgn = 1
         GOSUB "cutAt"
         nCut = nCut + 1
     ENDIF
     IF nB = nNode AND ecOn[2] THEN
+        secExtent = extB
         cutEndIdx = 2
         GOSUB "cutEnd"
         nCut = nCut + 1
@@ -384,11 +394,11 @@ RETURN
     ovA = 0
     ! far enough past a kink or an end cut to fill it, also where a plumb cut
     ! meets a slope
-    IF nA > 1 AND nodeKink[nA] THEN ovA = secExtent * (3 + MIN (20, TAN (kinkTurn[nA] / 2)) + ABS (sz))
-    IF nA = 1 AND ecOn[1] THEN ovA = secExtent * (3 + ecTan[1] + ABS (sz))
+    IF nA > 1 AND nodeKink[nA] THEN ovA = extA * (3 + MIN (20, TAN (kinkTurn[nA] / 2)) + ABS (sz))
+    IF nA = 1 AND ecOn[1] THEN ovA = extA * (3 + ecTan[1] + ABS (sz))
     ovB = 0
-    IF nB < nNode AND nodeKink[nB] THEN ovB = secExtent * (3 + MIN (20, TAN (kinkTurn[nB] / 2)) + ABS (ez))
-    IF nB = nNode AND ecOn[2] THEN ovB = secExtent * (3 + ecTan[2] + ABS (ez))
+    IF nB < nNode AND nodeKink[nB] THEN ovB = extB * (3 + MIN (20, TAN (kinkTurn[nB] / 2)) + ABS (ez))
+    IF nB = nNode AND ecOn[2] THEN ovB = extB * (3 + ecTan[2] + ABS (ez))
     nTube = pB - pA + 3
     IF ovA > 0 THEN nTube = nTube + 1
     IF ovB > 0 THEN nTube = nTube + 1
@@ -411,58 +421,62 @@ RETURN
     ! the section of profile attribute secAttr (0: the rectangle, also the
     ! fallback for a profile that cannot be read): useProfile with its
     ! components (nComp, geo, compStart, compEnd), its extent uLo, uHi, wLo,
-    ! wTop and the reference line shift refU. Read live, the closet pattern.
-    useProfile = 0
-    nComp = 0
-    IF secAttr > 0 THEN
-        rq1 = REQUEST ("Profile_components", secAttr, nComp, compTypes)
-        rq2 = REQUEST ("Profile_default_geometry", secAttr, geo)
-        rq3 = REQUEST ("Profile_default_boundingbox", secAttr, pbXmin, pbYmin, pbXmax, pbYmax)
-        IF rq1 > 0 AND rq2 > 0 AND rq3 > 0 AND nComp > 0 THEN
-            rawCount = VARDIM1 (geo)
-            okSplit = 1
-            nextIdx = nComp + 1
-            FOR iC = 1 TO nComp
-                nNodesC = INT (geo[iC])
-                compStart[iC] = nextIdx
-                compEnd[iC] = nextIdx + nNodesC * 5 - 1
-                IF nNodesC < 3 THEN okSplit = 0
-                IF compEnd[iC] > rawCount THEN okSplit = 0
-                nextIdx = compEnd[iC] + 1
-            NEXT iC
-            IF nextIdx - 1 <> rawCount THEN okSplit = 0
-            useProfile = okSplit
+    ! wTop and the reference line shift refU. Read live, the closet pattern;
+    ! read again only when secAttr changes (loadedAttr, -1 at the start)
+    IF secAttr <> loadedAttr THEN
+        useProfile = 0
+        nComp = 0
+        IF secAttr > 0 THEN
+            rq1 = REQUEST ("Profile_components", secAttr, nComp, compTypes)
+            rq2 = REQUEST ("Profile_default_geometry", secAttr, geo)
+            rq3 = REQUEST ("Profile_default_boundingbox", secAttr, pbXmin, pbYmin, pbXmax, pbYmax)
+            IF rq1 > 0 AND rq2 > 0 AND rq3 > 0 AND nComp > 0 THEN
+                rawCount = VARDIM1 (geo)
+                okSplit = 1
+                nextIdx = nComp + 1
+                FOR iC = 1 TO nComp
+                    nNodesC = INT (geo[iC])
+                    compStart[iC] = nextIdx
+                    compEnd[iC] = nextIdx + nNodesC * 5 - 1
+                    IF nNodesC < 3 THEN okSplit = 0
+                    IF compEnd[iC] > rawCount THEN okSplit = 0
+                    nextIdx = compEnd[iC] + 1
+                NEXT iC
+                IF nextIdx - 1 <> rawCount THEN okSplit = 0
+                useProfile = okSplit
+            ENDIF
         ENDIF
-    ENDIF
 
-    ! The section around the path, in path terms: sideways to the right
-    ! looking along the path, and W up. TUBE's own U points left; the default
-    ! mirror turns the section's x into "to the right", and Flip (no mirror)
-    ! turns it back, so with Flip the extents swap sides. The reference line (the nodes) takes the
-    ! beam's left face, centre or right face, and refOffset moves the beam away
-    ! from it; the shift refU is applied after the mirror, so Flip never moves the
-    ! beam, only turns the section over.
-    IF useProfile THEN
-        uLo = pbXmin - profileOffsetU
-        uHi = pbXmax - profileOffsetU
-        wLo = pbYmin - profileOffsetW
-        wTop = pbYmax - profileOffsetW
-    ELSE
-        uLo = -rw / 2 - profileOffsetU
-        uHi = rw / 2 - profileOffsetU
-        wLo = -rh / 2 - profileOffsetW
-        wTop = rh / 2 - profileOffsetW
+        ! The section around the path, in path terms: sideways to the right
+        ! looking along the path, and W up. TUBE's own U points left; the default
+        ! mirror turns the section's x into "to the right", and Flip (no mirror)
+        ! turns it back, so with Flip the extents swap sides. The reference line (the nodes) takes the
+        ! beam's left face, centre or right face, and refOffset moves the beam away
+        ! from it; the shift refU is applied after the mirror, so Flip never moves the
+        ! beam, only turns the section over.
+        IF useProfile THEN
+            uLo = pbXmin - profileOffsetU
+            uHi = pbXmax - profileOffsetU
+            wLo = pbYmin - profileOffsetW
+            wTop = pbYmax - profileOffsetW
+        ELSE
+            uLo = -rw / 2 - profileOffsetU
+            uHi = rw / 2 - profileOffsetU
+            wLo = -rh / 2 - profileOffsetW
+            wTop = rh / 2 - profileOffsetW
+        ENDIF
+        IF flipProfile THEN
+            uTmp = uLo
+            uLo = -uHi
+            uHi = -uTmp
+        ENDIF
+        refU = refOffset
+        IF refLine = "Left face" THEN refU = refOffset - uLo
+        IF refLine = "Right face" THEN refU = -refOffset - uHi
+        uLo = uLo + refU
+        uHi = uHi + refU
+        loadedAttr = secAttr
     ENDIF
-    IF flipProfile THEN
-        uTmp = uLo
-        uLo = -uHi
-        uHi = -uTmp
-    ENDIF
-    refU = refOffset
-    IF refLine = "Left face" THEN refU = refOffset - uLo
-    IF refLine = "Right face" THEN refU = -refOffset - uHi
-    uLo = uLo + refU
-    uHi = uHi + refU
 RETURN
 
 "tiltEdge":

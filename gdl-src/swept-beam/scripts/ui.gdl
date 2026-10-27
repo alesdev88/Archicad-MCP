@@ -73,7 +73,7 @@ IF profileMode = "Profile attribute" THEN
     UI_INFIELD "gripProfiles", 278, 116, 20, 19
     ! one row per segment, set to Profile 1, 2 or 3; scrolls on a long beam
     UI_LISTFIELD 1, 12, 142, 420, 96, 0, "Segment", "Profile"
-    FOR jS = 1 TO VARDIM1 (nodeX) - 1
+    FOR jS = 1 TO MIN (VARDIM1 (nodeX) - 1, VARDIM1 (segProfile))
         UI_LISTITEM{2} jS, 1, segProfile[jS], 0, "", "Segment " + STR (jS, 1, 0)
     NEXT jS
 ELSE
