@@ -249,7 +249,7 @@ description = "Profile 3"
 name = "segProfile"
 type = "integer"
 # per segment like segArc: which slot (1, 2 or 3) the segment from this node
-# to the next uses; the last item belongs to no segment
+# to the next uses, 0 for none (a gap); the last item belongs to no segment
 default = [1, 1]
 description = "Segment profile"
 
@@ -366,6 +366,12 @@ type = "boolean"
 default = false
 description = "Show node heights"
 
+
+[[param]]
+name = "showSegNumbers"
+type = "boolean"
+default = false
+description = "Show segment numbers"
 [[param]]
 name = "textPen"
 type = "pen"

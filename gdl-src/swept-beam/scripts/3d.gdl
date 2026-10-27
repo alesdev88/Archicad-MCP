@@ -49,17 +49,22 @@ NEXT iN
 DIM runExt[]
 loadedAttr = -1
 FOR iRun = 1 TO nRun
+    runExt[iRun] = 0
     secAttr = segAttr[runA[iRun]]
-    GOSUB "loadSection"
-    runExt[iRun] = SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2)
+    IF secAttr >= 0 THEN
+        GOSUB "loadSection"
+        runExt[iRun] = SQR (MAX (ABS (uLo), ABS (uHi))^2 + MAX (ABS (wLo), ABS (wTop))^2)
+    ENDIF
 NEXT iRun
 
 ! A run ends on a kink's mitre (cutAt, carried past the node), on an end cut
-! (cutEnd), or, where only the profile changes, square on the node: TUBE's own
-! end there is square to the path, and so is the next run's start
+! (cutEnd), or, where only the profile changes or beside a gap, square on the
+! node: TUBE's own end there is square to the path, and so is the next run's
+! start. A run of None segments draws nothing.
 FOR iRun = 1 TO nRun
     nA = runA[iRun]
     nB = runB[iRun]
+    IF segAttr[nA] >= 0 THEN
     secAttr = segAttr[nA]
     GOSUB "loadSection"
     extA = runExt[iRun]
@@ -157,6 +162,7 @@ FOR iRun = 1 TO nRun
     FOR iC = 1 TO nCut
         CUTEND
     NEXT iC
+    ENDIF
 NEXT iRun
 
 ! ---- 3D node grips: combined nodeX / nodeY / nodeZ drag ----
@@ -178,15 +184,20 @@ ENDIF
 ! ---- 3D profile grips: as in plan, two thirds along each segment at the
 ! path's height there; a drag of any length steps the segment to the next
 ! profile (Parameter Script). Only with two or more profiles of their own ----
-IF gripProfiles AND profileMode = "Profile attribute" AND nSlotsOn >= 2 THEN
+! a text variable before its first use (it is set in "segNameOf", further
+! down the script, which GDL's type check reads after this)
+segName = ""
+IF gripProfiles THEN
 FOR iS = 1 TO nNode - 1
     IF iS <= VARDIM1 (segProfGrip) AND iS <= VARDIM1 (segProfDone) THEN
+        jSeg = iS
+        GOSUB "segNameOf"
         gbx = pgX[iS] - pgTx[iS] * segProfDone[iS]
         gby = pgY[iS] - pgTy[iS] * segProfDone[iS]
         hId = 600000 + iS * 10
         HOTSPOT gbx, gby, pgZ[iS], hId, segProfGrip[iS], 1 + 128
         HOTSPOT gbx - pgTx[iS], gby - pgTy[iS], pgZ[iS], hId + 1, segProfGrip[iS], 3
-        HOTSPOT gbx + pgTx[iS] * segProfGrip[iS], gby + pgTy[iS] * segProfGrip[iS], pgZ[iS], hId + 2, segProfGrip[iS], 2, segProfGrip[iS], "Segment " + STR (iS, 1, 0) + ": Profile " + STR (segSlot[iS], 1, 0) + ", drag to switch"
+        HOTSPOT gbx + pgTx[iS] * segProfGrip[iS], gby + pgTy[iS] * segProfGrip[iS], pgZ[iS], hId + 2, segProfGrip[iS], 2, segProfGrip[iS], "Segment " + STR (iS, 1, 0) + ": " + segName + ", drag to switch"
     ENDIF
 NEXT iS
 ENDIF
@@ -197,9 +208,11 @@ ENDIF
 ! face, tipping it about the cut line (positive leans the top out, like the
 ! parameter) ----
 IF gripCuts AND nNode > 1 THEN
-    ! uLo, uHi, wLo and wTop: each end's own section ("loadSection")
+    ! uLo, uHi, wLo and wTop: each end's own section ("loadSection"); an end
+    ! whose segment is None has no cut grips
     iE = 1
     secAttr = segAttr[1]
+    IF secAttr >= 0 THEN
     GOSUB "loadSection"
     GOSUB "tiltEdge"
     hx = nodeX[1]
@@ -219,9 +232,11 @@ IF gripCuts AND nNode > 1 THEN
     HOTSPOT pcx + hLx, pcy + hLy, hz, 490011, cutStartTilt, 7
     HOTSPOT pcx + wEdge * u0x, pcy + wEdge * u0y, hz + wEdge * u0z, 490012, cutStartTilt, 4 + 128
     HOTSPOT pcx + wEdge * utx, pcy + wEdge * uty, hz + wEdge * utz, 490013, cutStartTilt, 5, cutStartTilt, "Start cut tilt"
+    ENDIF
 
     iE = 2
     secAttr = segAttr[nNode - 1]
+    IF secAttr >= 0 THEN
     GOSUB "loadSection"
     GOSUB "tiltEdge"
     hx = nodeX[nNode]
@@ -241,8 +256,17 @@ IF gripCuts AND nNode > 1 THEN
     HOTSPOT pcx + hLx, pcy + hLy, hz, 490031, cutEndTilt, 7
     HOTSPOT pcx + wEdge * u0x, pcy + wEdge * u0y, hz + wEdge * u0z, 490032, cutEndTilt, 4 + 128
     HOTSPOT pcx + wEdge * utx, pcy + wEdge * uty, hz + wEdge * utz, 490033, cutEndTilt, 5, cutEndTilt, "End cut tilt"
+    ENDIF
 ENDIF
 END
+
+"segNameOf":
+    ! segName: segment jSeg's profile for the grip's description: "Profile 2",
+    ! "Rectangle" or "None"
+    segName = "Rectangle"
+    IF profileMode = "Profile attribute" THEN segName = "Profile " + STR (segSlot[jSeg], 1, 0)
+    IF segSlot[jSeg] = 0 THEN segName = "None"
+RETURN
 
 "cutGripFrame":
     ! in: node hx, hy, hz; outward plan direction hox, hoy; the raw angles

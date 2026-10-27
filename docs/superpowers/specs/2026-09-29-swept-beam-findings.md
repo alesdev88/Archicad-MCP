@@ -297,3 +297,14 @@ MCP-Test_27 (Archicad 27, Tapir 1.7.1).
 - A new beam in a project shows the hidden `sb_version` stored in the project's
   object defaults (0.1.0 on new 0.2.0 beams in MCP-Test and MCP-Test_30); the
   geometry is the new part's.
+
+### Segment numbers and None, 0.3.0
+
+- A text variable first set in a subroutine further down the script fails GDL's
+  type check where it is used earlier ("Incompatible types in expression", both
+  validators); set it to "" before its first use.
+- Checked in MCP-Test (Archicad 29) and MCP-Test_27: gaps draw nothing, the pieces
+  beside them end square, the plan fill stops at each gap, labels sit at the
+  segment middles, the grip steps 1, 2, None (and toggles 1 and None with one
+  profile, the rectangle and None in Rectangle mode); the 0.1.0 rectangle beam is
+  still pixel identical.

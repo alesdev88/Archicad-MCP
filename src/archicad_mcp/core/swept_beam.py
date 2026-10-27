@@ -114,7 +114,7 @@ def _create(conn, source_guid, points, start_height, slope_percent, profile,
         if lost:
             warnings.append(f"The new path has {len(path.nodes)} nodes instead of "
                             f"{len(current.get('nodeX') or [])}, so every segment goes back to "
-                            f"Profile 1 ({lost} {'was' if lost == 1 else 'were'} on Profile 2 or 3).")
+                            f"Profile 1 ({lost} {'was' if lost == 1 else 'were'} on Profile 2, 3 or None).")
     else:
         origin, angle = path.nodes[0], 0.0
     local = pp.to_local(path.nodes, origin, angle)
@@ -229,19 +229,20 @@ def _fit_part(params: list[dict], current: dict, warnings: list[str]) -> list[di
 
 
 def _kept_profiles(current: dict, n: int) -> tuple[list[int], int]:
-    """A placed beam's segment profiles (slots 1 to 3) for a new path of n nodes,
-    and how many segments on Profile 2 or 3 go back to Profile 1.
+    """A placed beam's segment profiles (slots 1 to 3, 0 for None, a gap) for a
+    new path of n nodes, and how many segments on Profile 2, 3 or None go back to
+    Profile 1.
 
     The profiles stay while the node count does: padded with 1, values outside
-    1 to 3 read as 1, and a beam from before profiles per segment reads as all 1.
+    0 to 3 read as 1, and a beam from before profiles per segment reads as all 1.
     With another node count every segment goes back to Profile 1; the count
     leaves out the last item, which belongs to no segment."""
     old = current.get("segProfile") or []
     m = len(current.get("nodeX") or [])
     if m == n:
-        kept = [int(v) if 1 <= int(v) <= 3 else 1 for v in old[:n]]
+        kept = [int(v) if 0 <= int(v) <= 3 else 1 for v in old[:n]]
         return kept + [1] * (n - len(kept)), 0
-    return [1] * n, sum(1 for v in old[:max(0, m - 1)] if int(v) in (2, 3))
+    return [1] * n, sum(1 for v in old[:max(0, m - 1)] if int(v) in (0, 2, 3))
 
 
 def _ref_params(values: dict, keep_unset: bool) -> list[dict]:

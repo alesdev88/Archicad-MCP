@@ -186,6 +186,25 @@ does the same to the new arrays:
 - `docs/swept-beam.md` gets a short "Profiles per segment" section in Draw,
   and its `update_guid` line mentions the segment choices.
 
+## Addendum, 27.10.2026: segment numbers and None
+
+Asked after the first release: a beam with 20 segments is hard to edit from
+the settings without knowing where each segment is, and a segment should be
+able to be "none", an empty space.
+
+- "Show segment numbers" (Floor plan page, off by default) labels each segment
+  at its middle in plan with its number and profile ("3: P2", "3: None"; just
+  the number with the Rectangle section), horizontal on screen, in the node
+  heights' text pen and size. Aleš chose number and profile.
+- None is a fourth choice (`segProfile` 0): nothing is drawn, and the pieces
+  beside the gap end square on the node (Aleš's choice), never on a mitre. The
+  plan fill stops at the gap. It works with the Rectangle section too.
+- The grip steps 1, 2, 3, None and round (Aleš's choice), so the grips now show
+  on every beam, also with one profile; "Profile grips" hides them.
+- An end whose segment is None has no end cut grips. `create_swept_beam` keeps
+  None on an update like the other choices and counts it when the node count
+  changes. Part version 0.3.0.
+
 ## Constraints
 
 - Source of truth: `gdl-src/swept-beam` in this repo. Build with
