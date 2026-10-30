@@ -178,6 +178,15 @@ def test_commands_labelled_1_7_2_but_first_in_1_7_3_are_corrected():
         assert registry[name].version == "1.7.3", name
 
 
+def test_commands_labelled_1_7_3_but_first_in_1_7_4_are_corrected():
+    # Tapir main (ADDON_VERSION 1.7.4) registers them as 1.7.3; the 1.7.3 release has none.
+    registry = build_registry()
+    for name in ("PlaceOpenings", "CreateLibraryParts", "MergeElements", "ZoomToElements"):
+        assert registry[name].version == "1.7.4", name
+    conn, _ = fake_conn({"PlaceOpenings"}, version="1.7.3")
+    assert "1.7.4 or newer" in req.require_tapir_command(conn, "PlaceOpenings", "x")["error"]
+
+
 def test_outdated_refusal_and_instance_hint_say_replace():
     conn, core = fake_conn({"UpdateClassificationItems"})
     assert "--replace" in req.tapir_refusal(conn, "edit_classifications")["error"]
