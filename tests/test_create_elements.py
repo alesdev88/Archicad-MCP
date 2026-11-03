@@ -285,6 +285,7 @@ def test_model_types_do_not_warn_from_the_3d_window():
     assert result["warnings"] == []
 
 
+@pytest.mark.usefixtures("mac_host")
 def test_railings_come_from_the_tapir_release_from_1_8_0():
     # CreateRailings was a local fork command until Tapir 1.8.0 shipped its own
     # (2D coordinates, not the fork's 3D reference line), so a Tapir without it
