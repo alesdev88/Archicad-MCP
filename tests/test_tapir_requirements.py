@@ -55,8 +55,10 @@ def test_explicit_versions_only_cover_commands_the_definitions_lack():
 
 
 def test_fork_only_comes_from_the_local_overlay():
-    assert {"CreateRailings", "GetStairBoundaries"} <= req.FORK_ONLY
-    assert req.command_version("CreateRailings") is None
+    assert "GetStairBoundaries" in req.FORK_ONLY
+    assert req.command_version("GetStairBoundaries") is None
+    # Released in Tapir 1.8.0, so the overlay entry went.
+    assert "CreateRailings" not in req.FORK_ONLY
 
 
 def test_pinned_release_meets_every_release_backed_minimum():
@@ -96,8 +98,8 @@ def test_refusal_when_tapir_is_missing():
 
 
 def test_fork_only_refusal_says_no_release():
-    conn, _ = fake_conn({"CreateRailings"})
-    error = req.require_tapir_command(conn, "CreateRailings", "create_elements")["error"]
+    conn, _ = fake_conn({"GetStairBoundaries"})
+    error = req.require_tapir_command(conn, "GetStairBoundaries", "x")["error"]
     assert "no Tapir release has yet" in error and "install-tapir" not in error
 
 
@@ -166,25 +168,16 @@ def test_version_corrections_still_correct_the_definitions():
 
 def test_every_reader_of_the_registry_sees_the_corrected_version():
     # describe_api_command and the dashboard read the registry, as the gates do.
-    assert build_registry()["SaveCurrentWindowAsImage"].version == "1.7.2"
+    assert build_registry()["ModifyPens"].version == "1.8.0"
 
 
-def test_commands_labelled_1_7_2_but_first_in_1_7_3_are_corrected():
-    # Tapir main registers them as 1.7.2; the 1.7.2 release has none of them.
-    registry = build_registry()
-    for name in ("GetContainingDatabases", "GetReservationStatusOfElements", "MirrorElements"):
-        assert registry[name].version == "1.7.3", name
-    for name in ("GetFavoriteSettings", "RunParameterScriptOfElements"):
-        assert registry[name].version == "1.7.3", name
-
-
-def test_commands_labelled_1_7_3_but_first_in_1_7_4_are_corrected():
-    # Tapir main (ADDON_VERSION 1.7.4) registers them as 1.7.3; the 1.7.3 release has none.
+def test_commands_first_released_in_1_8_0_say_1_8_0():
+    # Tapir main labelled them 1.7.3 (ADDON_VERSION 1.7.4); the 1.8.0 release relabels them.
     registry = build_registry()
     for name in ("PlaceOpenings", "CreateLibraryParts", "MergeElements", "ZoomToElements"):
-        assert registry[name].version == "1.7.4", name
+        assert registry[name].version == "1.8.0", name
     conn, _ = fake_conn({"PlaceOpenings"}, version="1.7.3")
-    assert "1.7.4 or newer" in req.require_tapir_command(conn, "PlaceOpenings", "x")["error"]
+    assert "1.8.0 or newer" in req.require_tapir_command(conn, "PlaceOpenings", "x")["error"]
 
 
 def test_outdated_refusal_and_instance_hint_say_replace():

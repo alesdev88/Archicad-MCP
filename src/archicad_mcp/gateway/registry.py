@@ -92,83 +92,10 @@ def _resolve_refs(schema, definitions, seen=None):
 # shipped them. build_registry reports the corrected version, so the tool
 # gates, describe_api_command and the dashboard agree. A test fails once the
 # definitions agree, so the entry can go.
-_FIRST_IN_1_7_2 = ("new in the 1.7.2 definitions, labelled 1.7.1, absent from the 1.7.1 "
-                   "release and from Tapir 1.7.1 on MCP-Test (21.10.2026)")
-_FIRST_IN_1_7_3 = ("registered as 1.7.2 on Tapir main, absent from the 1.7.2 release "
-                   "(merged 21 to 25.10.2026, after it)")
-_FIRST_IN_1_7_4 = ("registered as 1.7.3 on Tapir main (ADDON_VERSION 1.7.4), absent from the "
-                   "1.7.3 release (merged 26 to 30.10.2026, after it)")
+_FIRST_IN_1_8_0 = ("labelled 1.7.2 in the 1.8.0 definitions, absent from the 1.7.2 and 1.7.3 "
+                   "releases (merged after 30.10.2026)")
 CORRECTED_VERSIONS: dict[str, tuple[str, str]] = {
-    name: ("1.7.2", _FIRST_IN_1_7_2) for name in (
-        "DeleteDesignOptionCombinations", "DeleteDesignOptionSets", "DeleteDesignOptions",
-        "Get3DProjectionSettings", "RenameDesignOptionCombinations",
-        "RenameDesignOptionSets", "RenameDesignOptions", "SaveCurrentWindowAsImage",
-        "Set3DProjectionSettings")
-} | {
-    name: ("1.7.3", _FIRST_IN_1_7_3) for name in (
-        "Change3DStyles", "Create3DStyles", "Get3DCutPlanes", "Get3DStyleDetails",
-        "GetCategoryValuesOfElements", "GetContainingDatabases", "GetCurrentLayerCombination",
-        "GetCurrentViewImage", "GetCurrentWindowDrawingScale", "GetDatabases",
-        "GetDrawingContentBoxes", "GetElementAtCoordinate", "GetElementCategories",
-        "GetElementsInDrawOrder", "GetFontsByName", "GetGraphicOverrideRulesByName",
-        "GetLayoutSubsetSettings", "GetLinksOfElements", "GetProjectPreferences",
-        "GetReservationStatusOfElements", "GetStructureDisplay",
-        "GetSurfaceQuantitiesOfElements", "GetUserDataOfGroups", "GetZoneReductions",
-        "GrantElements", "ImportMarkupsFromPDF", "LinkElements",
-        "MakePropertyAvailableForElements", "MakePropertyUnavailableForElements",
-        "MeasureTexts", "MirrorElements", "NewProject", "RegularizePolygons",
-        "RegularizePolylines", "SetCategoryValuesOfElements", "SetCurrentWindowDrawingScale",
-        "SetProjectPreferences", "SetStructureDisplay", "UngroupElements", "UnlinkElements")
-} | {
-    name: ("1.7.4", _FIRST_IN_1_7_4) for name in (
-        "ActivateDesignOptionsInCombinations", "AddLoadCasesToLoadCombination",
-        "AddMEPPreferenceTableRows", "ApplyFavoriteToToolDefault", "CalculateSunPosition",
-        "ChangeAddOnViewpoints", "ChangeFavorite", "ChangeLibraryPartOfElements",
-        "ChangeTextContent", "CheckMEPPortConnectability", "CloseWindows", "ConsolidateFills",
-        "ConsolidateLines", "ConvertUnitValues", "CreateAddOnViewpoints",
-        "CreateAnalyticalLoadCases", "CreateAnalyticalLoadCombinations",
-        "CreateAnalyticalLoadGroups", "CreateElementSets", "CreateFavorite",
-        "CreateLibraryPart", "CreateLibraryParts", "CreateMEPPreferenceTables",
-        "CreateProjectInfoGroups", "CreateSolidOperations", "DeleteAnalyticalLoadCases",
-        "DeleteAnalyticalLoadCombinations", "DeleteAnalyticalLoadGroups",
-        "DeleteMEPPreferenceTableRows", "DeleteProjectInfoGroups",
-        "DeleteUserDataOfAttributes", "EditHierarchicalElement", "FindModelViewOption",
-        "FinishHierarchicalEditing", "Get3DModelCounts", "GetAddOnViewpointChildren",
-        "GetAddOnViewpointRoots", "GetAddOnViewpoints", "GetAnalyticalLoadCases",
-        "GetAnalyticalLoadCombinations", "GetAnalyticalLoadGroups",
-        "GetAnalyticalMemberTypesOfElements", "GetAnalyticalModel",
-        "GetAnalyticalModelVariation", "GetAnalyticalVisibilitySettings", "GetAutoIntersect",
-        "GetBodyMaterialsOfElements", "GetCategoryValuesOfDefaults",
-        "GetClassificationItemParents", "GetClassificationItemVisibility",
-        "GetClassificationsOfAttributes", "GetClassificationsOfToolDefaults",
-        "GetCutPolygonsOfElements", "GetDescriptorsOfElements", "GetDimensionStandards",
-        "GetDocumentFrom3DDefaults", "GetDrawingNumberingGridLines",
-        "GetDrawingPrimitivesOfElements", "GetEditModeState", "GetElementConnections",
-        "GetElementSetData", "GetElementUserData", "GetElementsByClassification",
-        "GetFavoriteDetails", "GetFavoriteFolders", "GetGhostStorySettings",
-        "GetGraphicalOverrideStyleOfElements", "GetHotlinkOwnersOfElements",
-        "GetIFCClassificationReferencesOfElements", "GetLibPartTransformations",
-        "GetLibraryPartCustomSection", "GetLibraryPartPictures",
-        "GetLinkedPropertyObjectsOfElements", "GetMEPElementDetails",
-        "GetMEPPreferenceTableContainers", "GetMEPPreferenceTableRows", "GetMergedElements",
-        "GetPrinterAndPlotterInfo", "GetProjectInfoGroups", "GetPropertiesOfToolDefaults",
-        "GetPropertyObjectsOfElements", "GetRenovationStatusNames",
-        "GetStoryControlPrimitives", "GetSunSettings", "GetTeamworkProjectInfo",
-        "GetUsedAttributes", "GetUserDataOfAttributes", "GetVisibleSkinStatus",
-        "GetZoneLabelingSettings", "IsUsableGDLString", "MergeElements", "ModifyMEPPorts",
-        "ModifyMEPPreferenceTables", "ModifyPropertyValueOfElements", "MoveFavoriteFolder",
-        "MoveProjectInfoGroups", "PlaceOpenings", "RebuildCurrentDatabase", "RefreshElements",
-        "RemoveIFCClassificationReferencesOfElements", "RemoveLibrariesFromBIMcloud",
-        "RenameProjectInfoGroups", "ReorderDesignOptionSets", "ReorderDesignOptionsInSet",
-        "SetAnalyticalVisibilitySettings", "SetAutoIntersect",
-        "SetClassificationsOfAttributes", "SetDefaultDesignOption",
-        "SetDocumentFrom3DDefaults", "SetElementUserData", "SetGhostStorySettings",
-        "SetGraphicOverrideRuleOrder", "SetIFCClassificationReferencesOfElements",
-        "SetLibraryPartCustomSection", "SetLibraryPartMetadata", "SetLibraryPartPictures",
-        "SetLinkedPropertyObjectsOfElements", "SetMEPPreferenceTableRows",
-        "SetMasterLayoutContext", "SetOpeningDefault", "SetUserDataOfAttributes",
-        "SetUserDataOfGroups", "UnmergeElements", "UploadLibrariesToBIMcloud",
-        "ZoomToElements")
+    "ModifyPens": ("1.8.0", _FIRST_IN_1_8_0),
 }
 
 

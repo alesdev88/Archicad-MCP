@@ -13,27 +13,15 @@
             "properties": {
               "stairs": {
                 "type": "array",
-                "items": {"$ref": "#/ElementIdArrayItem"}
+                "items": {
+                  "$ref": "#/ElementIdArrayItem"
+                }
               }
             },
             "additionalProperties": false,
-            "required": ["stairs"]
-          }
-        },
-        {
-          "name": "CreateRailings",
-          "version": "1.5.9",
-          "description": "Creates Railing elements on the given 3D reference line polylines.",
-          "inputScheme": {
-            "type": "object",
-            "properties": {
-              "railingsData": {
-                "type": "array",
-                "items": {"type": "object"}
-              }
-            },
-            "additionalProperties": false,
-            "required": ["railingsData"]
+            "required": [
+              "stairs"
+            ]
           }
         }
       ]

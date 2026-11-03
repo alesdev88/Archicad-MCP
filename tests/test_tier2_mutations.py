@@ -75,8 +75,7 @@ async def test_create_elements_unknown_type_points_to_gateway(core):
     assert "door" in payload["valid_types"]
 
 
-RAILING_ITEM = {"referenceLinePoints": [{"x": 0, "y": 0, "z": 0},
-                                        {"x": 3, "y": 0, "z": 0.9}]}
+RAILING_ITEM = {"coordinates": [{"x": 0, "y": 0}, {"x": 3, "y": 0}], "height": 0.9}
 
 
 async def test_create_railing_dry_run(core):
