@@ -139,10 +139,13 @@ class ArchicadConnection:
 
 
 def tapir_missing_message(conn: ArchicadConnection, what: str) -> str:
-    from archicad_mcp.tapir_install.hint import install_hint
+    from archicad_mcp.tapir_install.hint import install_hint, not_loaded_hint
     version = conn.archicad_version()
     where = (f"Archicad {version} on port {conn.port}" if version else
              f"the Archicad instance on port {conn.port}")
+    not_loaded = not_loaded_hint(version)
+    if not_loaded:
+        return f"{what} requires the Tapir add-on, which {where} has not loaded. {not_loaded}"
     return (f"{what} requires the Tapir add-on, which is not installed in {where}. "
             + install_hint(version))
 
@@ -178,11 +181,11 @@ def probe_port(port: int, core=None, timeout: float | None = PROBE_TIMEOUT,
         except (APIErrorBase, TapirCommandError, ArchicadUnavailableError):
             pass
     version = int(product.get("version", 0))
-    from archicad_mcp.tapir_install.hint import install_hint
+    from archicad_mcp.tapir_install.hint import install_hint, not_loaded_hint
     hint = None
     needing: list[str] = []
     if diagnose and not tapir:
-        hint = install_hint(version or None)
+        hint = not_loaded_hint(version or None) or install_hint(version or None)
     elif diagnose:
         from archicad_mcp.tapir_requirements import unavailable_tools
         try:

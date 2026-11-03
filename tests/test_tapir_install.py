@@ -71,17 +71,24 @@ def test_replace_moves_old_copies_to_backup_with_manifest(tmp_path):
     assert out.installed.read_bytes() == b"MZ release"
 
 
+def fail_copy_in(monkeypatch, exc: OSError) -> None:
+    """The new .apx cannot be copied into place (Windows copies it in)."""
+    def copyfile(src, dst, *a, **k):
+        raise exc
+
+    monkeypatch.setattr(install_mod.shutil, "copyfile", copyfile)
+
+
+def denied(winerror: int = 5, filename: str | None = None) -> PermissionError:
+    exc = PermissionError(13, "Access is denied", filename)
+    exc.winerror = winerror
+    return exc
+
+
 def test_install_rolls_back_when_the_move_in_fails(tmp_path, monkeypatch):
     row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
     before = listing(row.inst.add_ons)
-    real = os.rename
-
-    def move(src, dst):
-        if Path(src) == apx:
-            raise OSError("disk full")
-        return real(src, dst)
-
-    monkeypatch.setattr(install_mod.os, "rename", move)
+    fail_copy_in(monkeypatch, OSError("disk full"))
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.restored is True and "disk full" in out.error and out.installed is None
     assert listing(row.inst.add_ons) == before
@@ -90,14 +97,7 @@ def test_install_rolls_back_when_the_move_in_fails(tmp_path, monkeypatch):
 
 def test_windows_locked_apx_says_close_archicad(tmp_path, monkeypatch):
     row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
-    real = os.rename
-
-    def move(src, dst):
-        if Path(src) == apx:
-            raise PermissionError("in use")
-        return real(src, dst)
-
-    monkeypatch.setattr(install_mod.os, "rename", move)
+    fail_copy_in(monkeypatch, denied(32))
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.error == "close Archicad 29 and retry" and out.restored is True
 
@@ -312,11 +312,12 @@ def test_failed_rollback_still_says_where_the_old_copy_is(tmp_path, monkeypatch)
     backups = tmp_path / "b"
 
     def rename(src, dst):
-        if Path(src) == apx or Path(src).is_relative_to(backups):
+        if Path(src).is_relative_to(backups):
             raise OSError("disk full")
         return real(src, dst)
 
     monkeypatch.setattr(install_mod.os, "rename", rename)
+    fail_copy_in(monkeypatch, OSError("disk full"))
     out = apply_row(row, apx, platform="win32", backups=backups, now=NOW)
     assert out.restored is False and out.backup is not None
     assert (out.backup / "TapirAddOn_AC29_Win.apx").read_bytes() == b"MZ old fork"
@@ -326,14 +327,7 @@ def test_failed_rollback_still_says_where_the_old_copy_is(tmp_path, monkeypatch)
 
 def test_successful_rollback_leaves_no_backup_folder(tmp_path, monkeypatch):
     row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
-    real = os.rename
-
-    def rename(src, dst):
-        if Path(src) == apx:
-            raise OSError("disk full")
-        return real(src, dst)
-
-    monkeypatch.setattr(install_mod.os, "rename", rename)
+    fail_copy_in(monkeypatch, OSError("disk full"))
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.restored is True and out.backup is None
     assert not any((tmp_path / "b").rglob("*")) if (tmp_path / "b").exists() else True
@@ -369,3 +363,50 @@ def test_a_locked_apx_on_the_first_move_says_close_archicad(tmp_path, monkeypatc
     out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
     assert out.error == "close Archicad 29 and retry"
     assert listing(row.inst.add_ons) == before and out.backup is None
+
+
+# ---------- Windows, from a colleague's 0.12.0 install (Archicad 29, Program Files) ----------
+
+def test_windows_copies_the_apx_in_so_it_takes_the_folder_acl(tmp_path, monkeypatch):
+    # A rename kept the staged copy's owner-only ACL (mkdtemp, Python 3.12.4+):
+    # installed from an administrator terminal, Archicad could not open it.
+    row, apx = win_row(tmp_path)
+    monkeypatch.setattr(install_mod.os, "rename", lambda *a: pytest.fail("renamed in"))
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.error is None and out.installed.read_bytes() == b"MZ release"
+    assert apx.exists()  # copied, so the staged file is still where it was
+
+
+def test_windows_folder_refusing_new_entries_moves_nothing(tmp_path, monkeypatch):
+    # os.access said writable; the ACL let the old .apx out but refused the
+    # Tapir folder and the way back, which stranded Archicad without Tapir.
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    add_ons = row.inst.add_ons
+    before = listing(add_ons)
+    monkeypatch.setattr(install_mod, "can_create", lambda folder: folder != add_ons)
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW,
+                    rerun_args=["--replace"])
+    assert listing(add_ons) == before and out.installed is None and out.backup is None
+    assert (add_ons / "TapirAddOn_AC29_Win.apx").read_bytes() == b"MZ old fork"
+    assert "administrator" in out.error and "--archicad 29 --replace" in out.error
+
+
+def test_windows_access_denied_after_a_move_says_administrator(tmp_path, monkeypatch):
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    target = row.inst.add_ons / "Tapir" / apx.name
+    fail_copy_in(monkeypatch, denied(5, str(target)))
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert out.restored is True and "close Archicad" not in out.error
+    assert out.error.startswith(f"Windows denied access to {target}.")
+    assert "Run as administrator" in out.error
+    assert (row.inst.add_ons / "TapirAddOn_AC29_Win.apx").read_bytes() == b"MZ old fork"
+
+
+def test_windows_access_denied_with_archicad_running_says_close_it(tmp_path, monkeypatch):
+    # A folder holding a loaded .apx refuses a move with winerror 5, not 32.
+    row, apx = win_row(tmp_path, replace=True, existing=b"MZ old fork")
+    row.running_version = "1.7.3"
+    fail_copy_in(monkeypatch, denied(5))
+    out = apply_row(row, apx, platform="win32", backups=tmp_path / "b", now=NOW)
+    assert "Archicad 29 is running" in out.error and "close it and retry" in out.error
+    assert out.restored is True

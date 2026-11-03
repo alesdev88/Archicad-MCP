@@ -178,16 +178,27 @@ Tapir's **Check for Updates** keeps working.
 **When the Add-Ons folder needs administrator rights:** on macOS the system
 password dialog appears. On Windows, where Archicad lives under Program Files,
 the result gives the exact command to run from a terminal opened as
-administrator, plus the steps to hand to IT. The Windows path is covered by unit
-tests only so far.
+administrator, plus the steps to hand to IT. Before moving an old Tapir aside,
+the installer checks that it can create entries in every folder it touches, so a
+folder that lets the old copy out but refuses the new one changes nothing. The
+.apx is copied in rather than moved, so it takes the folder's permissions.
+
+An install from an administrator terminal with 0.12.0 could leave an .apx that
+Archicad cannot open: Add-On Manager says you don't have permission to open the
+file, and `list_instances` says Tapir is there but not loaded. Reset its
+permissions from PowerShell run as administrator, then restart Archicad:
+
+```powershell
+icacls "C:\Program Files\Graphisoft\Archicad 29\Add-Ons\Tapir" /reset /T /C
+```
 
 **By hand:** download `TapirAddOn_AC<version>_Mac.zip` or
 `TapirAddOn_AC<version>_Win.apx` for your Archicad version from the
-[Tapir 1.7.3 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.7.3),
+[Tapir 1.8.0 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.8.0),
 unzip it (macOS) or copy it (Windows) into `Add-Ons/Tapir/` inside the Archicad
 folder, and restart Archicad.
 
-The bundled command definitions come from Tapir 1.7.3. A newer add-on than the
+The bundled command definitions come from Tapir 1.8.0. A newer add-on than the
 definitions is fine; a tool that needs a newer Tapir than the one installed
 refuses before sending anything and names both versions.
 
@@ -207,7 +218,7 @@ tail -20 ~/Library/Logs/Claude/mcp-server-archicad.log   # %APPDATA%\Claude\logs
 
 ```
 archicad-mcp: mode=full, 12 rules loaded
-archicad-mcp: Archicad 29 (build 5101) on port 19723, project 'Sample', Tapir 1.7.3
+archicad-mcp: Archicad 29 (build 5101) on port 19723, project 'Sample', Tapir 1.8.0
 ```
 
 No line at all means the server did not start. Otherwise the line says whether

@@ -153,7 +153,7 @@ def test_plan_windows_not_writable_note(tmp_path, monkeypatch):
     rel = Release("1.7.1", "1.7.1", {apx.name: asset}, True)
     folder = tmp_path / "GRAPHISOFT" / "Archicad 29"
     (folder / "Add-Ons").mkdir(parents=True)
-    monkeypatch.setattr("archicad_mcp.tapir_install.plan.is_writable", lambda p: False)
+    monkeypatch.setattr("archicad_mcp.tapir_install.plan.is_writable", lambda *a: False)
     (row,) = build_plan([Installation(29, folder, folder / "Add-Ons")], rel, replace=False,
                         reference={29: apx}, prefs_dir=tmp_path / "none", platform="win32")
     assert row.action == "install" and row.writable is False
@@ -193,3 +193,17 @@ def test_reference_hash_follows_the_executable_named_in_info_plist(tmp_path):
     _bundle_with_exe(i.add_ons, "TapirAddOn_AC30_Mac.bundle", "Tapir", RELEASE_BINARY)
     (row,) = plan(tmp_path, [i], {30: zipped}, replace=False)
     assert row.state == UP_TO_DATE
+
+
+def test_windows_writable_is_probed_because_os_access_ignores_the_acl(tmp_path, monkeypatch):
+    # 0.12.0: the dry run said writable for Program Files\...\Add-Ons.
+    import archicad_mcp.tapir_install.plan as plan_mod
+    monkeypatch.setattr(plan_mod, "can_create", lambda folder: False)
+    assert plan_mod.is_writable(tmp_path, "darwin") is True
+    assert plan_mod.is_writable(tmp_path, "win32") is False
+
+
+def test_can_create_leaves_nothing_behind(tmp_path):
+    from archicad_mcp.tapir_install.plan import can_create
+    assert can_create(tmp_path) and list(tmp_path.iterdir()) == []
+    assert not can_create(tmp_path / "missing")

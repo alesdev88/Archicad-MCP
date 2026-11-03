@@ -65,3 +65,14 @@ def mac_host(monkeypatch):
     command pin the platform the hint is written for.
     """
     monkeypatch.setattr("archicad_mcp.tapir_install.hint._host", lambda: "darwin")
+
+
+@pytest.fixture(autouse=True)
+def no_archicad_on_disk(monkeypatch):
+    """Hints see no Archicad installed, as on CI, not this machine's folders.
+
+    Otherwise a Tapir installed here turns the install hint into the
+    not-loaded one. Tests that want installations patch find_installations.
+    """
+    monkeypatch.setattr("archicad_mcp.tapir_install.hint.find_installations",
+                        lambda *a, **k: [])
