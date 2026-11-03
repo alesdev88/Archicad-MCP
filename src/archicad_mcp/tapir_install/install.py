@@ -21,7 +21,7 @@ from pathlib import Path
 
 from archicad_mcp.data_dir import data_root
 from archicad_mcp.tapir_install.detect import TAPIR_SUBFOLDER, main_binary
-from archicad_mcp.tapir_install.plan import MOVABLE, Row
+from archicad_mcp.tapir_install.plan import MOVABLE, Row, can_create
 from archicad_mcp.tapir_install.release import InstallError, check_mac_zip
 
 
@@ -186,6 +186,12 @@ def _locked(exc: OSError) -> bool:
     return getattr(exc, "winerror", None) in (32, 33)
 
 
+def _denied(exc: BaseException) -> bool:
+    # Access denied (winerror 5, errno 13): a folder ACL, or on Windows a
+    # folder holding a file Archicad has open. Not a sharing violation.
+    return isinstance(exc, PermissionError) and not _locked(exc)
+
+
 def _move_out(src: Path, dst: Path) -> None:
     """Move an existing Tapir aside: a rename or nothing.
 
@@ -212,10 +218,25 @@ def _remove_new_copy(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _place(staged: Path, target: Path) -> bool:
-    """Move the new copy into place; True when it had to be copied instead."""
+def _place(staged: Path, target: Path, platform: str) -> bool:
+    """Move the new copy into place; True when it was copied instead.
+
+    On Windows the .apx is always copied. A rename keeps the ACL the staged
+    file inherited from its mkdtemp folder, owner only since Python 3.12.4;
+    from an administrator terminal that owner is Administrators, and the
+    Archicad the user then starts cannot open the add-on (0.12.0). A new file
+    takes the ACL of the folder it is made in.
+    """
     if os.path.lexists(target):
         raise InstallError(f"{target} already exists; not overwriting it.")
+    if platform == "win32" and staged.is_file():
+        try:
+            shutil.copyfile(staged, target)
+        except BaseException:
+            if os.path.lexists(target):
+                _remove_new_copy(target)
+            raise
+        return True
     try:
         os.rename(staged, target)
         return False
@@ -256,6 +277,14 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
         _write_manifest(backup, row, moves, now)
         out.backup = backup
 
+    # Every folder this run adds to, the Tapir folder and those an old Tapir
+    # leaves (a roll back puts it back there), is tried before anything moves:
+    # Windows let an old Tapir out of Program Files and then refused the Tapir
+    # folder and the way back (0.12.0).
+    folders = {tapir_dir if tapir_dir.is_dir() else row.inst.add_ons}
+    folders |= {src.parent for src, _ in moves}
+    if row.writable and not all(can_create(f) for f in folders):
+        row.writable = False
     if not row.writable:
         return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
                                rerun_args)
@@ -263,29 +292,41 @@ def apply_row(row: Row, staged: Path, *, platform: str | None = None,
     done: list[tuple[Path, Path]] = []
     placed, copied, made_tapir_dir = None, False, False
     try:
+        if not tapir_dir.is_dir():
+            tapir_dir.mkdir()
+            made_tapir_dir = True
         for src, dst in moves:
             dst.parent.mkdir(parents=True, exist_ok=True)
             _move_out(src, dst)
             done.append((src, dst))
-        if not tapir_dir.is_dir():
-            tapir_dir.mkdir()
-            made_tapir_dir = True
-        copied = _place(staged, target)
+        copied = _place(staged, target, platform)
         placed = target
     except (OSError, InstallError) as exc:
-        locked = isinstance(exc, OSError) and _locked(exc)
-        if isinstance(exc, PermissionError) and not locked and not done and not made_tapir_dir:
-            # The folder refused before anything changed: the not-writable path.
-            row.writable = False
-            return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
-                                   rerun_args)
         out.restored = _roll_back(done, staged, placed, copied)
         if made_tapir_dir and tapir_dir.is_dir() and not any(tapir_dir.iterdir()):
             tapir_dir.rmdir()
-        if locked or (isinstance(exc, PermissionError) and platform == "win32"):
-            out.error = f"close Archicad {row.inst.version} and retry"
+        in_use = platform == "win32" and row.running_version is not None
+        if _denied(exc) and not done and not in_use:
+            # Refused before anything changed: the not-writable path.
+            row.writable, out.restored = False, None
+            return _apply_elevated(row, out, staged, target, backup, moves, platform, elevate,
+                                   rerun_args)
+        version = row.inst.version
+        if isinstance(exc, OSError) and _locked(exc):
+            out.error = f"close Archicad {version} and retry"
+        elif _denied(exc) and platform == "win32":
+            what = exc.filename or "a Tapir file"
+            if in_use:
+                out.error = (f"Windows denied access to {what}. Archicad {version} is "
+                             "running and may have Tapir open: close it and retry")
+            elif out.restored:
+                out.error = (f"Windows denied access to {what}. "
+                             + windows_admin_text(row, extra_args=rerun_args))
+            else:
+                out.error = (f"Windows denied access to {what}, so this needs "
+                             "administrator rights")
         else:
-            out.error = f"Installing into Archicad {row.inst.version} failed: {exc}"
+            out.error = f"Installing into Archicad {version} failed: {exc}"
         if out.restored:
             _discard_backup(backup)
             out.backup = None

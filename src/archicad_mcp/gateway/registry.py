@@ -92,32 +92,10 @@ def _resolve_refs(schema, definitions, seen=None):
 # shipped them. build_registry reports the corrected version, so the tool
 # gates, describe_api_command and the dashboard agree. A test fails once the
 # definitions agree, so the entry can go.
-_FIRST_IN_1_7_2 = ("new in the 1.7.2 definitions, labelled 1.7.1, absent from the 1.7.1 "
-                   "release and from Tapir 1.7.1 on MCP-Test (21.10.2026)")
-_FIRST_IN_1_7_3 = ("registered as 1.7.2 on Tapir main, absent from the 1.7.2 release "
-                   "(merged 21 to 25.10.2026, after it)")
+_FIRST_IN_1_8_0 = ("labelled 1.7.2 in the 1.8.0 definitions, absent from the 1.7.2 and 1.7.3 "
+                   "releases (merged after 30.10.2026)")
 CORRECTED_VERSIONS: dict[str, tuple[str, str]] = {
-    name: ("1.7.2", _FIRST_IN_1_7_2) for name in (
-        "DeleteDesignOptionCombinations", "DeleteDesignOptionSets", "DeleteDesignOptions",
-        "Get3DProjectionSettings", "RenameDesignOptionCombinations",
-        "RenameDesignOptionSets", "RenameDesignOptions", "SaveCurrentWindowAsImage",
-        "Set3DProjectionSettings")
-} | {
-    name: ("1.7.3", _FIRST_IN_1_7_3) for name in (
-        "Change3DStyles", "Create3DStyles", "CreateAttributeFolders", "DeleteAttributeFolders",
-        "Get3DCutPlanes", "Get3DStyleDetails", "GetCategoryValuesOfElements",
-        "GetContainingDatabases", "GetCurrentLayerCombination", "GetCurrentViewImage",
-        "GetCurrentWindowDrawingScale", "GetDatabases", "GetDrawingContentBoxes",
-        "GetElementAtCoordinate", "GetElementCategories", "GetElementsInDrawOrder",
-        "GetFontsByName", "GetGraphicOverrideRulesByName", "GetLayoutSubsetSettings",
-        "GetLinksOfElements", "GetProjectPreferences", "GetReservationStatusOfElements",
-        "GetStructureDisplay", "GetSurfaceQuantitiesOfElements", "GetUserDataOfGroups",
-        "GetZoneReductions", "GrantElements", "ImportMarkupsFromPDF", "LinkElements",
-        "MakePropertyAvailableForElements", "MakePropertyUnavailableForElements",
-        "MeasureTexts", "MirrorElements", "MoveAttributesAndFolders", "NewProject",
-        "RegularizePolygons", "RegularizePolylines", "RenameAttributeFolders",
-        "SetCategoryValuesOfElements", "SetCurrentWindowDrawingScale", "SetProjectPreferences",
-        "SetStructureDisplay", "UngroupElements", "UnlinkElements")
+    "ModifyPens": ("1.8.0", _FIRST_IN_1_8_0),
 }
 
 

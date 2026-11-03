@@ -11,6 +11,7 @@ import hashlib
 import os
 import plistlib
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,14 +50,30 @@ class Row:
     notes: list[str] = field(default_factory=list)
 
 
-def is_writable(folder: Path) -> bool:
+def can_create(folder: Path) -> bool:
+    """Whether this user can add an entry to folder, by adding one and removing it."""
+    try:
+        fd, name = tempfile.mkstemp(prefix=".archicad-mcp-probe-", dir=folder)
+    except OSError:
+        return False
+    os.close(fd)
+    try:
+        os.unlink(name)
+    except OSError:
+        pass
+    return True
+
+
+def is_writable(folder: Path, platform: str | None = None) -> bool:
     """Whether this user may add and remove entries in folder.
 
-    os.access rather than a probe file, so that a dry run writes nothing at
-    all. Where it is wrong (a Windows folder ACL), the real install meets a
-    PermissionError before changing anything and takes the same path.
+    os.access, so that a macOS dry run writes nothing at all. On Windows it
+    ignores the folder ACL and says yes to Program Files (Archicad 29 there,
+    0.12.0), so there a probe file is made and removed at once as well.
     """
-    return os.access(folder, os.W_OK | os.X_OK)
+    if not os.access(folder, os.W_OK | os.X_OK):
+        return False
+    return (platform or sys.platform) != "win32" or can_create(folder)
 
 
 def _reference_binary_hash(reference: Path, asset: Asset) -> str | None:
@@ -163,7 +180,7 @@ def build_plan(installations: list[Installation], release: Release, *,
             unmovable = [e for e in loaded if e.kind not in MOVABLE]
             action = "replace" if replace and not unmovable else "skip"
         row = Row(inst, asset, entries, identical, state, action,
-                  writable=is_writable(inst.add_ons), running_version=running_version)
+                  writable=is_writable(inst.add_ons, platform), running_version=running_version)
         if state == BLOCKED:
             row.notes.append(f"{tapir_path} exists and is not a folder; move it "
                              "away and run again")

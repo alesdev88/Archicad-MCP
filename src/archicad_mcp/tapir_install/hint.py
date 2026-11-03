@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from archicad_mcp.tapir_install.detect import TAPIR_SUBFOLDER, find_installations
+from archicad_mcp.tapir_install.detect import TAPIR_SUBFOLDER, find_installations, tapir_entries
 from archicad_mcp.tapir_install.release import (
     RELEASES_URL,
     asset_name,
@@ -66,3 +66,30 @@ def install_hint(archicad_version: int | None, platform: str | None = None, *,
     return (f"Install it with '{command}' or the install_tapir tool, or by hand: "
             f"download {asset} from {release_page_url(release)}, {step} {where}, "
             "and restart Archicad.")
+
+
+def not_loaded_hint(archicad_version: int | None, platform: str | None = None) -> str | None:
+    """For a Tapir that is in Add-Ons but did not load, in place of the install
+    hint; None when there is none there. Windows wording from 0.12.0: an .apx
+    Archicad 29 had no permission to open (owner-only ACL), Tapir not loaded."""
+    platform = platform or _host()
+    if archicad_version is None or platform != sys.platform:
+        return None
+    try:
+        entries = [e for i in find_installations(platform) if i.version == archicad_version
+                   for e in tapir_entries(i) if e.kind in ("tapir-folder", "loose")
+                   and e.path.name.startswith("TapirAddOn_")]
+    except OSError:
+        return None
+    if not entries:
+        return None
+    entry = entries[0]
+    text = (f"Archicad {archicad_version} has {entry.path} but did not load it; "
+            "Options > Add-On Manager says why.")
+    if platform == "win32":
+        target, flags = ((entry.path.parent, "/reset /T /C") if entry.kind == "tapir-folder"
+                         else (entry.path, "/reset /C"))
+        text += (" If it says you don't have permission to open the file, reset its "
+                 "permissions from PowerShell run as administrator: "
+                 f'icacls "{target}" {flags}, then restart Archicad.')
+    return text

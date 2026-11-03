@@ -44,6 +44,12 @@ TAPIR_KEEPS = {"id": "id", "layer": "layerIndex", "width": "width", "height": "h
                "sillHeight": "sillHeight", "referenceLineLocation": "referenceLineLocation",
                "topOffset": "topOffset", "relativeTopStory": "relativeTopStory"}
 KEEP_FIELDS_TAPIR = (1, 7, 3)
+# From 1.8.0 (#813) a door or window changes only through its opening settings.
+# Live 03.11.2026 (AC 29, MCP-Test): Entrance Door and Fixed 3 Pane Window gave a
+# Door and a Window their width and nothing else that showed: each kept its own
+# library part and, with keep=[], its Element ID; its layer is its wall's anyway.
+OWN_PART_TAPIR = (1, 8, 0)
+OWN_PART_TYPES = frozenset({"Door", "Window"})
 TOP_LINK = ("height", "topOffset", "relativeTopStory")
 FLAGS = {"settings": "applySettings", "classifications": "applyClassifications",
          "categories": "applyCategories", "properties": "applyProperties"}
@@ -59,6 +65,10 @@ _HIERARCHICAL_WARNING = ("gets only its own settings: Tapir leaves the settings 
                          "parts (treads, posts, panels) alone so it does not move")
 _LAYER_WARNING = "takes the favourite's layer"
 _ID_WARNING = "takes the favourite's Element ID (keep=[\"id\"] writes its own back)"
+_OWN_PART_WARNING = ("keeps its own library part, Element ID and layer (Tapir 1.8.0): it "
+                     "takes the favourite's size and the parameters both parts have, and "
+                     "stays at its place in the wall. ChangeLibraryPartOfElements "
+                     "(execute_write_api_command) changes the part")
 _HEIGHT_ALONE_WARNING = ("a kept height alone is recomputed by Archicad while the "
                          "favourite's relativeTopStory links the top to a story: keep "
                          "height, relativeTopStory and topOffset together")
@@ -72,6 +82,12 @@ def keeps_fields(conn: ArchicadConnection) -> bool:
     """Whether this Tapir copies kept fields back itself (keepFields, 1.7.3 and newer)."""
     version = installed_version(conn)
     return version is not None and _key(version) >= KEEP_FIELDS_TAPIR
+
+
+def keeps_own_part(conn: ArchicadConnection) -> bool:
+    """Whether this Tapir leaves a door's or window's library part, ID and layer."""
+    version = installed_version(conn)
+    return version is not None and _key(version) >= OWN_PART_TAPIR
 
 
 def _all_types() -> list[str]:
@@ -151,7 +167,9 @@ def _unknown(favorite: str, index: dict[str, list[str]]) -> dict:
                      + hint}
 
 
-def _warnings(element_type: str, keep: tuple[str, ...]) -> list[str]:
+def _warnings(element_type: str, keep: tuple[str, ...], own_part: bool = False) -> list[str]:
+    if own_part and element_type in OWN_PART_TYPES:
+        return [_OWN_PART_WARNING]
     out = []
     top_link = [] if set(TOP_LINK) <= set(keep) else ["height and top link"]
     if element_type == "Wall":
@@ -225,6 +243,7 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
     else:
         holders = p.favorite_types
     p.layers = _layers(conn)
+    own_part = keeps_own_part(conn)
     for g in guids:
         entry = entries.get(g)
         if entry is None:
@@ -236,7 +255,7 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
             continue
         p.planned.append({"guid": g, "type": element_type, "id": entry.get("id") or None,
                           "layerIndex": entry.get("layerIndex")})
-        p.warnings[g] = _warnings(element_type, keep)
+        p.warnings[g] = _warnings(element_type, keep, own_part)
     if not p.favorite_types:
         p.favorite_types = holders
     p.settings = _settings(conn, favorite)

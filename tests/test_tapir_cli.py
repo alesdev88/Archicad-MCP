@@ -302,7 +302,7 @@ def run_mod_restore(outcome):
 
 def test_admin_command_from_a_replace_run_keeps_replace(tmp_path, monkeypatch):
     installs, release, files = win_setup(tmp_path, existing={29: b"MZ fork"})
-    monkeypatch.setattr("archicad_mcp.tapir_install.plan.is_writable", lambda p: False)
+    monkeypatch.setattr("archicad_mcp.tapir_install.plan.is_writable", lambda *a: False)
     report = win_run(tmp_path, installs, release, files, dry_run=False, replace=True,
                      versions={29})
     (o,) = report.outcomes

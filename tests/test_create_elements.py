@@ -285,15 +285,16 @@ def test_model_types_do_not_warn_from_the_3d_window():
     assert result["warnings"] == []
 
 
-def test_a_fork_only_command_is_named_as_such_when_missing():
-    # CreateRailings exists only in the local Tapir fork (local_commands.json),
-    # so "update Tapir" would send a stock-Tapir user on a useless errand.
+@pytest.mark.usefixtures("mac_host")
+def test_railings_come_from_the_tapir_release_from_1_8_0():
+    # CreateRailings was a local fork command until Tapir 1.8.0 shipped its own
+    # (2D coordinates, not the fork's 3D reference line), so a Tapir without it
+    # is sent to the release, not told that no release has it.
     plan = Plan(missing_commands={"CreateRailings"})
     result = create_elements(plan.connection(), "railing",
-                             [{"referenceLinePoints": [{"x": 0, "y": 0, "z": 0},
-                                                       {"x": 3, "y": 0, "z": 0}]}])
-    assert "no Tapir release has yet" in result["error"]
-    assert "install-tapir" not in result["error"]
+                             [{"coordinates": [{"x": 0, "y": 0}, {"x": 3, "y": 0}]}])
+    assert "Tapir 1.8.0 or newer" in result["error"]
+    assert "install-tapir" in result["error"]
 
 
 def test_a_host_in_another_views_database_is_skipped():

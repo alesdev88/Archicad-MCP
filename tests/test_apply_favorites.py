@@ -496,3 +496,14 @@ def test_to_defaults_commit():
     result = run(p, None, "Partition Wall", dry_run=False, to_defaults=True)
     assert p.sent("ApplyFavoritesToElementDefaults") == [{"favorites": ["Partition Wall"]}]
     assert result["applied"] is True and result["tool"] == "Wall"
+
+
+def test_on_tapir_1_8_0_a_door_keeps_its_own_part_id_and_layer():
+    # Live 03.11.2026 (AC 29, Tapir 1.8.0): a Door given Entrance Door and a
+    # Window given Fixed 3 Pane Window took the width and kept their own part.
+    door = warnings_of(run(Project(version="1.8.0"), [DOOR], "Entrance Door", keep=[]), DOOR)
+    assert door == [favorites._OWN_PART_WARNING]
+    assert "keeps its own library part" in door[0] and "ChangeLibraryPartOfElements" in door[0]
+    old = warnings_of(run(Project(version="1.7.3"), [DOOR], "Entrance Door", keep=[]), DOOR)
+    assert any("library part" in w and "takes" in w for w in old)
+    assert favorites._LAYER_WARNING in old

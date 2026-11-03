@@ -512,6 +512,19 @@ def _shown_sent(c: Change):
     return c.new if c.address.kind == CLASSIFICATION else c.target
 
 
+# Tapir 1.8.0 (#1698) reads the parameters back after the change and fails the
+# whole element when Archicad did not keep one, though it wrote the others. Our
+# read back tells which, so such an element counts as written.
+_NOT_KEPT = "did not keep the value of"
+
+
+def _written(kind: str, outcome: object) -> object:
+    if (kind == GDL and isinstance(outcome, dict)
+            and _NOT_KEPT in str(outcome.get("message") or "")):
+        return "ok"
+    return outcome
+
+
 def commit(conn: ArchicadConnection, p: Plan) -> dict:
     outcomes: dict[int, object] = {}
     stopped = None
@@ -525,7 +538,7 @@ def commit(conn: ArchicadConnection, p: Plan) -> dict:
         call, command, list_key, items, chunk, at = _sends(conn, kind, changes)
         sent = send_items(call, command, list_key, items, chunk)
         for c, i in zip(changes, at):
-            outcomes[c.order] = sent.outcomes[i]
+            outcomes[c.order] = _written(kind, sent.outcomes[i])
         stopped = sent.stopped
 
     script = None

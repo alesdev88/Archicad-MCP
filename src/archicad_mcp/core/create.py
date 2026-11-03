@@ -194,6 +194,14 @@ CREATE_TYPES: dict[str, CreateType] = {
     "window": CreateType("CreateWindows", "windowsData", favorite_type="Window",
                          hosts=("ownerWallId",), host_types=_WALL, notes=_WINDOW_NOTES),
     "opening": CreateType("CreateOpenings", "openingsData", hosts=("ownerElementId",)),
+    # From the Opening tool's settings, each item changing only its own (Tapir 1.8.0).
+    "tool_opening": CreateType("PlaceOpenings", "openingsData", hosts=("parentElementId",),
+                               archicad=29),
+    # Structural analysis (Tapir 1.8.0), items as GetAnalyticalLoads, GetAnalyticalSupports
+    # and GetAnalyticalLinks return them.
+    "analytical_load": CreateType("CreateAnalyticalLoads", "loads", archicad=26),
+    "analytical_support": CreateType("CreateAnalyticalSupports", "supports", archicad=26),
+    "analytical_link": CreateType("CreateAnalyticalLinks", "links", archicad=26),
     # MEP (Archicad 28 and later)
     "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData", archicad=28),
     "mep_element": CreateType("CreateMEPElements", "elementsData", archicad=28),

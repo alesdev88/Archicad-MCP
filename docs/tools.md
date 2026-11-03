@@ -95,8 +95,11 @@ since a favourite's ID is a template value; `keep` also takes the layer. On
 Tapir 1.7.3 Tapir keeps them itself, `keep` also takes `width`, `height`,
 `sillHeight`, `referenceLineLocation`, `topOffset` and `relativeTopStory` (keep
 the last three together), and the dry run names the favourite's library part,
-marker and folder. A commit reports every field that changed, per element.
-`to_defaults=true` sets a tool's defaults instead. Needs Tapir 1.5.7.
+marker and folder. On Tapir 1.8.0 a door or window keeps its own library part,
+Element ID and layer: live, it took only the favourite's size and the parameters
+both parts have, so changing the part takes `ChangeLibraryPartOfElements`
+through `execute_write_api_command`. A commit reports every field that changed,
+per element. `to_defaults=true` sets a tool's defaults instead. Needs Tapir 1.5.7.
 
 `move_elements` and `delete_elements` need `confirm=true`. Archicad changes only
 elements in the active window's database and answers success for the rest, so
@@ -123,10 +126,11 @@ Needs Tapir 1.6.0.
 
 ## Creating
 
-`create_elements` places any of the 40 element types Tapir can create: walls,
+`create_elements` places any of the 44 element types Tapir can create: walls,
 beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
-walls, grid elements, objects, lamps, doors and windows in walls, openings, MEP
-routes and elements, electrical panels, devices and circuits (Archicad 30),
+walls, grid elements, objects, lamps, doors and windows in walls, openings (also
+from the Opening tool's settings, Archicad 29), analytical loads, supports and
+links (Archicad 26), MEP routes and elements, electrical panels, devices and circuits (Archicad 30),
 sections, interior elevations, hotlink instances, 2D lines to texts and labels,
 keynote labels, dimensions and drawings on a layout. Items use Tapir's own
 fields; `items=[]` returns a type's schema with notes on what it leaves out. The
@@ -222,8 +226,8 @@ and added to Archicad's Library Manager once. See [GDL pipeline](gdl-pipeline.md
 
 `list_api_commands`, `describe_api_command`, `execute_read_api_command` and
 `execute_write_api_command` reach the whole official and Tapir command surface:
-501 commands with the Tapir 1.7.3 definitions (73 official, 428 Tapir), 217
-reads and 284 writes. The write half needs `confirm=true`, because it can reach
+715 commands with the Tapir 1.8.0 definitions (73 official, 642 Tapir), 315
+reads and 400 writes. The write half needs `confirm=true`, because it can reach
 `DeleteElements` and `QuitArchicad`. The
 [API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)
 shows which commands have a tool of their own.
