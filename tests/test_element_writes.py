@@ -325,11 +325,14 @@ def test_classifications_go_through_the_official_api_without_tapirs_command():
     assert model.calls("API.SetClassificationsOfElements")
 
 
-def test_a_value_the_parameter_script_replaces_is_not_applied():
-    model = FakeModel()
+@pytest.mark.parametrize("tapir", ["1.7.3", "1.8.0"])
+def test_a_value_the_parameter_script_replaces_is_not_applied(tapir):
+    # 1.8.0 fails the whole element for it (#1698); the read back still tells
+    # the kept parameter from the replaced one.
+    model = FakeModel(tapir_version=tapir)
     out = _commit(model, [{"guid": OBJ, "property": "gdl:gs_capped", "value": 2.0},
                           {"guid": OBJ, "property": "gdl:A", "value": 1.2}])
-    assert out["applied"] == 1
+    assert out["applied"] == 1 and "failed" not in out
     assert out["not_applied"] == [{"property": "gdl:gs_capped", "count": 1,
                                    "sample": [{"guid": OBJ, "sent": 2.0, "read": 1.0}]}]
 

@@ -233,6 +233,7 @@ class FakeModel:
                     "code": -2130313112, "message": f"Invalid input: bad parameter of {guid}"}})
                 continue
             params = {q["name"]: q for q in self.gdl[guid]}
+            not_kept = []
             for change in item["gdlParameters"]:
                 target = params[change["name"]]
                 value = change["value"]
@@ -240,10 +241,19 @@ class FakeModel:
                         and tuple(map(int, self.tapir_version.split("."))) < (1, 7, 3)):
                     value = math.radians(value)       # ChangeAParameter takes degrees
                 if target["name"] == "gs_capped":
+                    if value > 1.0:
+                        not_kept.append(target["name"])
                     value = min(value, 1.0)           # the Parameter Script caps it
                 if isinstance(value, list):
                     target["dimension1"] = len(value)
                 target["value"] = value
+            if not_kept and tuple(map(int, self.tapir_version.split("."))) >= (1, 8, 0):
+                # Tapir 1.8.0 (#1698) reads the parameters back and fails the element
+                results.append({"success": False, "error": {"code": -2130313112, "message": (
+                    f"Archicad accepted the change of element with guid {guid} but did not "
+                    f"keep the value of {', '.join(not_kept)}: reading the parameters back "
+                    "gives another value. The other given parameters were written.")}})
+                continue
             results.append({"success": True})
         return {"executionResults": results}
 
