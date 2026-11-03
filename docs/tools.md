@@ -95,8 +95,11 @@ since a favourite's ID is a template value; `keep` also takes the layer. On
 Tapir 1.7.3 Tapir keeps them itself, `keep` also takes `width`, `height`,
 `sillHeight`, `referenceLineLocation`, `topOffset` and `relativeTopStory` (keep
 the last three together), and the dry run names the favourite's library part,
-marker and folder. A commit reports every field that changed, per element.
-`to_defaults=true` sets a tool's defaults instead. Needs Tapir 1.5.7.
+marker and folder. On Tapir 1.8.0 a door or window keeps its own library part,
+Element ID and layer: live, it took only the favourite's size and the parameters
+both parts have, so changing the part takes `ChangeLibraryPartOfElements`
+through `execute_write_api_command`. A commit reports every field that changed,
+per element. `to_defaults=true` sets a tool's defaults instead. Needs Tapir 1.5.7.
 
 `move_elements` and `delete_elements` need `confirm=true`. Archicad changes only
 elements in the active window's database and answers success for the rest, so
