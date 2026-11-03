@@ -26,8 +26,8 @@ extension's settings. An empty field falls back to the default under
 [Configuration](#configuration).
 
 The bundle holds a complete CPython 3.12 and every dependency, so it starts on a
-machine with no Python, no uv and no internet access. That is why it is 42 MB on
-Windows and 54 MB on macOS.
+machine with no Python, no uv and no internet access. That is why it is 52 MB on
+Windows and 62 MB on macOS.
 
 There is no Intel macOS bundle: `cryptography`, which the server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
