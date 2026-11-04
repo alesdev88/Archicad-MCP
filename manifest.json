@@ -27,8 +27,8 @@
     "qa"
   ],
   "server": {
-    "type": "python",
-    "entry_point": "runtime/lib/python3.12/site-packages/archicad_mcp/server.py",
+    "type": "binary",
+    "entry_point": "runtime/bin/python3",
     "mcp_config": {
       "command": "${__dirname}/runtime/bin/python3",
       "args": [
@@ -336,7 +336,7 @@
   "_meta": {
     "io.github.alesdev88/build": {
       "server_block": "template",
-      "note": "scripts/build_bundle.py rewrites server.command, server.entry_point and compatibility.platforms for the target it is building, because the interpreter lives at a different path on Windows and a bundle carrying one platform's compiled wheels must not offer to install on the other. Only the env mapping is taken verbatim. The values committed here are the darwin shape, so the file validates and reads as something real rather than as a placeholder."
+      "note": "scripts/build_bundle.py rewrites server.mcp_config.command, server.entry_point and compatibility.platforms for the target it is building, because the interpreter lives at a different path on Windows and a bundle carrying one platform's compiled wheels must not offer to install on the other. Only the env mapping is taken verbatim. The values committed here are the darwin shape, so the file validates and reads as something real rather than as a placeholder."
     }
   }
 }

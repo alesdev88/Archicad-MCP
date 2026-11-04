@@ -29,6 +29,12 @@ The bundle holds a complete CPython 3.12 and every dependency, so it starts on a
 machine with no Python, no uv and no internet access. That is why it is 52 MB on
 Windows and 62 MB on macOS.
 
+Bundles up to 0.13.0 declared themselves a Python extension, so on a machine
+without Python the install dialog marked Python red although the bundle never
+used it. From the next release the bundle is declared a self-contained binary
+and Claude Desktop asks for nothing. A Python installed only to get past that
+dialog can be removed.
+
 There is no Intel macOS bundle: `cryptography`, which the server depends on
 through FastMCP, no longer publishes macOS x86_64 wheels, so that bundle could
 only be built on an Intel Mac. Intel Macs use the manual install below.

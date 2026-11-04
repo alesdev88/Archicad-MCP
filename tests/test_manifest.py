@@ -31,3 +31,12 @@ def test_manifest_declares_the_enable_scripts_switch():
     assert field["type"] == "boolean" and field["default"] is False
     assert raw["server"]["mcp_config"]["env"]["ARCHICAD_MCP_SCRIPTS"] == \
         "${user_config.enable_scripts}"
+
+
+def test_manifest_asks_for_no_python_on_the_machine():
+    # The bundle carries its own interpreter. Declared "python", Claude Desktop
+    # checked for a Python on the machine and marked the install red without one.
+    raw = json.loads(MANIFEST.read_text())
+    assert raw["server"]["type"] == "binary"
+    assert raw["server"]["entry_point"] == "runtime/bin/python3"
+    assert "runtimes" not in raw["compatibility"]
