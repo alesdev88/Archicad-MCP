@@ -197,8 +197,14 @@ def build(target_name: str, out_dir: Path, cache: Path, keep_staging: bool) -> P
     sep = target["sep"]
     interpreter = "${__dirname}" + sep + target["interpreter"].replace("/", sep)
     manifest["server"] = {
-        "type": "python",
-        "entry_point": f"{target['site_packages']}/archicad_mcp/server.py",
+        # "binary", not "python": Claude Desktop reads "python" as needing a
+        # Python on the machine and marks the install red when it finds none,
+        # though this bundle brings its own. Seen in the office 3.11.2026 on a
+        # machine without Python, which then got one through uv to install the
+        # 0.13.0 bundle. A binary extension is self-contained by definition,
+        # and the interpreter is the executable Claude Desktop starts.
+        "type": "binary",
+        "entry_point": target["interpreter"],
         "mcp_config": {
             "command": interpreter,
             # -I is isolated mode: no user site directory, no PYTHONPATH, no
