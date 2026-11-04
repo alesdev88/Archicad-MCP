@@ -31,7 +31,7 @@ Windows and 62 MB on macOS.
 
 Bundles up to 0.13.0 declared themselves a Python extension, so on a machine
 without Python the install dialog marked Python red although the bundle never
-used it. From the next release the bundle is declared a self-contained binary
+used it. From 0.13.1 the bundle is declared a self-contained binary
 and Claude Desktop asks for nothing. A Python installed only to get past that
 dialog can be removed.
 
