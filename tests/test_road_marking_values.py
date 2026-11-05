@@ -5,42 +5,54 @@ import pytest
 
 from archicad_mcp.core import road_marking as rm
 
-DEFAULTS = rm.TABLE["defaults"]
+RM = rm.PARTS[rm.ROAD_MARKING]
+PP = rm.PARTS[rm.PARKING_PLACE]
+DEFAULTS = RM.table["defaults"]
+PARKING_DEFAULTS = PP.table["defaults"]
 
 
 def test_preset_names_match_without_regard_to_case():
-    assert rm.preset_name("5352-1 disabled BAYS, shared zone") == "5352-1 Disabled bays, shared zone"
-    assert rm.preset_name("custom") == "Custom"
+    assert rm.preset_name(RM, "5333-2 BUS stop on the carriageway") == "5333-2 Bus stop on the carriageway"
+    assert rm.preset_name(PP, "5352-1 disabled BAYS, shared zone") == "5352-1 Disabled bays, shared zone"
+    assert rm.preset_name(RM, "custom") == "Custom"
     with pytest.raises(rm.RoadMarkingError, match=re.escape("Unknown marking '5999'. Valid: 5111 Solid divider")):
-        rm.preset_name("5999")
+        rm.preset_name(RM, "5999")
 
 
 def test_a_new_preset_applies_and_the_calls_values_go_on_top():
-    want, state = rm.resolve(DEFAULTS, marking="5333-2 Bus stop on the carriageway", lettering={"offset": 1.75})
+    want, state = rm.resolve(RM, DEFAULTS, marking="5333-2 Bus stop on the carriageway", lettering={"offset": 1.75})
     assert state["letterOffset"] == 1.5 and want["letterOffset"] == 1.75
     assert want["bayLayout"] == "Stop end bars" and want["markingType"] == "5333-2 Bus stop on the carriageway"
 
 
 def test_the_markings_own_preset_is_not_applied_again():
     current = dict(DEFAULTS, s1Width=0.12)
-    want, _ = rm.resolve(current, marking="5121 broken divider, in settlements")
+    want, _ = rm.resolve(RM, current, marking="5121 broken divider, in settlements")
     assert want["s1Width"] == 0.12
 
 
 def test_flip_shift_and_thickness_survive_a_new_preset():
-    current = dict(DEFAULTS, flipSides=True, patternShift=1.0, thickness=0.005)
-    want, _ = rm.resolve(current, marking="Parking 90 degrees")
+    current = dict(PARKING_DEFAULTS, flipSides=True, patternShift=1.0, thickness=0.005, markingType="Custom")
+    want, _ = rm.resolve(PP, current, marking="Parking 90 degrees")
     assert (want["flipSides"], want["patternShift"], want["thickness"]) == (True, 1.0, 0.005)
     assert want["s1Offset"] == 2.5
 
 
 def test_stripes_bays_and_lettering_map_to_the_parts_parameters():
-    want, _ = rm.resolve(DEFAULTS, stripes={"2": {"on": True, "offset": 0.3, "shape": "Triangle, point left"}},
-                         bays={"layout": "Taxi bay", "depth": 4.5, "symbol": False},
+    want, _ = rm.resolve(RM, DEFAULTS, stripes={"2": {"on": True, "offset": 0.3, "shape": "Triangle, point left"}},
+                         bays={"layout": "Stop end bars", "depth": 4.5, "bar_width": 0.2},
                          lettering={"text": "BUS", "align": "Centre", "repeat": 20})
     assert (want["s2On"], want["s2Offset"], want["s2Shape"]) == (True, 0.3, "Triangle, point left")
-    assert (want["bayLayout"], want["bayDepth"], want["showSymbol"]) == ("Taxi bay", 4.5, False)
+    assert (want["bayLayout"], want["bayDepth"], want["barWidth"]) == ("Stop end bars", 4.5, 0.2)
     assert (want["letterText"], want["letterAlign"], want["letterRepeat"]) == ("BUS", "Centre", 20.0)
+
+
+def test_a_parking_place_maps_its_bay_values():
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS, stripes={"3": {"on": True}},
+                         bays={"layout": "Taxi bay", "depth": 4.5, "width": 3.0, "zone_first": False, "symbol": False})
+    assert want["s3On"] is True and want["s3Width"] == PARKING_DEFAULTS["s3Width"]
+    assert (want["bayLayout"], want["bayDepth"], want["bayWidth"]) == ("Taxi bay", 4.5, 3.0)
+    assert (want["zoneFirst"], want["showSymbol"]) == (False, False)
 
 
 @pytest.mark.parametrize("kwargs,message", [
@@ -53,7 +65,7 @@ def test_stripes_bays_and_lettering_map_to_the_parts_parameters():
     ({"stripes": {"1": {"on": 1}}}, "s1On must be true or false"),
     ({"bays": {"depth": 0.2}}, "bayDepth must be at least 0.3, got 0.2"),
     ({"bays": {"colour": "blue"}}, "Unknown bays key 'colour'. Valid: layout, width"),
-    ({"bays": {"layout": "Garage"}}, "bayLayout must be one of: None, Disabled bay"),
+    ({"bays": {"layout": "Taxi bay"}}, "bayLayout must be one of: None, Stop end bars"),
     ({"lettering": {"text": "STOP"}}, "letterText must be one of: None, BUS, TAXI"),
     ({"lettering": {"align": "Both ends"}}, "letterAlign must be one of: Start, Centre, End"),
     ({"lettering": {"font": "Arial"}}, "Unknown lettering key 'font'"),
@@ -62,42 +74,51 @@ def test_stripes_bays_and_lettering_map_to_the_parts_parameters():
 ])
 def test_bad_values_are_refused_with_the_valid_ones(kwargs, message):
     with pytest.raises(rm.RoadMarkingError, match=re.escape(message)):
-        rm.resolve(DEFAULTS, **kwargs)
+        rm.resolve(RM, DEFAULTS, **kwargs)
 
 
 @pytest.mark.parametrize("marking,flip,reach", [
     ("5121 Broken divider, in settlements", False, (-0.075, 0.075)),
     ("5131 Double solid", False, (-0.225, 0.225)),
     ("5231 Pedestrian crossing", False, (-2.0, 2.0)),
-    ("Parking 60 degrees", False, (0.0, 5.8)),
-    ("Parking 60 degrees", True, (-5.8, 0.0)),
-    ("5352-1 Disabled bays, shared zone", False, (0.0, 5.45)),
-    ("5352-2 Disabled bay, parallel", True, (-2.45, 0.0)),
     ("5333-2 Bus stop on the carriageway", False, (-0.15, 3.05)),
     ("5111-1 Bus lane line", False, (-0.075, 2.8)),
     ("5111-1 Bus lane line", True, (-2.8, 0.075)),
     ("5334-1 Taxi stop on the carriageway", False, (-0.075, 2.55)),
 ])
 def test_the_reach_covers_stripes_bays_and_the_word(marking, flip, reach):
-    want, _ = rm.resolve(DEFAULTS, marking=marking, flat={"flipSides": flip})
-    assert rm.reach(want) == pytest.approx(reach)
+    want, _ = rm.resolve(RM, DEFAULTS, marking=marking, flat={"flipSides": flip})
+    assert rm.reach(RM, want) == pytest.approx(reach)
+
+
+@pytest.mark.parametrize("marking,flip,reach", [
+    ("Parking 60 degrees", False, (0.0, 5.8)),
+    ("Parking 60 degrees", True, (-5.8, 0.0)),
+    ("5352-1 Disabled bays, shared zone", False, (0.0, 5.45)),
+    ("5352-2 Disabled bay, parallel", True, (-2.45, 0.0)),
+])
+def test_a_parking_places_reach_has_no_lettering(marking, flip, reach):
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS, marking=marking, flat={"flipSides": flip})
+    assert "letterText" not in want and rm.reach(PP, want) == pytest.approx(reach)
 
 
 def test_a_bay_row_or_word_past_the_paths_ends_is_reported():
-    want, _ = rm.resolve(DEFAULTS, marking="5352-1 Disabled bays, shared zone")
-    assert rm.overhang(want, 10.0) == []
-    notes = rm.overhang(want, 5.0)
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS, marking="5352-1 Disabled bays, shared zone")
+    assert rm.overhang(PP, want, 10.0) == []
+    notes = rm.overhang(PP, want, 5.0)
     assert len(notes) == 1 and "bay row is 6.30 m long" in notes[0] and "1.30 m past the end" in notes[0]
-    want, _ = rm.resolve(DEFAULTS, marking="5333 Bus stop in a lay-by")
-    assert "The word BUS is 4.00 m long and reaches 0.50 m before the start" in rm.overhang(want, 3.0)[0]
-    want, _ = rm.resolve(DEFAULTS, marking="5333-2 Bus stop on the carriageway")
-    notes = rm.overhang(want, 1.0)
+    want, _ = rm.resolve(RM, DEFAULTS, marking="5333 Bus stop in a lay-by")
+    assert "The word BUS is 4.00 m long and reaches 0.50 m before the start" in rm.overhang(RM, want, 3.0)[0]
+    want, _ = rm.resolve(RM, DEFAULTS, marking="5333-2 Bus stop on the carriageway")
+    notes = rm.overhang(RM, want, 1.0)
     assert len(notes) == 1 and "word" in notes[0]          # the stop's end bars stay inside the path
 
 
 def test_bay_and_lettering_values_with_nothing_to_act_on_are_reported():
-    want, _ = rm.resolve(DEFAULTS, bays={"depth": 4.0}, lettering={"offset": 2.0})
-    notes = rm.no_effect(want, {"depth": 4.0}, {"offset": 2.0})
+    want, _ = rm.resolve(RM, DEFAULTS, bays={"depth": 4.0}, lettering={"offset": 2.0})
+    notes = rm.no_effect(RM, want, {"depth": 4.0}, {"offset": 2.0})
     assert len(notes) == 2 and "bay layout is None" in notes[0] and "word is None" in notes[1]
-    want, _ = rm.resolve(DEFAULTS, bays={"layout": "Taxi bay", "depth": 4.0})
-    assert rm.no_effect(want, {"layout": "Taxi bay", "depth": 4.0}, None) == []
+    want, _ = rm.resolve(RM, DEFAULTS, bays={"layout": "Stop end bars", "depth": 4.0})
+    assert rm.no_effect(RM, want, {"layout": "Stop end bars", "depth": 4.0}, None) == []
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS, bays={"layout": "Taxi bay", "depth": 4.0})
+    assert rm.no_effect(PP, want, {"layout": "Taxi bay", "depth": 4.0}, None) == []
