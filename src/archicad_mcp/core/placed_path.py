@@ -1,5 +1,5 @@
-"""Shared by the tools that place a library part along a path: create_swept_beam and
-create_road_marking.
+"""Shared by the tools that place a library part along a path: create_swept_beam,
+create_road_marking and create_road_arrow.
 
 A source curve (a Morph line, Polyline, Line or Arc) or 3D points become nodes and plan
 arcs (swept_path); the part is placed at a point and its node arrays are written in the

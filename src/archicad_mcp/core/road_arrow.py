@@ -272,11 +272,16 @@ def _settings(o: dict, current):
     name = arrow_name(o["arrow"] if o["arrow"] is not None else held["arrowType"])
     size, warnings = pick_size(name, held["arrowSize"], o["size"], o["speed_kmh"], o["custom_length"],
                                o["custom_width"])
-    keep = update and current["arrowSize"] == CUSTOM
+    held_dims = None
+    if update and size == CUSTOM:
+        if current["arrowSize"] == CUSTOM:      # the values it holds stand
+            held_dims = {"length": current["customLength"], "width": current["customWidth"]}
+        else:       # the part's Into Custom takes the held size, as its Size fix leaves it for this arrow
+            held_dims = dimensions(name, pick_size(name, current["arrowSize"])[0], None, None)
     dims = dimensions(name, size, o["custom_length"] if o["custom_length"] is not None else
-                      (current["customLength"] if keep else None),
+                      (held_dims["length"] if held_dims else None),
                       o["custom_width"] if o["custom_width"] is not None else
-                      (current["customWidth"] if keep else None))
+                      (held_dims["width"] if held_dims else None))
     return name, size, dims, warnings
 
 
@@ -338,10 +343,12 @@ def _create(conn, asked, drape_on, o) -> dict:
         if value is not None:
             _number(name, value)
 
-    frame = current = None
+    frame = current = floor = None
     if update_guid:
         frame = pp.existing_frame(conn, update_guid, LIBRARY_PART)
-        if pp.details(conn, update_guid)["details"].get("reflected"):
+        held_element = pp.details(conn, update_guid)
+        floor = held_element.get("floorIndex")
+        if held_element["details"].get("reflected"):
             raise RoadArrowError(f"Element {update_guid} is mirrored. Its height points would be written against "
                                  "the wrong side; place the arrow anew instead.")
         current = pp.gdl_parameters(conn, update_guid)
@@ -349,10 +356,11 @@ def _create(conn, asked, drape_on, o) -> dict:
     length = dims["length"]
     reach = (dims["u_lo"], dims["u_hi"])
     surfaces = dr.read_surfaces(conn, drape_on) if drape_on is not None else None
+    if surfaces is None and o["lift"]:
+        warnings.append("lift only applies with drape_on: without it the arrow is not draped and lift is ignored.")
     if surfaces is not None and any(v is not None for v in (asked["height"], o["slope_percent"], o["cross_fall"])):
         warnings.append("height, slope_percent and cross_fall do not apply to a draped arrow.")
 
-    floor = None
     arrows = []     # (origin, angle, entry, parameters)
     if update_guid:
         origin, angle = frame
@@ -475,13 +483,16 @@ def _tail_params(o, extras) -> list[dict]:
 
 
 def _update_params(name, size, dims, current, o, extras) -> list[dict]:
-    """What an update writes: the settings that differ from the part's, and the values given."""
+    """What an update writes: the settings that differ from the part's, and the values given. Into Custom
+    the part's arrowSize write overwrites both custom values with the held size, so they are always written."""
     params = _head(name, size, dims) + _tail_params(o, extras)
     if o["slope_percent"] is not None:
         params.append({"name": "slopePercent", "value": float(o["slope_percent"])})
     if o["cross_fall"] is not None:
         params.append({"name": "crossFall", "value": float(o["cross_fall"])})
-    return [p for p in params if not _same(p["value"], current.get(p["name"]))]
+    into_custom = size == CUSTOM and current["arrowSize"] != CUSTOM
+    return [p for p in params if (into_custom and p["name"] in ("customLength", "customWidth"))
+            or not _same(p["value"], current.get(p["name"]))]
 
 
 def _fit_new(path, plan, station, a, length, offset, asked, o, reach, surfaces, name, size, dims, extras):

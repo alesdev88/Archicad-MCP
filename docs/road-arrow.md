@@ -120,13 +120,28 @@ does not give.
 
 ## The order of API writes
 
-A new arrow is placed with `CreateObjects` (with its angle), then its parameters are
-written in one `SetGDLParametersOfElements` call, in this order: `arrowType`,
-`arrowSize`, `customLength`, `customWidth`, `nodeCount`, `nodeX`, `nodeZ`, `nodeFall`,
-`slopePercent`, `crossFall`, `thickness`, `paintSurface`. The node arrays are
-padded to the part's 40 items. An update sends only the values that differ, in the same order. The dry run
-lists the parameters of each arrow as `gdl_parameters`. If a write fails midway, the
-report lists the elements already placed.
+A new arrow is placed with `CreateObjects` (with its angle). The tool then reads the placed
+arrow back, because Archicad's Object tool gives a new object the same-named values of other
+parts (see the look settings above), and writes its parameters in one
+`SetGDLParametersOfElements` call: `arrowType`, `arrowSize`, `customLength`, `customWidth`,
+`nodeCount`, `nodeX`, `nodeZ`, `nodeFall`, `slopePercent`, `crossFall`, `thickness`,
+`paintSurface`, and after them up to 8 more look settings where the placed arrow differs
+from the part's defaults: `markBmat`, `showPlanFill`, `useProjectFill`, `planFill`,
+`fillFgPen`, `fillBgPen`, `showOutline`, `outlinePen`. "In this order" is not literal:
+Tapir applies the list values (the node arrays) after the single values. The node arrays are
+padded to the part's 40 items. An update sends only the values that differ, in the same
+order, except that going into Custom always sends `customLength` and `customWidth`: the part's
+own step into Custom overwrites both with the held size. Values the call leaves out then
+come from the held size (an arrow held at 12.00 m going into Custom keeps 12.00 by 1.20).
+The dry run lists the parameters of each arrow as `gdl_parameters`.
+
+A write adds to each arrow's report entry `element` (the GUID) and `created` (a new arrow)
+or `updated` (an update; false when nothing differed). If a write fails midway, the report
+carries `error` and `elements_placed`, the elements already placed.
+
+A grip drag on a draped arrow (the slope and cross fall grips of the part) is cleared by
+draping again. On a strongly twisted Mesh the paint's flat triangles can sink below the
+surface; `lift=0.002` is the remedy.
 
 ## Checked
 

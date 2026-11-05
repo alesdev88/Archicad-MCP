@@ -444,3 +444,61 @@ async def test_the_registered_tool_takes_its_lists_as_json_text(monkeypatch):
             "points": json.dumps(PTS), "stations": json.dumps([2, 10]), "arrow": "5412 Left"})
     payload = json.loads(result.content[0].text)
     assert payload["dry_run"] is True and len(payload["arrows"]) == 2
+
+
+def _into_custom(held, **kwargs):
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed(), "mesh": MESH}),
+                  "GetGDLParametersOfElements": _held(arrowSize=held, customLength=5.0, customWidth=0.75)})
+    r = ra.create_road_arrow(conn, update_guid="a-1", dry_run=False, **kwargs)
+    return r, [(x["name"], x["value"]) for x in _writes(conn)[0]["gdlParameters"]] if _writes(conn) else []
+
+
+def test_into_custom_with_both_values_equal_to_the_stored_ones_still_writes_them():
+    # the arrowSize write runs the part's Into Custom, which overwrites both with the held 12.00 m size
+    r, writes = _into_custom("12.00 m", custom_length=5, custom_width=0.75)
+    assert writes == [("arrowSize", "Custom"), ("customLength", 5.0), ("customWidth", 0.75)]
+    assert (r["length"], r["width"]) == (5.0, 0.75)
+
+
+def test_into_custom_without_values_keeps_the_held_size():
+    r, writes = _into_custom("7.50 m", size="Custom")
+    assert writes == [("arrowSize", "Custom"), ("customLength", 7.5), ("customWidth", 0.75)]
+    assert (r["length"], r["width"]) == (7.5, 0.75)
+    r, writes = _into_custom("12.00 m", size="Custom")
+    assert writes == [("arrowSize", "Custom"), ("customLength", 12.0), ("customWidth", 1.2)]
+    assert (r["length"], r["width"]) == (12.0, 1.2)
+
+
+def test_into_custom_with_one_value_takes_the_other_from_the_held_size():
+    r, writes = _into_custom("12.00 m", custom_length=6)
+    assert writes == [("arrowSize", "Custom"), ("customLength", 6.0), ("customWidth", 1.2)]
+    assert (r["length"], r["width"]) == (6.0, 1.2)
+
+
+def test_into_custom_drapes_with_the_held_length():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed(), "mesh": MESH}),
+                  "GetGDLParametersOfElements": _held(arrowSize="12.00 m")})
+    ra.create_road_arrow(conn, update_guid="a-1", size="Custom", drape_on=["mesh"], dry_run=False)
+    p = {x["name"]: x["value"] for x in _writes(conn)[0]["gdlParameters"]}
+    assert p["nodeX"][p["nodeCount"] - 1] == pytest.approx(12.0)
+
+
+def test_an_arrow_already_custom_keeps_the_values_it_holds():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed()}),
+                  "GetGDLParametersOfElements": _held(arrowSize="Custom", customLength=9.0, customWidth=0.9)})
+    r = ra.create_road_arrow(conn, update_guid="a-1", custom_length=6, dry_run=False)
+    assert [(x["name"], x["value"]) for x in _writes(conn)[0]["gdlParameters"]] == [("customLength", 6.0)]
+    assert (r["length"], r["width"]) == (6.0, 0.9)
+
+
+def test_lift_without_drape_on_warns():
+    conn = _conn(TAPIR)
+    r = ra.create_road_arrow(conn, points=PTS, stations=[1], lift=0.002)
+    assert any("lift" in w and "drape_on" in w for w in r["warnings"])
+    assert not any("lift" in w for w in ra.create_road_arrow(conn, points=PTS, stations=[1])["warnings"])
+
+
+def test_an_update_reports_the_story_of_the_element():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed(floor=1)}),
+                  "GetGDLParametersOfElements": _held()})
+    assert ra.create_road_arrow(conn, update_guid="a-1", cross_fall=2.0)["story"] == 1
