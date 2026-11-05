@@ -648,6 +648,54 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
             drape_tolerance=drape_tolerance, path_tolerance=path_tolerance,
             update_guid=update_guid, dry_run=dry_run)
 
+    from archicad_mcp.core import road_arrow as _arrow
+
+    @mcp.tool(description=(
+        "Place Road Arrows (straight, left, right, combined, roundabout, sorting, split, "
+        "lane ending, wrong way, cycle and garage arrows) as the 'Road Arrow' library part "
+        "at stations along a lane axis, and drape them onto Meshes and Slabs. The axis comes "
+        "from source_guid (a Morph line, Polyline, Line or Arc) or points [{x, y, z}] in "
+        "metres, drawn in the direction of travel. arrow is a name, for example "
+        "'5411 Straight' or '5443 Split, left and right', any case. stations is metres along "
+        "the axis, a number or a list, default [0]: one arrow at each, with its anchor "
+        "('tail', 'centre' or 'tip') on the station and offset metres to the right. The "
+        "size is size ('5.00 m'), speed_kmh (30, 50, 90 or more picks 3.00, 5.00, 7.50 or "
+        "12.00 m) or custom_length and custom_width. drape_on lists Mesh and Slab GUIDs: the "
+        "arrow's height points follow the surface, the paint never sinks below it, and "
+        "points are added until it is within drape_tolerance (metres); lift raises it. "
+        "Without drape_on, height, slope_percent and cross_fall set the height. update_guid "
+        "rewrites one placed arrow in place, keeping its settings unless given. DRY-RUN BY "
+        "DEFAULT: reports each arrow's position, direction, height points, drape deviations, "
+        "stretches off the surface and warnings. Pass dry_run=false to place or update."),
+        **_tool_meta("Create Road Arrow", read_only=False, destructive=True))
+    @_guarded
+    def create_road_arrow(source_guid: str | None = None,
+                          points: list[dict] | str | None = None,
+                          stations: list[float] | float | str | None = None,
+                          anchor: str = "tail", offset: float = 0.0,
+                          arrow: str | None = None, size: str | None = None,
+                          speed_kmh: float | None = None,
+                          custom_length: float | None = None,
+                          custom_width: float | None = None,
+                          height: float | None = None,
+                          slope_percent: float | None = None,
+                          cross_fall: float | None = None,
+                          drape_on: list[str] | str | None = None,
+                          lift: float = 0.0, drape_tolerance: float = 0.005,
+                          path_tolerance: float = 0.002,
+                          thickness: float | None = None,
+                          paint_surface: str | int | None = None,
+                          update_guid: str | None = None, dry_run: bool = True,
+                          port: int | None = None) -> dict:
+        return _arrow.create_road_arrow(
+            _tapir_conn(port, "create_road_arrow"), source_guid=source_guid, points=points,
+            stations=stations, anchor=anchor, offset=offset, arrow=arrow, size=size,
+            speed_kmh=speed_kmh, custom_length=custom_length, custom_width=custom_width,
+            height=height, slope_percent=slope_percent, cross_fall=cross_fall,
+            drape_on=drape_on, lift=lift, drape_tolerance=drape_tolerance,
+            path_tolerance=path_tolerance, thickness=thickness, paint_surface=paint_surface,
+            update_guid=update_guid, dry_run=dry_run)
+
     @mcp.tool(description="Move elements by a vector {x,y,z} in meters. Refuses without "
                           "confirm=true. Archicad changes only elements in the "
                           "database of the active window, so elements it would "

@@ -163,6 +163,10 @@
       "description": "Place a Road Marking (lanes, crossings, stops, parking and bays, BUS and TAXI) along a line or points, draped onto Meshes and Slabs. Dry-run by default."
     },
     {
+      "name": "create_road_arrow",
+      "description": "Place Road Arrows at stations along a lane axis, sized by name or speed, draped onto Meshes and Slabs. Dry-run by default."
+    },
+    {
       "name": "modify_elements",
       "description": "Change existing elements: story, layer, draw order and the type's own settings (height, thickness, sizes, attributes). Dry-run by default."
     },
