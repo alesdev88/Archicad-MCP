@@ -60,12 +60,16 @@ loaded; a write is refused.
   - `pattern_align`: `Start`, `Centre`, `End`, and `Both ends` on a Road Marking only.
 - **Kerb line (Parking Place):** the kerb line is stripe 3, off in every preset. Switch it on
   with `stripes: {"3": {"on": true}}`; it takes nothing else of stripe 3. Its width and place
-  come from the part, and the reach counts it.
+  come from the part, and the reach counts it. On a row the part also moves stripe 1's offset
+  and stripes 2 and 3 with `width` and `dash` of stripe 1; the reach follows that rule.
 - **Refused, naming the part:**
   - Parking Place: any `lettering` value; `bays.bar_width`; on `stripes`, anything but
     `width`, `dash`, `gap` and `angle` for stripe 1 and `on` for stripes 2 and 3 (the part's
     Parameter Script sets the rest: the offsets, the shapes, and stripes 2 and 3's widths,
     dashes, gaps and angles from stripe 1); `pattern_align` of `Both ends`.
+  - Parking Place bays (a preset or current layout other than `None`: disabled, taxi, EV): any
+    `stripes` value, because a bay keeps no stripes (so no kerb line either): "Parking Place
+    bays take no stripes". Use a parking row preset for stripes.
   - Road Marking: `bays.width`, `bays.zone_width`, `bays.zone_first`, `bays.symbol`.
 - **Look:** `pattern_align`, `pattern_shift`, `whole_dashes`, `thickness`, and
   `paint_surface` (a Surface name or index: 18 white, 78 yellow, 76 green in the office

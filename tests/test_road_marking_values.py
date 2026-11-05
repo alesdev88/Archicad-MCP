@@ -48,9 +48,10 @@ def test_stripes_bays_and_lettering_map_to_the_parts_parameters():
 
 
 def test_a_parking_place_maps_its_bay_values():
-    want, _ = rm.resolve(PP, PARKING_DEFAULTS, stripes={"3": {"on": True}},
-                         bays={"layout": "Taxi bay", "depth": 4.5, "width": 3.0, "zone_first": False, "symbol": False})
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS, stripes={"3": {"on": True}})
     assert want["s3On"] is True and want["s3Width"] == PARKING_DEFAULTS["s3Width"]
+    want, _ = rm.resolve(PP, PARKING_DEFAULTS,
+                         bays={"layout": "Taxi bay", "depth": 4.5, "width": 3.0, "zone_first": False, "symbol": False})
     assert (want["bayLayout"], want["bayDepth"], want["bayWidth"]) == ("Taxi bay", 4.5, 3.0)
     assert (want["zoneFirst"], want["showSymbol"]) == (False, False)
 

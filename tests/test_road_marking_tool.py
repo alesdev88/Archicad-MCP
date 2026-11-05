@@ -405,6 +405,17 @@ def test_every_stale_setting_gives_way_to_the_preset_the_call_names(marking):
     assert {k: state[k] for k in want if k != "pathTolerance"} == {k: want[k] for k in want if k != "pathTolerance"}
 
 
+def test_a_stale_preset_equal_to_the_calls_is_not_written_and_its_other_settings_are_corrected():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(markingType="5111 Solid divider", s1Width=0.5,
+                                                            s2On=True, showPlanFill=False)})
+    r = rm.create_road_marking(conn, points=PTS, marking="5111 Solid divider", dry_run=False)
+    written = dict(_named(_writes(conn)[0]))
+    assert "markingType" not in written
+    assert written["s1Width"] == 0.15
+    assert written["s2On"] is False and written["showPlanFill"] is True
+    assert r["marking"] == "5111 Solid divider"
+
+
 def test_a_call_for_custom_writes_the_name_and_every_stale_value():
     held = _plain(**{**EVERYTHING_STALE, "markingType": "5231 Pedestrian crossing"})
     stale = {**EVERYTHING_STALE, "markingType": "5231 Pedestrian crossing"}

@@ -198,6 +198,47 @@ def test_a_parking_row_with_bay_values_and_a_short_path_warns_of_the_overhang():
     assert "bay row is 6.30 m long" in text
 
 
+# The part's Parameter Script (follow rule) moves s1Offset, s2Offset, s2Width and s3Width when s1Width or s1Dash
+# change, so the reach, which the drape samples, must follow the same rule (parking_place_model.follow).
+@pytest.mark.parametrize("marking,stripes,reach", [
+    ("Parking 90 degrees", {"1": {"width": 6.0}}, (0.0, 6.0)),
+    ("Parking 90 degrees", {"1": {"width": 4.0}}, (0.0, 4.0)),
+    ("Parking 60 degrees", {"1": {"width": 6.0, "dash": 0.12}, "2": {"on": True}, "3": {"on": True}},
+     (-0.06, 6.06)),
+    ("Parking 90 degrees", {"1": {"dash": 0.3}, "3": {"on": True}}, (-0.15, 5.0)),
+    ("Parallel parking", {"1": {"width": 2.5}}, (0.0, 2.55)),
+])
+def test_the_reach_follows_the_parts_rule_for_the_stripes_it_owns(marking, stripes, reach):
+    r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking=marking,
+                               stripes=stripes)
+    assert (r["reach"]["u_lo"], r["reach"]["u_hi"]) == pytest.approx(reach, abs=1e-9)
+
+
+def test_a_slab_ending_short_of_a_wide_row_is_reported_partly_off():
+    # the row is 6 m wide (s1Width 6.0 moves its offset) and lies to the right (-y) of the path; the slab ends 0.4 m short of it
+    short = {**SLAB, "details": {**SLAB["details"], "polygonOutline": [
+        {"x": -5, "y": -5.6}, {"x": 20, "y": -5.6}, {"x": 20, "y": 10}, {"x": -5, "y": 10}, {"x": -5, "y": -5.6}]}}
+    conn = _conn({"GetDetailsOfElements": _details({"slab": short}), "GetAvailableLibraryParts": LIB})
+    r = rm.create_road_marking(conn, points=PTS, marking="Parking 90 degrees", stripes={"1": {"width": 6.0}},
+                               drape_on=["slab"])
+    assert r["partly_off_surface"] and r["reach"] == {"u_lo": 0.0, "u_hi": 6.0}
+
+
+def test_a_parking_place_bay_refuses_stripes():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    r = rm.create_road_marking(conn, points=PTS, marking="5352 Disabled bay", stripes={"3": {"on": True}})
+    assert "Parking Place bays take no stripes" in r["error"]
+    r = rm.create_road_marking(conn, points=PTS, marking="Parking 90 degrees", bays={"layout": "Taxi bay"},
+                               stripes={"3": {"on": True}})
+    assert "Parking Place bays take no stripes" in r["error"]
+    upd = _conn({"GetDetailsOfElements": _details({"m-1": _marking(name="Parking Place")}),
+                 "GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,
+                 "GetGDLParametersOfElements": _gdl(bayLayout="Taxi bay", markingType="5351 Taxi bay")})
+    r = rm.create_road_marking(upd, update_guid="m-1", points=PTS, stripes={"3": {"on": True}}, dry_run=False)
+    assert "Parking Place bays take no stripes" in r["error"] and not _writes(upd)
+    assert "error" not in rm.create_road_marking(conn, points=PTS, marking="5352 Disabled bay", stripes={})
+
+
 def test_a_parking_row_drapes_on_the_saved_surfaces():
     conn = _conn({"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB,
                   "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
@@ -220,7 +261,7 @@ async def test_the_registered_tool_places_a_parking_place_from_json_text(monkeyp
     tapir = {"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB}
     payload = await _call_tool(monkeypatch, tapir, {
         "points": json.dumps(PTS), "marking": "5351 Taxi bay", "bays": json.dumps({"depth": 4.5}),
-        "lettering": json.dumps({}), "stripes": json.dumps({"1": {"width": 4.5}}),
+        "lettering": json.dumps({}), "stripes": json.dumps({}),
         "drape_on": json.dumps(["slab"])})
     assert payload["dry_run"] is True and payload["reach"] == {"u_lo": 0.0, "u_hi": 4.55}
     assert _params(payload)["bayDepth"] == 4.5

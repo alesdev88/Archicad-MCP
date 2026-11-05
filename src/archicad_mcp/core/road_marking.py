@@ -207,13 +207,26 @@ def resolve(part: Part, current: dict, marking=None, stripes=None, bays=None, le
     for name, v in (flat or {}).items():
         if v is not None:
             want[name] = check_value(part, name, v)
+    if part.name == PARKING_PLACE and stripes and want["bayLayout"] != "None":
+        raise RoadMarkingError(f"{PARKING_PLACE} bays take no stripes: {want['bayLayout']} is a bay, so stripes "
+                               "(including the kerb line) are for a row. Use a parking row preset.")
     return want, state
+
+
+def followed(p: dict) -> dict:
+    """A Parking Place row as its Parameter Script leaves it (parking_place_model.follow): the offset of
+    stripe 1 is half its width, stripe 2 sits at the width, stripes 2 and 3 are as wide as stripe 1's dash
+    and stripe 3 is at the kerb. The call can change s1Width and s1Dash only, so the reach follows."""
+    return {**p, "s1Offset": float(p["s1Width"]) / 2, "s2Offset": float(p["s1Width"]),
+            "s2Width": float(p["s1Dash"]), "s3Width": float(p["s1Dash"]), "s3Offset": 0.0}
 
 
 def reach(part: Part, p: dict) -> tuple[float, float]:
     """How far the marking reaches across its path, (u_lo, u_hi), positive to the right,
     after Flip sides: the switched on stripes, the bay layout and the word, and always 0
     (the part model's layout_reach and lettering_reach)."""
+    if part.name == PARKING_PLACE and p["bayLayout"] == "None":
+        p = followed(p)
     flip = -1.0 if p["flipSides"] else 1.0
     lo = hi = 0.0
     for k in (1, 2, 3):
