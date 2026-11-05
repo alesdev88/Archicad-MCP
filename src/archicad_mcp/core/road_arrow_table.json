@@ -1,0 +1,625 @@
+{
+ "source": {
+  "repo": "Archicad GDL",
+  "commit": "1206e48",
+  "part": "Road Arrow",
+  "exporter": "road_arrow/export_table.py"
+ },
+ "defaults": {
+  "arrowType": "5411 Straight",
+  "arrowSize": "5.00 m",
+  "customLength": 5.0,
+  "customWidth": 0.75,
+  "thickness": 0.003,
+  "paintSurface": 18
+ },
+ "by_speed": [
+  [
+   30,
+   "3.00 m"
+  ],
+  [
+   50,
+   "5.00 m"
+  ],
+  [
+   90,
+   "7.50 m"
+  ],
+  [
+   null,
+   "12.00 m"
+  ]
+ ],
+ "ranges": {
+  "customLength": [
+   0.3,
+   50.0
+  ],
+  "customWidth": [
+   0.05,
+   20.0
+  ],
+  "thickness": [
+   0.0005,
+   0.05
+  ]
+ },
+ "arrows": {
+  "5411 Straight": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 0.75,
+     "u_lo": -0.375,
+     "u_hi": 0.375,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 0.75,
+     "u_lo": -0.375,
+     "u_hi": 0.375,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 0.75,
+     "u_lo": -0.375,
+     "u_hi": 0.375,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 1.2,
+     "u_lo": -0.6,
+     "u_hi": 0.6,
+     "drawn": false
+    }
+   }
+  },
+  "5412 Left": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 1.68,
+     "u_lo": -1.56,
+     "u_hi": 0.12,
+     "drawn": false
+    }
+   }
+  },
+  "5413 Right": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 1.68,
+     "u_lo": -0.12,
+     "u_hi": 1.56,
+     "drawn": false
+    }
+   }
+  },
+  "5414 Straight, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 0.815,
+     "u_lo": -0.375,
+     "u_hi": 0.44,
+     "drawn": true
+    }
+   }
+  },
+  "5415 Left, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.465,
+     "u_lo": -1.025,
+     "u_hi": 0.44,
+     "drawn": true
+    }
+   }
+  },
+  "5416 Right, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.1,
+     "u_lo": -0.075,
+     "u_hi": 1.025,
+     "drawn": true
+    }
+   }
+  },
+  "5417 Wrong way": {
+   "by_speed": false,
+   "sizes": {
+    "10.00 m": {
+     "length": 10.0,
+     "width": 1.2,
+     "u_lo": -0.6,
+     "u_hi": 0.6,
+     "drawn": true
+    }
+   }
+  },
+  "5421 Straight or left": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.35,
+     "u_lo": -0.975,
+     "u_hi": 0.375,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.35,
+     "u_lo": -0.975,
+     "u_hi": 0.375,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.35,
+     "u_lo": -0.975,
+     "u_hi": 0.375,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 2.16,
+     "u_lo": -1.56,
+     "u_hi": 0.6,
+     "drawn": false
+    }
+   }
+  },
+  "5422 Straight or right": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.35,
+     "u_lo": -0.375,
+     "u_hi": 0.975,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.35,
+     "u_lo": -0.375,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.35,
+     "u_lo": -0.375,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 2.16,
+     "u_lo": -0.6,
+     "u_hi": 1.56,
+     "drawn": false
+    }
+   }
+  },
+  "5423 Left or right": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 3.12,
+     "u_lo": -1.56,
+     "u_hi": 1.56,
+     "drawn": false
+    }
+   }
+  },
+  "5424 Straight, left or right": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.95,
+     "u_lo": -0.975,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 3.12,
+     "u_lo": -1.56,
+     "u_hi": 1.56,
+     "drawn": false
+    }
+   }
+  },
+  "5425 Straight or left, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.47,
+     "u_lo": -1.025,
+     "u_hi": 0.445,
+     "drawn": true
+    }
+   }
+  },
+  "5426 Straight or right, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.4,
+     "u_lo": -0.375,
+     "u_hi": 1.025,
+     "drawn": true
+    }
+   }
+  },
+  "5427 Left or right, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 2.05,
+     "u_lo": -1.025,
+     "u_hi": 1.025,
+     "drawn": true
+    }
+   }
+  },
+  "5428 Straight, left or right, roundabout": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 2.05,
+     "u_lo": -1.025,
+     "u_hi": 1.025,
+     "drawn": true
+    }
+   }
+  },
+  "5431 Sorting, left": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.05,
+     "u_lo": -0.975,
+     "u_hi": 0.075,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 1.68,
+     "u_lo": -1.56,
+     "u_hi": 0.12,
+     "drawn": false
+    }
+   }
+  },
+  "5432 Sorting, right": {
+   "by_speed": true,
+   "sizes": {
+    "3.00 m": {
+     "length": 3.0,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": false
+    },
+    "5.00 m": {
+     "length": 5.0,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.05,
+     "u_lo": -0.075,
+     "u_hi": 0.975,
+     "drawn": true
+    },
+    "12.00 m": {
+     "length": 12.0,
+     "width": 1.68,
+     "u_lo": -0.12,
+     "u_hi": 1.56,
+     "drawn": false
+    }
+   }
+  },
+  "5441 Split, right": {
+   "by_speed": false,
+   "sizes": {
+    "10.00 m": {
+     "length": 10.0,
+     "width": 1.6,
+     "u_lo": -0.15,
+     "u_hi": 1.45,
+     "drawn": true
+    }
+   }
+  },
+  "5442 Split, left": {
+   "by_speed": false,
+   "sizes": {
+    "10.00 m": {
+     "length": 10.0,
+     "width": 1.6,
+     "u_lo": -1.45,
+     "u_hi": 0.15,
+     "drawn": true
+    }
+   }
+  },
+  "5443 Split, left and right": {
+   "by_speed": false,
+   "sizes": {
+    "10.00 m": {
+     "length": 10.0,
+     "width": 2.9,
+     "u_lo": -1.45,
+     "u_hi": 1.45,
+     "drawn": true
+    }
+   }
+  },
+  "5451 Lane ending, move right": {
+   "by_speed": false,
+   "sizes": {
+    "5.00 by 2.90 m": {
+     "length": 5.0,
+     "width": 2.9,
+     "u_lo": -1.45,
+     "u_hi": 1.45,
+     "drawn": true
+    },
+    "5.00 by 2.00 m": {
+     "length": 5.0,
+     "width": 2.0,
+     "u_lo": -1.0,
+     "u_hi": 1.0,
+     "drawn": true
+    }
+   }
+  },
+  "5451 Lane ending, move left": {
+   "by_speed": false,
+   "sizes": {
+    "5.00 by 2.90 m": {
+     "length": 5.0,
+     "width": 2.9,
+     "u_lo": -1.45,
+     "u_hi": 1.45,
+     "drawn": true
+    },
+    "5.00 by 2.00 m": {
+     "length": 5.0,
+     "width": 2.0,
+     "u_lo": -1.0,
+     "u_hi": 1.0,
+     "drawn": true
+    }
+   }
+  },
+  "5452 Solid line ahead, move right": {
+   "by_speed": false,
+   "sizes": {
+    "7.50 m": {
+     "length": 7.5,
+     "width": 1.16,
+     "u_lo": -0.15,
+     "u_hi": 1.01,
+     "drawn": true
+    }
+   }
+  },
+  "5461 Cycle, straight": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.4,
+     "u_lo": -0.2,
+     "u_hi": 0.2,
+     "drawn": true
+    }
+   }
+  },
+  "5462 Cycle, left": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.45,
+     "u_lo": -0.4,
+     "u_hi": 0.05,
+     "drawn": true
+    }
+   }
+  },
+  "5463 Cycle, right": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.45,
+     "u_lo": -0.05,
+     "u_hi": 0.4,
+     "drawn": true
+    }
+   }
+  },
+  "5464 Cycle, straight or left": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.6,
+     "u_lo": -0.4,
+     "u_hi": 0.2,
+     "drawn": true
+    }
+   }
+  },
+  "5465 Cycle, straight or right": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.6,
+     "u_lo": -0.2,
+     "u_hi": 0.4,
+     "drawn": true
+    }
+   }
+  },
+  "5466 Cycle, left or right": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.8,
+     "u_lo": -0.4,
+     "u_hi": 0.4,
+     "drawn": true
+    }
+   }
+  },
+  "5467 Cycle, straight, left or right": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.8,
+     "u_lo": -0.4,
+     "u_hi": 0.4,
+     "drawn": true
+    }
+   }
+  },
+  "Garage arrow (TSC)": {
+   "by_speed": false,
+   "sizes": {
+    "1.60 m": {
+     "length": 1.6,
+     "width": 0.6,
+     "u_lo": -0.3,
+     "u_hi": 0.3,
+     "drawn": true
+    }
+   }
+  }
+ }
+}
