@@ -282,7 +282,11 @@ def overhang(part: Part, p: dict, length: float) -> list[str]:
 def no_effect(part: Part, p: dict, bays, lettering) -> list[str]:
     out = []
     if p["bayLayout"] == "None" and any(k != "layout" for k in (bays or {})):
-        out.append("The bays values have no effect while the bay layout is None.")
+        if part.name == "Road Parking":
+            out.append("A Road Parking row takes its depth, line width, space and angle through stripes 1 "
+                       "(width, dash, gap, angle), not bays.")
+        else:
+            out.append("The bays values have no effect while the bay layout is None.")
     if p.get("letterText", "None") == "None" and any(k != "text" for k in (lettering or {})):
         out.append("The lettering values have no effect while the word is None.")
     return out

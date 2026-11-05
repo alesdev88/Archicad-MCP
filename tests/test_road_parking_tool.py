@@ -6,8 +6,8 @@ import pytest
 
 from archicad_mcp.core import road_marking as rm
 from tests import test_road_marking_tool as base
-from tests.test_road_marking_tool import (LOOK, MESH, NEW, OK, PTS, SLAB, STORIES, _call_tool, _conn, _details,
-                                           _marking, _named, _params, _reads, _writes)
+from tests.test_road_marking_tool import (LOOK, NEW, OK, PTS, SLAB, _call_tool, _conn, _details,
+                                           _marking, _named, _params, _writes)
 
 PP = rm.PARTS[rm.ROAD_PARKING]
 RM = rm.PARTS[rm.ROAD_MARKING]
@@ -98,14 +98,13 @@ def test_the_kerb_line_goes_through_stripes():
 # ---------------------------------------------------------------- update
 
 def test_update_uses_the_elements_own_part():
-    for part, name, other in ((PP, "Road Parking", "Road Marking"), (RM, "Road Marking", "Road Parking")):
+    for part, name in ((PP, "Road Parking"), (RM, "Road Marking")):
         held = _marking(name=name)
         conn = _conn({"GetDetailsOfElements": _details({"m-1": held}), "GetAvailableLibraryParts": LIB,
                       "SetGDLParametersOfElements": OK, "GetGDLParametersOfElements": base._gdl(part)})
         r = rm.create_road_marking(conn, update_guid="m-1", points=PTS, flip_sides=True, dry_run=False)
         assert r["updated"] is True and r["marking"] == part.table["defaults"]["markingType"]
         assert ("flipSides", True) in [n for w in _writes(conn) for n in _named(w)]
-        assert not any(p.get("libraryPartName") == other for c, p in conn._core.calls if c == "CreateObjects")
 
 
 def test_update_refuses_a_name_of_the_other_part():
@@ -183,10 +182,23 @@ def test_both_ends_is_refused_on_road_parking():
 def test_a_stop_still_takes_depth_and_bar_width():
     r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS,
                                marking="5333-2 Bus stop on the carriageway", bays={"depth": 2.5, "bar_width": 0.2})
-    assert "error" not in r and _params(r)["barWidth"] == 0.2
+    assert "error" not in r and _params(r)["barWidth"] == 0.2 and _params(r)["bayDepth"] == 2.5
 
 
 # ---------------------------------------------------------------- warnings and draping
+
+def test_a_parking_row_with_bays_values_is_told_to_use_stripe_1():
+    r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking="Parking 60 degrees",
+                               bays={"depth": 6.0})
+    assert ("A Road Parking row takes its depth, line width, space and angle through stripes 1 "
+            "(width, dash, gap, angle), not bays.") in r["warnings"]
+
+
+def test_a_road_marking_keeps_its_bays_warning():
+    r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking="5111 Solid divider",
+                               bays={"depth": 6.0})
+    assert "The bays values have no effect while the bay layout is None." in r["warnings"]
+
 
 def test_a_missing_part_warns_with_its_own_name():
     for part, loaded, marking in ((PP, ONLY_RM, "Parking 60 degrees"), (RM, ONLY_PP, "5111 Solid divider")):

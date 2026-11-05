@@ -54,10 +54,17 @@ loaded; a write is refused.
     adds `width`, `zone_width`, `zone_first`, `symbol`, Road Marking adds `bar_width`.
     Layouts: Road Marking `None`, `Stop end bars`; Road Parking `None`, `Disabled bay`,
     `Disabled bays, shared zone`, `Disabled bay, parallel`, `Taxi bay`, `EV charging bay`.
+    On a Road Parking row the bay fields of the dialog are stripe 1's: bay depth is
+    `stripes.1.width` (`s1Width`), line width is `stripes.1.dash` (`s1Dash`), space between lines
+    is `stripes.1.gap` (`s1Gap`) and angle is `stripes.1.angle` (`s1Angle`). `bays.depth`
+    (`bayDepth`) is the depth of a bay (disabled, taxi, EV) only; on a row it has no effect and
+    the call warns. The layout comes with the preset, so `bays.layout` is not the way to choose a
+    bay: name the preset in `marking`.
   - `lettering` (Road Marking only): `{"text": "BUS", "align": "Centre", "repeat": 20}`,
     keys `text` (`None`, `BUS`, `TAXI`), `length`, `width`, `gap`, `offset`, `align`
     (`Start`, `Centre`, `End`), `shift`, `repeat`.
-  - `pattern_align`: `Start`, `Centre`, `End`, and `Both ends` on a Road Marking only.
+  - `pattern_align`: `Start`, `Centre`, `End`, and `Both ends` on a Road Marking only (Road
+    Parking refuses it with "patternAlign must be one of: Start, Centre, End").
 - **Kerb line (Road Parking):** the kerb line is stripe 3, off in every preset. Switch it on
   with `stripes: {"3": {"on": true}}`; it takes nothing else of stripe 3. Its width and place
   come from the part, and the reach counts it. On a row the part also moves stripe 1's offset
@@ -66,7 +73,7 @@ loaded; a write is refused.
   - Road Parking: any `lettering` value; `bays.bar_width`; on `stripes`, anything but
     `width`, `dash`, `gap` and `angle` for stripe 1 and `on` for stripes 2 and 3 (the part's
     Parameter Script sets the rest: the offsets, the shapes, and stripes 2 and 3's widths,
-    dashes, gaps and angles from stripe 1); `pattern_align` of `Both ends`.
+    dashes, gaps and angles from stripe 1).
   - Road Parking bays (a preset or current layout other than `None`: disabled, taxi, EV): any
     `stripes` value, because a bay keeps no stripes (so no kerb line either): "Road Parking
     bays take no stripes". Use a parking row preset for stripes.
