@@ -128,9 +128,18 @@ padded to the part's 40 items. An update sends only the values that differ, in t
 lists the parameters of each arrow as `gdl_parameters`. If a write fails midway, the
 report lists the elements already placed.
 
-## Not checked yet
+## Checked
 
-The tool and the part are tested against a faked Archicad connection and the part's own
-model. The live check in the MCP-Test project (every arrow side by side, draped on the
-saved Meshes and a Slab, an IFC export, an update in place) is still to be done, and this
-guide says nothing about it until it has been.
+Live check on 05.11.2026 in the MCP-Test project on port 19723 (Archicad 29 build 5101, Tapir 1.8.0), run from this
+branch. All 60 combinations of the 31 arrows and their sizes read back right; stations, anchors, draping on Meshes, a Slab
+and a Polyline, and updates in place (new size, new arrow, Custom) read back with no problems. The user also opened the
+dialog and placed the part by hand in Archicad 29 and 27, and it works.
+
+Against an IFC export of the whole project (about 74,000 samples), the paint's underside met the plan's pass mark (at most
+0.1 mm below the surface) on the Slabs and the road like Meshes; the twisted Meshes below did not. The check found two defects, both fixed: new
+arrows took same-named settings from other parts (hence the look settings above), and the edges between pieces showed in
+3D.
+
+Limit: on a strongly twisted Mesh the paint's flat triangles differ from the fit, so its underside can sit up to about
+1.6 mm below the surface (measured on a Mesh twisted 5 cm per square metre) and float more than the tool reports; the 3 mm
+paint still shows. The part's notes (`road_arrow/notes/live-check.md` in the office GDL library repo) have the numbers.
