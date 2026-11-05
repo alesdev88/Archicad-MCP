@@ -124,7 +124,13 @@ draping, and to write only what differs from the preset.
   B, S, T and U 0.50; I 0.15) and the GDL repo commit it was exported from. `road_marking/
   export_presets.py` in the GDL repo writes it.
 - **New marking:** the part's defaults, then the preset's values when `marking` names a preset, then
-  the call's values.
+  the call's values. `CreateObjects` hands a new element the Object tool's same-named values, so those
+  are the marking's target, not what it holds: after `CreateObjects` the tool reads the element once,
+  writes `markingType` when the element holds another name, and writes each setting that still differs
+  once that name has applied its preset. A dry run cannot know this and leaves those writes out. `A`,
+  `aDone`, the node arrays and their grip helpers stay as the path writes leave them. If that read or the
+  write fails, the report keeps `element` and adds `elements_placed` and `error`; if only the last read
+  (`marking_after`) fails, the marking counts as created and the report warns.
 - **Update:** the marking's own values (`GetGDLParametersOfElements`; single angles converted from
   radians to degrees), then the preset's values when `marking` names a preset other than the
   marking's own, then the call's values. As in the dialog, a new preset replaces what it sets;

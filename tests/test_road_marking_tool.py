@@ -272,3 +272,233 @@ def test_a_new_marking_is_read_after_placing_for_its_grip_state():
     (main,) = _writes(conn)
     assert main[:3] == [{"name": "A", "value": 1.0}, {"name": "aDone", "value": 2.0},
                         {"name": "extEnd", "value": 1.0}]
+
+
+# ---------------------------------------------------------------- the Object tool's stale settings
+
+NEW = {"GetAvailableLibraryParts": LIB, "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
+       "SetGDLParametersOfElements": OK}
+LOOK = dict(thickness=0.01, paintSurface=78, markBmat=5, showPlanFill=False, useProjectFill=True, planFill=9,
+            fillFgPen=3, fillBgPen=4, showOutline=False, outlinePen=6)
+# every setting holding something other than the part's default, as a part left in the Object tool could
+EVERYTHING_STALE = {
+    **LOOK, "gripNodes": False, "gripCurves": False, "gripAdd": False, "flipSides": True, "patternAlign": "End",
+    "patternShift": 1.5, "wholeDashes": True, "s1On": False, "s1Offset": 1.0, "s1Width": 0.5, "s1Dash": 2.0, "s1Gap": 3.0,
+    "s1Angle": 20.0, "s1Shape": "Triangle, point left", "s2On": True, "s2Offset": 1.0, "s2Width": 0.5, "s2Dash": 2.0,
+    "s2Gap": 3.0, "s2Angle": 20.0, "s2Shape": "Triangle, point left", "s3On": True, "s3Offset": 1.0, "s3Width": 0.5,
+    "s3Dash": 2.0, "s3Gap": 3.0, "s3Angle": 20.0, "s3Shape": "Triangle, point left", "bayLayout": "Taxi bay",
+    "bayWidth": 3.0, "bayDepth": 6.0, "zoneWidth": 2.0, "zoneFirst": False, "barWidth": 0.2, "showSymbol": False,
+    "letterText": "TAXI", "letterLength": 2.0, "letterWidth": 0.4, "letterGap": 0.4, "letterOffset": 3.0,
+    "letterAlign": "End", "letterShift": 3.0, "letterRepeat": 9.0, "showAxis": True, "axisPen": 5, "axisLineType": 2,
+    "showNodeHeights": True, "textPen": 5, "textSizeMm": 3.5, "markingType": "Custom"}
+
+
+def _named(writes):
+    return [(p["name"], p["value"]) for p in writes]
+
+
+def _reads(conn):
+    return [p for c, p in conn._core.calls if c == "GetGDLParametersOfElements"]
+
+
+def _after(held, writes):
+    """The settings once the writes are done, as the part takes them: a new preset name replaces what it sets."""
+    state = dict(held)
+    for name, value in _named(writes):
+        if name == "markingType" and value != state["markingType"] and value in rm.PRESETS:
+            state.update(rm.PRESETS[value])
+        state[name] = value
+    return state
+
+
+def _plain(**over):
+    """What a placed marking holds, in the tool's own degrees."""
+    return {**rm.TABLE["defaults"], **over}
+
+
+def test_the_table_covers_the_look_settings():
+    assert set(LOOK) <= set(rm.TABLE["settings"]) and set(LOOK) <= set(rm.TABLE["defaults"])
+    assert set(EVERYTHING_STALE) - {"markingType"} == set(rm.TABLE["settings"]) - {"pathTolerance"}
+    assert all(EVERYTHING_STALE[k] != rm.TABLE["defaults"][k] for k in EVERYTHING_STALE)
+
+
+def test_a_new_marking_does_not_keep_settings_left_in_the_object_tool():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(showPlanFill=False, paintSurface=78, thickness=0.01)})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    written = _named(_writes(conn)[0])
+    assert written[-3:] == [("thickness", 0.003), ("paintSurface", 18), ("showPlanFill", True)]
+    assert r["created"] is True and r["element"] == "new" and "error" not in r
+    assert _reads(conn) == [{"elements": [{"elementId": {"guid": "new"}}]}] * 2      # after placing and at the end
+
+
+def test_every_look_setting_is_written_back_to_the_parts_default():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**LOOK)})
+    rm.create_road_marking(conn, points=PTS, dry_run=False)
+    written = dict(_named(_writes(conn)[0]))
+    assert {k: written[k] for k in LOOK} == {k: rm.TABLE["defaults"][k] for k in LOOK}
+
+
+def test_a_placed_marking_holding_the_defaults_gets_the_writes_of_its_dry_run():
+    # 1 for True and 1.0 for 1 are the same value
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(showPlanFill=1, planFill=1.0, paintSurface=18.0)})
+    dry = rm.create_road_marking(conn, points=PTS)
+    rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert _writes(conn)[0] == dry["gdl_parameters"]
+
+
+def test_settings_the_call_gives_are_not_overwritten_by_the_defaults():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(showPlanFill=False, paintSurface=76, thickness=0.01,
+                                                           pathTolerance=0.05)})
+    rm.create_road_marking(conn, points=PTS, paint_surface=78, thickness=0.005, path_tolerance=0.01, dry_run=False)
+    written = _named(_writes(conn)[0])
+    assert [v for n, v in written if n == "thickness"] == [0.005]
+    assert [v for n, v in written if n == "paintSurface"] == [78]
+    assert [v for n, v in written if n == "pathTolerance"] == [0.01]
+    assert ("showPlanFill", True) in written
+
+
+def test_a_stale_setting_the_call_also_holds_needs_no_write():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(thickness=0.005)})
+    rm.create_road_marking(conn, points=PTS, thickness=0.005, dry_run=False)
+    assert "thickness" not in dict(_named(_writes(conn)[0]))
+
+
+def test_every_stale_setting_comes_back_with_no_preset_given():
+    held = _plain(**EVERYTHING_STALE)
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**EVERYTHING_STALE)})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    state = _after(held, _writes(conn)[0])
+    assert all(state[k] == rm.TABLE["defaults"][k] for k in rm.TABLE["settings"] if k != "pathTolerance")
+    assert state["markingType"] == r["marking"] == "5121 Broken divider, in settlements"
+
+
+def test_a_stale_preset_name_gives_way_to_the_default_preset_which_sets_its_own_values():
+    held = _plain(markingType="5231 Pedestrian crossing", **{"s1Width": 4.0, "s1Dash": 0.5, "s1Gap": 0.5, "patternAlign": "Centre",
+                                                             "wholeDashes": True})
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(markingType="5231 Pedestrian crossing", s1Width=4.0, s1Dash=0.5,
+                                                            s1Gap=0.5, patternAlign="Centre", wholeDashes=True)})
+    rm.create_road_marking(conn, points=PTS, dry_run=False)
+    written = _named(_writes(conn)[0])
+    assert ("markingType", "5121 Broken divider, in settlements") in written
+    names = [n for n, _ in written]
+    assert not {"s1Width", "s1Dash", "s1Gap", "patternAlign", "wholeDashes"} & set(names)  # the preset writes those
+    assert names.index("nodeX") < names.index("markingType")
+    assert _after(held, _writes(conn)[0])["s1Width"] == 0.15
+
+
+@pytest.mark.parametrize("marking", ["Parking 60 degrees", "5334-1 Taxi stop on the carriageway", "5354 EV charging bay"])
+def test_every_stale_setting_gives_way_to_the_preset_the_call_names(marking):
+    held = _plain(**EVERYTHING_STALE)
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**EVERYTHING_STALE)})
+    rm.create_road_marking(conn, points=PTS, marking=marking, dry_run=False)
+    state = _after(held, _writes(conn)[0])
+    want = {**rm.TABLE["defaults"], **rm.PRESETS[marking], "markingType": marking}
+    assert {k: state[k] for k in want if k != "pathTolerance"} == {k: want[k] for k in want if k != "pathTolerance"}
+
+
+def test_a_stale_preset_equal_to_the_calls_is_not_written_and_its_other_settings_are_corrected():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(markingType="Parking 60 degrees", s1Offset=2.90, s1Width=5.80, s1Dash=0.10,
+                                                            s1Gap=2.40, s1Angle=-30.0, wholeDashes=True, s2Offset=5.80,
+                                                            s2Width=0.10, s2Dash=1.0, s2Gap=0.0, s2On=True, showPlanFill=False)})
+    r = rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
+    written = dict(_named(_writes(conn)[0]))
+    assert "markingType" not in written and "s1Angle" not in written       # s1Angle reads back in radians, the table is in degrees
+    assert written["showPlanFill"] is True and written["s2On"] is False
+    assert r["marking"] == "Parking 60 degrees"
+
+
+def test_a_call_for_custom_writes_the_name_and_every_stale_value():
+    held = _plain(**{**EVERYTHING_STALE, "markingType": "5231 Pedestrian crossing"})
+    stale = {**EVERYTHING_STALE, "markingType": "5231 Pedestrian crossing"}
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**stale)})
+    rm.create_road_marking(conn, points=PTS, marking="Custom", dry_run=False)
+    state = _after(held, _writes(conn)[0])
+    assert state["markingType"] == "Custom"
+    assert all(state[k] == rm.TABLE["defaults"][k] for k in rm.TABLE["settings"] if k != "pathTolerance")
+
+
+def test_a_stale_angle_goes_back_in_the_radians_the_tapir_takes():
+    conn = _conn({**NEW, "GetAddOnVersion": {"version": "1.7.3"},
+                  "GetGDLParametersOfElements": _gdl(markingType="Parking 60 degrees", s1Angle=20.0)})
+    rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
+    assert dict(_named(_writes(conn)[0]))["s1Angle"] == pytest.approx(math.radians(-30))
+
+
+@pytest.mark.parametrize("version", ["1.7.1", "1.8.0"])
+def test_the_helper_grips_are_not_touched_by_the_correction(version):
+    # a lone write of one of these is a drag; whatever they hold, the writes stay those of a clean placement
+    helpers = dict(extStart=2.0, extStartDone=1.0, extEnd=2.0, extEndDone=1.0, insL=[1.0, 0.0], insDone=[0.0, 0.0],
+                   segSag=[0.5, 0.0], sagDone=[0.0, 0.0], slopePercent=2.0, slopeDone=1.0)
+    clean = _conn({**NEW, "GetAddOnVersion": {"version": version}, "GetGDLParametersOfElements": _gdl()})
+    rm.create_road_marking(clean, points=PTS, dry_run=False)
+    stale = _conn({**NEW, "GetAddOnVersion": {"version": version}, "GetGDLParametersOfElements": _gdl(**helpers)})
+    rm.create_road_marking(stale, points=PTS, dry_run=False)
+    assert _writes(stale) == _writes(clean)
+
+
+def test_a_new_marking_grows_from_the_one_read_it_makes():
+    three = [{"x": 0, "y": 0, "z": 0}, {"x": 10, "y": 0, "z": 0}, {"x": 20, "y": 5, "z": 0}]
+    conn = _conn({**NEW, "GetAddOnVersion": {"version": "1.8.0"}, "GetGDLParametersOfElements": _gdl(extEnd=4.0, showPlanFill=False)})
+    rm.create_road_marking(conn, points=three, dry_run=False)
+    written = _named(_writes(conn)[0])
+    assert written[:3] == [("A", 1.0), ("aDone", 2.0), ("extEnd", 5.0)]
+    assert written[-1] == ("showPlanFill", True) and len(_reads(conn)) == 2
+
+
+def test_an_update_keeps_the_markings_own_values():
+    stale = dict(showPlanFill=False, paintSurface=78, thickness=0.01, markingType="Custom", s1Width=0.12, outlinePen=6)
+    conn = _conn({**NEW, "GetDetailsOfElements": _details({"m-1": _marking()}),
+                  "GetGDLParametersOfElements": _gdl(**stale)})
+    r = rm.create_road_marking(conn, update_guid="m-1", points=PTS, flip_sides=True, dry_run=False)
+    names = [n for w in _writes(conn) for n, _ in _named(w)]
+    assert r["updated"] is True and "flipSides" in names
+    assert not {*stale, "markBmat"} & set(names) and len(_reads(conn)) == 2
+
+
+def test_a_dry_run_does_not_read_a_placement_it_has_not_made():
+    conn = _conn({"GetAvailableLibraryParts": LIB})
+    r = rm.create_road_marking(conn, points=PTS)
+    assert "showPlanFill" not in _params(r) and "CreateObjects" not in [c for c, _ in conn._core.calls]
+    assert not _reads(conn)
+
+
+def test_a_failed_read_after_placing_still_reports_what_was_placed():
+    answer = {"gdlParametersOfElements": [{"error": {"message": "gone"}}]}
+    conn = _conn({**NEW, "GetGDLParametersOfElements": answer})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert "gone" in r["error"] and r["element"] == "new" and r["elements_placed"] == ["new"]
+    assert "created" not in r and r["marking"] == "5121 Broken divider, in settlements" and not _writes(conn)
+
+
+def test_a_read_after_placing_refused_by_the_api_still_reports_what_was_placed():
+    conn = _conn(NEW)                 # FakeCore raises the transport's error for the read it has no answer to
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert "GetGDLParametersOfElements" in r["error"] and r["elements_placed"] == ["new"] and "created" not in r
+
+
+def test_a_failed_write_after_placing_still_reports_what_was_placed():
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(),
+                  "SetGDLParametersOfElements": {"executionResults": [{"success": False, "error": "boom"}]}})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert "boom" in r["error"] and r["element"] == "new" and r["elements_placed"] == ["new"] and "created" not in r
+
+
+def test_a_failed_last_read_warns_and_keeps_the_written_marking():
+    bad = {"gdlParametersOfElements": [{"error": {"message": "gone"}}]}
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _sequence(_gdl(showPlanFill=False), bad)})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert r["created"] is True and r["element"] == "new" and "error" not in r and "marking_after" not in r
+    assert any("gone" in w for w in r["warnings"]) and dict(_named(_writes(conn)[0]))["showPlanFill"] is True
+
+
+def test_a_failed_placement_is_still_a_plain_error():
+    conn = _conn({**NEW, "CreateObjects": {"elements": []}})
+    r = rm.create_road_marking(conn, points=PTS, dry_run=False)
+    assert "did not place" in r["error"] and "elements_placed" not in r
+
+
+def test_a_failed_write_on_an_update_is_still_a_plain_error():
+    conn = _conn({**NEW, "GetDetailsOfElements": _details({"m-1": _marking()}), "GetGDLParametersOfElements": _gdl(),
+                  "SetGDLParametersOfElements": {"executionResults": [{"success": False, "error": "boom"}]}})
+    r = rm.create_road_marking(conn, update_guid="m-1", points=PTS, dry_run=False)
+    assert "boom" in r["error"] and "elements_placed" not in r
