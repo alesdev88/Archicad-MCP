@@ -42,6 +42,15 @@ def _new(part=PP):
 
 # ---------------------------------------------------------------- which part
 
+def test_a_new_parking_is_placed_at_angle_zero():
+    # The nodes assume no rotation, and the Object tool hands a new element its own angle (90 degrees in a live
+    # check), so the placement must say 0 itself or the whole row turns about its first node.
+    conn = _new()
+    rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
+    placed = [p for c, p in conn._core.calls if c == "CreateObjects"][0]["objectsData"][0]
+    assert placed["angle"] == 0.0
+
+
 def test_a_parking_name_places_a_road_parking():
     conn = _new(PP)
     r = rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)

@@ -105,6 +105,16 @@ def test_a_draped_write_places_on_the_surface_and_reads_the_name_back():
     assert r["off_surface"] == [] and r["partly_off_surface"] == []
 
 
+def test_a_new_marking_is_placed_at_angle_zero():
+    # The nodes assume no rotation, and the Object tool hands a new element its own angle (90 degrees in a live
+    # check), so the placement must say 0 itself or the whole marking turns about its first node.
+    conn = _conn({"GetAvailableLibraryParts": LIB, "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
+                  "SetGDLParametersOfElements": OK, "GetGDLParametersOfElements": _gdl()})
+    rm.create_road_marking(conn, points=PTS, dry_run=False)
+    placed = [p for c, p in conn._core.calls if c == "CreateObjects"][0]["objectsData"][0]
+    assert placed["angle"] == 0.0
+
+
 def test_an_update_drapes_the_markings_own_path_turned_as_placed():
     conn = _conn({"GetDetailsOfElements": _details({"m-1": _marking((5.0, 5.0, 3.0), math.pi / 2), "mesh": MESH}),
                   "GetStories": STORIES, "GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,

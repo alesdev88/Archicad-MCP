@@ -397,7 +397,7 @@ def _place(part, conn, source_guid, given, flat, start_height, slope_percent, ma
         return report
     if not loaded:
         raise RoadMarkingError(not_loaded(part))
-    guid = update_guid or pp.place(conn, part.name, origin, floor_index)
+    guid = update_guid or pp.place(conn, part.name, origin, floor_index, angle=0.0)
     report["element"] = guid
     try:
         if not update_guid:
