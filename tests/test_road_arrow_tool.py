@@ -360,3 +360,16 @@ def test_an_update_with_nothing_to_change_says_so():
     r = ra.create_road_arrow(conn, update_guid="a-1", dry_run=False)
     assert r["arrows"][0]["updated"] is False and any("Nothing differed" in w for w in r["warnings"])
     assert not _writes(conn)
+
+
+async def test_the_registered_tool_takes_its_lists_as_json_text(monkeypatch):
+    import archicad_mcp.server as server_mod
+    from fastmcp import Client
+
+    core = FakeCore(official={"API.IsAddOnCommandAvailable": {"available": True}}, tapir=TAPIR)
+    monkeypatch.setattr(server_mod, "get_connection", lambda port: ArchicadConnection(19725, core=core))
+    async with Client(server_mod.build_server(mode="full")) as client:
+        result = await client.call_tool("create_road_arrow", {
+            "points": json.dumps(PTS), "stations": json.dumps([2, 10]), "arrow": "5412 Left"})
+    payload = json.loads(result.content[0].text)
+    assert payload["dry_run"] is True and len(payload["arrows"]) == 2
