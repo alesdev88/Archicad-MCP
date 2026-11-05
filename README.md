@@ -61,7 +61,7 @@ something is missing. If the client shows no tools at all, see
 | QA | `audit_delivery_readiness`, `run_rule`, `list_rules`, `verify_ifc_export_readiness`, `highlight_failures`, `create_issues_from_failures` |
 | Find and read | `find_elements`, `search_definitions`, `get_element_data`, `get_model_summary`, `get_project_info`, `list_attributes`, `find_collisions` |
 | Change | `set_element_data`, `modify_elements`, `apply_favorites`, `move_elements`, `delete_elements`, `edit_attributes`, `edit_property_definitions`, `edit_classifications` |
-| Create | `create_elements` (44 types), `create_swept_beam`, `create_road_marking`, and `learn_library_part` for placing furniture, doors and windows from a sketch |
+| Create | `create_elements` (44 types), `create_swept_beam`, `create_road_marking`, `create_road_arrow`, and `learn_library_part` for placing furniture, doors and windows from a sketch |
 | Look | `show_elements`, `capture_window`, the selection tools |
 | Issues and output | Issue Manager and BCF, `export_ifc`, `publish`, `save_project` |
 | Teamwork | `reserve_elements`, `release_elements` |

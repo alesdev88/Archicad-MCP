@@ -48,6 +48,8 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
                           "SetGDLParametersOfElements"),
     "create_road_marking": ("CreateObjects", "GetAvailableLibraryParts",
                             "SetGDLParametersOfElements"),
+    "create_road_arrow": ("CreateObjects", "GetAvailableLibraryParts",
+                          "SetGDLParametersOfElements"),
     "edit_property_definitions": ("UpdateClassificationItems",),
     "edit_classifications": ("UpdateClassificationItems",),
     "import_definitions": ("UpdateClassificationItems",),

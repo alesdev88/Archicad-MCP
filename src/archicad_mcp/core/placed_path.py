@@ -1,5 +1,5 @@
-"""Shared by the tools that place a library part along a path: create_swept_beam and
-create_road_marking.
+"""Shared by the tools that place a library part along a path: create_swept_beam,
+create_road_marking and create_road_arrow.
 
 A source curve (a Morph line, Polyline, Line or Arc) or 3D points become nodes and plan
 arcs (swept_path); the part is placed at a point and its node arrays are written in the
@@ -195,9 +195,25 @@ def to_local(nodes, origin, angle: float) -> list[sp.Point]:
     return out
 
 
-def place(conn, part: str, origin, floor_index) -> str:
+def surface_index(conn, value) -> int:
+    """A Surface attribute's index from an index, digits or a name (paint_surface)."""
+    if isinstance(value, bool):
+        raise PlacedPathError("paint_surface must be a Surface attribute name or index.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    if isinstance(value, str):
+        return attribute_index(conn, "Surface", value)
+    raise PlacedPathError("paint_surface must be a Surface attribute name or index.")
+
+
+def place(conn, part: str, origin, floor_index, angle: float | None = None) -> str:
+    """Place the part at origin; angle is in radians and sent only when given."""
     item = {"libraryPartName": part,
             "coordinates": {"x": origin[0], "y": origin[1], "z": origin[2]}}
+    if angle is not None:
+        item["angle"] = angle
     if floor_index is not None:
         item["floorIndex"] = floor_index
     result = conn.tapir("CreateObjects", {"objectsData": [item]})

@@ -224,7 +224,7 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     frame = pp.existing_frame(conn, update_guid, LIBRARY_PART) if update_guid else None
     current = read_parameters(conn, update_guid) if update_guid else dict(TABLE["defaults"])
     if paint_surface is not None:
-        flat["paintSurface"] = _surface_index(conn, paint_surface)
+        flat["paintSurface"] = pp.surface_index(conn, paint_surface)
     want, state = resolve(current, marking, given["stripes"], given["bays"], given["lettering"], flat)
     warnings += no_effect(want, given["bays"], given["lettering"])
     u_lo, u_hi = reach(want)
@@ -321,18 +321,6 @@ def _sent(name: str, value, radians: bool):
     """A setting as SetGDLParametersOfElements takes it: the stripe angles are kept in
     degrees and go in radians to Tapir 1.7.3 and newer."""
     return math.radians(value) if radians and name in ANGLES else value
-
-
-def _surface_index(conn, value) -> int:
-    if isinstance(value, bool):
-        raise RoadMarkingError("paint_surface must be a Surface attribute name or index.")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value)
-    if isinstance(value, str):
-        return pp.attribute_index(conn, "Surface", value)
-    raise RoadMarkingError("paint_surface must be a Surface attribute name or index.")
 
 
 def _same(a, b) -> bool:

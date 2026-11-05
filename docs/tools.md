@@ -143,10 +143,11 @@ about a door or window without `sillHeight`. On Tapir 1.7.3 most types also take
 the Element ID as `id`. Model elements are placed from the floor plan or the 3D
 window; 2D elements go into the active drawing window.
 
-`create_swept_beam` and `create_road_marking` place two GDL objects of this
-project along a path or an existing element: a beam swept along a 3D path
-([Swept Beam](swept-beam.md)), and road markings draped over slabs and meshes
-([Road marking](road-marking.md)).
+`create_swept_beam`, `create_road_marking` and `create_road_arrow` place GDL objects
+of this project along a path or an existing element: a beam swept along a 3D path
+([Swept Beam](swept-beam.md)), road markings draped over slabs and meshes
+([Road marking](road-marking.md)), and road arrows at stations along a lane
+([Road arrow](road-arrow.md)).
 
 `learn_library_part`, `record_library_part` and `list_library_part_records`
 teach the server a library part once, so a sketch can become a placement.
