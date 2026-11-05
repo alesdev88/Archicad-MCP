@@ -93,6 +93,7 @@ def _new_guids():
 
 
 TAPIR = {"GetAvailableLibraryParts": LIB, "GetStories": STORIES, "SetGDLParametersOfElements": OK,
+         "GetGDLParametersOfElements": lambda params: _held(),
          "GetDetailsOfElements": _answer_by_guid({"slab": SLAB, "mesh": MESH, "bumpy": BUMPY})}
 HALF_SLAB = {**TAPIR, "GetDetailsOfElements": _answer_by_guid({"slab": HALF})}
 
@@ -325,6 +326,76 @@ def test_a_new_arrow_writes_thickness_and_a_custom_size_in_order():
                      "nodeFall", "slopePercent", "crossFall", "thickness", "paintSurface"]
     assert r["size"] == "Custom" and r["length"] == 6.0 and r["width"] == 0.9
     assert _params(r["arrows"][0])["paintSurface"] == 7
+
+
+# ---------------------------------------------------------------- the object tool's stale defaults
+
+def _written(conn, element=0):
+    return [(p["name"], p["value"]) for p in _writes(conn)[element]["gdlParameters"]]
+
+
+def test_a_new_arrow_does_not_keep_settings_left_in_the_object_tool():
+    conn = _conn({**TAPIR, "GetGDLParametersOfElements": _held(showPlanFill=False, paintSurface=78, thickness=0.01)})
+    r = ra.create_road_arrow(conn, points=PTS, stations=[0], dry_run=False)
+    written = _written(conn)
+    assert written[-3:] == [("thickness", 0.003), ("paintSurface", 18), ("showPlanFill", True)]
+    assert [n for n, _ in written[:-3]] == ["arrowType", "arrowSize", "nodeCount", "nodeX", "nodeZ", "nodeFall",
+                                            "slopePercent", "crossFall"]
+    assert r["arrows"][0]["created"] and "error" not in r
+    reads = [p for c, p in conn._core.calls if c == "GetGDLParametersOfElements"]
+    assert reads == [{"elements": [{"elementId": {"guid": "new-1"}}]}]
+
+
+def test_settings_the_call_gives_are_not_overwritten_by_the_defaults():
+    conn = _conn({**TAPIR, "GetAttributesByType": {"attributes": [{"index": 78, "name": "Paint yellow"}]},
+                  "GetGDLParametersOfElements": _held(showPlanFill=False, paintSurface=78, thickness=0.01)})
+    ra.create_road_arrow(conn, points=PTS, stations=[0], paint_surface=78, thickness=0.005, dry_run=False)
+    written = _written(conn)
+    assert [v for n, v in written if n == "thickness"] == [0.005]
+    assert [v for n, v in written if n == "paintSurface"] == [78]
+    assert written[-1] == ("showPlanFill", True)
+
+
+def test_a_placed_arrow_holding_the_defaults_gets_no_extra_writes():
+    # 1 for True and 1.0 for 1 are the same value
+    conn = _conn({**TAPIR, "GetGDLParametersOfElements": _held(showPlanFill=1, planFill=1.0, thickness=0.003)})
+    ra.create_road_arrow(conn, points=PTS, stations=[0], dry_run=False)
+    assert [n for n, _ in _written(conn)] == ["arrowType", "arrowSize", "nodeCount", "nodeX", "nodeZ", "nodeFall",
+                                              "slopePercent", "crossFall"]
+
+
+def test_every_look_setting_is_corrected_in_a_fixed_order():
+    stale = dict(thickness=0.01, paintSurface=78, markBmat=5, showPlanFill=False, useProjectFill=True, planFill=9,
+                 fillFgPen=3, fillBgPen=4, showOutline=False, outlinePen=6)
+    conn = _conn({**TAPIR, "GetGDLParametersOfElements": _held(**stale)})
+    ra.create_road_arrow(conn, points=PTS, stations=[0], dry_run=False)
+    assert _written(conn)[8:] == [("thickness", 0.003), ("paintSurface", 18), ("markBmat", 41), ("showPlanFill", True),
+                                  ("useProjectFill", False), ("planFill", 1), ("fillFgPen", 1), ("fillBgPen", 0),
+                                  ("showOutline", True), ("outlinePen", 1)]
+
+
+def test_an_update_keeps_the_arrows_own_look_settings():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed()}),
+                  "GetGDLParametersOfElements": _held(showPlanFill=False, paintSurface=78, thickness=0.01)})
+    r = ra.create_road_arrow(conn, update_guid="a-1", cross_fall=2.0, dry_run=False)
+    assert _written(conn) == [("crossFall", 2.0)] and r["arrows"][0]["updated"]
+    reads = [p for c, p in conn._core.calls if c == "GetGDLParametersOfElements"]
+    assert len(reads) == 1                                      # the one read of the held values, none after
+
+
+def test_a_dry_run_does_not_read_a_placement_it_has_not_made():
+    conn = _conn(TAPIR)
+    r = ra.create_road_arrow(conn, points=PTS, stations=[0])
+    assert "showPlanFill" not in _params(r["arrows"][0])
+    assert not any(c == "GetGDLParametersOfElements" for c, _ in conn._core.calls)
+
+
+def test_a_failed_read_back_lists_the_element_placed():
+    conn = _conn({**TAPIR, "GetGDLParametersOfElements": {"gdlParametersOfElements": [{"error": {"message": "gone"}}]}})
+    r = ra.create_road_arrow(conn, points=PTS, stations=[0, 10], dry_run=False)
+    assert "gone" in r["error"] and r["elements_placed"] == ["new-1"]
+    assert r["arrows"][0]["element"] == "new-1" and "created" not in r["arrows"][0]
+    assert not _writes(conn)
 
 
 # ---------------------------------------------------------------- fix round 1

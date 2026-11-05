@@ -1,7 +1,7 @@
 {
  "source": {
   "repo": "Archicad GDL",
-  "commit": "1206e48",
+  "commit": "12e3d7f",
   "part": "Road Arrow",
   "exporter": "road_arrow/export_table.py"
  },
@@ -11,7 +11,15 @@
   "customLength": 5.0,
   "customWidth": 0.75,
   "thickness": 0.003,
-  "paintSurface": 18
+  "paintSurface": 18,
+  "markBmat": 41,
+  "showPlanFill": true,
+  "useProjectFill": false,
+  "planFill": 1,
+  "fillFgPen": 1,
+  "fillBgPen": 0,
+  "showOutline": true,
+  "outlinePen": 1
  },
  "by_speed": [
   [

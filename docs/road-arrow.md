@@ -41,6 +41,11 @@ Every arrow also takes `Custom`.
   drawn size nearest in length.
 - **Without a size,** a new arrow takes the part's default (5.00 m); an update keeps the
   arrow's own, or the nearest size the new arrow offers.
+- **Look settings** (`thickness`, `paintSurface`, the plan fill and outline settings, their
+  pens and `markBmat`): Archicad's Object tool keeps same-named values from other parts
+  (a Road Marking with its plan fill off, say), so a new arrow is read back after it is placed
+  and the tool writes the part's defaults for anything the call leaves out. An update keeps
+  the arrow's own values. A dry run cannot show these writes.
 - **Not dimensioned by any source:** the 3.00 m and 12.00 m arrows (derived from the 5.00
   m and 7.50 m figures by the rulebook's rules), 5427, 5467, 5452 and the mirrored 5451
   are drawn by the part without printed dimensions to check against.

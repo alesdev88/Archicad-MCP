@@ -209,7 +209,12 @@ def create_road_arrow(conn, source_guid=None, points=None, stations=None, anchor
     """Place Road Arrows at stations along a lane axis (a source element or points), each
     with its anchor on the station and offset metres to the right, or rewrite one placed arrow.
     Values left as None take the part's defaults on a new arrow and keep the arrow's own on
-    an update. With drape_on the arrow gets height points that follow the surfaces."""
+    an update. With drape_on the arrow gets height points that follow the surfaces.
+
+    Archicad's Object tool keeps same-named values as tool defaults, so a new arrow is read back
+    after it is placed and the part's defaults are written for each look setting it holds
+    differently and the call did not give. A dry run cannot know what a placement inherits, so
+    its gdl_parameters leave those out."""
     try:
         asked = {"source_guid": source_guid, "points": pp.from_json_text(points, "points", list),
                  "stations": stations, "anchor": anchor, "offset": offset, "height": height}
@@ -405,6 +410,8 @@ def _create(conn, asked, drape_on, o) -> dict:
             if not update_guid:
                 placed.append(guid)
             entry["element"] = guid
+            if not update_guid:
+                params = _in_write_order(params + _inherited(conn, guid, params))
             if params:
                 pp.write_parameters(conn, guid, params, LIBRARY_PART)
             entry["updated" if update_guid else "created"] = bool(params or not update_guid)
@@ -429,8 +436,20 @@ def _held_length(current) -> float:
         return -1.0
 
 
+# The settings of the part's look. Archicad's Object tool keeps same-named values as tool defaults, so a new
+# arrow can be placed holding another part's values; the tool writes the part's own over the ones it finds.
+LOOK = ("thickness", "paintSurface", "markBmat", "showPlanFill", "useProjectFill", "planFill", "fillFgPen",
+        "fillBgPen", "showOutline", "outlinePen")
 ORDER = ["arrowType", "arrowSize", "customLength", "customWidth", "nodeCount", "nodeX", "nodeZ", "nodeFall",
-         "slopePercent", "crossFall", "thickness", "paintSurface"]
+         "slopePercent", "crossFall", *LOOK]
+
+
+def _inherited(conn, guid, params) -> list[dict]:
+    """The look settings a new arrow holds that differ from the part's defaults and that the call did not give."""
+    held = pp.gdl_parameters(conn, guid)
+    given = {p["name"] for p in params}
+    return [{"name": k, "value": TABLE["defaults"][k]} for k in LOOK
+            if k not in given and not _same(TABLE["defaults"][k], held.get(k))]
 
 
 def _in_write_order(params) -> list[dict]:
