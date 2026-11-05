@@ -325,3 +325,38 @@ def test_a_new_arrow_writes_thickness_and_a_custom_size_in_order():
                      "nodeFall", "slopePercent", "crossFall", "thickness", "paintSurface"]
     assert r["size"] == "Custom" and r["length"] == 6.0 and r["width"] == 0.9
     assert _params(r["arrows"][0])["paintSurface"] == 7
+
+
+# ---------------------------------------------------------------- fix round 1
+
+EAST_RISING = {"type": "Mesh", "floorIndex": 1, "details": {"level": 0.0, "polygonCoordinates": [
+    {"x": -5, "y": -5, "z": 0.0}, {"x": 25, "y": -5, "z": 3.0}, {"x": 25, "y": 25, "z": 3.0}, {"x": -5, "y": 25, "z": 0.0}]}}
+NORTH = [{"x": 5, "y": 0, "z": 0}, {"x": 5, "y": 20, "z": 0}]       # the plane rises 0.1 m per metre to the east
+
+
+def test_a_mesh_rising_to_the_right_gives_a_positive_node_fall_new_and_update():
+    tapir = {**TAPIR, "GetDetailsOfElements": _answer_by_guid({"east": EAST_RISING, "a-1": _placed(math.pi / 2, (5.0, 5.0, 3.0))}),
+             "GetGDLParametersOfElements": _held()}
+    new = ra.create_road_arrow(_conn(tapir), points=NORTH, drape_on=["east"], stations=[2])
+    assert _params(new["arrows"][0])["nodeFall"][:2] == pytest.approx([10.0, 10.0], abs=0.01)
+    conn = _conn(tapir)
+    ra.create_road_arrow(conn, update_guid="a-1", drape_on=["east"], dry_run=False)
+    p = {x["name"]: x["value"] for x in _writes(conn)[0]["gdlParameters"]}
+    assert p["nodeFall"][:2] == pytest.approx([10.0, 10.0], abs=0.01) and p["nodeFall"][2:] == [0.0] * 38
+
+
+def test_a_draped_update_does_not_write_a_given_slope_or_cross_fall():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed(), "mesh": MESH}),
+                  "GetGDLParametersOfElements": _held(slopePercent=0.0, crossFall=0.0)})
+    r = ra.create_road_arrow(conn, update_guid="a-1", drape_on=["mesh"], slope_percent=5.0, cross_fall=3.0, dry_run=False)
+    names = [x["name"] for x in _writes(conn)[0]["gdlParameters"]]
+    assert "slopePercent" not in names and "crossFall" not in names
+    assert any("do not apply" in w for w in r["warnings"])
+
+
+def test_an_update_with_nothing_to_change_says_so():
+    conn = _conn({**TAPIR, "GetDetailsOfElements": _answer_by_guid({"a-1": _placed()}),
+                  "GetGDLParametersOfElements": _held()})
+    r = ra.create_road_arrow(conn, update_guid="a-1", dry_run=False)
+    assert r["arrows"][0]["updated"] is False and any("Nothing differed" in w for w in r["warnings"])
+    assert not _writes(conn)

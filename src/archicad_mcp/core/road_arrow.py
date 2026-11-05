@@ -260,7 +260,7 @@ def _check_update(asked: dict) -> None:
             raise RoadArrowError(f"{name} cannot be given with update_guid: the arrow stays where it stands. {MOVE}")
 
 
-def _settings(conn, o: dict, current):
+def _settings(o: dict, current):
     """The arrow's name and size, its dimensions, and the warnings the choice brings."""
     update = current is not None
     held = current if update else TABLE["defaults"]
@@ -340,7 +340,7 @@ def _create(conn, asked, drape_on, o) -> dict:
             raise RoadArrowError(f"Element {update_guid} is mirrored. Its height points would be written against "
                                  "the wrong side; place the arrow anew instead.")
         current = pp.gdl_parameters(conn, update_guid)
-    name, size, dims, warnings = _settings(conn, o, current)
+    name, size, dims, warnings = _settings(o, current)
     length = dims["length"]
     reach = (dims["u_lo"], dims["u_hi"])
     surfaces = dr.read_surfaces(conn, drape_on) if drape_on is not None else None
@@ -354,6 +354,8 @@ def _create(conn, asked, drape_on, o) -> dict:
         tail = origin
         tip = (origin[0] + length * math.cos(angle), origin[1] + length * math.sin(angle), origin[2])
         entry_params = _update_params(name, size, dims, current, o, extras)
+        if surfaces is not None:     # the drape sets both; a given slope or cross fall would count twice
+            entry_params = [p for p in entry_params if p["name"] not in ("slopePercent", "crossFall")]
         entry = _entry(None, tail, angle)
         if surfaces is not None:
             d, _, local = _fit_drape(tail, tip, angle, reach, surfaces, o, frame_origin=origin)
@@ -405,7 +407,9 @@ def _create(conn, asked, drape_on, o) -> dict:
             entry["element"] = guid
             if params:
                 pp.write_parameters(conn, guid, params, LIBRARY_PART)
-            entry["updated" if update_guid else "created"] = True
+            entry["updated" if update_guid else "created"] = bool(params or not update_guid)
+            if update_guid and not params:
+                report["warnings"].append("Nothing differed from what the arrow holds: nothing was written.")
     except FAILURES as exc:
         if not placed:
             raise
