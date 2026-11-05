@@ -1,11 +1,11 @@
-"""create_road_marking: place a Road Marking or a Parking Place along a curve and drape it
+"""create_road_marking: place a Road Marking or a Road Parking along a curve and drape it
 onto Meshes and Slabs (docs/superpowers/specs/2026-10-12-road-marking-tool-design.md; the
 split in two parts: 2026-11-05-road-marking-split-design.md in the GDL repo).
 
-The two library parts (Archicad GDL repo, Library/Site/Road Marking and Parking Place) keep
+The two library parts (Archicad GDL repo, Library/Site/Road Marking and Road Parking) keep
 their path as node arrays in their own coordinates, like the Swept Beam, with a cross fall
 in percent per node. Their presets live in their Parameter Scripts; road_marking_presets.json
-and parking_place_presets.json hold the same tables, exported from each part's model by its
+and road_parking_presets.json hold the same tables, exported from each part's model by its
 export_presets.py in the GDL repo, whose tests check that the two agree. This module works out the
 marking's settings (the current or default values, the preset, the call's changes), how
 far the marking reaches across its path, and what the part would draw past the path's
@@ -27,7 +27,7 @@ from archicad_mcp.core import placed_path as pp
 from archicad_mcp.core import swept_path as sp
 
 ROAD_MARKING = "Road Marking"
-PARKING_PLACE = "Parking Place"
+ROAD_PARKING = "Road Parking"
 CUSTOM = "Custom"
 
 
@@ -53,7 +53,7 @@ def _part(name: str, file: str) -> Part:
 
 
 PARTS: dict[str, Part] = {ROAD_MARKING: _part(ROAD_MARKING, "road_marking_presets.json"),
-                          PARKING_PLACE: _part(PARKING_PLACE, "parking_place_presets.json")}
+                          ROAD_PARKING: _part(ROAD_PARKING, "road_parking_presets.json")}
 FAILURES = (pp.PlacedPathError, ArchicadAPIError, ArchicadUnavailableError)
 STRIPE_KEYS = {"on": "On", "offset": "Offset", "width": "Width", "dash": "Dash", "gap": "Gap",
                "angle": "Angle", "shape": "Shape"}
@@ -74,7 +74,7 @@ RANGES = {"Width": (0.01, None), "Dash": (0.01, None), "Gap": (0.0, None), "Angl
           "letterGap": (0.0, None), "letterRepeat": (0.0, None), "thickness": (0.0005, 0.05)}
 # The single Angle parameters; the tool keeps them in degrees, the part reads them in radians
 ANGLES = tuple(f"s{k}Angle" for k in (1, 2, 3))
-# Parking Place: the part sets stripe 1's offset and shape and all of stripes 2 and 3 but their switch (its follow rule)
+# Road Parking: the part sets stripe 1's offset and shape and all of stripes 2 and 3 but their switch (its follow rule)
 PARKING_STRIPE_1 = ("width", "dash", "gap", "angle")
 PARKING_STRIPE_OTHERS = ("on",)
 ROAD_REFUSED_BAYS = ("width", "zone_width", "zone_first", "symbol")
@@ -89,11 +89,11 @@ def _kind(name: str) -> str:
 
 
 def _all_names() -> str:
-    return ", ".join([*PARTS[ROAD_MARKING].presets, *PARTS[PARKING_PLACE].presets, CUSTOM])
+    return ", ".join([*PARTS[ROAD_MARKING].presets, *PARTS[ROAD_PARKING].presets, CUSTOM])
 
 
 def _other(part: Part) -> Part:
-    return PARTS[PARKING_PLACE if part.name == ROAD_MARKING else ROAD_MARKING]
+    return PARTS[ROAD_PARKING if part.name == ROAD_MARKING else ROAD_MARKING]
 
 
 def _match(presets, marking):
@@ -102,10 +102,10 @@ def _match(presets, marking):
 
 
 def part_of_name(marking) -> Part:
-    """The part a new element takes from the preset's name: a parking name means Parking Place;
+    """The part a new element takes from the preset's name: a parking name means Road Parking;
     any other name, Custom or no name means Road Marking (an unknown name is refused later)."""
-    if marking is not None and _match(PARTS[PARKING_PLACE].presets, marking):
-        return PARTS[PARKING_PLACE]
+    if marking is not None and _match(PARTS[ROAD_PARKING].presets, marking):
+        return PARTS[ROAD_PARKING]
     return PARTS[ROAD_MARKING]
 
 
@@ -116,8 +116,8 @@ def part_of_element(conn, guid: str) -> Part:
     for part in PARTS.values():
         if entry["type"] == "Object" and name.casefold() == part.name.casefold():
             return part
-    raise RoadMarkingError(f"Element {guid} is not a {ROAD_MARKING} or a {PARKING_PLACE}. update_guid must "
-                           f"point at a placed {ROAD_MARKING} or {PARKING_PLACE}.")
+    raise RoadMarkingError(f"Element {guid} is not a {ROAD_MARKING} or a {ROAD_PARKING}. update_guid must "
+                           f"point at a placed {ROAD_MARKING} or {ROAD_PARKING}.")
 
 
 def preset_name(part: Part, marking) -> str:
@@ -134,12 +134,12 @@ def preset_name(part: Part, marking) -> str:
 
 def check_allowed(part: Part, stripes, bays, lettering) -> None:
     """Refuse what the part does not take or sets itself, naming the part."""
-    if part.name == PARKING_PLACE:
+    if part.name == ROAD_PARKING:
         if lettering:
-            raise RoadMarkingError(f"A {PARKING_PLACE} has no lettering: the lettering values are for a "
+            raise RoadMarkingError(f"A {ROAD_PARKING} has no lettering: the lettering values are for a "
                                    f"{ROAD_MARKING}.")
         if "bar_width" in (bays or {}):
-            raise RoadMarkingError(f"A {PARKING_PLACE} has no end bars: bays.bar_width is for a {ROAD_MARKING}.")
+            raise RoadMarkingError(f"A {ROAD_PARKING} has no end bars: bays.bar_width is for a {ROAD_MARKING}.")
         for key, change in (stripes or {}).items():
             if not isinstance(change, dict):
                 continue
@@ -147,12 +147,12 @@ def check_allowed(part: Part, stripes, bays, lettering) -> None:
             for k in change:
                 if k in STRIPE_KEYS and k not in allowed:
                     raise RoadMarkingError(
-                        f"stripes['{key}'].{k} is set by the {PARKING_PLACE} part, not by the call: stripe {key} "
+                        f"stripes['{key}'].{k} is set by the {ROAD_PARKING} part, not by the call: stripe {key} "
                         f"takes {', '.join(allowed)} here.")
     else:
         for k in ROAD_REFUSED_BAYS:
             if k in (bays or {}):
-                raise RoadMarkingError(f"bays.{k} is for a {PARKING_PLACE}: a {ROAD_MARKING} takes only "
+                raise RoadMarkingError(f"bays.{k} is for a {ROAD_PARKING}: a {ROAD_MARKING} takes only "
                                        "layout, depth and bar_width.")
 
 
@@ -207,14 +207,14 @@ def resolve(part: Part, current: dict, marking=None, stripes=None, bays=None, le
     for name, v in (flat or {}).items():
         if v is not None:
             want[name] = check_value(part, name, v)
-    if part.name == PARKING_PLACE and stripes and want["bayLayout"] != "None":
-        raise RoadMarkingError(f"{PARKING_PLACE} bays take no stripes: {want['bayLayout']} is a bay, so stripes "
+    if part.name == ROAD_PARKING and stripes and want["bayLayout"] != "None":
+        raise RoadMarkingError(f"{ROAD_PARKING} bays take no stripes: {want['bayLayout']} is a bay, so stripes "
                                "(including the kerb line) are for a row. Use a parking row preset.")
     return want, state
 
 
 def followed(p: dict) -> dict:
-    """A Parking Place row as its Parameter Script leaves it (parking_place_model.follow): the offset of
+    """A Road Parking row as its Parameter Script leaves it (road_parking_model.follow): the offset of
     stripe 1 is half its width, stripe 2 sits at the width, stripes 2 and 3 are as wide as stripe 1's dash
     and stripe 3 is at the kerb. The call can change s1Width and s1Dash only, so the reach follows."""
     return {**p, "s1Offset": float(p["s1Width"]) / 2, "s2Offset": float(p["s1Width"]),
@@ -225,7 +225,7 @@ def reach(part: Part, p: dict) -> tuple[float, float]:
     """How far the marking reaches across its path, (u_lo, u_hi), positive to the right,
     after Flip sides: the switched on stripes, the bay layout and the word, and always 0
     (the part model's layout_reach and lettering_reach)."""
-    if part.name == PARKING_PLACE and p["bayLayout"] == "None":
+    if part.name == ROAD_PARKING and p["bayLayout"] == "None":
         p = followed(p)
     flip = -1.0 if p["flipSides"] else 1.0
     lo = hi = 0.0

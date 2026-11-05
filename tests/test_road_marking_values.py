@@ -6,7 +6,7 @@ import pytest
 from archicad_mcp.core import road_marking as rm
 
 RM = rm.PARTS[rm.ROAD_MARKING]
-PP = rm.PARTS[rm.PARKING_PLACE]
+PP = rm.PARTS[rm.ROAD_PARKING]
 DEFAULTS = RM.table["defaults"]
 PARKING_DEFAULTS = PP.table["defaults"]
 
@@ -47,7 +47,7 @@ def test_stripes_bays_and_lettering_map_to_the_parts_parameters():
     assert (want["letterText"], want["letterAlign"], want["letterRepeat"]) == ("BUS", "Centre", 20.0)
 
 
-def test_a_parking_place_maps_its_bay_values():
+def test_a_road_parking_maps_its_bay_values():
     want, _ = rm.resolve(PP, PARKING_DEFAULTS, stripes={"3": {"on": True}})
     assert want["s3On"] is True and want["s3Width"] == PARKING_DEFAULTS["s3Width"]
     want, _ = rm.resolve(PP, PARKING_DEFAULTS,
@@ -98,7 +98,7 @@ def test_the_reach_covers_stripes_bays_and_the_word(marking, flip, reach):
     ("5352-1 Disabled bays, shared zone", False, (0.0, 5.45)),
     ("5352-2 Disabled bay, parallel", True, (-2.45, 0.0)),
 ])
-def test_a_parking_places_reach_has_no_lettering(marking, flip, reach):
+def test_a_road_parkings_reach_has_no_lettering(marking, flip, reach):
     want, _ = rm.resolve(PP, PARKING_DEFAULTS, marking=marking, flat={"flipSides": flip})
     assert "letterText" not in want and rm.reach(PP, want) == pytest.approx(reach)
 

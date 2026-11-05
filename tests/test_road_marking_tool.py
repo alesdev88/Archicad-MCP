@@ -171,7 +171,7 @@ def test_the_call_is_refused_without_exactly_one_source_or_with_bad_input():
     assert "drape_tolerance" in rm.create_road_marking(conn, points=PTS, drape_tolerance=0)["error"]
     beam = _conn({"GetDetailsOfElements": _details({"b-1": _marking(name="Swept Beam")})})
     error = rm.create_road_marking(beam, update_guid="b-1", points=PTS)["error"]
-    assert "not a Road Marking or a Parking Place" in error
+    assert "not a Road Marking or a Road Parking" in error
 
 
 def test_the_paint_surface_is_found_by_name_or_taken_as_an_index():
@@ -191,7 +191,7 @@ def test_path_errors_name_the_road_marking():
     assert "A Road Marking follows one unbranched line" in r["error"]
     r = rm.create_road_marking(_conn({"GetDetailsOfElements": _details({"m": morph})}), source_guid="m",
                                marking="Parking 60 degrees")
-    assert "A Parking Place follows one unbranched line" in r["error"]
+    assert "A Road Parking follows one unbranched line" in r["error"]
 
 
 async def _call_tool(monkeypatch, tapir, args):

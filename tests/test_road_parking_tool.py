@@ -1,4 +1,4 @@
-"""create_road_marking choosing between a Road Marking and a Parking Place, and placing a Parking Place."""
+"""create_road_marking choosing between a Road Marking and a Road Parking, and placing a Road Parking."""
 import json
 import math
 
@@ -9,10 +9,10 @@ from tests import test_road_marking_tool as base
 from tests.test_road_marking_tool import (LOOK, MESH, NEW, OK, PTS, SLAB, STORIES, _call_tool, _conn, _details,
                                            _marking, _named, _params, _reads, _writes)
 
-PP = rm.PARTS[rm.PARKING_PLACE]
+PP = rm.PARTS[rm.ROAD_PARKING]
 RM = rm.PARTS[rm.ROAD_MARKING]
 LIB = {"libraryParts": [{"documentName": "Road Marking", "fileName": "Road Marking.gsm", "typeId": "Object"},
-                        {"documentName": "Parking Place", "fileName": "Parking Place.gsm", "typeId": "Object"}]}
+                        {"documentName": "Road Parking", "fileName": "Road Parking.gsm", "typeId": "Object"}]}
 ONLY_RM = {"libraryParts": [LIB["libraryParts"][0]]}
 ONLY_PP = {"libraryParts": [LIB["libraryParts"][1]]}
 CREATED = {"CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]}, "SetGDLParametersOfElements": OK}
@@ -42,10 +42,10 @@ def _new(part=PP):
 
 # ---------------------------------------------------------------- which part
 
-def test_a_parking_name_places_a_parking_place():
+def test_a_parking_name_places_a_road_parking():
     conn = _new(PP)
     r = rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
-    assert r["created"] and placed_part(conn) == "Parking Place"
+    assert r["created"] and placed_part(conn) == "Road Parking"
 
 
 def test_a_road_marking_name_places_a_road_marking():
@@ -64,12 +64,12 @@ def test_the_parts_name_is_matched_without_regard_to_case():
     assert rm.part_of_name("Custom") is RM and rm.part_of_name(None) is RM and rm.part_of_name("5999") is RM
 
 
-def test_a_new_parking_place_takes_its_own_defaults():
-    # stale settings are written back to Parking Place's table, not Road Marking's
+def test_a_new_road_parking_takes_its_own_defaults():
+    # stale settings are written back to Road Parking's table, not Road Marking's
     stale = dict(showPlanFill=False, paintSurface=78, thickness=0.01, bayWidth=3.0, showSymbol=False)
     conn = _conn({"GetAvailableLibraryParts": LIB, **CREATED, "GetGDLParametersOfElements": _gdl(**stale)})
     rm.create_road_marking(conn, points=PTS, dry_run=False, marking="Parking 90 degrees")
-    assert placed_part(conn) == "Parking Place"
+    assert placed_part(conn) == "Road Parking"
     written = dict(_named(_writes(conn)[0]))
     assert written["bayWidth"] == PP.table["defaults"]["bayWidth"] and written["showSymbol"] is True
     assert written["paintSurface"] == PP.table["defaults"]["paintSurface"] and written["thickness"] == 0.003
@@ -89,7 +89,7 @@ def test_the_kerb_line_goes_through_stripes():
 # ---------------------------------------------------------------- update
 
 def test_update_uses_the_elements_own_part():
-    for part, name, other in ((PP, "Parking Place", "Road Marking"), (RM, "Road Marking", "Parking Place")):
+    for part, name, other in ((PP, "Road Parking", "Road Marking"), (RM, "Road Marking", "Road Parking")):
         held = _marking(name=name)
         conn = _conn({"GetDetailsOfElements": _details({"m-1": held}), "GetAvailableLibraryParts": LIB,
                       "SetGDLParametersOfElements": OK, "GetGDLParametersOfElements": base._gdl(part)})
@@ -100,8 +100,8 @@ def test_update_uses_the_elements_own_part():
 
 
 def test_update_refuses_a_name_of_the_other_part():
-    for name, other, held, want in (("5352 Disabled bay", "Parking Place", "Road Marking", RM),
-                                    ("5111 Solid divider", "Road Marking", "Parking Place", PP)):
+    for name, other, held, want in (("5352 Disabled bay", "Road Parking", "Road Marking", RM),
+                                    ("5111 Solid divider", "Road Marking", "Road Parking", PP)):
         conn = _conn({"GetDetailsOfElements": _details({"m-1": _marking(name=held)}),
                       "GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,
                       "GetGDLParametersOfElements": base._gdl(want)})
@@ -114,11 +114,11 @@ def test_update_refuses_any_other_library_part():
     beam = _conn({"GetDetailsOfElements": _details({"b-1": _marking(name="Swept Beam")}),
                   "SetGDLParametersOfElements": OK})
     r = rm.create_road_marking(beam, update_guid="b-1", points=PTS, dry_run=False)
-    assert "Road Marking" in r["error"] and "Parking Place" in r["error"] and not _writes(beam)
+    assert "Road Marking" in r["error"] and "Road Parking" in r["error"] and not _writes(beam)
 
 
 def test_custom_is_valid_on_both_parts():
-    for part, name in ((PP, "Parking Place"), (RM, "Road Marking")):
+    for part, name in ((PP, "Road Parking"), (RM, "Road Marking")):
         conn = _conn({"GetDetailsOfElements": _details({"m-1": _marking(name=name)}),
                       "GetAvailableLibraryParts": LIB, "GetGDLParametersOfElements": base._gdl(part)})
         r = rm.create_road_marking(conn, update_guid="m-1", points=PTS, marking="custom")
@@ -133,22 +133,22 @@ def test_unknown_names_list_both_parts_presets():
 
 # ---------------------------------------------------------------- refusals
 
-def test_parking_place_refuses_lettering_and_bar_width():
+def test_road_parking_refuses_lettering_and_bar_width():
     conn = _conn({"GetAvailableLibraryParts": LIB})
     for kwargs in ({"lettering": {"text": "BUS"}}, {"lettering": {"offset": 1.0}}, {"bays": {"bar_width": 0.2}}):
         r = rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", **kwargs)
-        assert "Parking Place" in r["error"], kwargs
+        assert "Road Parking" in r["error"], kwargs
 
 
 @pytest.mark.parametrize("stripes", [{"1": {"offset": 1}}, {"2": {"width": 1}}, {"3": {"dash": 1}},
                                      {"1": {"on": True}}, {"1": {"shape": "Bar"}}, {"2": {"angle": 10}}])
-def test_parking_place_refuses_stripe_values_the_part_owns(stripes):
+def test_road_parking_refuses_stripe_values_the_part_owns(stripes):
     r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking="Parking 60 degrees",
                                stripes=stripes)
-    assert "Parking Place" in r["error"] and "set by the Parking Place part" in r["error"]
+    assert "Road Parking" in r["error"] and "set by the Road Parking part" in r["error"]
 
 
-def test_parking_place_takes_the_stripe_values_it_leaves_to_the_call():
+def test_road_parking_takes_the_stripe_values_it_leaves_to_the_call():
     r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking="Parking 60 degrees",
                                stripes={"1": {"width": 6.0, "dash": 0.12, "gap": 2.3, "angle": -20},
                                         "2": {"on": True}, "3": {"on": True}})
@@ -163,7 +163,7 @@ def test_road_marking_refuses_the_bay_keys(key, value):
     assert "Road Marking" in r["error"] and key in r["error"]
 
 
-def test_both_ends_is_refused_on_parking_place():
+def test_both_ends_is_refused_on_road_parking():
     r = rm.create_road_marking(_conn({"GetAvailableLibraryParts": LIB}), points=PTS, marking="Parking 60 degrees",
                                pattern_align="Both ends")
     assert "patternAlign must be one of: Start, Centre, End" in r["error"]
@@ -199,7 +199,7 @@ def test_a_parking_row_with_bay_values_and_a_short_path_warns_of_the_overhang():
 
 
 # The part's Parameter Script (follow rule) moves s1Offset, s2Offset, s2Width and s3Width when s1Width or s1Dash
-# change, so the reach, which the drape samples, must follow the same rule (parking_place_model.follow).
+# change, so the reach, which the drape samples, must follow the same rule (road_parking_model.follow).
 @pytest.mark.parametrize("marking,stripes,reach", [
     ("Parking 90 degrees", {"1": {"width": 6.0}}, (0.0, 6.0)),
     ("Parking 90 degrees", {"1": {"width": 4.0}}, (0.0, 4.0)),
@@ -224,18 +224,18 @@ def test_a_slab_ending_short_of_a_wide_row_is_reported_partly_off():
     assert r["partly_off_surface"] and r["reach"] == {"u_lo": 0.0, "u_hi": 6.0}
 
 
-def test_a_parking_place_bay_refuses_stripes():
+def test_a_road_parking_bay_refuses_stripes():
     conn = _conn({"GetAvailableLibraryParts": LIB})
     r = rm.create_road_marking(conn, points=PTS, marking="5352 Disabled bay", stripes={"3": {"on": True}})
-    assert "Parking Place bays take no stripes" in r["error"]
+    assert "Road Parking bays take no stripes" in r["error"]
     r = rm.create_road_marking(conn, points=PTS, marking="Parking 90 degrees", bays={"layout": "Taxi bay"},
                                stripes={"3": {"on": True}})
-    assert "Parking Place bays take no stripes" in r["error"]
-    upd = _conn({"GetDetailsOfElements": _details({"m-1": _marking(name="Parking Place")}),
+    assert "Road Parking bays take no stripes" in r["error"]
+    upd = _conn({"GetDetailsOfElements": _details({"m-1": _marking(name="Road Parking")}),
                  "GetAvailableLibraryParts": LIB, "SetGDLParametersOfElements": OK,
                  "GetGDLParametersOfElements": _gdl(bayLayout="Taxi bay", markingType="5351 Taxi bay")})
     r = rm.create_road_marking(upd, update_guid="m-1", points=PTS, stripes={"3": {"on": True}}, dry_run=False)
-    assert "Parking Place bays take no stripes" in r["error"] and not _writes(upd)
+    assert "Road Parking bays take no stripes" in r["error"] and not _writes(upd)
     assert "error" not in rm.create_road_marking(conn, points=PTS, marking="5352 Disabled bay", stripes={})
 
 
@@ -247,7 +247,7 @@ def test_a_parking_row_drapes_on_the_saved_surfaces():
     r = rm.create_road_marking(conn, points=PTS, marking="Parking 90 degrees", stripes={"3": {"on": True}},
                                drape_on=["slab"], lift=0.002, dry_run=False)
     assert r["created"] is True and r["element"] == "new" and r["marking_after"] == "Parking 90 degrees"
-    assert placed_part(conn) == "Parking Place"
+    assert placed_part(conn) == "Road Parking"
     # the row reaches 5.0 m to the right of the path; the kerb line adds half its 0.10 m width to the left
     assert r["reach"] == {"u_lo": -0.05, "u_hi": 5.0}
     placed = [p for c, p in conn._core.calls if c == "CreateObjects"][0]["objectsData"][0]
@@ -257,7 +257,7 @@ def test_a_parking_row_drapes_on_the_saved_surfaces():
     assert r["off_surface"] == [] and r["partly_off_surface"] == []
 
 
-async def test_the_registered_tool_places_a_parking_place_from_json_text(monkeypatch):
+async def test_the_registered_tool_places_a_road_parking_from_json_text(monkeypatch):
     tapir = {"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB}
     payload = await _call_tool(monkeypatch, tapir, {
         "points": json.dumps(PTS), "marking": "5351 Taxi bay", "bays": json.dumps({"depth": 4.5}),

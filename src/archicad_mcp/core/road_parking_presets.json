@@ -1,9 +1,9 @@
 {
  "source": {
   "repo": "Archicad GDL",
-  "commit": "b34d76e",
-  "part": "Parking Place",
-  "exporter": "parking_place/export_presets.py"
+  "commit": "ae5bde8",
+  "part": "Road Parking",
+  "exporter": "road_parking/export_presets.py"
  },
  "settings": [
   "pathTolerance",

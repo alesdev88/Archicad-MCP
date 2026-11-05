@@ -1,12 +1,12 @@
-"""road_marking_presets.json and parking_place_presets.json: the two parts' preset tables, exported from their
-models (Archicad GDL repo, road_marking/export_presets.py and parking_place/export_presets.py, which also check
+"""road_marking_presets.json and road_parking_presets.json: the two parts' preset tables, exported from their
+models (Archicad GDL repo, road_marking/export_presets.py and road_parking/export_presets.py, which also check
 these copies)."""
 import json
 from pathlib import Path
 
 CORE = Path(__file__).parents[1] / "src" / "archicad_mcp" / "core"
 TABLE = json.loads((CORE / "road_marking_presets.json").read_text(encoding="utf-8"))
-PARKING = json.loads((CORE / "parking_place_presets.json").read_text(encoding="utf-8"))
+PARKING = json.loads((CORE / "road_parking_presets.json").read_text(encoding="utf-8"))
 
 
 def test_the_table_has_the_parts_28_presets_and_its_values():
