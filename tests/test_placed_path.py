@@ -143,3 +143,25 @@ def test_nodes_closer_than_the_merge_gap_are_refused():
     pp.check_plan_gaps([(0, 0, 0), (0.01, 0, 0), (3, 0, 1)], "Swept Beam")
     with pytest.raises(pp.PlacedPathError, match=r"Nodes 2 and 3 are 5\.0 mm apart"):
         pp.check_plan_gaps([(0, 0, 0), (3, 0, 0), (3.005, 0, 2)], "Swept Beam")
+
+
+def test_place_sends_the_angle_only_when_given():
+    sent = []
+
+    def create(params):
+        sent.append(params["objectsData"][0])
+        return {"elements": [{"elementId": {"guid": "g-1"}}]}
+
+    conn = _conn({"CreateObjects": create})
+    assert pp.place(conn, "Road Arrow", (1.0, 2.0, 3.0), 0, angle=1.5) == "g-1"
+    pp.place(conn, "Road Arrow", (1.0, 2.0, 3.0), 0)
+    assert sent[0]["angle"] == 1.5 and "angle" not in sent[1]
+
+
+def test_surface_index_takes_an_index_digits_or_a_name():
+    conn = _conn({"GetAttributesByType": {"attributes": [{"name": "Paint", "index": 7}]}})
+    assert pp.surface_index(conn, 5) == 5 and pp.surface_index(conn, "32") == 32
+    assert pp.surface_index(conn, "paint") == 7
+    for bad in (True, 1.5, None):
+        with pytest.raises(pp.PlacedPathError, match="paint_surface"):
+            pp.surface_index(conn, bad)
