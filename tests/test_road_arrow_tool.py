@@ -43,5 +43,12 @@ def test_past_the_end_runs_on_straight():
     assert pl.tip == pytest.approx((5.0, 0.0)) and pl.past_end
     assert ra.axis_point(path, -1.0, 0.5) == pytest.approx((-1.0, -0.5))
     assert ra.axis_point(path, 3.0, 0.0) == pytest.approx((3.0, 0.0))
-    assert not ra.place_on_axis(path, 2.0005, "tail", 0.0001, 0.0).past_end      # within 1 mm
-    assert ra.place_on_axis(path, 2.002, "tail", 0.0001, 0.0).past_end
+    assert not ra.place_on_axis(path, 2.0005, "tip", 0.01, 0.0).past_end      # within 1 mm
+    assert ra.place_on_axis(path, 2.002, "tip", 0.01, 0.0).past_end
+
+
+def test_an_axis_that_folds_back_over_the_arrow_is_refused_not_a_crash():
+    # a hairpin: out 5 m and back, so the tail at 0 and the tip at 10 coincide
+    path = dr.PlanPath([(0, 0, 0), (5, 0, 0), (0, 0.0001, 0)], [0.0, 0.0, 0.0], 0.002)
+    with pytest.raises(ra.RoadArrowError, match="station 0.*folds back"):
+        ra.place_on_axis(path, 0.0, "tail", path.length, 0.0)

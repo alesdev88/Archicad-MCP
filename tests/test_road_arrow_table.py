@@ -85,3 +85,22 @@ def test_custom_defaults_come_from_the_nearest_drawn_row():
     d = ra.dimensions("5412 Left", "Custom", None, 0.5)          # no length: the row's own
     assert d["length"] == 5.0 and d["u_lo"] == pytest.approx(-0.975 * 0.5 / 1.05)
     assert ra.dimensions("5412 Left", "Custom", 6.25, None)["length"] == 6.25   # tie: 7.50 m, same width
+
+
+def test_a_fixed_length_arrow_with_a_speed_follows_the_size_fix_and_keeps_custom(monkeypatch):
+    rows = {"3.00 m": {"length": 3.0, "width": 1.0}, "10.00 m": {"length": 10.0, "width": 1.0},
+            "20.00 m": {"length": 20.0, "width": 1.0}}
+    monkeypatch.setitem(ra.TABLE["arrows"], "Fixed", {"by_speed": False, "sizes": rows})
+    size, warnings = ra.pick_size("Fixed", "18.00 m", speed_kmh=50)
+    assert size == "20.00 m" == ra.pick_size("Fixed", "18.00 m")[0] and "20.00 m" in warnings[0]
+    assert ra.pick_size("Fixed", "Custom", speed_kmh=50)[0] == "Custom"
+    assert ra.pick_size("5417 Wrong way", "Custom", speed_kmh=50)[0] == "Custom"
+
+
+@pytest.mark.parametrize("kwargs, argument", [
+    (dict(speed_kmh=float("nan")), "speed_kmh"), (dict(speed_kmh=float("inf")), "speed_kmh"),
+    (dict(custom_length=float("nan")), "custom_length"), (dict(custom_length=float("inf")), "custom_length"),
+    (dict(custom_width=float("nan")), "custom_width"), (dict(custom_width=float("inf")), "custom_width")])
+def test_values_that_are_not_finite_are_refused(kwargs, argument):
+    with pytest.raises(ra.RoadArrowError, match=argument):
+        ra.pick_size("5411 Straight", "5.00 m", **kwargs)

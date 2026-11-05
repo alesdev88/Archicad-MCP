@@ -47,7 +47,7 @@ def arrow_name(arrow) -> str:
 
 
 def _number(argument: str, value) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise RoadArrowError(f"{argument} must be a number, got {value!r}.")
     return float(value)
 
@@ -112,7 +112,7 @@ def pick_size(name, current, size=None, speed_kmh=None, custom_length=None, cust
     if speed_kmh is not None:
         if arrow["by_speed"]:
             return next(s for limit, s in TABLE["by_speed"] if limit is None or speed <= limit), []
-        keep = current if current in sizes else next(iter(sizes))
+        keep = current if current in sizes or current == CUSTOM else _nearest(sizes, _asked_length(current))
         return keep, [f"{name} has a fixed length: speed_kmh does not apply, it stays {keep}."]
     if current in sizes or current == CUSTOM:
         return current, []
@@ -173,6 +173,9 @@ def place_on_axis(path: dr.PlanPath, station: float, anchor: str, length: float,
     s_tail, s_tip = station - a * length, station + (1 - a) * length
     (x0, y0), (x1, y1) = axis_point(path, s_tail, offset), axis_point(path, s_tip, offset)
     norm = math.hypot(x1 - x0, y1 - y0)
+    if norm < STATION_TOL:
+        raise RoadArrowError(f"At station {station:g} the axis folds back on itself over the arrow's length "
+                             f"({length:g} m): its tail and tip land on the same point, so it has no direction.")
     d = ((x1 - x0) / norm, (y1 - y0) / norm)
     ax, ay = axis_point(path, station, offset)
     tail = (ax - a * length * d[0], ay - a * length * d[1])
