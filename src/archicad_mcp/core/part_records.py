@@ -69,6 +69,10 @@ class PartRecord:
     # The `flipped` of the temporary wall the combos were seen in; None when it could
     # not be read, or for a record kept before it was.
     wall_flipped: bool | None = None
+    # What the part itself says, read fresh on each learning: {"a", "b", "height"} from its
+    # default A, B and ZZYZX; None when it could not be read. `height` above is what was
+    # recorded about the part and may be a deliberate choice, so it comes first.
+    own_size: dict | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:

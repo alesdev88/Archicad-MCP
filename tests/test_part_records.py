@@ -247,3 +247,18 @@ def test_a_failed_write_leaves_the_old_file_and_no_stray_temporary(tmp_path, mon
 def test_a_successful_save_leaves_only_the_file(tmp_path):
     PartRecords(tmp_path / "r.json").save(bed())
     assert [p.name for p in tmp_path.iterdir()] == ["r.json"]
+
+
+OWN = {"a": 1.6, "b": 2.0, "height": 0.6}
+
+
+def test_a_record_without_own_size_loads_with_none():
+    record = PartRecord.from_json({"name": "Bed", "guid": "g", "kind": "object",
+                                   "learned": "2026-10-22"})
+    assert record.own_size is None
+
+
+def test_own_size_round_trips_through_the_store(tmp_path):
+    kept = PartRecords(tmp_path / "library-parts.json")
+    kept.save(PartRecord(name="Bed", guid="g", kind="object", learned="2026-11-06", own_size=OWN))
+    assert kept.get("Bed").own_size == OWN

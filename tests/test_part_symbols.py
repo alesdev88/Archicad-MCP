@@ -9,17 +9,24 @@ import io
 import math
 
 import pytest
+from multiconn_archicad.errors import TapirCommandError
 from PIL import Image
 
+from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.part_symbols import (
     CELL,
     CROSS,
     FILL,
     LINE,
     NUMBER,
+    default_parameters,
     draw_symbols,
+    own_size_of,
     symbol_extents,
+    symbol_of,
 )
+from tests.conftest import FakeCore
+from tests.fixtures import api_replays
 
 R = math.sqrt(0.5)
 PI = math.pi
@@ -131,3 +138,97 @@ def test_a_fill_polygon_is_filled_light_and_outlined():
 
 def test_an_arc_is_drawn():
     assert _rows_of(_image([[arc(0, PI / 2)]]), LINE)
+
+
+# ---------- the reads ----------
+
+def _connection(tapir, missing=()):
+    official = dict(api_replays.OFFICIAL)
+    official["API.IsAddOnCommandAvailable"] = lambda p: {
+        "available": p["addOnCommandId"]["commandName"] not in missing}
+    core = FakeCore(official=official, tapir=tapir)
+    return ArchicadConnection(19723, core=core), core
+
+
+def _sent(core, command):
+    return [p for c, p in core.calls if c == command]
+
+
+def _refuses(p):
+    raise TapirCommandError(message="refused", code=1)
+
+
+def _named(**values):
+    return [{"name": k, "type": "Length", "value": v} for k, v in values.items()]
+
+
+def test_own_size_comes_from_a_b_and_zzyzx():
+    assert own_size_of(_named(A=0.8, B=2.0, ZZYZX=0.5)) == {"a": 0.8, "b": 2.0, "height": 0.5}
+
+
+def test_a_part_without_zzyzx_has_no_height():
+    assert own_size_of(_named(A=0.9, B=2.1)) == {"a": 0.9, "b": 2.1, "height": None}
+
+
+@pytest.mark.parametrize("zzyzx", [0, -1, "tall"])
+def test_a_height_not_above_zero_is_no_height(zzyzx):
+    assert own_size_of(_named(A=0.9, B=2.1, ZZYZX=zzyzx)) == {"a": 0.9, "b": 2.1, "height": None}
+
+
+@pytest.mark.parametrize("a", [0, -0.5, None, "wide", True, [1.0]])
+def test_an_a_that_is_no_positive_number_gives_no_size(a):
+    assert own_size_of(_named(A=a, B=2.0)) is None
+
+
+def test_a_b_that_is_no_positive_number_gives_no_size():
+    assert own_size_of(_named(A=1.0, B="deep")) is None
+
+
+@pytest.mark.parametrize("parameters", [None, []])
+def test_no_parameters_give_no_size(parameters):
+    assert own_size_of(parameters) is None
+
+
+def test_default_parameters_ask_by_name():
+    answer = {"gdlParametersOfLibraryParts": [{"parameters": _named(A=1.0)}]}
+    conn, core = _connection({"GetGDLParametersOfLibraryParts": answer})
+    assert default_parameters(conn, "Bed Double 01") == _named(A=1.0)
+    assert _sent(core, "GetGDLParametersOfLibraryParts") == [
+        {"libraryParts": [{"libraryPartName": "Bed Double 01"}]}]
+
+
+@pytest.mark.parametrize("tapir, missing", [
+    ({}, ["GetGDLParametersOfLibraryParts"]),
+    ({"GetGDLParametersOfLibraryParts": _refuses}, ()),
+    ({"GetGDLParametersOfLibraryParts": {"gdlParametersOfLibraryParts": [
+        {"error": {"code": 1, "message": "Not found"}}]}}, ()),
+    ({"GetGDLParametersOfLibraryParts": {"gdlParametersOfLibraryParts": [
+        {"parameters": []}]}}, ()),
+    ({"GetGDLParametersOfLibraryParts": {"gdlParametersOfLibraryParts": []}}, ()),
+])
+def test_default_parameters_are_none_when_the_read_fails(tapir, missing):
+    conn, _ = _connection(tapir, missing)
+    assert default_parameters(conn, "Door") is None
+
+
+def test_symbol_of_asks_for_the_defaults_or_an_instance():
+    answer = {"primitives": [line(0, 0, 1, 1)]}
+    conn, core = _connection({"GetLibraryPart2DPrimitives": answer})
+    assert symbol_of(conn, "Door") == [line(0, 0, 1, 1)]
+    symbol_of(conn, "Door", "G")
+    assert _sent(core, "GetLibraryPart2DPrimitives") == [
+        {"name": "Door"}, {"name": "Door", "elementId": {"guid": "G"}}]
+
+
+@pytest.mark.parametrize("tapir, missing", [
+    ({}, ["GetLibraryPart2DPrimitives"]),
+    ({"GetLibraryPart2DPrimitives": _refuses}, ()),
+])
+def test_symbol_of_is_none_when_the_read_fails(tapir, missing):
+    conn, _ = _connection(tapir, missing)
+    assert symbol_of(conn, "Door") is None
+
+
+def test_a_symbol_with_nothing_in_it_is_an_empty_list():
+    conn, _ = _connection({"GetLibraryPart2DPrimitives": {"primitives": []}})
+    assert symbol_of(conn, "Door") == []

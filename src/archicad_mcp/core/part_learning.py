@@ -50,6 +50,7 @@ from archicad_mcp.core.part_records import (
     RecordsFileError,
     identity_problem,
 )
+from archicad_mcp.core.part_symbols import parameter_number
 from archicad_mcp.core.window_image import capture_window
 from archicad_mcp.extract import _fetch_types, element_payload, get_all_element_ids
 from archicad_mcp.tapir_requirements import installed_version
@@ -556,7 +557,7 @@ class _Learning:
                  for i in range(len(sized))]
         taken = []
         for p, parameters in zip(sized, lists):
-            a, b = _number(parameters, "A"), _number(parameters, "B")
+            a, b = parameter_number(parameters, "A"), parameter_number(parameters, "B")
             if a is None or b is None:
                 self.warnings.append(f"The GDL A and B of sample '{p.label}' could not be "
                                      "read, so its footprint is fitted against the size sent.")
@@ -841,16 +842,6 @@ def _from_insertion(box: tuple, placed: _Placed) -> tuple[float, float, float, f
 def _parameters_of(entry: object) -> list | None:
     parameters = entry.get("parameters") if isinstance(entry, dict) else None
     return parameters if isinstance(parameters, list) and parameters else None
-
-
-def _number(parameters: list | None, name: str) -> float | None:
-    for parameter in parameters or []:
-        if isinstance(parameter, dict) and str(parameter.get("name")).casefold() == name.casefold():
-            value = parameter.get("value")
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return float(value)
-            return None
-    return None
 
 
 def _named_values(parameters: list) -> list[dict]:
