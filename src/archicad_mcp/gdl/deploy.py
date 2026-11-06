@@ -21,8 +21,8 @@ from archicad_mcp.gdl.toolchain import ToolchainError
 
 def embed_gsm(conn: ArchicadConnection, gsm_path: str | Path,
               output_name: str | None = None, replace: bool = False) -> dict:
-    """`replace` deletes an embedded file of that name first, which changes the part for
-    every instance placed from it; otherwise Tapir refuses a name already there."""
+    """`replace` deletes an embedded file of that name first, and instances already placed
+    follow the new build (see docs/gdl-pipeline.md); otherwise Tapir refuses the name."""
     gsm_path = Path(gsm_path)
     params: dict = {
         "files": [{

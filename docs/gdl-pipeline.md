@@ -47,8 +47,11 @@ itself rather than sitting in the linked library folder. This is the fallback
 path if the linked-library folder does not work in your setup. Deploying under a
 name already there fails with a clear error instead of silently rendering the
 previous build. Pass `replace_embedded=true` as well to replace it (Tapir 1.7.1,
-Archicad 27), which changes the part for every instance placed from it, or deploy
-under a fresh name.
+Archicad 27), or deploy under a fresh name. Instances already placed follow the new
+build, but not entirely: live on MCP-Test (06.11.2026, Archicad 29, Tapir 1.8.0), an
+instance of a 1 m cube replaced by a 2 m cube read A and B 2 and kept its height of 1,
+so it came out 2 x 2 x 1, while a new instance was 2 x 2 x 2. Re-place an instance whose
+height changed. Tapir has no command to take a part out of the embedded library again.
 
 ## What build does
 

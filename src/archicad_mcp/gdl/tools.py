@@ -297,8 +297,8 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
             raise ToolchainError(
                 f"Could not embed {gsm.name} into the project's embedded "
                 "library: the name is likely already there. Pass "
-                "replace_embedded=true to replace it, which changes it for every "
-                "placed instance, deploy under a fresh name, or use the linked "
+                "replace_embedded=true to replace it, which instances already "
+                "placed follow too, deploy under a fresh name, or use the linked "
                 "library folder instead of embed=true.")
         added, skipped = deploy_mod.embed_textures(conn, textures)
         embedded = {"textures_added": added, "textures_skipped": skipped}
@@ -447,8 +447,9 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
                           "setup. A name already embedded fails with a clear "
                           "error rather than silently rendering the previous "
                           "build; replace_embedded=true replaces it (Tapir 1.7.1, "
-                          "Archicad 27), which changes the part for every "
-                          "instance placed from it.",
+                          "Archicad 27). Instances already placed follow the new "
+                          "build, taking its A and B but keeping their own height, "
+                          "so re-place one whose height changed.",
               **tool_meta("Deploy GDL library part", read_only=False, destructive=True))
     @gdl_guarded
     def deploy_gdl_object(name: str, x: float = 0.0, y: float = 0.0,
