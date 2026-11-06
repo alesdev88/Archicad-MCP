@@ -51,7 +51,8 @@ Archicad 27), or deploy under a fresh name. Instances already placed follow the 
 build, but not entirely: live on MCP-Test (06.11.2026, Archicad 29, Tapir 1.8.0), an
 instance of a 1 m cube replaced by a 2 m cube read A and B 2 and kept its height of 1,
 so it came out 2 x 2 x 1, while a new instance was 2 x 2 x 2. Re-place an instance whose
-height changed. Tapir has no command to take a part out of the embedded library again.
+height changed. `DeleteEmbeddedLibraryItems`, through the gateway, takes a part out of
+the embedded library again.
 
 ## What build does
 
