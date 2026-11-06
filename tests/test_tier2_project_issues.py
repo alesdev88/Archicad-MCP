@@ -130,3 +130,28 @@ async def test_publish(core):
     assert payload == {"published": "IFC Export"}
     command, params = [c for c in core.calls if c[0] == "PublishPublisherSet"][0]
     assert params == {"publisherSetName": "IFC Export"}
+
+
+def _with_sets(core, *names):
+    core.tapir_responses["GetPublisherSets"] = {"publisherSets": [
+        {"name": n, "rootNavigatorItemId": {"guid": f"nav-{i}"}} for i, n in enumerate(names)]}
+
+
+async def test_publish_runs_a_set_the_project_has(core):
+    _with_sets(core, "PDF Set", "IFC Export")
+    payload = await call("publish", {"publisher_set_name": "IFC Export"})
+    assert payload == {"published": "IFC Export"}
+
+
+async def test_publish_refuses_a_name_the_project_does_not_have_and_lists_the_sets(core):
+    _with_sets(core, "PDF Set", "IFC Export")
+    payload = await call("publish", {"publisher_set_name": "IFC Exprt"})
+    assert "IFC Exprt" in payload["error"]
+    assert payload["publisher_sets"] == ["PDF Set", "IFC Export"]
+    assert not any(cmd == "PublishPublisherSet" for cmd, _ in core.calls)
+
+
+async def test_publish_lets_archicad_judge_when_the_sets_cannot_be_read(core):
+    # No canned GetPublisherSets: it fails the way the transport does.
+    payload = await call("publish", {"publisher_set_name": "IFC Export"})
+    assert payload == {"published": "IFC Export"}

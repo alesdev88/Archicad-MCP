@@ -31,6 +31,7 @@ from archicad_mcp.extract import (
     element_payload,
     get_selected_element_ids,
 )
+from archicad_mcp.tapir_requirements import require_tapir_command
 
 # Tapir's fixed id for the floor plan database (CommandBase.cpp,
 # DatabaseIdResolver). Every story shares it.
@@ -273,8 +274,99 @@ def clear(conn: ArchicadConnection, select: bool) -> dict:
     return out
 
 
+def _report_the_rest(out: dict, located: Located, view: View | None,
+                     warnings: list[str]) -> None:
+    """What the call did not show: other views, unknown GUIDs, GUIDs not searched for."""
+    if view not in (FLOOR_PLAN, MODEL_3D) and located.floor_plan:
+        out["in_other_views"] = [{"type": "FloorPlan", "name": "Floor Plan",
+                                  "guids": list(located.floor_plan)}]
+    else:
+        out["in_other_views"] = []
+    for v in located.views:
+        if v != view:
+            out["in_other_views"].append({"type": WINDOW_OF.get(v.kind, v.kind),
+                                          "name": v.name,
+                                          "guids": [g for g, w in located.elsewhere.items()
+                                                    if w == v]})
+    out["not_found"] = located.not_found
+    out["not_searched"] = located.not_searched
+    if located.not_searched:
+        warnings.append(f"{len(located.not_searched)} element(s) were not searched for: "
+                        f"the walk stops after {WALK_CAP} views, or a view could not be "
+                        "listed. Show them from the view that holds them.")
+    out["warnings"] = warnings
+
+
+def _ask_3d(conn: ArchicadConnection, guids: list[str]) -> dict | None:
+    """Sends ShowElementsIn3D; the error result when Archicad refuses, else None."""
+    response = conn.tapir("ShowElementsIn3D",
+                          {"elements": element_payload(guids)} if guids else {})
+    if response.get("success") is False:
+        detail = response.get("error") or {}
+        return {"error": "Archicad refused to show the elements in 3D: "
+                         f"{detail.get('message', detail)}"}
+    return None
+
+
+def _show_in_3d(conn: ArchicadConnection, guids: list[str], select: bool, highlight: bool,
+                zoom: bool) -> dict:
+    """Show Selection in 3D through Tapir's main after 1.8.0, not tried live yet. It fails
+    the whole call over a GUID the current database does not hold, so only floor plan
+    elements are sent, and from the floor plan or the 3D window."""
+    refusal = require_tapir_command(conn, "ShowElementsIn3D", "show_elements")
+    if refusal is not None:
+        return refusal
+    if not guids:
+        return _ask_3d(conn, []) or {"shown": "all", "view": {"type": "3DModel"}}
+    window = active_window(conn)
+    located = locate(conn, guids, window)
+    marked = list(located.floor_plan)
+    warnings: list[str] = []
+    out: dict = {"shown": 0, "view": None, "switched": False, "on_other_stories": []}
+    if not marked:
+        warnings.append("None of the elements is on the floor plan, and only those can be "
+                        "shown in 3D; nothing was shown.")
+        _report_the_rest(out, located, MODEL_3D, warnings)
+        return out
+    stories = conn.tapir("GetStories")
+    act = stories.get("actStory", 0)
+    if window not in ("FloorPlan", "3DModel"):
+        _go_to_story(conn, act)
+    refused = _ask_3d(conn, marked)
+    if refused is not None:
+        return refused
+    now = active_window(conn)
+    if now != window:
+        names = _story_names(stories)
+        out["switched"] = {"from": _label(window, act, names), "to": _label(now, None, names)}
+    if now != "3DModel":
+        warnings.append(f"Archicad shows {now or 'an unknown window'}, not the 3D window.")
+    out["view"] = {"type": "3DModel"}
+    out["shown"] = len(marked)
+    selected = {g.upper() for g in get_selected_element_ids(conn)}
+    out["not_selectable"] = [g for g in marked if g.upper() not in selected]
+    out["selected"] = len(marked) - len(out["not_selectable"])
+    if highlight:
+        out["highlighted"] = highlight_elements(conn, marked)["highlighted"]
+    else:
+        clear_highlight(conn)
+        out["highlighted"] = 0
+    out["zoomed"] = zoom and fit_in_window(conn, marked)
+    if not select:
+        warnings.append("The elements replaced the selection anyway: the 3D window shows "
+                        "what is selected.")
+    flat = [g for g in marked if located.types.get(g) in TWO_D_TYPES]
+    if flat:
+        warnings.append(f"The 3D window does not draw 2D elements, so these show nothing: "
+                        f"{', '.join(flat)}.")
+    _report_the_rest(out, located, MODEL_3D, warnings)
+    return out
+
+
 def show_elements(conn: ArchicadConnection, guids: list[str], select: bool = True,
-                  highlight: bool = True, zoom: bool = True) -> dict:
+                  highlight: bool = True, zoom: bool = True, in_3d: bool = False) -> dict:
+    if in_3d:
+        return _show_in_3d(conn, guids, select, highlight, zoom)
     if not guids:
         return clear(conn, select)
     window = active_window(conn)
@@ -343,22 +435,5 @@ def show_elements(conn: ArchicadConnection, guids: list[str], select: bool = Tru
                 other.setdefault(s, []).append(g)
     out["on_other_stories"] = [{"story_index": s, "story_name": names.get(s, f"Story {s}"),
                                 "guids": gs} for s, gs in sorted(other.items())]
-    if view not in (FLOOR_PLAN, MODEL_3D) and located.floor_plan:
-        out["in_other_views"] = [{"type": "FloorPlan", "name": "Floor Plan",
-                                  "guids": list(located.floor_plan)}]
-    else:
-        out["in_other_views"] = []
-    for v in located.views:
-        if v != view:
-            out["in_other_views"].append({"type": WINDOW_OF.get(v.kind, v.kind),
-                                          "name": v.name,
-                                          "guids": [g for g, w in located.elsewhere.items()
-                                                    if w == v]})
-    out["not_found"] = located.not_found
-    out["not_searched"] = located.not_searched
-    if located.not_searched:
-        warnings.append(f"{len(located.not_searched)} element(s) were not searched for: "
-                        f"the walk stops after {WALK_CAP} views, or a view could not be "
-                        "listed. Show them from the view that holds them.")
-    out["warnings"] = warnings
+    _report_the_rest(out, located, view, warnings)
     return out

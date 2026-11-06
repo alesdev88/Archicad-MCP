@@ -860,14 +860,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "in front, floor plan elements are shown there across every story. selected "
         "counts what Archicad really selected (not_selectable lists the rest). "
         "highlight=false removes any earlier highlight; guids=[] removes the highlight "
-        "and, with select, the selection, and changes nothing else. Changes only what "
+        "and, with select, the selection, and changes nothing else. in_3d=true (a Tapir "
+        "newer than 1.8.0) opens the 3D window on just the floor plan's elements among "
+        "them, as Show Selection in 3D does, so they always become the selection; there "
+        "guids=[] shows everything, as Show All in 3D does. Changes only what "
         "is on screen, never the project."),
               **_tool_meta("Show elements in Archicad", read_only=False, destructive=False))
     @_guarded
     def show_elements(guids: list[str], select: bool = True, highlight: bool = True,
-                      zoom: bool = True, port: int | None = None) -> dict:
+                      zoom: bool = True, in_3d: bool = False,
+                      port: int | None = None) -> dict:
         return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
-                                    highlight, zoom)
+                                    highlight, zoom, in_3d)
 
     from archicad_mcp.core import window_image as _window_image
 
@@ -1174,7 +1178,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _ifc_export.export_ifc(_tapir_conn(port, "export_ifc"), path, translator,
                                       scope, overwrite, dry_run)
 
-    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).",
+    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir). On a Tapir newer "
+                          "than 1.8.0 an unknown name is refused with the project's sets.",
               **_tool_meta("Run a publisher set", read_only=False, destructive=True))
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:

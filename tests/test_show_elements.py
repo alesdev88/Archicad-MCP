@@ -496,3 +496,134 @@ async def test_show_elements_is_full_mode_only():
     async with Client(build_server(mode="verdicts")) as client:
         names = {t.name for t in await client.list_tools()}
     assert "show_elements" not in names
+
+
+# ---------- in_3d ----------
+#
+# As Tapir's main after 1.8.0 runs ShowElementsIn3D: no elements shows everything; a GUID
+# not in the current database fails the whole call before the selection is touched; the
+# rest replace the selection and the 3D window comes forward.
+
+def serve_3d(monkeypatch, project: LiveProject, refuse=None) -> FakeCore:
+    def show_3d(params):
+        if refuse:
+            return {"success": False, "error": {"code": 1, "message": refuse}}
+        sent = [e["elementId"]["guid"].upper() for e in (params or {}).get("elements", [])]
+        current = project.databases.get(FLOOR_PLAN_DB, {})
+        if project.window not in ("FloorPlan", "3DModel") or not set(sent) <= set(current):
+            return {"success": False, "error": {"code": 2, "message": "Element not found."}}
+        if sent:
+            project.selected = set(sent) - project.unselectable
+        project.window = "3DModel"
+        return {"success": True}
+
+    core = serve(monkeypatch, project)
+    core.tapir_responses["ShowElementsIn3D"] = show_3d
+    return core
+
+
+def shown_in_3d(core) -> list[dict]:
+    return [p for c, p in core.calls if c == "ShowElementsIn3D"]
+
+
+async def test_in_3d_shows_the_elements_and_reads_the_selection_back(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0), "B": wall(1)}}, selected=["Z"],
+                          unselectable=["B"])
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A", "B"], "in_3d": True})
+    assert [[e["elementId"]["guid"] for e in p["elements"]] for p in shown_in_3d(core)] == [
+        ["A", "B"]]
+    assert out["view"] == {"type": "3DModel"}
+    assert out["shown"] == 2
+    assert out["selected"] == 1 and out["not_selectable"] == ["B"]
+    assert project.highlighted == ["A", "B"]
+    assert project.zoomed == [["A", "B"]]
+    assert out["warnings"] == []
+
+
+async def test_in_3d_without_guids_shows_everything_and_reads_nothing(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}}, selected=["A"])
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": [], "in_3d": True})
+    assert shown_in_3d(core) == [{}]
+    assert out == {"shown": "all", "view": {"type": "3DModel"}}
+    assert project.selected == {"A"}
+
+
+async def test_in_3d_sends_only_what_is_on_the_floor_plan_and_says_where_the_rest_is(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}, SEC_DB: {"S": {"type": "Line"}}})
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A", "S", "GONE"], "in_3d": True})
+    assert [[e["elementId"]["guid"] for e in p["elements"]] for p in shown_in_3d(core)] == [["A"]]
+    assert out["shown"] == 1
+    assert out["not_found"] == ["GONE"]
+    assert [(v["name"], v["guids"]) for v in out["in_other_views"]] == [
+        ("Building Section", ["S"])]
+
+
+async def test_in_3d_with_nothing_on_the_floor_plan_sends_nothing(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}, SEC_DB: {"S": {"type": "Line"}}})
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": ["S"], "in_3d": True})
+    assert shown_in_3d(core) == []
+    assert out["shown"] == 0 and out["view"] is None
+    assert any("floor plan" in w for w in out["warnings"])
+
+
+async def test_in_3d_warns_about_elements_the_3d_window_does_not_draw(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0), "T": {"type": "Text", "floorIndex": 0}}})
+    serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A", "T"], "in_3d": True})
+    [warning] = out["warnings"]
+    assert "T" in warning and "2D" in warning
+
+
+async def test_in_3d_from_a_section_goes_to_the_floor_plan_first(monkeypatch):
+    # The elements are looked up in the current database, so from a section's every one
+    # would answer "Element not found".
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(1)}}, window="Section", act_story=1)
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A"], "in_3d": True})
+    assert windows_asked(core) == [{"windowType": "FloorPlan", "storyIndex": 1}]
+    assert out["shown"] == 1
+    assert out["switched"]["from"].startswith("Section")
+    assert project.window == "3DModel"
+
+
+async def test_in_3d_from_the_floor_plan_asks_for_no_other_window(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}})
+    core = serve_3d(monkeypatch, project)
+    await show({"guids": ["A"], "in_3d": True})
+    assert windows_asked(core) == []
+
+
+async def test_in_3d_says_that_it_selects_when_told_not_to(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}})
+    serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A"], "in_3d": True, "select": False})
+    assert any("selection" in w for w in out["warnings"])
+    assert project.selected == {"A"}
+
+
+async def test_in_3d_highlight_false_removes_an_earlier_highlight(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}})
+    project.highlighted = ["OLD"]
+    serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A"], "in_3d": True, "highlight": False})
+    assert out["highlighted"] == 0 and project.highlighted == []
+
+
+async def test_in_3d_reports_a_refusal(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}})
+    serve_3d(monkeypatch, project, refuse="no 3D window here")
+    out = await show({"guids": ["A"], "in_3d": True})
+    assert "no 3D window here" in out["error"]
+    assert project.highlighted is None
+
+
+async def test_in_3d_is_refused_by_a_tapir_without_it(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}}, missing=["ShowElementsIn3D"])
+    core = serve_3d(monkeypatch, project)
+    out = await show({"guids": ["A"], "in_3d": True})
+    assert "ShowElementsIn3D" in out["error"]
+    assert shown_in_3d(core) == []
