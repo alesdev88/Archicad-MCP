@@ -188,6 +188,7 @@ def _reserve_guids(conn: ArchicadConnection, guids: list[str], confirm: bool) ->
     if not_elements:
         guids_sent = (item.get("elementId", {}).get("guid", "") for item in not_elements)
         result["not_elements"] = [spelled.get(g.upper(), g) for g in guids_sent]
+    if err is not None:
         result["note"] = err["error"]
     return result
 

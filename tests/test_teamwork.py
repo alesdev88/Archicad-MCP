@@ -198,6 +198,18 @@ def test_reserve_commit_says_why_when_the_failure_beside_a_non_element_was_real(
     assert "Failed to reserve elements." in payload["note"]
 
 
+def test_reserve_commit_lists_non_elements_on_an_answer_that_did_not_fail():
+    conn, ws = make()
+    def reserve(p):
+        ws.mine.add("w-1")
+        return {"executionResult": {"success": True},
+                "notElements": [{"elementId": {"guid": "Z-1"}}]}
+    conn._core.tapir_responses["ReserveElements"] = reserve
+    payload = reserve_elements(conn, ["w-1", "z-1"], confirm=True)
+    assert payload["reserved"] == ["w-1"] and payload["not_elements"] == ["z-1"]
+    assert "note" not in payload
+
+
 def test_reserve_takes_guids_in_any_case():
     # find_elements gives GUIDs uppercase; a caller may type them lowercase.
     conn, ws = make(mine=["z-1"])
