@@ -159,9 +159,16 @@ def test_with_nothing_drawn_there_is_no_image():
 
 def test_a_part_whose_defaults_cannot_be_read_is_drawn_without_sizes():
     library = Library({"Door": {"symbol": rect(0, 0, 1, 1)}})
-    [part] = preview_library_parts(library.connection(), ["Door"])["parts"]
+    out = preview_library_parts(library.connection(), ["Door"])
+    [part] = out["parts"]
     assert (part["a"], part["b"], part["height"]) == (None, None, None)
     assert part["extent"] == [0.0, 0.0, 1.0, 1.0]
+    [warning] = out["warnings"]
+    assert "'Door'" in warning and "size" in warning
+
+
+def test_parts_with_their_sizes_have_no_warning():
+    assert "warnings" not in preview_library_parts(Library().connection(), ["Door"])
 
 
 @pytest.mark.parametrize("command", sorted(READS))

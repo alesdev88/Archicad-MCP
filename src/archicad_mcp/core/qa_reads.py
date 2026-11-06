@@ -65,6 +65,9 @@ def read_missing_parts(conn: ArchicadConnection) -> MissingParts | str | None:
             unread += 1
         elif name and name.casefold() not in loaded:
             missing.append(guid)
+    if unread == len(guids):
+        return (f"the part name of all {unread} element(s) could not be read, so what is missing "
+                "is not known")
     return MissingParts(checked=len(guids), guids=tuple(missing), unread=unread)
 
 

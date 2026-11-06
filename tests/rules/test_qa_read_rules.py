@@ -170,6 +170,14 @@ def test_an_element_whose_name_cannot_be_read_does_not_fail_it():
     assert "1" in result.message and "could not be read" in result.message
 
 
+def test_it_skips_when_no_elements_part_name_could_be_read():
+    # It cannot tell "nothing is missing" from "the read answers nothing", so no pass.
+    project = Project(types={CHAIR: "Object", LAMP: "Lamp"}, names={})
+    result = parts_rule().check(parts_snapshot(project))
+    assert result.skipped is True
+    assert "could not be read" in result.skip_reason
+
+
 def test_an_empty_name_is_not_a_missing_part():
     project = Project(types={CHAIR: "Object"}, names={CHAIR: ""})
     assert parts_rule().check(parts_snapshot(project)).passed is True

@@ -483,10 +483,16 @@ project, once a newer Tapir is installed:
   the commit then applies.
 - An `edit_attributes` replace on throwaway attributes: the dry run's list against what
   the commit changes, a favourite that keeps a copy, and one undo step.
-- The `library-parts-loaded` rule with a library removed: whether the name
-  `GetMissingLibPartNames` gives matches the listing for loaded parts, as a mismatch would
-  fail every element. The `ifc-spatial-structure` rule on a real project, to learn whether
-  an element's IFC story ever differs from its home story.
+- The `library-parts-loaded` rule with a library removed: whether `GetMissingLibPartNames`
+  answers for loaded parts too (if it answers for none, the rule reports `skipped`), and
+  whether the name it gives matches the listing, as a mismatch would fail every element.
+  The `ifc-spatial-structure` rule on a real project, to learn whether an element's IFC
+  story ever differs from its home story.
+- Whether `GetGDLParametersOfLibraryParts` lists A and B. The DevKit calls that list
+  "others than A and B" and Tapir drops the separate values, though its own element read
+  matches the two lists up by index, which suggests they are there. If they are not, no
+  part gets an `own_size`: learning says so, every sample stays at the fixed sizes, and
+  `GetLibraryPartParameterValues` is the next read to try.
 - `learn_library_part` on Bed Double 01, Chair 01, Door and Window: how the symbol's extents
   compare with the plan boxes, which decides whether measuring from symbols is ever worth doing
   and settles which way a partial arc runs. Whether `GetGDLParametersOfLibraryParts` and

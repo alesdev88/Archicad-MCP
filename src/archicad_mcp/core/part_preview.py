@@ -48,7 +48,7 @@ def preview_library_parts(conn: ArchicadConnection, names: list[str]) -> dict:
         if refusal is not None:
             return refusal
     library = LoadedParts(conn)     # lists the library only if a name fails
-    parts, symbols, not_drawn = [], [], []
+    parts, symbols, not_drawn, warnings = [], [], [], []
     for name in wanted:
         primitives = symbol_of(conn, name)
         extents = symbol_extents(primitives) if primitives else None
@@ -56,11 +56,16 @@ def preview_library_parts(conn: ArchicadConnection, names: list[str]) -> dict:
             not_drawn.append({"name": name, "reason": _why_not_drawn(library, name, primitives)})
             continue
         own = own_size_of(default_parameters(conn, name)) or {}
+        if not own:
+            warnings.append(f"'{name}': its size could not be read (the read failed, or its "
+                            "default parameters hold no A and B above zero), so none is shown.")
         symbols.append(primitives)
         parts.append({"number": len(symbols), "name": name, "a": own.get("a"), "b": own.get("b"),
                       "height": own.get("height"),
                       "extent": [round(value, 4) + 0.0 for value in extents]})
     result: dict = {"parts": parts, "not_drawn": not_drawn, "note": NOTE}
+    if warnings:
+        result["warnings"] = warnings
     if symbols:
         result["png"] = draw_symbols(symbols)
     return result

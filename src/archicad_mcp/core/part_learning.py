@@ -53,6 +53,7 @@ from archicad_mcp.core.part_records import (
     identity_problem,
 )
 from archicad_mcp.core.part_symbols import (
+    DEFAULTS_READ,
     default_parameters,
     own_size_of,
     parameter_number,
@@ -201,6 +202,11 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
 
     learning = _Learning(conn, name, kind, origin, story, variants, own_size, defaults)
     learning.warnings.extend(notes)
+    if own_size is None and conn.tapir_command_available(DEFAULTS_READ):
+        learning.warnings.append(
+            "The part's own size could not be read (the read failed, or its default parameters "
+            "hold no A and B above zero), so the record holds none: a placement must give the "
+            "size, and an object's or lamp's samples use the fixed sizes.")
     left: dict[str, str] = {}
     try:
         outcome = learning.run()

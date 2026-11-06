@@ -1094,3 +1094,26 @@ def test_a_door_has_no_symbol_check(records):
     fake = Fake(symbol=lambda a, b: rect(0, 0, a, b), missing=())
     out = learn_library_part(fake.connection(), records, "Door", "door")
     assert "symbol_check" not in out
+
+
+@pytest.mark.parametrize("part, kind, options", [
+    ("Bed Double 01", "object", {"own": {"B": 2.0}}),
+    ("Bed Double 01", "object", {"own": {"A": 0, "B": 2.0}}),
+    ("Bed Double 01", "object", {"own_fails": True}),
+    ("Door", "door", {"own": {"gs_leaf_1_open": 0}}),
+])
+def test_learning_says_when_it_has_no_own_size_for_the_part(records, part, kind, options):
+    out = learn_library_part(Fake(missing=(), **options).connection(), records, part, kind)
+    [warning] = [w for w in out["warnings"] if "own size" in w]
+    assert "placement must give the size" in warning
+
+
+def test_learning_does_not_mention_an_own_size_it_read(records):
+    fake = Fake(own={"A": 0.8, "B": 2.0}, missing=())
+    out = learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+    assert not [w for w in out["warnings"] if "own size" in w]
+
+
+def test_learning_does_not_mention_an_own_size_a_tapir_cannot_read(records):
+    out = learn_library_part(Fake().connection(), records, "Bed Double 01", "object")
+    assert not [w for w in out["warnings"] if "own size" in w]

@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from archicad_mcp.connection import ArchicadConnection
 
-_DEFAULTS_READ = "GetGDLParametersOfLibraryParts"
+DEFAULTS_READ = "GetGDLParametersOfLibraryParts"
 _SYMBOL_READ = "GetLibraryPart2DPrimitives"
 
 CELL = 400
@@ -50,10 +50,10 @@ def parameter_number(parameters: list | None, name: str) -> float | None:
 def default_parameters(conn: ArchicadConnection, name: str) -> list[dict] | None:
     """The part's default GDL parameters as stored in it (Tapir says its Parameter Script is
     not run for this read); None when this Tapir cannot read them or the read fails."""
-    if not conn.tapir_command_available(_DEFAULTS_READ):
+    if not conn.tapir_command_available(DEFAULTS_READ):
         return None
     try:
-        items = conn.tapir(_DEFAULTS_READ, {"libraryParts": [{"libraryPartName": name}]}).get(
+        items = conn.tapir(DEFAULTS_READ, {"libraryParts": [{"libraryPartName": name}]}).get(
             "gdlParametersOfLibraryParts") or []
     except TapirCommandError:
         return None
