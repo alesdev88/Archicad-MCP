@@ -492,11 +492,12 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description=(
         "Create elements of any type Tapir can create. element_type: model wall, "
-        "beam, column, slab, roof, morph, mesh, stair, railing, zone, curtain_wall, "
-        "grid_element, object, lamp; hosted door, window (in a wall), opening; MEP "
-        "mep_route, mep_element (Archicad 28+), electrical_panel, electrical_device, "
-        "electrical_circuit (Archicad 30); markers section, interior_elevation; "
-        "hotlink_instance; 2D "
+        "beam, column, slab, roof, shell, morph, mesh, stair, railing, railing_polyline, "
+        "zone, curtain_wall, grid_element, object, lamp; hosted door, window (in a wall), "
+        "skylight (in a roof or shell), opening; MEP mep_route, mep_element, "
+        "mep_flexible_segment, mep_take_off (Archicad 28+), electrical_panel, "
+        "electrical_device, electrical_circuit (Archicad 30); markers section, "
+        "interior_elevation, detail_marker, worksheet_marker; hotlink_instance; 2D "
         "line, arc, circle, polyline, spline, hatch, hotspot, text, label, "
         "keynote_label; dimension, level_dimension, wall_thickness_dimension, "
         "section_dimension; "
@@ -541,13 +542,16 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
         "index -> GUID) when not every item was created, and 'placed_not_set' for an "
-        "element placed whose leaves Archicad refused."),
+        "element placed whose leaves Archicad refused. On a Tapir newer than 1.8.0, "
+        "database ({\"guid\": ...}, from GetDatabaseIdFromNavigatorItemId) puts lines, "
+        "arcs, circles, polylines, splines, hatches, hotspots, texts or labels into that "
+        "layout's, section's or other view's database instead of the active window's."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
-                        port: int | None = None) -> dict:
+                        database: dict | None = None, port: int | None = None) -> dict:
         return _create.create_elements(_conn(port), element_type, items, dry_run,
-                                       records=records)
+                                       records=records, database=database)
 
     from archicad_mcp.core import swept_beam as _swept
 

@@ -144,7 +144,7 @@ class Plan:
 
     def _creator(self, command):
         def create(p):
-            [items] = p.values()
+            [items] = [value for key, value in p.items() if key != "databaseId"]
             self.created.append((command, p))
             return {"elements": [
                 self.create_errors.get(i) or {"elementId": {"guid": f"new-{i}"}}
@@ -1326,3 +1326,148 @@ def test_an_element_id_on_create_waits_for_tapir_1_7_3():
     assert "set_element_data" in old["skipped"][0]["reason"]
     new = create_elements(Plan(tapir_version="1.7.3").connection(), "wall", [item])
     assert new["ready"] == 1 and new["payload"]["wallsData"][0]["id"] == "W-01"
+
+
+# The seven create commands of Tapir's main after 1.8.0, and `database`, which the 2D
+# commands take there: its elements go into that database, not the active window's.
+
+R1 = "00000000-0000-4000-8000-0000000000c1"
+SKYLIGHT = {"ownerId": {"guid": R1}, "anchorPosition": {"x": 1.0, "y": 1.0}}
+TAKE_OFF = {"segmentId": {"guid": GONE}, "distanceFromBeginning": 0.5}
+MARKER = {"clipPolygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]}
+TEXT = {"coordinate": {"x": 0, "y": 0, "z": 0}, "text": "A"}
+DB = {"guid": "00000000-0000-4000-8000-0000000000d1"}
+
+
+@pytest.mark.parametrize("owner", ["Roof", "Shell"])
+def test_a_skylight_goes_in_a_roof_or_a_shell(owner):
+    result = create_elements(Plan(types={R1: owner}).connection(), "skylight", [SKYLIGHT])
+    assert result["ready"] == 1 and result["skipped"] == []
+
+
+def test_a_skylight_in_a_wall_is_skipped_with_the_reason():
+    result = create_elements(Plan(types={R1: "Wall"}).connection(), "skylight", [SKYLIGHT])
+    assert result["ready"] == 0
+    assert "goes in a Roof or Shell" in result["skipped"][0]["reason"]
+
+
+def test_the_skylight_schema_reply_says_its_surface_placement_is_unverified():
+    notes = " ".join(create_elements(Plan().connection(), "skylight", [])["notes"])
+    assert "surface" in notes and "not" in notes
+
+
+@pytest.mark.parametrize("element_type, item, favorite_type", [
+    ("shell", {"shellClass": "Extruded", "profile": {"coordinates": [{"x": 0, "y": 0},
+                                                                     {"x": 1, "y": 0}]}},
+     "Shell"),
+    ("skylight", SKYLIGHT, "Skylight"),
+    ("railing_polyline", {"polylineCoordinates": [{"x": 0, "y": 0, "z": 0},
+                                                  {"x": 1, "y": 0, "z": 0}]}, "Railing"),
+])
+def test_the_new_types_check_their_favourites(element_type, item, favorite_type):
+    plan = Plan(types={R1: "Roof"}, favorites={favorite_type: ["Known"]})
+    conn = plan.connection()
+    result = create_elements(conn, element_type, [{**item, "favoriteName": "Known"},
+                                                  {**item, "favoriteName": "Knwon"}])
+    assert [s["index"] for s in result["skipped"]] == [1]
+    assert "closest: Known" in result["skipped"][0]["reason"]
+
+
+@pytest.mark.parametrize("element_type, item", [
+    ("mep_flexible_segment", {"domain": "Piping"}),
+    ("mep_take_off", TAKE_OFF),
+])
+def test_the_new_mep_types_need_archicad_28(element_type, item):
+    plan = Plan(archicad=27)
+    result = create_elements(plan.connection(), element_type, [item], dry_run=False)
+    assert "Archicad 28" in result["error"]
+    assert plan.created == []
+
+
+def test_a_take_off_is_sent_for_archicad_to_judge_its_segment():
+    # A routing segment does not read as an element here, like an electrical circuit:
+    # the other-database guard would refuse every one.
+    plan = Plan()
+    result = create_elements(plan.connection(), "mep_take_off", [TAKE_OFF], dry_run=False)
+    assert result["created"] == 1
+    assert plan.sent("CreateMEPTakeOffs") == [{"takeOffsData": [TAKE_OFF]}]
+
+
+@pytest.mark.parametrize("element_type, command, key", [
+    ("detail_marker", "CreateDetailMarkers", "detailMarkersData"),
+    ("worksheet_marker", "CreateWorksheetMarkers", "worksheetMarkersData"),
+])
+@pytest.mark.parametrize("window", ["FloorPlan", "Section"])
+def test_a_marker_is_placed_from_any_drawing_window(element_type, command, key, window):
+    plan = Plan(window=window)
+    conn = plan.connection()
+    assert create_elements(conn, element_type, [MARKER])["warnings"] == []
+    create_elements(conn, element_type, [MARKER], dry_run=False)
+    assert plan.sent(command) == [{key: [MARKER]}]
+
+
+def test_a_shell_is_placed_from_the_floor_plan():
+    item = {"shellClass": "Extruded", "profile": {"coordinates": [{"x": 0, "y": 0},
+                                                                  {"x": 1, "y": 0}]}}
+    result = create_elements(Plan(window="Section").connection(), "shell", [item])
+    assert any("floor plan or the 3D window" in w for w in result["warnings"])
+
+
+def test_database_goes_out_beside_the_items():
+    plan = Plan()
+    conn = plan.connection()
+    dry = create_elements(conn, "text", [TEXT], database=DB)
+    assert dry["payload"] == {"textsData": [TEXT], "databaseId": DB}
+    assert plan.created == []
+    create_elements(conn, "text", [TEXT], dry_run=False, database=DB)
+    assert plan.sent("CreateTexts") == [{"textsData": [TEXT], "databaseId": DB}]
+
+
+def test_without_database_nothing_says_one():
+    plan = Plan()
+    create_elements(plan.connection(), "text", [TEXT], dry_run=False)
+    assert plan.sent("CreateTexts") == [{"textsData": [TEXT]}]
+
+
+def test_database_is_refused_for_a_type_that_cannot_take_it():
+    plan = Plan()
+    result = create_elements(plan.connection(), "wall", [WALL], dry_run=False, database=DB)
+    assert "'wall'" in result["error"] and "text" in result["error"]
+    assert plan.created == []
+
+
+@pytest.mark.parametrize("version", ["1.8.0", None])
+def test_database_is_refused_on_a_tapir_not_known_to_take_it(version):
+    plan = Plan(tapir_version=version)
+    conn = plan.connection()
+    if version is None:
+        del plan.core.tapir_responses["GetAddOnVersion"]
+    result = create_elements(conn, "text", [TEXT], dry_run=False, database=DB)
+    assert "newer than 1.8.0" in result["error"]
+    assert plan.created == []
+
+
+@pytest.mark.parametrize("bad", [{"guid": "not-a-guid"}, {}, {"guid": DB["guid"], "x": 1}, "text"])
+def test_a_database_that_is_no_database_id_is_refused(bad):
+    plan = Plan()
+    result = create_elements(plan.connection(), "text", [TEXT], dry_run=False, database=bad)
+    assert "database" in result["error"]
+    assert plan.created == []
+
+
+LABEL = {"begCoordinate": {"x": 0, "y": 0}, "parentElementId": {"guid": W2}}
+
+
+def test_a_label_for_another_database_keeps_its_parent_unchecked_and_says_so():
+    # The guard knows only the active window's elements, so it would refuse this parent.
+    plan = Plan(types={W1: "Wall", W2: "Wall"}, elsewhere={W2})
+    conn = plan.connection()
+    without = create_elements(conn, "label", [LABEL])
+    assert without["ready"] == 0
+    result = create_elements(conn, "label", [LABEL], database=DB)
+    assert result["ready"] == 1
+    assert any("not checked" in w for w in result["warnings"])
+
+
+def test_a_text_for_another_database_has_no_host_to_warn_about():
+    assert create_elements(Plan().connection(), "text", [TEXT], database=DB)["warnings"] == []
