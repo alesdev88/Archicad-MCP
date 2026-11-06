@@ -160,7 +160,7 @@
     },
     {
       "name": "create_road_marking",
-      "description": "Place a Road Marking (lanes, crossings, stops, parking and bays, BUS and TAXI) along a line or points, draped onto Meshes and Slabs. Dry-run by default."
+      "description": "Place a Road Marking (lanes, crossings, stops, BUS and TAXI) or a Road Parking (parking rows, disabled, taxi and EV bays) along a line or points, draped onto Meshes and Slabs. Dry-run by default."
     },
     {
       "name": "create_road_arrow",

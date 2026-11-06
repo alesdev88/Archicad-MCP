@@ -8,6 +8,7 @@ from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core import road_marking as rm
 from tests.conftest import FakeCore
 
+RM = rm.PARTS[rm.ROAD_MARKING]
 LIB = {"libraryParts": [{"documentName": "Road Marking", "fileName": "Road Marking.gsm", "typeId": "Object"}]}
 OK = {"executionResults": [{"success": True}]}
 PTS = [{"x": 0, "y": 0, "z": 0}, {"x": 10, "y": 0, "z": 0}]
@@ -25,9 +26,9 @@ def _conn(tapir):
                                                    tapir=tapir))
 
 
-def _gdl(**over):
+def _gdl(_part=RM, **over):
     """A placed marking's parameters as GetGDLParametersOfElements returns them (angles in radians)."""
-    v = dict(rm.TABLE["defaults"])
+    v = dict(_part.table["defaults"])
     v.update(nodeX=[0.0, 10.0], nodeY=[0.0, 0.0], nodeZ=[0.0, 0.0], nodeFall=[0.0, 0.0], segArc=[0.0, 0.0])
     v.update(over)
     for k in (1, 2, 3):
@@ -93,15 +94,25 @@ def test_a_draped_write_places_on_the_surface_and_reads_the_name_back():
     conn = _conn({"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB,
                   "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
                   "SetGDLParametersOfElements": OK,
-                  "GetGDLParametersOfElements": _gdl(markingType="Parking 90 degrees")})
-    r = rm.create_road_marking(conn, points=PTS, marking="Parking 90 degrees", drape_on=["slab"], lift=0.002,
+                  "GetGDLParametersOfElements": _gdl(markingType="5111 Solid divider")})
+    r = rm.create_road_marking(conn, points=PTS, marking="5111 Solid divider", drape_on=["slab"], lift=0.002,
                                dry_run=False)
-    assert r["created"] is True and r["element"] == "new" and r["marking_after"] == "Parking 90 degrees"
+    assert r["created"] is True and r["element"] == "new" and r["marking_after"] == "5111 Solid divider"
     placed = [p for c, p in conn._core.calls if c == "CreateObjects"][0]["objectsData"][0]
     assert placed["coordinates"]["z"] == pytest.approx(3.252) and "floorIndex" not in placed
     written = {p["name"]: p["value"] for p in _writes(conn)[-1]}
     assert written["nodeZ"] == [0.0, 0.0] and written["nodeFall"] == [0.0, 0.0]
     assert r["off_surface"] == [] and r["partly_off_surface"] == []
+
+
+def test_a_new_marking_is_placed_at_angle_zero():
+    # The nodes assume no rotation, and the Object tool hands a new element its own angle (90 degrees in a live
+    # check), so the placement must say 0 itself or the whole marking turns about its first node.
+    conn = _conn({"GetAvailableLibraryParts": LIB, "CreateObjects": {"elements": [{"elementId": {"guid": "new"}}]},
+                  "SetGDLParametersOfElements": OK, "GetGDLParametersOfElements": _gdl()})
+    rm.create_road_marking(conn, points=PTS, dry_run=False)
+    placed = [p for c, p in conn._core.calls if c == "CreateObjects"][0]["objectsData"][0]
+    assert placed["angle"] == 0.0
 
 
 def test_an_update_drapes_the_markings_own_path_turned_as_placed():
@@ -142,17 +153,22 @@ def test_a_source_on_another_story_lands_on_the_surface_and_keeps_its_story():
 def test_warnings_for_replaced_heights_ignored_slope_overhang_and_no_effect():
     conn = _conn({"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB})
     r = rm.create_road_marking(conn, points=[{"x": 0, "y": 0, "z": 0}, {"x": 3, "y": 0, "z": 0}],
-                               marking="5352-1 Disabled bays, shared zone", lettering={"offset": 2.0},
+                               marking="5333-2 Bus stop on the carriageway", lettering={"length": 2.0, "offset": 2.0},
                                drape_on=["slab"], start_height=1.0)
     text = " ".join(r["warnings"])
     assert "replaces the source's own heights" in text and "start_height and slope_percent do not apply" in text
-    assert "bay row is 6.30 m long" in text and "word is None" in text
+    assert "word BUS is 2.00 m long" not in text
+    r = rm.create_road_marking(conn, points=[{"x": 0, "y": 0, "z": 0}, {"x": 1, "y": 0, "z": 0}],
+                               marking="5333-2 Bus stop on the carriageway", lettering={"length": 4.0})
+    assert "word BUS is 4.00 m long" in " ".join(r["warnings"])
+    r = rm.create_road_marking(conn, points=PTS, lettering={"offset": 2.0})
+    assert "word is None" in " ".join(r["warnings"])
 
 
 def test_without_the_part_a_dry_run_warns_and_a_write_is_refused():
     conn = _conn({"GetAvailableLibraryParts": {"libraryParts": []}})
-    assert any("not loaded" in w for w in rm.create_road_marking(conn, points=PTS)["warnings"])
-    assert "not loaded" in rm.create_road_marking(conn, points=PTS, dry_run=False)["error"]
+    assert any("'Road Marking' is not loaded" in w for w in rm.create_road_marking(conn, points=PTS)["warnings"])
+    assert "'Road Marking' is not loaded" in rm.create_road_marking(conn, points=PTS, dry_run=False)["error"]
 
 
 def test_the_call_is_refused_without_exactly_one_source_or_with_bad_input():
@@ -164,7 +180,8 @@ def test_the_call_is_refused_without_exactly_one_source_or_with_bad_input():
     assert "Unknown marking" in rm.create_road_marking(conn, points=PTS, marking="5999")["error"]
     assert "drape_tolerance" in rm.create_road_marking(conn, points=PTS, drape_tolerance=0)["error"]
     beam = _conn({"GetDetailsOfElements": _details({"b-1": _marking(name="Swept Beam")})})
-    assert "not a Road Marking" in rm.create_road_marking(beam, update_guid="b-1", points=PTS)["error"]
+    error = rm.create_road_marking(beam, update_guid="b-1", points=PTS)["error"]
+    assert "not a Road Marking or a Road Parking" in error
 
 
 def test_the_paint_surface_is_found_by_name_or_taken_as_an_index():
@@ -182,6 +199,9 @@ def test_path_errors_name_the_road_marking():
         "polygons": [], "wireEdges": [{"vertexIds": [0, 1]}, {"vertexIds": [1, 2]}, {"vertexIds": [1, 3]}]}}}
     r = rm.create_road_marking(_conn({"GetDetailsOfElements": _details({"m": morph})}), source_guid="m")
     assert "A Road Marking follows one unbranched line" in r["error"]
+    r = rm.create_road_marking(_conn({"GetDetailsOfElements": _details({"m": morph})}), source_guid="m",
+                               marking="Parking 60 degrees")
+    assert "A Road Parking follows one unbranched line" in r["error"]
 
 
 async def _call_tool(monkeypatch, tapir, args):
@@ -198,11 +218,11 @@ async def _call_tool(monkeypatch, tapir, args):
 async def test_the_registered_tool_takes_its_lists_and_objects_as_json_text(monkeypatch):
     tapir = {"GetDetailsOfElements": _details({"slab": SLAB}), "GetAvailableLibraryParts": LIB}
     payload = await _call_tool(monkeypatch, tapir, {
-        "points": json.dumps(PTS), "marking": "5351 Taxi bay", "bays": json.dumps({"depth": 4.5}),
-        "lettering": json.dumps({}), "stripes": json.dumps({"1": {"on": True, "width": 0.12}}),
-        "drape_on": json.dumps(["slab"])})
-    assert payload["dry_run"] is True and payload["reach"] == {"u_lo": -0.06, "u_hi": 4.55}
-    assert _params(payload)["bayDepth"] == 4.5
+        "points": json.dumps(PTS), "marking": "5333-2 Bus stop on the carriageway",
+        "bays": json.dumps({"depth": 2.5}), "lettering": json.dumps({}),
+        "stripes": json.dumps({"1": {"on": True, "width": 0.12}}), "drape_on": json.dumps(["slab"])})
+    assert payload["dry_run"] is True and payload["reach"] == {"u_lo": -0.06, "u_hi": 2.55}
+    assert _params(payload)["bayDepth"] == 2.5
 
 
 async def test_the_registered_tool_explains_text_that_is_not_json(monkeypatch):
@@ -286,9 +306,8 @@ EVERYTHING_STALE = {
     "patternShift": 1.5, "wholeDashes": True, "s1On": False, "s1Offset": 1.0, "s1Width": 0.5, "s1Dash": 2.0, "s1Gap": 3.0,
     "s1Angle": 20.0, "s1Shape": "Triangle, point left", "s2On": True, "s2Offset": 1.0, "s2Width": 0.5, "s2Dash": 2.0,
     "s2Gap": 3.0, "s2Angle": 20.0, "s2Shape": "Triangle, point left", "s3On": True, "s3Offset": 1.0, "s3Width": 0.5,
-    "s3Dash": 2.0, "s3Gap": 3.0, "s3Angle": 20.0, "s3Shape": "Triangle, point left", "bayLayout": "Taxi bay",
-    "bayWidth": 3.0, "bayDepth": 6.0, "zoneWidth": 2.0, "zoneFirst": False, "barWidth": 0.2, "showSymbol": False,
-    "letterText": "TAXI", "letterLength": 2.0, "letterWidth": 0.4, "letterGap": 0.4, "letterOffset": 3.0,
+    "s3Dash": 2.0, "s3Gap": 3.0, "s3Angle": 20.0, "s3Shape": "Triangle, point left", "bayLayout": "Stop end bars",
+    "bayDepth": 6.0, "barWidth": 0.2, "letterText": "TAXI", "letterLength": 2.0, "letterWidth": 0.4, "letterGap": 0.4, "letterOffset": 3.0,
     "letterAlign": "End", "letterShift": 3.0, "letterRepeat": 9.0, "showAxis": True, "axisPen": 5, "axisLineType": 2,
     "showNodeHeights": True, "textPen": 5, "textSizeMm": 3.5, "markingType": "Custom"}
 
@@ -301,25 +320,25 @@ def _reads(conn):
     return [p for c, p in conn._core.calls if c == "GetGDLParametersOfElements"]
 
 
-def _after(held, writes):
+def _after(held, writes, part=RM):
     """The settings once the writes are done, as the part takes them: a new preset name replaces what it sets."""
     state = dict(held)
     for name, value in _named(writes):
-        if name == "markingType" and value != state["markingType"] and value in rm.PRESETS:
-            state.update(rm.PRESETS[value])
+        if name == "markingType" and value != state["markingType"] and value in part.presets:
+            state.update(part.presets[value])
         state[name] = value
     return state
 
 
-def _plain(**over):
+def _plain(_part=RM, **over):
     """What a placed marking holds, in the tool's own degrees."""
-    return {**rm.TABLE["defaults"], **over}
+    return {**_part.table["defaults"], **over}
 
 
 def test_the_table_covers_the_look_settings():
-    assert set(LOOK) <= set(rm.TABLE["settings"]) and set(LOOK) <= set(rm.TABLE["defaults"])
-    assert set(EVERYTHING_STALE) - {"markingType"} == set(rm.TABLE["settings"]) - {"pathTolerance"}
-    assert all(EVERYTHING_STALE[k] != rm.TABLE["defaults"][k] for k in EVERYTHING_STALE)
+    assert set(LOOK) <= set(RM.table["settings"]) and set(LOOK) <= set(RM.table["defaults"])
+    assert set(EVERYTHING_STALE) - {"markingType"} == set(RM.table["settings"]) - {"pathTolerance"}
+    assert all(EVERYTHING_STALE[k] != RM.table["defaults"][k] for k in EVERYTHING_STALE)
 
 
 def test_a_new_marking_does_not_keep_settings_left_in_the_object_tool():
@@ -335,7 +354,7 @@ def test_every_look_setting_is_written_back_to_the_parts_default():
     conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**LOOK)})
     rm.create_road_marking(conn, points=PTS, dry_run=False)
     written = dict(_named(_writes(conn)[0]))
-    assert {k: written[k] for k in LOOK} == {k: rm.TABLE["defaults"][k] for k in LOOK}
+    assert {k: written[k] for k in LOOK} == {k: RM.table["defaults"][k] for k in LOOK}
 
 
 def test_a_placed_marking_holding_the_defaults_gets_the_writes_of_its_dry_run():
@@ -368,7 +387,7 @@ def test_every_stale_setting_comes_back_with_no_preset_given():
     conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**EVERYTHING_STALE)})
     r = rm.create_road_marking(conn, points=PTS, dry_run=False)
     state = _after(held, _writes(conn)[0])
-    assert all(state[k] == rm.TABLE["defaults"][k] for k in rm.TABLE["settings"] if k != "pathTolerance")
+    assert all(state[k] == RM.table["defaults"][k] for k in RM.table["settings"] if k != "pathTolerance")
     assert state["markingType"] == r["marking"] == "5121 Broken divider, in settlements"
 
 
@@ -386,25 +405,25 @@ def test_a_stale_preset_name_gives_way_to_the_default_preset_which_sets_its_own_
     assert _after(held, _writes(conn)[0])["s1Width"] == 0.15
 
 
-@pytest.mark.parametrize("marking", ["Parking 60 degrees", "5334-1 Taxi stop on the carriageway", "5354 EV charging bay"])
+@pytest.mark.parametrize("marking", ["5334-1 Taxi stop on the carriageway", "5111-1 Bus lane line"])
 def test_every_stale_setting_gives_way_to_the_preset_the_call_names(marking):
     held = _plain(**EVERYTHING_STALE)
     conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(**EVERYTHING_STALE)})
     rm.create_road_marking(conn, points=PTS, marking=marking, dry_run=False)
     state = _after(held, _writes(conn)[0])
-    want = {**rm.TABLE["defaults"], **rm.PRESETS[marking], "markingType": marking}
+    want = {**RM.table["defaults"], **RM.presets[marking], "markingType": marking}
     assert {k: state[k] for k in want if k != "pathTolerance"} == {k: want[k] for k in want if k != "pathTolerance"}
 
 
 def test_a_stale_preset_equal_to_the_calls_is_not_written_and_its_other_settings_are_corrected():
-    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(markingType="Parking 60 degrees", s1Offset=2.90, s1Width=5.80, s1Dash=0.10,
-                                                            s1Gap=2.40, s1Angle=-30.0, wholeDashes=True, s2Offset=5.80,
-                                                            s2Width=0.10, s2Dash=1.0, s2Gap=0.0, s2On=True, showPlanFill=False)})
-    r = rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
+    conn = _conn({**NEW, "GetGDLParametersOfElements": _gdl(markingType="5111 Solid divider", s1Width=0.5,
+                                                            s2On=True, showPlanFill=False)})
+    r = rm.create_road_marking(conn, points=PTS, marking="5111 Solid divider", dry_run=False)
     written = dict(_named(_writes(conn)[0]))
-    assert "markingType" not in written and "s1Angle" not in written       # s1Angle reads back in radians, the table is in degrees
-    assert written["showPlanFill"] is True and written["s2On"] is False
-    assert r["marking"] == "Parking 60 degrees"
+    assert "markingType" not in written
+    assert written["s1Width"] == 0.15
+    assert written["s2On"] is False and written["showPlanFill"] is True
+    assert r["marking"] == "5111 Solid divider"
 
 
 def test_a_call_for_custom_writes_the_name_and_every_stale_value():
@@ -414,14 +433,14 @@ def test_a_call_for_custom_writes_the_name_and_every_stale_value():
     rm.create_road_marking(conn, points=PTS, marking="Custom", dry_run=False)
     state = _after(held, _writes(conn)[0])
     assert state["markingType"] == "Custom"
-    assert all(state[k] == rm.TABLE["defaults"][k] for k in rm.TABLE["settings"] if k != "pathTolerance")
+    assert all(state[k] == RM.table["defaults"][k] for k in RM.table["settings"] if k != "pathTolerance")
 
 
 def test_a_stale_angle_goes_back_in_the_radians_the_tapir_takes():
     conn = _conn({**NEW, "GetAddOnVersion": {"version": "1.7.3"},
-                  "GetGDLParametersOfElements": _gdl(markingType="Parking 60 degrees", s1Angle=20.0)})
-    rm.create_road_marking(conn, points=PTS, marking="Parking 60 degrees", dry_run=False)
-    assert dict(_named(_writes(conn)[0]))["s1Angle"] == pytest.approx(math.radians(-30))
+                  "GetGDLParametersOfElements": _gdl(markingType="5111-1 Bus lane line", s1Angle=20.0)})
+    rm.create_road_marking(conn, points=PTS, marking="5111-1 Bus lane line", dry_run=False)
+    assert dict(_named(_writes(conn)[0]))["s1Angle"] == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("version", ["1.7.1", "1.8.0"])

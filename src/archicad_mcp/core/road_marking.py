@@ -1,11 +1,12 @@
-"""create_road_marking: place a Road Marking along a curve and drape it onto Meshes and
-Slabs (docs/superpowers/specs/2026-10-12-road-marking-tool-design.md).
+"""create_road_marking: place a Road Marking or a Road Parking along a curve and drape it
+onto Meshes and Slabs (docs/superpowers/specs/2026-10-12-road-marking-tool-design.md; the
+split in two parts: 2026-11-05-road-marking-split-design.md in the GDL repo).
 
-The Road Marking library part (Archicad GDL repo, Library/Site/Road Marking) keeps its
-path as node arrays in its own coordinates, like the Swept Beam, with a cross fall in
-percent per node. Its presets live in its Parameter Script; road_marking_presets.json
-holds the same table, exported from the part's model by road_marking/export_presets.py
-in the GDL repo, whose tests check that the two agree. This module works out the
+The two library parts (Archicad GDL repo, Library/Site/Road Marking and Road Parking) keep
+their path as node arrays in their own coordinates, like the Swept Beam, with a cross fall
+in percent per node. Their presets live in their Parameter Scripts; road_marking_presets.json
+and road_parking_presets.json hold the same tables, exported from each part's model by its
+export_presets.py in the GDL repo, whose tests check that the two agree. This module works out the
 marking's settings (the current or default values, the preset, the call's changes), how
 far the marking reaches across its path, and what the part would draw past the path's
 ends.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 from multiconn_archicad.errors import ArchicadAPIError
@@ -24,13 +26,34 @@ from archicad_mcp.core import drape as dr
 from archicad_mcp.core import placed_path as pp
 from archicad_mcp.core import swept_path as sp
 
-LIBRARY_PART = "Road Marking"
+ROAD_MARKING = "Road Marking"
+ROAD_PARKING = "Road Parking"
 CUSTOM = "Custom"
-TABLE = json.loads(Path(__file__).with_name("road_marking_presets.json").read_text(encoding="utf-8"))
-PRESETS: dict[str, dict] = TABLE["presets"]
-VALUES = TABLE["values"]
-# The settings a write compares; node_params always writes pathTolerance, the call's own
-SETTINGS = [k for k in TABLE["settings"] if k != "pathTolerance"]
+
+
+@dataclass(frozen=True)
+class Part:
+    """One library part and its table: presets, allowed values and the settings a write compares."""
+    name: str
+    table: dict
+    presets: dict
+    values: dict
+    settings: list
+    enums: dict
+
+
+def _part(name: str, file: str) -> Part:
+    table = json.loads(Path(__file__).with_name(file).read_text(encoding="utf-8"))
+    values = table["values"]
+    enums = {"Shape": values["shapes"], "patternAlign": values["aligns"], "bayLayout": values["layouts"]}
+    if "letter_texts" in values:
+        enums |= {"letterText": values["letter_texts"], "letterAlign": values["letter_aligns"]}
+    # node_params always writes pathTolerance, the call's own
+    return Part(name, table, table["presets"], values, [k for k in table["settings"] if k != "pathTolerance"], enums)
+
+
+PARTS: dict[str, Part] = {ROAD_MARKING: _part(ROAD_MARKING, "road_marking_presets.json"),
+                          ROAD_PARKING: _part(ROAD_PARKING, "road_parking_presets.json")}
 FAILURES = (pp.PlacedPathError, ArchicadAPIError, ArchicadUnavailableError)
 STRIPE_KEYS = {"on": "On", "offset": "Offset", "width": "Width", "dash": "Dash", "gap": "Gap",
                "angle": "Angle", "shape": "Shape"}
@@ -51,8 +74,10 @@ RANGES = {"Width": (0.01, None), "Dash": (0.01, None), "Gap": (0.0, None), "Angl
           "letterGap": (0.0, None), "letterRepeat": (0.0, None), "thickness": (0.0005, 0.05)}
 # The single Angle parameters; the tool keeps them in degrees, the part reads them in radians
 ANGLES = tuple(f"s{k}Angle" for k in (1, 2, 3))
-ENUMS = {"Shape": VALUES["shapes"], "patternAlign": VALUES["aligns"], "bayLayout": VALUES["layouts"],
-         "letterText": VALUES["letter_texts"], "letterAlign": VALUES["letter_aligns"]}
+# Road Parking: the part sets stripe 1's offset and shape and all of stripes 2 and 3 but their switch (its follow rule)
+PARKING_STRIPE_1 = ("width", "dash", "gap", "angle")
+PARKING_STRIPE_OTHERS = ("on",)
+ROAD_REFUSED_BAYS = ("width", "zone_width", "zone_first", "symbol")
 
 
 class RoadMarkingError(pp.PlacedPathError):
@@ -63,16 +88,75 @@ def _kind(name: str) -> str:
     return name[2:] if len(name) > 2 and name[0] == "s" and name[1] in "123" else name
 
 
-def preset_name(marking) -> str:
-    """The part's own spelling of a preset name, matched without regard to case."""
+def _all_names() -> str:
+    return ", ".join([*PARTS[ROAD_MARKING].presets, *PARTS[ROAD_PARKING].presets, CUSTOM])
+
+
+def _other(part: Part) -> Part:
+    return PARTS[ROAD_PARKING if part.name == ROAD_MARKING else ROAD_MARKING]
+
+
+def _match(presets, marking):
     want = str(marking).strip().casefold()
-    for name in [*PRESETS, CUSTOM]:
-        if name.casefold() == want:
-            return name
-    raise RoadMarkingError(f"Unknown marking {marking!r}. Valid: {', '.join([*PRESETS, CUSTOM])}.")
+    return next((name for name in presets if name.casefold() == want), None)
 
 
-def check_value(name: str, value):
+def part_of_name(marking) -> Part:
+    """The part a new element takes from the preset's name: a parking name means Road Parking;
+    any other name, Custom or no name means Road Marking (an unknown name is refused later)."""
+    if marking is not None and _match(PARTS[ROAD_PARKING].presets, marking):
+        return PARTS[ROAD_PARKING]
+    return PARTS[ROAD_MARKING]
+
+
+def part_of_element(conn, guid: str) -> Part:
+    """The part a placed element is, from its library part's name."""
+    entry = pp.details(conn, guid)
+    name = str(((entry.get("details") or {}).get("libPart") or {}).get("name", ""))
+    for part in PARTS.values():
+        if entry["type"] == "Object" and name.casefold() == part.name.casefold():
+            return part
+    raise RoadMarkingError(f"Element {guid} is not a {ROAD_MARKING} or a {ROAD_PARKING}. update_guid must "
+                           f"point at a placed {ROAD_MARKING} or {ROAD_PARKING}.")
+
+
+def preset_name(part: Part, marking) -> str:
+    """The part's own spelling of a preset name, matched without regard to case."""
+    name = _match([*part.presets, CUSTOM], marking)
+    if name:
+        return name
+    other = _match(_other(part).presets, marking)
+    if other:
+        raise RoadMarkingError(f"{other} belongs to {_other(part).name} and this element is a {part.name}: "
+                               "place a new one.")
+    raise RoadMarkingError(f"Unknown marking {marking!r}. Valid: {_all_names()}.")
+
+
+def check_allowed(part: Part, stripes, bays, lettering) -> None:
+    """Refuse what the part does not take or sets itself, naming the part."""
+    if part.name == ROAD_PARKING:
+        if lettering:
+            raise RoadMarkingError(f"A {ROAD_PARKING} has no lettering: the lettering values are for a "
+                                   f"{ROAD_MARKING}.")
+        if "bar_width" in (bays or {}):
+            raise RoadMarkingError(f"A {ROAD_PARKING} has no end bars: bays.bar_width is for a {ROAD_MARKING}.")
+        for key, change in (stripes or {}).items():
+            if not isinstance(change, dict):
+                continue
+            allowed = PARKING_STRIPE_1 if str(key) == "1" else PARKING_STRIPE_OTHERS
+            for k in change:
+                if k in STRIPE_KEYS and k not in allowed:
+                    raise RoadMarkingError(
+                        f"stripes['{key}'].{k} is set by the {ROAD_PARKING} part, not by the call: stripe {key} "
+                        f"takes {', '.join(allowed)} here.")
+    else:
+        for k in ROAD_REFUSED_BAYS:
+            if k in (bays or {}):
+                raise RoadMarkingError(f"bays.{k} is for a {ROAD_PARKING}: a {ROAD_MARKING} takes only "
+                                       "layout, depth and bar_width.")
+
+
+def check_value(part: Part, name: str, value):
     """The value the part takes for this setting, or RoadMarkingError."""
     kind = _kind(name)
     if kind in BOOLEANS:
@@ -88,21 +172,22 @@ def check_value(name: str, value):
             span = f"at least {lo:g}" if hi is None else f"{lo:g} to {hi:g}"
             raise RoadMarkingError(f"{name} must be {span}, got {value:g}.")
         return value
-    if kind in ENUMS and value not in ENUMS[kind]:
-        raise RoadMarkingError(f"{name} must be one of: {', '.join(ENUMS[kind])}; got {value!r}.")
+    if kind in part.enums and value not in part.enums[kind]:
+        raise RoadMarkingError(f"{name} must be one of: {', '.join(part.enums[kind])}; got {value!r}.")
     return value
 
 
-def resolve(current: dict, marking=None, stripes=None, bays=None, lettering=None, flat=None):
+def resolve(part: Part, current: dict, marking=None, stripes=None, bays=None, lettering=None, flat=None):
     """The marking's settings after the call (want), and the part's settings right after
     markingType is written (state): the current values, then the preset when the call picks
     one the marking does not already have (it replaces what it sets, as in the dialog),
     then the call's values."""
+    check_allowed(part, stripes, bays, lettering)
     state = dict(current)
     if marking is not None:
-        name = preset_name(marking)
-        if name != current["markingType"] and name in PRESETS:
-            state.update(PRESETS[name])
+        name = preset_name(part, marking)
+        if name != current["markingType"] and name in part.presets:
+            state.update(part.presets[name])
         state["markingType"] = name
     want = dict(state)
     for key, change in (stripes or {}).items():
@@ -113,22 +198,35 @@ def resolve(current: dict, marking=None, stripes=None, bays=None, lettering=None
         for k, v in change.items():
             if k not in STRIPE_KEYS:
                 raise RoadMarkingError(f"Unknown stripe key {k!r}. Valid: {', '.join(STRIPE_KEYS)}.")
-            want[f"s{key}{STRIPE_KEYS[k]}"] = check_value(f"s{key}{STRIPE_KEYS[k]}", v)
+            want[f"s{key}{STRIPE_KEYS[k]}"] = check_value(part, f"s{key}{STRIPE_KEYS[k]}", v)
     for group, keys, given in (("bays", BAY_KEYS, bays), ("lettering", LETTER_KEYS, lettering)):
         for k, v in (given or {}).items():
             if k not in keys:
                 raise RoadMarkingError(f"Unknown {group} key {k!r}. Valid: {', '.join(keys)}.")
-            want[keys[k]] = check_value(keys[k], v)
+            want[keys[k]] = check_value(part, keys[k], v)
     for name, v in (flat or {}).items():
         if v is not None:
-            want[name] = check_value(name, v)
+            want[name] = check_value(part, name, v)
+    if part.name == ROAD_PARKING and stripes and want["bayLayout"] != "None":
+        raise RoadMarkingError(f"{ROAD_PARKING} bays take no stripes: {want['bayLayout']} is a bay, so stripes "
+                               "(including the kerb line) are for a row. Use a parking row preset.")
     return want, state
 
 
-def reach(p: dict) -> tuple[float, float]:
+def followed(p: dict) -> dict:
+    """A Road Parking row as its Parameter Script leaves it (road_parking_model.follow): the offset of
+    stripe 1 is half its width, stripe 2 sits at the width, stripes 2 and 3 are as wide as stripe 1's dash
+    and stripe 3 is at the kerb. The call can change s1Width and s1Dash only, so the reach follows."""
+    return {**p, "s1Offset": float(p["s1Width"]) / 2, "s2Offset": float(p["s1Width"]),
+            "s2Width": float(p["s1Dash"]), "s3Width": float(p["s1Dash"]), "s3Offset": 0.0}
+
+
+def reach(part: Part, p: dict) -> tuple[float, float]:
     """How far the marking reaches across its path, (u_lo, u_hi), positive to the right,
     after Flip sides: the switched on stripes, the bay layout and the word, and always 0
     (the part model's layout_reach and lettering_reach)."""
+    if part.name == ROAD_PARKING and p["bayLayout"] == "None":
+        p = followed(p)
     flip = -1.0 if p["flipSides"] else 1.0
     lo = hi = 0.0
     for k in (1, 2, 3):
@@ -136,12 +234,13 @@ def reach(p: dict) -> tuple[float, float]:
             c, w = flip * float(p[f"s{k}Offset"]), float(p[f"s{k}Width"])
             lo, hi = min(lo, c - w / 2), max(hi, c + w / 2)
     if p["bayLayout"] != "None":
-        d = flip * (float(p["bayDepth"]) + TABLE["line_width"] / 2)
+        d = flip * (float(p["bayDepth"]) + part.table["line_width"] / 2)
         lo, hi = min(lo, d), max(hi, d)
-    if p["letterText"] != "None":
-        scale = float(p["letterWidth"]) / TABLE["letter_base_width"]
-        width = (sum(TABLE["letter_widths"][ch] * scale for ch in p["letterText"])
-                 + float(p["letterGap"]) * (len(p["letterText"]) - 1))
+    text = p.get("letterText", "None")
+    if text != "None":
+        scale = float(p["letterWidth"]) / part.table["letter_base_width"]
+        width = (sum(part.table["letter_widths"][ch] * scale for ch in text)
+                 + float(p["letterGap"]) * (len(text) - 1))
         centre = flip * float(p["letterOffset"])
         lo, hi = min(lo, centre - width / 2), max(hi, centre + width / 2)
     return lo, hi
@@ -155,7 +254,7 @@ def _start(align: str, length: float, size: float, shift: float) -> float:
     return shift
 
 
-def overhang(p: dict, length: float) -> list[str]:
+def overhang(part: Part, p: dict, length: float) -> list[str]:
     """Warnings for a bay row or the placed word reaching past the path's ends, where the
     part draws it straight on but the drape does not reach."""
     out = []
@@ -174,25 +273,30 @@ def overhang(p: dict, length: float) -> list[str]:
                  "EV charging bay": [bay]}.get(layout, [zone, bay])
         row = sum(cells)
         note("The bay row", row, _start(p["patternAlign"], length, row, float(p["patternShift"])))
-    if p["letterText"] != "None":
+    if p.get("letterText", "None") != "None":
         size = float(p["letterLength"])
         note(f"The word {p['letterText']}", size, _start(p["letterAlign"], length, size, float(p["letterShift"])))
     return out
 
 
-def no_effect(p: dict, bays, lettering) -> list[str]:
+def no_effect(part: Part, p: dict, bays, lettering) -> list[str]:
     out = []
     if p["bayLayout"] == "None" and any(k != "layout" for k in (bays or {})):
-        out.append("The bays values have no effect while the bay layout is None.")
-    if p["letterText"] == "None" and any(k != "text" for k in (lettering or {})):
+        if part.name == "Road Parking":
+            out.append("A Road Parking row takes its depth, line width, space and angle through stripes 1 "
+                       "(width, dash, gap, angle), not bays.")
+        else:
+            out.append("The bays values have no effect while the bay layout is None.")
+    if p.get("letterText", "None") == "None" and any(k != "text" for k in (lettering or {})):
         out.append("The lettering values have no effect while the word is None.")
     return out
 
 
 # ---------------------------------------------------------------- the tool
 
-NOT_LOADED = (f"'{LIBRARY_PART}' is not loaded in this project. Load the Road Marking library part "
-              "(Library/Site/Road Marking in the office GDL library) and reload libraries.")
+def not_loaded(part: Part) -> str:
+    return (f"'{part.name}' is not loaded in this project. Load the {part.name} library part "
+            f"(Library/Site/{part.name} in the office GDL library) and reload libraries.")
 
 
 def create_road_marking(conn, source_guid=None, points=None, start_height=None, slope_percent=None,
@@ -216,14 +320,13 @@ def create_road_marking(conn, source_guid=None, points=None, start_height=None, 
                 "wholeDashes": whole_dashes, "thickness": thickness}
         return _create(conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface,
                        lift, drape_tolerance, path_tolerance, update_guid, dry_run)
-    except sp.PathError as exc:
-        return {"error": str(exc).replace("Swept Beam", LIBRARY_PART)}
     except (pp.PlacedPathError, dr.DrapeError) as exc:
         return {"error": str(exc)}
 
 
 def _create(conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface, lift,
             drape_tolerance, path_tolerance, update_guid, dry_run) -> dict:
+    """The part is the element's own on an update, else the preset's name picks it."""
     points, drape_on = given["points"], given["drape_on"]
     own_path = bool(update_guid and drape_on and source_guid is None and points is None)
     if not own_path and (source_guid is None) == (points is None):
@@ -231,15 +334,27 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
                                "neither: it drapes the marking's own path).")
     if path_tolerance <= 0 or drape_tolerance <= 0:
         raise RoadMarkingError("path_tolerance and drape_tolerance must be positive lengths in metres.")
+    part = part_of_element(conn, update_guid) if update_guid else part_of_name(marking)
+    try:
+        return _place(part, conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface,
+                      lift, drape_tolerance, path_tolerance, update_guid, dry_run)
+    except sp.PathError as exc:
+        raise RoadMarkingError(str(exc).replace("Swept Beam", part.name)) from exc
+
+
+def _place(part, conn, source_guid, given, flat, start_height, slope_percent, marking, paint_surface, lift,
+           drape_tolerance, path_tolerance, update_guid, dry_run) -> dict:
+    points, drape_on = given["points"], given["drape_on"]
+    own_path = bool(update_guid and drape_on and source_guid is None and points is None)
     warnings: list[str] = []
-    frame = pp.existing_frame(conn, update_guid, LIBRARY_PART) if update_guid else None
-    current = read_parameters(conn, update_guid) if update_guid else dict(TABLE["defaults"])
+    frame = pp.existing_frame(conn, update_guid, part.name) if update_guid else None
+    current = read_parameters(conn, update_guid) if update_guid else dict(part.table["defaults"])
     if paint_surface is not None:
         flat["paintSurface"] = pp.surface_index(conn, paint_surface)
-    want, state = resolve(current, marking, given["stripes"], given["bays"], given["lettering"], flat)
-    warnings += no_effect(want, given["bays"], given["lettering"])
-    u_lo, u_hi = reach(want)
-    path, floor_index, flat_source = _path(conn, source_guid, points, own_path, current, frame, path_tolerance)
+    want, state = resolve(part, current, marking, given["stripes"], given["bays"], given["lettering"], flat)
+    warnings += no_effect(part, want, given["bays"], given["lettering"])
+    u_lo, u_hi = reach(part, want)
+    path, floor_index, flat_source = _path(part, conn, source_guid, points, own_path, current, frame, path_tolerance)
     nodes, arcs, falls = path.nodes, path.arcs, [0.0] * len(path.nodes)
     drape_report = {"nodes_added_for_drape": 0, "max_along_deviation_mm": 0.0, "max_across_misfit_mm": 0.0,
                     "off_surface": [], "partly_off_surface": []}
@@ -260,20 +375,20 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     elif start_height is not None or slope_percent is not None:
         warnings.append("start_height and slope_percent apply to flat sources only; this source keeps its own "
                         "heights.")
-    warnings += overhang(want, dr.PlanPath(nodes, arcs, path_tolerance).length)
-    loaded = pp.library_part_loaded(conn, LIBRARY_PART)
+    warnings += overhang(part, want, dr.PlanPath(nodes, arcs, path_tolerance).length)
+    loaded = pp.library_part_loaded(conn, part.name)
     if not loaded:
-        warnings.append(NOT_LOADED)
+        warnings.append(not_loaded(part))
     origin, angle = frame if frame else (nodes[0], 0.0)
     local = pp.to_local(nodes, origin, angle)
     items = pp.writes_items(conn)
     radians = pp.angles_in_radians(conn)
     if items:
-        pp.check_plan_gaps(local, LIBRARY_PART)
+        pp.check_plan_gaps(local, part.name)
     same_count = bool(update_guid) and len(nodes) == len(current["nodeX"]) and not items
     path_params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items,
                               radians=radians)
-    params = path_params + _setting_writes(want, current, state, radians)
+    params = path_params + _setting_writes(part, want, current, state, radians)
     report = {"dry_run": dry_run, "marking": want["markingType"], "nodes": len(nodes),
               "arcs": sum(1 for a in arcs[:-1] if abs(a) > sp.ARC_EPS_DEG), **drape_report,
               "max_deviation_mm": round(path.max_deviation * 1000, 2),
@@ -285,15 +400,15 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
         report["gdl_parameters"] = params
         return report
     if not loaded:
-        raise RoadMarkingError(NOT_LOADED)
-    guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
+        raise RoadMarkingError(not_loaded(part))
+    guid = update_guid or pp.place(conn, part.name, origin, floor_index, angle=0.0)
     report["element"] = guid
     try:
         if not update_guid:
             # the plan assumed the part's defaults; the placement holds what the Object tool handed it
-            current = {**TABLE["defaults"], **read_parameters(conn, guid)}
-            _, state = resolve(current, want["markingType"])
-            params = path_params + _setting_writes(want, current, state, radians)
+            current = {**part.table["defaults"], **read_parameters(conn, guid)}
+            _, state = resolve(part, current, want["markingType"])
+            params = path_params + _setting_writes(part, want, current, state, radians)
         if items:
             # no resizing: reset the path, grow it to the node count, then write every item
             params = pp.resize_writes(current, len(nodes)) + params
@@ -301,8 +416,8 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
             # the same number of nodes: nodeX as 0, 1, 2 first, then nodeY before the real nodeX, so the
             # part's node merge never compares a new x with an old y (parent spec, "Through the API")
             pp.write_parameters(conn, guid, [{"name": "nodeX", "value": [float(i) for i in range(len(nodes))]}],
-                                LIBRARY_PART)
-        pp.write_parameters(conn, guid, params, LIBRARY_PART)
+                                part.name)
+        pp.write_parameters(conn, guid, params, part.name)
     except FAILURES as exc:
         if update_guid:
             raise
@@ -317,17 +432,17 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     return report
 
 
-def _setting_writes(want: dict, current: dict, state: dict, radians: bool) -> list[dict]:
+def _setting_writes(part: Part, want: dict, current: dict, state: dict, radians: bool) -> list[dict]:
     """markingType when it changes, then each setting that differs from what the part holds
     right after that write (resolve's state). Never a grip helper or its marker, which are not
     settings: a lone write of one is a drag."""
     out = []
     if want["markingType"] != current["markingType"]:
         out.append({"name": "markingType", "value": want["markingType"]})
-    return out + [{"name": k, "value": _sent(k, want[k], radians)} for k in SETTINGS if not _same(want[k], state[k])]
+    return out + [{"name": k, "value": _sent(k, want[k], radians)} for k in part.settings if not _same(want[k], state[k])]
 
 
-def _path(conn, source_guid, points, own_path, current, frame, tol):
+def _path(part, conn, source_guid, points, own_path, current, frame, tol):
     """The path in absolute coordinates, the source's story, and whether the source is flat."""
     if own_path:
         (ox, oy, oz), angle = frame
@@ -336,7 +451,7 @@ def _path(conn, source_guid, points, own_path, current, frame, tol):
                  for x, y, z in zip(current["nodeX"], current["nodeY"], current["nodeZ"])]
         return sp.SweptPath(nodes, [math.degrees(a) for a in current["segArc"]][:len(nodes)]), None, False
     if source_guid is not None:
-        return pp.path_from_element(conn, source_guid, tol, LIBRARY_PART)
+        return pp.path_from_element(conn, source_guid, tol, part.name)
     return pp.path_from_points(points, tol), None, False
 
 
