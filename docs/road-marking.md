@@ -43,6 +43,13 @@ is refused.
   template).
 - **Rewrite:** `update_guid` rewrites a placed marking and keeps its GUID and settings
   unless the call sets them; a new preset replaces what it sets, as in the dialog.
+- **Settings the call leaves out:** Archicad's Object tool keeps same-named values from the
+  last marking or from other parts (a plan fill switched off, a thickness, a preset), so a
+  new marking is read back after it is placed and the tool writes the part's default, or the
+  named preset's value, for anything it holds differently. Grip helpers and their markers are
+  not settings and are left to the path writes. An update keeps the marking's own values. A
+  dry run cannot show these writes. If the read back or the write fails, the report still
+  names the marking placed (`element`, `elements_placed`, `error`).
 
 ## Draping
 

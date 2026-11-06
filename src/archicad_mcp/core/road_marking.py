@@ -17,6 +17,9 @@ import json
 import math
 from pathlib import Path
 
+from multiconn_archicad.errors import ArchicadAPIError
+
+from archicad_mcp.connection import ArchicadUnavailableError
 from archicad_mcp.core import drape as dr
 from archicad_mcp.core import placed_path as pp
 from archicad_mcp.core import swept_path as sp
@@ -26,6 +29,9 @@ CUSTOM = "Custom"
 TABLE = json.loads(Path(__file__).with_name("road_marking_presets.json").read_text(encoding="utf-8"))
 PRESETS: dict[str, dict] = TABLE["presets"]
 VALUES = TABLE["values"]
+# The settings a write compares; node_params always writes pathTolerance, the call's own
+SETTINGS = [k for k in TABLE["settings"] if k != "pathTolerance"]
+FAILURES = (pp.PlacedPathError, ArchicadAPIError, ArchicadUnavailableError)
 STRIPE_KEYS = {"on": "On", "offset": "Offset", "width": "Width", "dash": "Dash", "gap": "Gap",
                "angle": "Angle", "shape": "Shape"}
 BAY_KEYS = {"layout": "bayLayout", "width": "bayWidth", "depth": "bayDepth", "zone_width": "zoneWidth",
@@ -196,7 +202,12 @@ def create_road_marking(conn, source_guid=None, points=None, start_height=None, 
                         path_tolerance=0.002, update_guid=None, dry_run=True) -> dict:
     """Values left as None take the part's defaults on a new marking and keep the marking's
     own on an update; a preset replaces what it sets. Offsets, bays and the word lie to the
-    right looking from the first point to the last."""
+    right looking from the first point to the last.
+
+    Archicad's Object tool keeps same-named values as tool defaults, so a new marking is read
+    back after it is placed and the part's defaults are written for each setting it holds
+    differently and the call did not give. A dry run cannot know what a placement inherits, so
+    its gdl_parameters leave those out."""
     try:
         given = {name: pp.from_json_text(value, name, kind) for name, value, kind in (
             ("points", points, list), ("stripes", stripes, dict), ("bays", bays, dict),
@@ -260,12 +271,9 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     if items:
         pp.check_plan_gaps(local, LIBRARY_PART)
     same_count = bool(update_guid) and len(nodes) == len(current["nodeX"]) and not items
-    params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items,
-                         radians=radians)
-    if want["markingType"] != current["markingType"]:
-        params.append({"name": "markingType", "value": want["markingType"]})
-    params += [{"name": k, "value": _sent(k, want[k], radians)}
-               for k in TABLE["settings"] if not _same(want[k], state[k])]
+    path_params = node_params(local, arcs, falls, path_tolerance, y_first=same_count, items=items,
+                              radians=radians)
+    params = path_params + _setting_writes(want, current, state, radians)
     report = {"dry_run": dry_run, "marking": want["markingType"], "nodes": len(nodes),
               "arcs": sum(1 for a in arcs[:-1] if abs(a) > sp.ARC_EPS_DEG), **drape_report,
               "max_deviation_mm": round(path.max_deviation * 1000, 2),
@@ -279,20 +287,44 @@ def _create(conn, source_guid, given, flat, start_height, slope_percent, marking
     if not loaded:
         raise RoadMarkingError(NOT_LOADED)
     guid = update_guid or pp.place(conn, LIBRARY_PART, origin, floor_index)
-    if items:
-        # no resizing: reset the path, grow it to the node count, then write every item
-        placed = current if update_guid else pp.gdl_parameters(conn, guid)
-        params = pp.resize_writes(placed, len(nodes)) + params
-    if same_count:
-        # the same number of nodes: nodeX as 0, 1, 2 first, then nodeY before the real nodeX, so the
-        # part's node merge never compares a new x with an old y (parent spec, "Through the API")
-        pp.write_parameters(conn, guid, [{"name": "nodeX", "value": [float(i) for i in range(len(nodes))]}],
-                            LIBRARY_PART)
-    pp.write_parameters(conn, guid, params, LIBRARY_PART)
     report["element"] = guid
+    try:
+        if not update_guid:
+            # the plan assumed the part's defaults; the placement holds what the Object tool handed it
+            current = {**TABLE["defaults"], **read_parameters(conn, guid)}
+            _, state = resolve(current, want["markingType"])
+            params = path_params + _setting_writes(want, current, state, radians)
+        if items:
+            # no resizing: reset the path, grow it to the node count, then write every item
+            params = pp.resize_writes(current, len(nodes)) + params
+        if same_count:
+            # the same number of nodes: nodeX as 0, 1, 2 first, then nodeY before the real nodeX, so the
+            # part's node merge never compares a new x with an old y (parent spec, "Through the API")
+            pp.write_parameters(conn, guid, [{"name": "nodeX", "value": [float(i) for i in range(len(nodes))]}],
+                                LIBRARY_PART)
+        pp.write_parameters(conn, guid, params, LIBRARY_PART)
+    except FAILURES as exc:
+        if update_guid:
+            raise
+        report["error"] = str(exc)
+        report["elements_placed"] = [guid]
+        return report
     report["updated" if update_guid else "created"] = True
-    report["marking_after"] = read_parameters(conn, guid)["markingType"]
+    try:
+        report["marking_after"] = read_parameters(conn, guid)["markingType"]
+    except FAILURES as exc:
+        warnings.append(f"The marking is written, but reading it back failed: {exc}")
     return report
+
+
+def _setting_writes(want: dict, current: dict, state: dict, radians: bool) -> list[dict]:
+    """markingType when it changes, then each setting that differs from what the part holds
+    right after that write (resolve's state). Never a grip helper or its marker, which are not
+    settings: a lone write of one is a drag."""
+    out = []
+    if want["markingType"] != current["markingType"]:
+        out.append({"name": "markingType", "value": want["markingType"]})
+    return out + [{"name": k, "value": _sent(k, want[k], radians)} for k in SETTINGS if not _same(want[k], state[k])]
 
 
 def _path(conn, source_guid, points, own_path, current, frame, tol):
