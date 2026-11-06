@@ -935,6 +935,26 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
             return result
         return [Image(data=png, format="png"), result]
 
+    from archicad_mcp.core import part_preview as _part_preview
+
+    @mcp.tool(description=(
+        "Draw the 2D symbols of up to 8 library parts in one image, with nothing placed, to "
+        "choose between candidates before learning one (a Tapir newer than 1.8.0). Each cell "
+        "is numbered and has its own scale, with a red cross at the insertion point; 'parts' "
+        "gives each part's number, default size (a, b, height) and extent in metres, and "
+        "'not_drawn' why a name could not be drawn, with the closest names. It shows the "
+        "default parameters, and only lines, arcs and polygons, so no texts or hotspots. It "
+        "does not replace learn_library_part or the look after placing."),
+              **_tool_meta("Preview library parts", read_only=True, destructive=False))
+    @_guarded
+    def preview_library_parts(names: list[str], port: int | None = None):
+        result = _part_preview.preview_library_parts(
+            _tapir_conn(port, "preview_library_parts"), names)
+        png = result.pop("png", None)
+        if png is None:
+            return result
+        return [Image(data=png, format="png"), result]
+
     @mcp.tool(description=(
         "Record what you judged from learn_library_part's image, in the part's stored "
         "record. Objects and lamps: head ('+x', '-x', '+y' or '-y', the part's own "

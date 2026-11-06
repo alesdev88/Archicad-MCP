@@ -487,6 +487,15 @@ project, once a newer Tapir is installed:
   `GetMissingLibPartNames` gives matches the listing for loaded parts, as a mismatch would
   fail every element. The `ifc-spatial-structure` rule on a real project, to learn whether
   an element's IFC story ever differs from its home story.
+- `learn_library_part` on Bed Double 01, Chair 01, Door and Window: how the symbol's extents
+  compare with the plan boxes, which decides whether measuring from symbols is ever worth doing
+  and settles which way a partial arc runs. Whether `GetGDLParametersOfLibraryParts` and
+  `GetLibraryPart2DPrimitives` find the same part under the same name.
+- `preview_library_parts` on those four: drawn the right way up, the cross where the insertion
+  point is.
+- A bed and a chair placed by `placement` without `size`: the part's own size, and which way
+  the head points. A door without `width`, with the Door tool set to another width: the part's
+  width, not the tool's.
 - `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
   `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
   in a form that compares equal.

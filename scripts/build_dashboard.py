@@ -173,6 +173,8 @@ for _spec in CREATE_TYPES.values():
 # commands, so the dashboard reads them from there.
 for _command in TOOL_COMMANDS["learn_library_part"]:
     WRAPPED_BY.setdefault(_command, []).append("learn_library_part")
+for _command in TOOL_COMMANDS["preview_library_parts"]:
+    WRAPPED_BY.setdefault(_command, []).append("preview_library_parts")
 
 # The dedicated high-level MCP tools, transcribed from server.py. "mode" is which
 # server mode exposes the tool; "mutates" flags tools that can change the model.
@@ -229,6 +231,8 @@ TOOLS: list[dict] = [
      "desc": "Show elements to the user: open the story or view (section, layout, ...) that holds them, select, highlight and zoom. Reads the selection back; guids=[] clears the highlight."},
     {"name": "capture_window", "cat": "Elements", "mode": "full",
      "desc": "See what the current window shows (floor plan, section, 3D, layout) as an image, to check placements by eye. Needs Tapir 1.7.2."},
+    {"name": "preview_library_parts", "cat": "Elements", "mode": "full",
+     "desc": "Draw the 2D symbols of up to 8 library parts in one image, with nothing placed, to choose between candidates. Needs a Tapir newer than 1.8.0."},
     {"name": "learn_library_part", "cat": "Elements", "mode": "full", "mutates": True,
      "desc": "Place samples of a library part past the model, measure them, show them in one floor plan image, delete them again and store the measurement. Needs Tapir 1.7.2."},
     {"name": "record_library_part", "cat": "Elements", "mode": "full", "mutates": True,

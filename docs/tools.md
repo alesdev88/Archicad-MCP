@@ -196,6 +196,11 @@ height when the item leaves them out. `modify_elements` still needs `size`, sinc
 element already placed has one. The part's own values are as stored in it, so one that
 clamps its size may draw otherwise; the existing warning catches that.
 
+`preview_library_parts` draws the 2D symbols of up to 8 parts in one image with nothing
+placed, so an agent can compare candidates before learning one. It gives each part's default
+size and extent as JSON. It shows the default parameters, and only lines, arcs and polygons,
+so it does not replace the look after placing. Needs a Tapir newer than 1.8.0.
+
 The tool descriptions carry the rules for reading a sketch, so the agent follows
 them without being told: learn a part before placing it; choose the part from
 what the sketch draws (the lines dividing a window give its sashes, the arcs
