@@ -238,6 +238,22 @@ def test_bounding_box_queries_are_reads(name):
     assert classify_access(name) == "read"
 
 
+@pytest.mark.parametrize("name", ["CheckPropertyValues", "CompareLibraryPartUnIds",
+                                  "FindLibraryParts", "SearchLibraryParts",
+                                  "ReadFavoritesFile", "InterpretAutoTexts"])
+def test_reads_without_a_read_verb_need_no_confirmation(name):
+    from archicad_mcp.gateway.registry import build_registry, classify_access
+    assert classify_access(name) == "read"
+    assert build_registry()[name].access == "read"
+
+
+@pytest.mark.parametrize("name", ["InterpretGDLScript3D", "ReadFavoriteFile", "SearchAndReplace"])
+def test_the_read_list_takes_nothing_it_was_not_argued_for(name):
+    # GDL can read and write files, so running a script is no read.
+    from archicad_mcp.gateway.registry import classify_access
+    assert classify_access(name) == "write"
+
+
 def test_a_word_merely_starting_with_get_is_not_a_read():
     from archicad_mcp.gateway.registry import classify_access
     assert classify_access("Getaway") == "write"
