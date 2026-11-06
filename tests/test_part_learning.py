@@ -62,11 +62,14 @@ class Fake:
                  tapir_version="1.7.2", library=None, fail_create_at=None, gdl_fails=False,
                  refuse_parameters=(), keep=(), capture=True, create_raises=False,
                  mirror_axis="x", act_story=0, stories=None, appear=(), rotation=0.0,
-                 wall_flipped=True, own=None, own_fails=False, missing=NEW_READS):
+                 wall_flipped=True, own=None, own_fails=False, missing=NEW_READS,
+                 symbol=None):
         self.draw = boxes or corner_boxes()
         self.own = own                       # the part's default parameter values, by name
         self.own_fails = own_fails           # GetGDLParametersOfLibraryParts is refused
         self.missing = set(missing)          # commands this Tapir does not have
+        # (a, b) -> the primitives of a sample of that size; it may raise TapirCommandError.
+        self.symbol = symbol
         self.mirror_axis = mirror_axis       # the local axis `reflected` negates
         self.model: dict[str, tuple] = {}
         self.model_types: dict[str, str] = {}
@@ -198,6 +201,13 @@ class Fake:
             {"name": name, "type": "Length", "value": value}
             for name, value in self.own.items()]}]}
 
+    def _primitives(self, p):
+        self.sent.setdefault("GetLibraryPart2DPrimitives", []).append(p)
+        if self.symbol is None:
+            return {"primitives": []}
+        item = self.elements[p["elementId"]["guid"]]["item"]
+        return {"primitives": self.symbol(item["dimensions"]["x"], item["dimensions"]["y"])}
+
     def _set_gdl(self, p):
         self.sent.setdefault("SetGDLParametersOfElements", []).append(p)
         results = []
@@ -287,6 +297,7 @@ class Fake:
             "available": p["addOnCommandId"]["commandName"] not in self.missing}
         tapir = {
             "GetGDLParametersOfLibraryParts": self._defaults,
+            "GetLibraryPart2DPrimitives": self._primitives,
             "GetCurrentWindowType": lambda p: {"currentWindowType": self.window},
             "GetStories": lambda p: {"firstStory": 0, "lastStory": 2,
                                      "actStory": self.act_story, "skipNullFloor": False,
@@ -1001,3 +1012,85 @@ def test_an_older_tapir_sends_only_what_it_sends_today(records):
     assert not set(NEW_READS) & set(_commands(fake))
     assert _dimensions(fake) == FIXED
     assert records.get("Bed Double 01").own_size is None
+
+
+# ---------- the symbol check (Tapir's main after 1.8.0) ----------
+
+def rect(x0: float, y0: float, x1: float, y1: float) -> list[dict]:
+    return [{"type": "Polygon", "coordinates": [
+        {"x": x0, "y": y0}, {"x": x1, "y": y0}, {"x": x1, "y": y1}, {"x": x0, "y": y1}]}]
+
+
+def _refused_symbol(a, b):
+    raise TapirCommandError(message="Failed to get the 2D primitives", code=1)
+
+
+def _learned_with(records, symbol, **options):
+    fake = Fake(symbol=symbol, missing=(), **options)
+    return fake, learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+
+
+def _symbol_warnings(out):
+    return [w for w in out["warnings"] if "symbol" in w]
+
+
+def test_a_symbol_that_matches_the_box_agrees(records):
+    _, out = _learned_with(records, lambda a, b: rect(0, 0, a, b))
+    assert out["symbol_check"] == "agrees"
+    assert _symbol_warnings(out) == []
+
+
+def test_a_difference_inside_the_tolerance_agrees(records):
+    _, out = _learned_with(records, lambda a, b: rect(0, 0, a + 0.02, b))
+    assert out["symbol_check"] == "agrees"
+
+
+def test_a_symbol_that_differs_warns_and_changes_no_measurement(records):
+    _, out = _learned_with(records, lambda a, b: rect(0, 0, a + 0.05, b))
+    assert out["symbol_check"] == "differs"
+    warning = _symbol_warnings(out)[0]
+    assert "1.0 x 1.0 m" in warning and "1.05" in warning
+    assert out["measured"] == {"xMin": [0.0, 0.0], "xMax": [1.0, 0.0],
+                               "yMin": [0.0, 0.0], "yMax": [1.0, 0.0]}
+
+
+def test_every_refused_read_is_unread(records):
+    _, out = _learned_with(records, _refused_symbol)
+    assert out["symbol_check"] == "unread"
+    assert _symbol_warnings(out)
+    assert records.get("Bed Double 01").footprint is not None
+
+
+def test_a_symbol_with_nothing_in_it_counts_as_unread(records):
+    _, out = _learned_with(records, lambda a, b: [])
+    assert out["symbol_check"] == "unread"
+
+
+def test_one_refused_read_leaves_the_verdict_to_the_other(records):
+    def first_refused(a, b):
+        if a == 1.0:
+            _refused_symbol(a, b)
+        return rect(0, 0, a, b)
+    _, out = _learned_with(records, first_refused)
+    assert out["symbol_check"] == "agrees"
+    assert any("1.0 x 1.0 m" in w for w in _symbol_warnings(out))
+
+
+def test_only_the_sized_samples_are_read(records):
+    fake, _ = _learned_with(records, lambda a, b: rect(0, 0, a, b))
+    asked = [p["elementId"]["guid"] for p in fake.sent["GetLibraryPart2DPrimitives"]]
+    assert asked == fake.created_guids[:2]
+    assert all(p["name"] == "Bed Double 01" for p in fake.sent["GetLibraryPart2DPrimitives"])
+
+
+def test_there_is_no_symbol_check_on_a_tapir_without_the_command(records):
+    fake = Fake(symbol=lambda a, b: rect(0, 0, a, b))
+    out = learn_library_part(fake.connection(), records, "Bed Double 01", "object")
+    assert "symbol_check" not in out
+    assert "GetLibraryPart2DPrimitives" not in _commands(fake)
+
+
+def test_a_door_has_no_symbol_check(records):
+    fake = Fake(symbol=lambda a, b: rect(0, 0, a, b), missing=())
+    out = learn_library_part(fake.connection(), records, "Door", "door")
+    assert "symbol_check" not in out

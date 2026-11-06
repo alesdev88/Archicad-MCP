@@ -42,7 +42,7 @@ from archicad_mcp.core.create import FLOOR_PLAN, _part_name_faults_tool, closest
 from archicad_mcp.core.editability import active_window, present
 from archicad_mcp.core.element_data import error_fields
 from archicad_mcp.core.mutate import _refused_deletions, _survivor_reason
-from archicad_mcp.core.part_placement import Sample, fit_axis
+from archicad_mcp.core.part_placement import SIZE_TOLERANCE, Sample, fit_axis
 from archicad_mcp.core.part_records import (
     COMBOS,
     HEADS,
@@ -52,7 +52,13 @@ from archicad_mcp.core.part_records import (
     RecordsFileError,
     identity_problem,
 )
-from archicad_mcp.core.part_symbols import default_parameters, own_size_of, parameter_number
+from archicad_mcp.core.part_symbols import (
+    default_parameters,
+    own_size_of,
+    parameter_number,
+    symbol_extents,
+    symbol_of,
+)
 from archicad_mcp.core.window_image import capture_window
 from archicad_mcp.extract import _fetch_types, element_payload, get_all_element_ids
 from archicad_mcp.tapir_requirements import installed_version
@@ -391,6 +397,7 @@ class _Learning:
         self.wall: str | None = None
         self.warnings: list[str] = []
         self.note: str | None = None         # what the reply must say above the warnings
+        self.symbol_check: str | None = None
 
     def placed(self) -> list[str]:
         return self.samples + ([self.wall] if self.wall else [])
@@ -414,8 +421,11 @@ class _Learning:
         self._apply_variants(placed)
         footprint, parameters = self._measure(placed)
         png = self._look([p.guid for p in placed])
-        return {"png": png, "samples": [p.label for p in placed], "measured": footprint,
-                "parameters": parameters}
+        outcome = {"png": png, "samples": [p.label for p in placed], "measured": footprint,
+                   "parameters": parameters}
+        if self.symbol_check is not None:
+            outcome["symbol_check"] = self.symbol_check
+        return outcome
 
     def _openings(self) -> dict:
         command, key = _CREATE[self.kind]
@@ -532,7 +542,35 @@ class _Learning:
             self.warnings.append("Only one size could be measured, so the footprint is "
                                  "fixed: it will not follow the size the part is placed at.")
         self._check_mirror(sized[0], boxes[0], mirrored, boxes[len(SAMPLE_SIZES)])
+        self.symbol_check = self._check_symbols(sized, boxes)
         return self._fitted(samples), parameters
+
+    def _check_symbols(self, sized: list[_Placed], boxes: list[tuple | None]) -> str | None:
+        """Each sized sample's symbol against its plan box: "agrees", "differs" or "unread";
+        None on a Tapir without the command. It only warns: plan boxes stay the measurement
+        until a live check shows the two agree. The mirrored sample is not read, as whether
+        its symbol is mirrored is not stated."""
+        if not self.conn.tapir_command_available("GetLibraryPart2DPrimitives"):
+            return None
+        compared = differs = 0
+        for p, box in zip(sized, boxes):
+            primitives = symbol_of(self.conn, self.name, p.guid)
+            extents = symbol_extents(primitives) if primitives is not None else None
+            if extents is None or box is None:
+                self.warnings.append(f"The symbol of sample '{p.label}' could not be compared "
+                                     "with its plan box.")
+                continue
+            compared += 1
+            seen = _from_insertion(box, p)
+            if max(abs(s - e) for s, e in zip(seen, extents)) > SIZE_TOLERANCE:
+                differs += 1
+                self.warnings.append(
+                    f"The symbol of sample '{p.label}' covers {_rounded(extents)} from its "
+                    f"insertion point, and its plan box {_rounded(seen)}. The plan box is what "
+                    "was measured; a plan box may hold what the symbol read leaves out.")
+        if not compared:
+            return "unread"
+        return "differs" if differs else "agrees"
 
     def _fitted(self, samples: list[Sample]) -> dict | None:
         """The footprint, each axis fitted against the size its plan box follows; None,
