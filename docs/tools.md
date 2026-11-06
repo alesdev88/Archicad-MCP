@@ -85,6 +85,14 @@ module, locked, not reserved) are named and skipped, never unlocked. A commit
 reads the elements back, so a field Archicad answered success for but did not
 change shows up under `not_applied`. Needs Tapir 1.5.9.
 
+On a Tapir newer than 1.8.0 it also changes stairs and railings, and the name and
+reference ID of sections, elevations and detail and worksheet markers, and a
+marker's clip polygon. `id` stays the Element ID everywhere, so the reference ID in
+the marker is `reference_id`. Archicad solves a stair again after a change and may
+adjust the step values, which show up under `not_applied`. MEP elements stay in the
+gateway (`ModifyMEPElements`): Tapir names them `Unknown`, so the tool cannot choose a
+command from the type.
+
 `apply_favorites` makes elements match an office favourite: "make these 40 doors
 Internal Door". Without a favourite it lists the ones that fit. The dry run
 warns what a favourite takes over besides materials and pens, because Tapir's
@@ -126,13 +134,16 @@ Needs Tapir 1.6.0.
 
 ## Creating
 
-`create_elements` places any of the 44 element types Tapir can create: walls,
-beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
-walls, grid elements, objects, lamps, doors and windows in walls, openings (also
-from the Opening tool's settings, Archicad 29), analytical loads, supports and
-links (Archicad 26), MEP routes and elements, electrical panels, devices and circuits (Archicad 30),
-sections, interior elevations, hotlink instances, 2D lines to texts and labels,
-keynote labels, dimensions and drawings on a layout. Items use Tapir's own
+`create_elements` places any of the 51 element types Tapir can create: walls,
+beams, columns, slabs, roofs, shells, morphs, meshes, stairs, railings (also along
+a 3D polyline), zones, curtain walls, grid elements, objects, lamps, doors and
+windows in walls, skylights in roofs and shells, openings (also from the Opening
+tool's settings, Archicad 29), analytical loads, supports and links (Archicad 26),
+MEP routes, elements, flexible segments and take-offs (Archicad 28), electrical
+panels, devices and circuits (Archicad 30), sections, interior elevations, detail
+and worksheet markers, hotlink instances, 2D lines to texts and labels, keynote
+labels, dimensions and drawings on a layout. Shells, skylights, polyline railings,
+flexible segments, take-offs and the two markers need a Tapir newer than 1.8.0. Items use Tapir's own
 fields; `items=[]` returns a type's schema with notes on what it leaves out. The
 dry run validates every item, checks that a named favourite or library part
 exists (with the closest names when it does not), and checks hosts for
@@ -141,7 +152,11 @@ reason. It warns about an object without `dimensions` (it would take the tool's
 current size), about `offset` and `useFixedAngle` (Archicad discards them), and
 about a door or window without `sillHeight`. On Tapir 1.7.3 most types also take
 the Element ID as `id`. Model elements are placed from the floor plan or the 3D
-window; 2D elements go into the active drawing window.
+window; 2D elements go into the active drawing window, or, on a Tapir newer than
+1.8.0, into the database given as `database` (a `{"guid": ...}`, for lines, arcs,
+circles, polylines, splines, hatches, hotspots, texts and labels). With `database`,
+a label's parent is not checked, because that check knows only the active window's
+elements.
 
 `create_swept_beam`, `create_road_marking` and `create_road_arrow` place GDL objects
 of this project along a path or an existing element: a beam swept along a 3D path
@@ -177,6 +192,10 @@ detail, worksheet or layout), opens it, selects, highlights and zooms. Archicad
 answers success for selections and zooms it did not make, so the selection is
 read back and the story or window checked after the switch. `guids=[]` removes
 the highlight and the selection. Needs Tapir 1.3.1; the story switch needs 1.7.0.
+On a Tapir newer than 1.8.0, `in_3d=true` opens the 3D window on just the floor
+plan's elements among them, as Show Selection in 3D does, and reports the rest where
+they are. They always become the selection, 2D elements show nothing there, and
+`guids=[]` shows everything.
 
 `capture_window` is how an agent looks: it saves what the current window shows
 (floor plan, section, 3D, layout) as a PNG and returns it as an image, so a
@@ -195,7 +214,8 @@ and BCF files.
 `export_ifc` saves the project as `.ifc` or `.ifczip` with a translator chosen by
 name and one of Archicad's five element scopes. It never replaces an existing
 file without `overwrite=true`, checks the file is there afterwards, and never
-opens or merges IFC. Needs Tapir 1.6.0. `publish` runs a Publisher set.
+opens or merges IFC. Needs Tapir 1.6.0. `publish` runs a Publisher set; on a Tapir
+newer than 1.8.0 an unknown name is refused with the project's sets.
 
 `reserve_elements` and `release_elements` are confirm-gated. A dry run reports
 unknown GUIDs, elements already in your workspace and, on a Tapir newer than

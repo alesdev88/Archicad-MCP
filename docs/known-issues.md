@@ -461,6 +461,27 @@ Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
   (no attribute) and new layers with intersection group 0, so a create without
   them warns.
 
+## Tapir after 1.8.0: built from its source, not tried live
+
+The definitions come from Tapir's `main` (a7d4b075), which says 1.8.1, and
+`scripts/check_release_version.py` holds any release until they are re-pinned to the
+real Tapir release. Everything that needs the new add-on is unit-tested against the
+shapes in Tapir's source and has not run in Archicad. The check to make, on a test
+project, once a newer Tapir is installed:
+
+- A door and a window by `libraryPartName`: parameters read and written, tool defaults
+  unchanged. Tapir's change says it is untested in Archicad. If it fails, the warnings'
+  gate in `create.py` comes out again.
+- A stair with a landing (`baseLineEdges`, `baseLineVertices`), one with each
+  `baselinePosition`, and which way a positive `baselineOffset` runs. Until that is
+  known, a non-zero offset stops the stair checks.
+- Each new `create_elements` type once, and `database`.
+- `modify_elements` read-backs on a stair, a railing, a section, an elevation and both
+  markers.
+- `show_elements(in_3d=true)`, from the floor plan and from a section.
+- A reservation dry run on a Teamwork project, with a teammate holding an element.
+- `set_element_data` round trips and a stair's 3D bounding box, which Tapir also changed.
+
 ## Teamwork reservation: what Tapir reports and what is derived
 
 Tapir 1.5.9's `ReserveElements` (present since 1.1.4, wrapping
