@@ -72,6 +72,8 @@ WRAPPED_BY: dict[str, list[str]] = {
     "SetDetailsOfElements": ["modify_elements", "apply_favorites"],
     "GetFavoritesByType": ["apply_favorites"],
     "ApplyFavoritesToElements": ["apply_favorites"],
+    "GetFavoriteSettings": ["apply_favorites"],
+    "GetFavoriteDefaults": ["apply_favorites"],
     "ApplyFavoritesToElementDefaults": ["apply_favorites"],
     "ModifyWalls": ["modify_elements"],
     "ModifyBeams": ["modify_elements"],

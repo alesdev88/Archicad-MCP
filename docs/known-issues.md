@@ -479,6 +479,8 @@ project, once a newer Tapir is installed:
 - `modify_elements` read-backs on a stair, a railing, a section, an elevation and both
   markers.
 - `show_elements(in_3d=true)`, from the floor plan and from a section.
+- An `apply_favorites` dry run on a wall: the layer and Element ID it names are the ones
+  the commit then applies.
 - `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
   `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
   in a form that compares equal.

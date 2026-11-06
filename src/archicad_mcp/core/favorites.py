@@ -18,7 +18,9 @@ Tapir 1.7.3 (#905) takes keepFields: it copies the named fields of the target
 back itself after the favourite, sizes and top links included, so `keep` grows
 to those fields there and the write-back after the call finds nothing left to
 do. GetFavoriteSettings (1.7.3) lets the dry run name the favourite's library
-part, marker and folder.
+part, marker and folder. GetFavoriteDefaults (Tapir's main after 1.8.0, Archicad 29)
+adds its layer and Element ID, so the warnings can name them and leave out an element
+that already has them; read from Tapir's source, not tried live yet.
 """
 from __future__ import annotations
 
@@ -148,7 +150,7 @@ class FavoritePlan:
     window: str | None = None
     layers: dict[int, str] = field(default_factory=dict)
     tapir_keeps: bool = False      # send keep as keepFields (Tapir 1.7.3)
-    settings: dict = field(default_factory=dict)   # GetFavoriteSettings, shown
+    settings: dict = field(default_factory=dict)   # what the favourite holds, shown
 
 
 def _clean_guids(guids: list[str] | None) -> list[str]:
@@ -167,7 +169,26 @@ def _unknown(favorite: str, index: dict[str, list[str]]) -> dict:
                      + hint}
 
 
-def _warnings(element_type: str, keep: tuple[str, ...], own_part: bool = False) -> list[str]:
+def _taken_warnings(keep: tuple[str, ...], stored: dict, entry: dict,
+                    layers: dict[int, str]) -> list[str]:
+    """The layer and Element ID the element would lose, by value where the favourite's are
+    known; nothing for one it already has. Tapir leaves out an empty Element ID, and what
+    applying that does is not known, so that one keeps the generic warning."""
+    out = []
+    layer = stored.get("layerIndex")
+    if "layer" not in keep and (layer is None or layer != entry.get("layerIndex")):
+        out.append(_LAYER_WARNING if layer is None
+                   else f"takes the favourite's layer '{layers.get(layer, layer)}'")
+    element_id = stored.get("elementId")
+    if "id" not in keep and (element_id is None or element_id != entry.get("id")):
+        out.append(_ID_WARNING if element_id is None
+                   else f"takes the favourite's Element ID '{element_id}' "
+                        "(keep=[\"id\"] writes its own back)")
+    return out
+
+
+def _warnings(element_type: str, keep: tuple[str, ...], own_part: bool,
+              taken: list[str]) -> list[str]:
     if own_part and element_type in OWN_PART_TYPES:
         return [_OWN_PART_WARNING]
     out = []
@@ -191,25 +212,34 @@ def _warnings(element_type: str, keep: tuple[str, ...], own_part: bool = False) 
         out.append(_HIERARCHICAL_WARNING)
     else:
         out.append(_UNCHECKED_WARNING)
-    if "layer" not in keep:
-        out.append(_LAYER_WARNING)
-    if "id" not in keep:
-        out.append(_ID_WARNING)
+    out.extend(taken)
     if element_type in ("Wall", "Column") and "height" in keep and top_link:
         out.append(_HEIGHT_ALONE_WARNING)
     return out
 
 
-def _settings(conn: ArchicadConnection, favorite: str) -> dict:
-    """What the favourite holds that the dry run can name: its folder, library part
-    and marker. Empty without GetFavoriteSettings (Tapir 1.7.3) or when it fails."""
-    if not conn.tapir_command_available("GetFavoriteSettings"):
-        return {}
-    try:
-        [item] = conn.tapir("GetFavoriteSettings",
-                            {"favorites": [favorite]}).get("favoriteSettings") or [{}]
-    except (APIErrorBase, ArchicadUnavailableError, ValueError):
-        return {}
+# The reads of what a favourite holds, fullest first: GetFavoriteDefaults is registered
+# on older Archicad too and refuses there.
+_STORED_READS = (("GetFavoriteDefaults", "favoriteDefaults"),
+                 ("GetFavoriteSettings", "favoriteSettings"))
+
+
+def _stored(conn: ArchicadConnection, favorite: str) -> dict:
+    """What the favourite holds, from the fullest read that answers; empty when none does."""
+    for command, key in _STORED_READS:
+        if not conn.tapir_command_available(command):
+            continue
+        try:
+            [item] = conn.tapir(command, {"favorites": [favorite]}).get(key) or [{}]
+        except (APIErrorBase, ArchicadUnavailableError, ValueError):
+            continue
+        if item and "error" not in item:
+            return item
+    return {}
+
+
+def _settings(item: dict, layers: dict[int, str]) -> dict:
+    """What the favourite holds that the dry run can name."""
     out = {}
     if item.get("folder"):
         out["folder"] = "/".join(item["folder"])
@@ -217,6 +247,10 @@ def _settings(conn: ArchicadConnection, favorite: str) -> dict:
         out["library_part"] = item["libPart"]["name"]
     if ((item.get("marker") or {}).get("libPart") or {}).get("name"):
         out["marker"] = item["marker"]["libPart"]["name"]
+    if item.get("layerIndex") is not None:
+        out["layer"] = layers.get(item["layerIndex"], item["layerIndex"])
+    if item.get("elementId"):
+        out["element_id"] = item["elementId"]
     return out
 
 
@@ -244,6 +278,8 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
         holders = p.favorite_types
     p.layers = _layers(conn)
     own_part = keeps_own_part(conn)
+    stored = _stored(conn, favorite)
+    p.settings = _settings(stored, p.layers)
     for g in guids:
         entry = entries.get(g)
         if entry is None:
@@ -255,10 +291,10 @@ def plan(conn: ArchicadConnection, guids: list[str], favorite: str,
             continue
         p.planned.append({"guid": g, "type": element_type, "id": entry.get("id") or None,
                           "layerIndex": entry.get("layerIndex")})
-        p.warnings[g] = _warnings(element_type, keep, own_part)
+        p.warnings[g] = _warnings(element_type, keep, own_part,
+                                  _taken_warnings(keep, stored, entry, p.layers))
     if not p.favorite_types:
         p.favorite_types = holders
-    p.settings = _settings(conn, favorite)
     return p
 
 

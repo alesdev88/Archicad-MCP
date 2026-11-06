@@ -103,7 +103,9 @@ since a favourite's ID is a template value; `keep` also takes the layer. On
 Tapir 1.7.3 Tapir keeps them itself, `keep` also takes `width`, `height`,
 `sillHeight`, `referenceLineLocation`, `topOffset` and `relativeTopStory` (keep
 the last three together), and the dry run names the favourite's library part,
-marker and folder. On Tapir 1.8.0 a door or window keeps its own library part,
+marker and folder. On a Tapir newer than 1.8.0 and Archicad 29 it also names the
+favourite's layer and Element ID, and warns only about elements that would change.
+On Tapir 1.8.0 a door or window keeps its own library part,
 Element ID and layer: live, it took only the favourite's size and the parameters
 both parts have, so changing the part takes `ChangeLibraryPartOfElements`
 through `execute_write_api_command`. A commit reports every field that changed,
