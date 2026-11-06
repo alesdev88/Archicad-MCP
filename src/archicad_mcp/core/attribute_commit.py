@@ -2,8 +2,9 @@
 read the attributes back and report what Archicad actually did.
 
 Order: per type in WRITE_ORDER (a type before the types that refer to it),
-creates before modifies; then property values; deletes last, so nothing is
-deleted that another change still names. A reference to an attribute created
+creates before modifies; then property values; then replaces, one call per type, which
+is one undo step in Archicad; deletes last, so nothing is deleted that another change
+still names. A reference to an attribute created
 in this call is resolved just before its batch, by name from a fresh read:
 Tapir's returned GUID is not trusted (its source returns whatever is in the
 header after Create).
@@ -13,6 +14,8 @@ from __future__ import annotations
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.core.attribute_edit import (
+    REPLACE_COMMAND,
+    REPLACEABLE,
     Plan,
     _Context,
     _diff,
@@ -21,6 +24,9 @@ from archicad_mcp.core.attribute_edit import (
     _project,
     _to_tapir,
     renamed_references,
+    replace_answered,
+    replace_items,
+    replace_uses,
 )
 from archicad_mcp.core.attribute_types import (
     FILL_TEXTURE_READ,
@@ -52,6 +58,10 @@ def _batches(plans: list[Plan]) -> list[tuple[str, list[Plan], bool | None]]:
     props = [p for p in plans if p.props]
     if props:
         batches.append(("properties", props, None))
+    for type_name in REPLACEABLE:
+        replaces = [p for p in plans if p.action == "replace" and p.type_name == type_name]
+        if replaces:
+            batches.append(("replace", replaces, None))
     deletes = [p for p in plans if p.action == "delete"]
     if deletes:
         batches.append(("delete", deletes, None))
@@ -65,6 +75,7 @@ class _Run:
         self.fields_ok: list[Plan] = []
         self.props_ok: dict[int, list[dict]] = {}
         self.deletes_ok: list[Plan] = []
+        self.replaces_ok: list[tuple[Plan, dict]] = []
         self.failed: list[dict] = []
         self.stopped: list[dict] = []
         self.error: Exception | None = None
@@ -82,6 +93,8 @@ class _Run:
             self._send_fields(batch, overwrite)
         elif kind == "properties":
             self._send_properties(batch)
+        elif kind == "replace":
+            self._send_replaces(batch)
         else:
             self._send_deletes(batch)
 
@@ -161,6 +174,36 @@ class _Run:
                                     "message": error.get("message", "no answer for this item")})
 
 
+    def _send_replaces(self, batch: list[Plan]) -> None:
+        try:
+            response = self.ctx.conn.tapir(REPLACE_COMMAND, {
+                "attributeType": batch[0].type_name, "attributes": replace_items(batch)})
+        except (APIErrorBase, ArchicadUnavailableError) as exc:
+            self.refused(batch, exc)
+            return
+        answers = response.get("attributes", [])
+        for i, p in enumerate(batch):
+            answer = answers[i] if i < len(answers) else {}
+            if replace_answered(answer):
+                self.replaces_ok.append((p, answer))
+            else:
+                error = answer.get("error", {}) if isinstance(answer, dict) else {}
+                self.failed.append({"target": _label(p),
+                                    "message": error.get("message", "no answer for this item")})
+
+
+def _replaced_entry(ctx: _Context, p: Plan, answer: dict) -> dict:
+    entry = {**p.head(), "with": p.replacement, "uses": replace_uses(answer)}
+    shown = [item.get("attributeId", {}).get("guid") for item in answer.get("layersShown", [])]
+    if shown:
+        layers = [ctx.names.by_guid("Layer", guid) for guid in shown]
+        entry["layers_shown"] = [layer["name"] if layer else guid
+                                 for layer, guid in zip(layers, shown)]
+    if answer.get("warnings"):
+        entry["warnings"] = answer["warnings"]
+    return entry
+
+
 def _verify_shape(p: Plan, rename_to: dict) -> dict:
     """What the read-back is compared with: the merged values of the fields asked
     for (a create also its name), a profile's skinOverrides as asked, references
@@ -191,7 +234,8 @@ def _now_shape(named: dict, shape: dict) -> dict:
 
 def _read_back(run: _Run) -> tuple[list[dict], list[dict]]:
     ctx = run.ctx
-    for type_name in {p.type_name for p in run.fields_ok + run.deletes_ok}:
+    replaced = [p for p, _ in run.replaces_ok]
+    for type_name in {p.type_name for p in run.fields_ok + run.deletes_ok + replaced}:
         ctx.names.forget(type_name)
     applied: dict[int, dict] = {}
     not_applied: list[dict] = []
@@ -234,6 +278,16 @@ def _read_back(run: _Run) -> tuple[list[dict], list[dict]]:
         else:
             not_applied.append({"type": p.type_name, "target": p.target, "field": "deleted",
                                 "sent": True, "read": False})
+    for p, answer in run.replaces_ok:
+        # By GUID: what Tapir cannot rewrite keeps a copy with the old name and a new GUID.
+        if ctx.names.by_guid(p.type_name, p.guid) is not None:
+            not_applied.append({"type": p.type_name, "target": p.target, "field": "deleted",
+                                "sent": True, "read": False})
+        elif ctx.names.by_guid(p.type_name, p.replacement_guid) is None:
+            not_applied.append({"type": p.type_name, "target": p.target, "field": "with",
+                                "sent": p.replacement, "read": "not found afterwards"})
+        else:
+            applied[id(p)] = _replaced_entry(ctx, p, answer)
     return list(applied.values()), not_applied
 
 
@@ -248,7 +302,7 @@ def commit(ctx: _Context, plans: list[Plan], result: dict) -> None:
         # Written already: say what was sent, and that it could not be confirmed.
         read_back_error = exc
         written = run.fields_ok + [p for p in run.plans if id(p) in run.props_ok] \
-            + run.deletes_ok
+            + run.deletes_ok + [p for p, _ in run.replaces_ok]
         applied = list({id(p): p.head() for p in written}.values())
         not_applied = []
     result["applied"] = applied

@@ -1081,7 +1081,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import attribute_edit as _attribute_edit
 
     @mcp.tool(description=(
-        "Create, modify and delete attributes (layers, layer combinations, lines, "
+        "Create, modify, delete and replace attributes (layers, layer combinations, lines, "
         "fills, zone categories, pen tables, profiles, building materials, composites, "
         "surfaces) and set attribute property values (Tapir). DRY-RUN BY DEFAULT; pass "
         "dry_run=false to commit. Each change has one action key whose value is the "
@@ -1092,7 +1092,10 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "their value, including what Tapir's own overwrite would drop: a composite's "
         "useWith, a building material's texts); {\"modify\": ..., \"properties\": "
         "{\"Group/Name\": \"value\"}} sets property values; {\"delete\": \"Fill\", "
-        "\"attribute\": ...} deletes. Fields use Tapir's names and units (metres, "
+        "\"attribute\": ...} deletes; {\"replace\": \"Fill\", \"attribute\": ..., "
+        "\"with\": ...} (fills, lines, surfaces, building materials, a Tapir newer than "
+        "1.8.0, Archicad 27) rewrites every reference across the project and deletes it, "
+        "and its dry run lists what uses it (uses). Fields use Tapir's names and units (metres, "
         "radians, pen numbers); a field holding another attribute (buildingMaterialId, "
         "lineTypeId, fillId, cutFillIndex, a layer combination's layers[].attributeId) "
         "takes its name. changes=[] lists every type's fields; list_attributes"
@@ -1102,7 +1105,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "own index 1 attributes, a layer delete while elements are on the layer (it "
         "would delete them) or without the floor plan active. In Teamwork the "
         "attribute type's set must be reserved (reserve_elements object_sets). "
-        "Attribute writes cannot be undone. A commit returns applied (read back), "
+        "Attribute writes cannot be undone, except a replace, which is one undo step per "
+        "type. A commit returns applied (read back), "
         "not_applied, failed (grouped) and stopped."),
               **_tool_meta("Edit attributes", read_only=False, destructive=True))
     @_guarded

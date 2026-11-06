@@ -125,6 +125,16 @@ every field it does not change, and values Tapir would silently replace with a
 default are refused. A layer is deleted only when no element is on it. Attribute
 writes cannot be undone in Archicad. Needs Tapir 1.5.4.
 
+On a Tapir newer than 1.8.0 and Archicad 27, `{"replace": "Fill", "attribute": ...,
+"with": ...}` deletes a fill, line, surface or building material and rewrites
+everything that used it to another one of the same type, like Delete and Replace in
+the Attribute Manager. One call changes the whole project, in one undo step per type,
+so read the dry run: it lists the elements, tool defaults, favourites, other attributes
+and override rules that use it. Elements on hidden or locked layers change too, as
+Tapir shows and unlocks those layers and puts them back. Hotlinked elements cannot be
+changed, indices typed into GDL scripts are not found, and if an element cannot be
+changed the attribute stays and the change reports under `failed`.
+
 `edit_property_definitions`, `edit_classifications` and `import_definitions` edit
 property definitions and classification systems in place, instead of the XML
 round trip through Property Manager or Classification Manager. A property can be

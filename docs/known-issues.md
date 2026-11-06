@@ -481,6 +481,8 @@ project, once a newer Tapir is installed:
 - `show_elements(in_3d=true)`, from the floor plan and from a section.
 - An `apply_favorites` dry run on a wall: the layer and Element ID it names are the ones
   the commit then applies.
+- An `edit_attributes` replace on throwaway attributes: the dry run's list against what
+  the commit changes, a favourite that keeps a copy, and one undo step.
 - `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
   `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
   in a form that compares equal.

@@ -145,6 +145,7 @@ WRAPPED_BY: dict[str, list[str]] = {
         "CreateLayers", "CreateLayerCombinations", "CreateLines", "CreateFills",
         "CreateZoneCategories", "CreatePenTables", "CreateProfiles",
         "CreateBuildingMaterials", "CreateComposites", "CreateSurfaces", "DeleteAttributes",
+        "DeleteAndReplaceAttributes",
         "GetPropertyValuesOfAttributes", "SetPropertyValuesOfAttributes")},
     "ReserveLockableObjectSet": ["reserve_elements"],
     "ReleaseLockableObjectSet": ["release_elements"],
