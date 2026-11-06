@@ -26,7 +26,7 @@ taking the server down.
 | Field | Required | Default | Notes |
 |---|---|---|---|
 | `id` | yes | n/a | String, unique. This is what `run_rule` and `highlight_failures` take. |
-| `type` | yes | n/a | One of the six below. |
+| `type` | yes | n/a | One of the eight below. |
 | `severity` | no | `error` | `error` or `warning`. Only `error` rules can fail the audit. |
 | `tags` | no | `[]` | Free-form. `audit_delivery_readiness(ruleset="…")` filters on these. |
 | `applies_to` | no | all elements | `{ element_type: Wall, where: [...] }`. Omit it, or use `*`, to match everything. |
@@ -189,9 +189,49 @@ only when `surface_tolerance` is set, and building materials set not to take par
 in collision detection are left out. A pass is not proof that nothing overlaps. Needs the Tapir add-on with
 `GetCollisions` (1.2.2); without it the rule reports `skipped`.
 
+### `library-parts-loaded`
+
+Fails on objects, lamps, windows and doors whose library part is not loaded, the ones
+Archicad draws as dots.
+
+```yaml
+- id: library-parts-loaded
+  type: library-parts-loaded
+  severity: error
+  tags: [delivery]
+```
+
+`applies_to` is not used. It reads no properties, so it is safe where a property read
+can crash Archicad 29. The failing GUIDs go to `highlight_failures` as usual. Like every
+verdict it names no model data, so to learn which parts they are, send those GUIDs to
+`GetMissingLibPartNames` through `execute_read_api_command`. An element whose part name
+cannot be read is counted in the message and does not fail the rule. If some library
+entries could not be read, a part not in the listing may still be loaded, so the rule
+reports `skipped` rather than fail on it. Needs a Tapir newer than 1.8.0; without it the
+rule reports `skipped`. Not tried live yet.
+
+### `ifc-spatial-structure`
+
+Fails when Archicad reports no IfcProject, IfcSite or IfcBuilding. With `element_types`,
+it also fails on an element whose story in the IFC model is not its home story.
+`verify_ifc_export_readiness` runs it too.
+
+```yaml
+- id: ifc-structure
+  type: ifc-spatial-structure
+  element_types: [Wall, Slab]    # optional; a misspelt one is a load error
+  severity: warning
+  tags: [ifc-delivery]
+```
+
+`applies_to` is not used, and it reads no properties. How often the two stories differ in
+a real project is not known yet, so the comparison runs only when `element_types` asks
+for it. Needs a Tapir newer than 1.8.0 and Archicad 28; otherwise the rule reports
+`skipped`. Not tried live yet.
+
 ## Custom rules
 
-For anything the six types cannot express, drop a `custom_rules.py` into the
+For anything the eight types cannot express, drop a `custom_rules.py` into the
 same directory and expose a module-level `RULES` list:
 
 ```python

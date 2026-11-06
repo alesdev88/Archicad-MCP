@@ -90,7 +90,7 @@ Rules are YAML files in a folder you point the server at (the extension's
   severity: error
 ```
 
-Six rule types are built in, and custom checks go in Python beside the YAML. Keep
+Eight rule types are built in, and custom checks go in Python beside the YAML. Keep
 real office standards outside this repository. See [Writing rules](docs/rules.md).
 
 ## Docs

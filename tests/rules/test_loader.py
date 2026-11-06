@@ -7,6 +7,7 @@ def test_rule_types_registry_complete():
     assert set(RULE_TYPES) == {
         "property-required", "classification-required", "layer-compliance",
         "zone-number-required", "ifc-property-required", "no-collisions",
+        "library-parts-loaded", "ifc-spatial-structure",
     }
 
 

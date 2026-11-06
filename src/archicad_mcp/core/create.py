@@ -387,6 +387,25 @@ class LoadedParts:
         self.answer()
         return self._parts
 
+    def complete(self) -> bool:
+        """Whether every part is listed. Entries Archicad could not read past the last
+        listed one are not parts (live 21.10.2026, MCP-Test: 123 indices after 7402
+        parts); one among them could be."""
+        response = self.answer() or {}
+        entries = response.get("libraryParts") or []
+        listed = sorted(e.get("index") for e in entries if isinstance(e.get("index"), int))
+        return not response.get("skippedCount") or listed == list(range(1, len(entries) + 1))
+
+    def spellings(self) -> dict[str, str]:
+        """Every name a loaded part goes by, without case -> its document name."""
+        out: dict[str, str] = {}
+        for e in self.parts():
+            file_name = str(e.get("fileName"))
+            for spelling in (str(e.get("documentName")), file_name,
+                             file_name.removesuffix(".gsm")):
+                out.setdefault(spelling.casefold(), str(e.get("documentName")))
+        return out
+
     def guid_of(self, name: str) -> tuple[str | None, str | None]:
         """(the main GUID of the loaded part named name, why there is none). With
         several parts of that name it is the first, as learn_library_part takes it."""
@@ -424,21 +443,11 @@ def _library_part_checks(library: LoadedParts, items: list[dict],
     response = library.answer()
     if response is None:
         return {}, []  # unreadable: let Archicad judge the names
-    entries = response["libraryParts"]
-    parts = library.parts()
-    names = {str(e.get("documentName")) for e in parts}
+    names = {str(e.get("documentName")) for e in library.parts()}
     ordered = sorted(names)
-    spellings = {}
-    for e in parts:
-        file_name = str(e.get("fileName"))
-        for spelling in (str(e.get("documentName")), file_name,
-                         file_name.removesuffix(".gsm")):
-            spellings.setdefault(spelling.casefold(), str(e.get("documentName")))
-    # Entries Archicad could not read past the last listed one are not parts (live
-    # 21.10.2026, MCP-Test: 123 indices after 7402 parts); one among them could be.
+    spellings = library.spellings()
     unread = response.get("skippedCount") or 0
-    listed = sorted(e.get("index") for e in entries if isinstance(e.get("index"), int))
-    complete = not unread or listed == list(range(1, len(entries) + 1))
+    complete = library.complete()
     skips, warnings = {}, []
     for name, indices in wanted.items():
         if name in names:

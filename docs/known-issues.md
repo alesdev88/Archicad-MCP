@@ -483,6 +483,10 @@ project, once a newer Tapir is installed:
   the commit then applies.
 - An `edit_attributes` replace on throwaway attributes: the dry run's list against what
   the commit changes, a favourite that keeps a copy, and one undo step.
+- The `library-parts-loaded` rule with a library removed: whether the name
+  `GetMissingLibPartNames` gives matches the listing for loaded parts, as a mismatch would
+  fail every element. The `ifc-spatial-structure` rule on a real project, to learn whether
+  an element's IFC story ever differs from its home story.
 - `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
   `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
   in a form that compares equal.

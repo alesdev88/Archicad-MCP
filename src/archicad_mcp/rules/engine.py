@@ -41,6 +41,11 @@ def collision_queries(rules: Sequence[Rule]) -> frozenset:
                      if (q := getattr(r, "collision_query", None)) is not None)
 
 
+def ifc_story_types(rules: Sequence[Rule]) -> frozenset[str]:
+    """The element types whose IFC story the rules compare (ifc-spatial-structure)."""
+    return frozenset(t for r in rules for t in getattr(r, "story_element_types", ()))
+
+
 def filter_by_tag(rules: Sequence[Rule], tag: str | None) -> list[Rule]:
     if tag is None:
         return list(rules)

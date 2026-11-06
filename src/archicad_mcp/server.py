@@ -31,6 +31,7 @@ from archicad_mcp.rules.engine import (
     data_needs,
     element_type_scope,
     filter_by_tag,
+    ifc_story_types,
     property_needs,
     run_rules,
 )
@@ -149,7 +150,8 @@ def build_server(
         conn = get_connection(request_port if request_port is not None else default_port)
         snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules),
                                   element_types=element_type_scope(rules),
-                                  collision_queries=collision_queries(rules))
+                                  collision_queries=collision_queries(rules),
+                                  ifc_story_types=ifc_story_types(rules))
         return run_rules(rules, snapshot)
 
     # ---------- Tier 1: verdict tools (both modes) ----------
@@ -233,10 +235,10 @@ def build_server(
               **_tool_meta("Verify IFC export readiness", read_only=True, destructive=False))
     @_guarded
     def verify_ifc_export_readiness(port: int | None = None) -> dict:
-        ifc_rules = [r for r in loaded.rules if "ifc" in r.needs]
+        ifc_rules = [r for r in loaded.rules if r.needs & {"ifc", "ifc_structure"}]
         if not ifc_rules:
-            return {"error": "No IFC rules configured. Add 'ifc-property-required' "
-                             "rules to your rules directory."}
+            return {"error": "No IFC rules configured. Add 'ifc-property-required' or "
+                             "'ifc-spatial-structure' rules to your rules directory."}
         return _verdict_for(ifc_rules, port).to_dict()
 
     highlight_text = ("Highlight the elements failing a rule in the Archicad window and "

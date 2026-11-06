@@ -9,7 +9,9 @@ import yaml
 from archicad_mcp.rules.builtin.classification_required import ClassificationRequiredRule
 from archicad_mcp.rules.builtin.collisions import NoCollisionsRule
 from archicad_mcp.rules.builtin.ifc_readiness import IfcPropertyRequiredRule
+from archicad_mcp.rules.builtin.ifc_structure import IfcSpatialStructureRule
 from archicad_mcp.rules.builtin.layer_compliance import LayerComplianceRule
+from archicad_mcp.rules.builtin.library_parts import LibraryPartsLoadedRule
 from archicad_mcp.rules.builtin.property_required import PropertyRequiredRule
 from archicad_mcp.rules.builtin.zone_checks import ZoneNumberRequiredRule
 from archicad_mcp.rules.engine import Rule
@@ -22,6 +24,8 @@ RULE_TYPES: dict[str, type] = {
     "zone-number-required": ZoneNumberRequiredRule,
     "ifc-property-required": IfcPropertyRequiredRule,
     "no-collisions": NoCollisionsRule,
+    "library-parts-loaded": LibraryPartsLoadedRule,
+    "ifc-spatial-structure": IfcSpatialStructureRule,
 }
 
 EXAMPLES_DIR = Path(__file__).parent / "examples"
