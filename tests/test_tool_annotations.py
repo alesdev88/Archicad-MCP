@@ -49,6 +49,8 @@ WRITERS = {
     # Writes into Archicad's Add-Ons folder: outside the project, still a file
     # change a client must ask about.
     "install_tapir",
+    # Writes the downloaded bundle to the temp folder and opens an installer.
+    "update_extension",
 }
 
 # Writes that change only transient application state, never project data or a

@@ -1204,6 +1204,23 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         result["backups"] = [str(o.backup) for o in report.outcomes if o.backup]
         return result
 
+    @mcp.tool(description=(
+        "Update this extension to the newest release. Dry run by default: it compares "
+        "the installed version with the latest release on GitHub and says what it would "
+        "do. confirm=true downloads the bundle for this computer, checks its sha256 and "
+        "opens it, so Claude Desktop shows its own install dialog; nothing is installed "
+        "until the user accepts there. Never downgrades. Reaches GitHub only when "
+        "called. A server not installed as a Claude Desktop bundle gets the upgrade "
+        "command instead. Needs no running Archicad."),
+        **_tool_meta("Update this extension", read_only=False, destructive=True))
+    def update_extension(confirm: bool = False) -> dict:
+        from archicad_mcp import extension_update as _extension_update
+        from archicad_mcp.tapir_install import InstallError
+        try:
+            return _extension_update.run(confirm=confirm)
+        except InstallError as exc:
+            return {"error": str(exc)}
+
     @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
                           "criteria and its ordered columns, with what each column "
                           "binds to. Schedules have no API, so export the scheme "

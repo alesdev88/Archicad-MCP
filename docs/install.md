@@ -29,6 +29,15 @@ The bundle holds a complete CPython 3.12 and every dependency, so it starts on a
 machine with no Python, no uv and no internet access. That is why it is 52 MB on
 Windows and 62 MB on macOS.
 
+To update, ask Claude to **update the extension**. Claude Desktop updates only
+the extensions from its own directory, so a bundle installed from a file stays
+on its version until a newer file is installed. The `update_extension` tool
+compares the versions, and once you confirm it downloads the bundle for your
+platform, checks its sha256 and opens it, so Desktop shows its usual install
+dialog. Nothing is installed until you accept there. Afterwards, check that the
+office rules folder is still set. To do it by hand, drag the newest bundle into
+**Settings > Extensions**, over the installed one.
+
 Bundles up to 0.13.0 declared themselves a Python extension, so on a machine
 without Python the install dialog marked Python red although the bundle never
 used it. From 0.13.1 the bundle is declared a self-contained binary

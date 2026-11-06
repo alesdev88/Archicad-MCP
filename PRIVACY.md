@@ -8,7 +8,8 @@ in every version distributed from
 ## Summary
 
 This server runs entirely on your own computer and talks to one thing: the
-Archicad instance already running beside it. It has no backend. The author
+Archicad instance already running beside it. The exception is two setup tools
+that download from GitHub when you call them. It has no backend. The author
 receives no data from it of any kind, including error reports and usage counts.
 
 ## What the server collects
@@ -37,10 +38,18 @@ conversation. **Anthropic's handling of it is governed by
 this one.** If you connect this server to a different MCP client, that client's
 policy applies instead.
 
-The server itself makes no outbound network connections. It opens TCP
+In normal use the server makes no outbound network connections. It opens TCP
 connections to `127.0.0.1` on ports 19723 to 19743, which is the Archicad JSON
-API listening on your own machine, and to nothing else. There is no telemetry,
-no analytics, no crash reporting, and no license or update check.
+API listening on your own machine. There is no telemetry, no analytics, no crash
+reporting, no license check and no background update check.
+
+Two tools reach GitHub, and only when you call them: `install_tapir` downloads
+the Tapir add-on, and `update_extension` asks which release is newest and
+downloads its bundle. They send what any download sends, which is your IP address
+and a user agent naming this server and its version, and nothing about your
+project. GitHub's handling of those requests is governed by
+[GitHub's Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+Neither tool exists in `verdicts` mode.
 
 ## Two deliberate reductions
 
