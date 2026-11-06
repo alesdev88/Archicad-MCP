@@ -241,8 +241,11 @@ schedule API at all. See [Schedules](schedules.md).
 `deploy_gdl_object` turn mesh models (OBJ, 3DS) into placeable library parts
 with finish variants, without the GDL editor. Deploying places the object,
 renders it and returns the image, because Archicad silently drops defective 3D
-bodies that every offline validator passes. Needs the GDL workspace folder set
-and added to Archicad's Library Manager once. See [GDL pipeline](gdl-pipeline.md).
+bodies that every offline validator passes. On a Tapir newer than 1.8.0 it also
+says whether the part's script ran and what it made. Needs the GDL workspace folder
+set and added to Archicad's Library Manager once, which `link_workspace=true` can do
+there. `replace_embedded=true` replaces a part already in the embedded library. See
+[GDL pipeline](gdl-pipeline.md).
 
 ## Gateway and scripting
 

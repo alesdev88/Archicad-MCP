@@ -479,6 +479,9 @@ project, once a newer Tapir is installed:
 - `modify_elements` read-backs on a stair, a railing, a section, an elevation and both
   markers.
 - `show_elements(in_3d=true)`, from the floor plan and from a section.
+- `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
+  `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
+  in a form that compares equal.
 - A reservation dry run on a Teamwork project, with a teammate holding an element.
 - `set_element_data` round trips and a stair's 3D bounding box, which Tapir also changed.
 

@@ -28,6 +28,7 @@ from archicad_mcp.gdl import toolchain
 from archicad_mcp.gdl.toolchain import ToolchainError
 from archicad_mcp.gdl.workspace import Workspace, WorkspaceError
 from archicad_mcp.connection import get_connection
+from archicad_mcp.tapir_requirements import _key, installed_version, require_tapir_command
 
 SOURCE_SUFFIXES = (".obj", ".3ds")
 TEXTURE_SUFFIXES = (".jpg", ".jpeg", ".png")
@@ -206,8 +207,55 @@ def _delete_probe(conn, guid: str) -> str | None:
     return "; ".join(reasons) or "the deletion could not be confirmed"
 
 
+# overwriteExisting: in the bundled definitions from 1.7.1, and Tapir answers it with a
+# refusal before Archicad 27.
+REPLACE_EMBEDDED_TAPIR = (1, 7, 1)
+REPLACE_EMBEDDED_ARCHICAD = 27
+LINK_WORKSPACE_ARCHICAD = 28
+
+
+def _refuse_what_cannot_run(conn, embed: bool, link_workspace: bool,
+                            replace_embedded: bool) -> None:
+    """Raises before anything is sent when an option this Archicad cannot do was asked for."""
+    if replace_embedded:
+        if not embed:
+            raise ToolchainError("replace_embedded replaces a part in the embedded library, "
+                                 "so it needs embed=true. Nothing was sent.")
+        archicad = conn.archicad_version()
+        if archicad and archicad < REPLACE_EMBEDDED_ARCHICAD:
+            raise ToolchainError(f"replace_embedded needs Archicad {REPLACE_EMBEDDED_ARCHICAD} "
+                                 f"or later, and this is Archicad {archicad}. Nothing was sent.")
+        version = installed_version(conn)
+        if version is None or _key(version) < REPLACE_EMBEDDED_TAPIR:
+            raise ToolchainError("replace_embedded needs Tapir 1.7.1 or newer, and this "
+                                 f"Archicad has {version or 'a Tapir of unknown version'}. "
+                                 "Nothing was sent.")
+    if link_workspace:
+        archicad = conn.archicad_version()
+        if archicad and archicad < LINK_WORKSPACE_ARCHICAD:
+            raise ToolchainError(f"link_workspace needs Archicad {LINK_WORKSPACE_ARCHICAD} or "
+                                 f"later, and this is Archicad {archicad}. Add the folder by "
+                                 "hand in the Library Manager. Nothing was sent.")
+        refusal = require_tapir_command(conn, "ModifyLibraryList", "deploy_gdl_object")
+        if refusal is not None:
+            raise ToolchainError(refusal["error"])
+
+
+def _script_warnings(check: dict | None) -> list[str]:
+    if check is None:
+        return []
+    if not check["ran"]:
+        return [f"The part's script did not run ({check['message']}). Archicad gives no line "
+                "number for a GDL error, so look at the render and the script."]
+    if check["element_count"] == 0:
+        return ["The part's script made no 3D elements with its default parameters. If it "
+                "should have a body, it was dropped or a parameter hides it."]
+    return []
+
+
 def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
-                   keep: bool, embed: bool) -> tuple[dict, bytes]:
+                   keep: bool, embed: bool, link_workspace: bool = False,
+                   replace_embedded: bool = False) -> tuple[dict, bytes]:
     """Reload, place, render, and unless kept, delete again.
 
     The render is the only automated check that catches a body Archicad
@@ -222,32 +270,41 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
         raise FileNotFoundError(
             f"No such library part in the GDL workspace: {name}.gsm. Build it "
             "first with build_gdl_object.")
+    _refuse_what_cannot_run(conn, embed, link_workspace, replace_embedded)
 
+    linked = deploy_mod.link_library_folder(conn, ws.root) if link_workspace else None
     embedded = None
     if embed:
         tex_dir = ws.textures_dir()
         textures = ([p for p in sorted(tex_dir.iterdir())
                      if p.suffix.lower() in TEXTURE_SUFFIXES]
                     if tex_dir.is_dir() else [])
-        gsm_result = deploy_mod.embed_gsm(conn, gsm)
+        gsm_result = deploy_mod.embed_gsm(conn, gsm, replace=replace_embedded)
         gsm_results = gsm_result.get("executionResults") or []
         # Unlike a texture (whose filename carries a content hash, so a
         # failure there means the identical file is already in place and
-        # skipping is correct), <name>.gsm carries no hash. Tapir cannot
-        # overwrite an existing embedded file, so a failed embed here means
-        # the name is already taken and the render below would silently show
-        # the PREVIOUS build under a success payload. Fail loudly instead of
-        # reloading, placing and rendering a stale object.
+        # skipping is correct), <name>.gsm carries no hash. Tapir refuses a
+        # name already embedded unless told to replace it, so a failed embed
+        # here means the render below would silently show the PREVIOUS build
+        # under a success payload. Fail loudly instead of reloading, placing
+        # and rendering a stale object.
         if not gsm_results or not gsm_results[0].get("success"):
+            if replace_embedded:
+                detail = ((gsm_results[0].get("error") or {}).get("message")
+                          if gsm_results else None) or "no reason given"
+                raise ToolchainError(f"Could not replace {gsm.name} in the project's embedded "
+                                     f"library: {detail}")
             raise ToolchainError(
                 f"Could not embed {gsm.name} into the project's embedded "
-                "library: the name is likely already there, and Tapir cannot "
-                "overwrite an existing embedded file. Deploy under a fresh "
-                "name, or use the linked library folder instead of embed=true.")
+                "library: the name is likely already there. Pass "
+                "replace_embedded=true to replace it, which changes it for every "
+                "placed instance, deploy under a fresh name, or use the linked "
+                "library folder instead of embed=true.")
         added, skipped = deploy_mod.embed_textures(conn, textures)
         embedded = {"textures_added": added, "textures_skipped": skipped}
 
     deploy_mod.reload_libraries(conn)
+    script = deploy_mod.check_script(conn, name)
     x, y = place
     guid = deploy_mod.place_object(conn, name, x=x, y=y)
     try:
@@ -280,11 +337,18 @@ def _deploy_object(ws: Workspace, conn, name: str, place: tuple[float, float],
         "placed_at": {"x": x, "y": y},
         "kept": keep,
         "port": conn.port,
-        "note": ("Look at the render. A body Archicad dropped shows up here and "
-                 "nowhere else: the offline validator passes it."),
+        "note": ("Look at the render. A body Archicad dropped shows up here, and the "
+                 "offline validator passes it."),
     }
+    if linked is not None:
+        payload["workspace_library"] = linked
     if embedded is not None:
         payload["embedded"] = embedded
+    if script is not None:
+        payload["gdl_check"] = script
+    warnings = _script_warnings(script)
+    if warnings:
+        payload["warnings"] = warnings
     if problem is not None:
         payload["cleanup_failed"] = (
             f"Element {guid} was not deleted after the render ({problem}), so it "
@@ -362,26 +426,34 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
 
     @mcp.tool(description="Reload libraries, place the built library part, "
                           "render it, and return the image. The render is the "
-                          "only check that catches a 3D body Archicad silently "
-                          "dropped, so look at it. By default the placed "
+                          "reliable check for a 3D body Archicad silently "
+                          "dropped, so look at it. On a Tapir newer than 1.8.0, "
+                          "gdl_check also says whether the part's script ran with "
+                          "its default parameters, how many 3D elements it made "
+                          "and their bounding box, and warnings flags a script "
+                          "that stopped or made nothing. By default the placed "
                           "instance is deleted again after the render, leaving "
                           "the project unchanged; pass keep=true to actually "
                           "place it. Requires Archicad running with a project "
                           "open, and the workspace folder added once as a "
-                          "linked library via Library Manager. Pass embed=true "
+                          "linked library via Library Manager; on a Tapir newer "
+                          "than 1.8.0 and Archicad 28 or later, link_workspace="
+                          "true adds it to the project's library list, unless "
+                          "it is there already. Pass embed=true "
                           "to also push the .gsm and its textures into the "
                           "project's embedded library, for when the object must "
                           "travel inside the .pln itself; this is the fallback "
                           "if the linked-library folder does not work in your "
-                          "setup. Tapir cannot overwrite an existing embedded "
-                          "file, so each embed=true deploy of the same object "
-                          "needs a fresh name; a name already embedded fails "
-                          "with a clear error rather than silently rendering "
-                          "the previous build.",
+                          "setup. A name already embedded fails with a clear "
+                          "error rather than silently rendering the previous "
+                          "build; replace_embedded=true replaces it (Tapir 1.7.1, "
+                          "Archicad 27), which changes the part for every "
+                          "instance placed from it.",
               **tool_meta("Deploy GDL library part", read_only=False, destructive=True))
     @gdl_guarded
     def deploy_gdl_object(name: str, x: float = 0.0, y: float = 0.0,
                           keep: bool = False, embed: bool = False,
+                          link_workspace: bool = False, replace_embedded: bool = False,
                           port: int | None = None):
         # No return type annotation: Image cannot be serialized into an MCP
         # outputSchema, so omitting the annotation allows FastMCP to skip
@@ -393,5 +465,6 @@ def register(mcp, default_port, workspace: Workspace, tool_meta, guarded) -> Non
         refusal = tapir_refusal(conn, "deploy_gdl_object")
         if refusal is not None:
             return refusal
-        payload, png = _deploy_object(ws, conn, name, (x, y), keep, embed)
+        payload, png = _deploy_object(ws, conn, name, (x, y), keep, embed,
+                                      link_workspace, replace_embedded)
         return [payload, Image(data=png, format="png")]
