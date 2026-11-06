@@ -207,6 +207,10 @@
       "description": "See what the current Archicad window shows as an image, to check placements by eye."
     },
     {
+      "name": "preview_library_parts",
+      "description": "Draw the 2D symbols of library parts in one image, with nothing placed, to choose between candidates"
+    },
+    {
       "name": "learn_library_part",
       "description": "Place samples of a library part past the model, measure them, show them in one floor plan image and delete them again."
     },
