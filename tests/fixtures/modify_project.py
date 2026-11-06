@@ -29,6 +29,8 @@ LIST_KEYS = {
     "ModifyMeshes": "meshesData", "ModifyObjects": "objectsWithDetails",
     "ModifyLamps": "lampsWithDetails", "ModifyTexts": "textsWithDetails",
     "ModifyLabels": "labelsWithDetails",
+    "ModifyStairs": "stairsWithDetails", "ModifyRailings": "railingsWithDetails",
+    "ModifySections": "sectionsWithDetails", "ModifyDetailMarkers": "detailMarkersWithDetails",
 }
 
 
@@ -282,7 +284,10 @@ class ModifyProject:
     # Where a written field shows in the details, where the name differs.
     _WRITE_KEYS = {("ModifyWalls", "thickness"): "begThickness",
                    ("ModifyObjects", "coordinates"): "origin",
-                   ("ModifyLamps", "coordinates"): "origin"}
+                   ("ModifyLamps", "coordinates"): "origin",
+                   ("ModifySections", "id"): "idStr",
+                   ("ModifyDetailMarkers", "id"): "detailIdStr",
+                   ("ModifyDetailMarkers", "name"): "detailName"}
 
     def _apply(self, command: str, guid: str, fields: dict) -> None:
         details = self.elements[guid]["details"]
