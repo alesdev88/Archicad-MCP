@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-from multiconn_archicad.errors import APIErrorBase
+from multiconn_archicad.errors import APIErrorBase, TapirCommandError
 
 from archicad_mcp.actions import clear_highlight, fit_in_window, highlight_elements
 from archicad_mcp.connection import ArchicadConnection
@@ -299,12 +299,10 @@ def _report_the_rest(out: dict, located: Located, view: View | None,
 
 def _ask_3d(conn: ArchicadConnection, guids: list[str]) -> dict | None:
     """Sends ShowElementsIn3D; the error result when Archicad refuses, else None."""
-    response = conn.tapir("ShowElementsIn3D",
-                          {"elements": element_payload(guids)} if guids else {})
-    if response.get("success") is False:
-        detail = response.get("error") or {}
-        return {"error": "Archicad refused to show the elements in 3D: "
-                         f"{detail.get('message', detail)}"}
+    try:
+        conn.tapir("ShowElementsIn3D", {"elements": element_payload(guids)} if guids else {})
+    except TapirCommandError as exc:
+        return {"error": f"Archicad refused to show the elements in 3D: {exc.message}"}
     return None
 
 

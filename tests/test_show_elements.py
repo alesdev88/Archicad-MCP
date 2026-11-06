@@ -507,11 +507,12 @@ async def test_show_elements_is_full_mode_only():
 def serve_3d(monkeypatch, project: LiveProject, refuse=None) -> FakeCore:
     def show_3d(params):
         if refuse:
-            return {"success": False, "error": {"code": 1, "message": refuse}}
+            # The transport raises on a top-level error (post_tapir_command).
+            raise TapirCommandError(message=refuse, code=1)
         sent = [e["elementId"]["guid"].upper() for e in (params or {}).get("elements", [])]
         current = project.databases.get(FLOOR_PLAN_DB, {})
         if project.window not in ("FloorPlan", "3DModel") or not set(sent) <= set(current):
-            return {"success": False, "error": {"code": 2, "message": "Element not found."}}
+            raise TapirCommandError(message="Element not found.", code=2)
         if sent:
             project.selected = set(sent) - project.unselectable
         project.window = "3DModel"
@@ -617,6 +618,7 @@ async def test_in_3d_reports_a_refusal(monkeypatch):
     project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0)}})
     serve_3d(monkeypatch, project, refuse="no 3D window here")
     out = await show({"guids": ["A"], "in_3d": True})
+    assert out["error"].startswith("Archicad refused to show the elements in 3D")
     assert "no 3D window here" in out["error"]
     assert project.highlighted is None
 
