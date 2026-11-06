@@ -431,8 +431,8 @@ def test_the_height_falls_back_to_the_record_then_the_element(tmp_path):
     out = modify_elements(project.connect(), [{"guid": OBJECT,
                                                "placement": _bed(size=no_height)}],
                           records=records)
-    assert out == {"error": f"change 1 ({OBJECT}): give size.height in metres: Tapir 1.7.2 "
-                            "cannot read a part's own height"}
+    assert out["error"].startswith(f"change 1 ({OBJECT}): give size.height in metres")
+    assert "holds no height" in out["error"]
 
 
 def test_a_footprint_off_the_size_asked_warns_and_one_of_no_width_is_an_error(tmp_path):
@@ -731,3 +731,12 @@ def test_finish_visibility_on_a_stair_warns_of_nothing():
     guid = _element(project, "EL-1", "Stair", finishVisible=True)
     out = _dry(project, [{"guid": guid, "finishVisible": False}])
     assert not _warnings(out, guid)
+
+
+def test_a_modify_placement_still_needs_a_size(tmp_path):
+    project, records = _bed_project(tmp_path, own_size={"a": 1.6, "b": 2.0, "height": 0.6})
+    placement = _bed()
+    del placement["size"]
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": placement}],
+                          records=records)
+    assert out["error"].startswith(f"change 1 ({OBJECT})") and "size" in out["error"]

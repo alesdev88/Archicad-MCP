@@ -108,6 +108,33 @@ def footprint_at(footprint: dict, a: float, b: float) -> tuple[float, float, flo
     return edge("xMin", a), edge("yMin", b), edge("xMax", a), edge("yMax", b)
 
 
+def _above_zero(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def own_a_b(record: PartRecord) -> tuple[float, float] | None:
+    """The part's own A and B from its record; None without a usable own_size."""
+    own = record.own_size
+    if not isinstance(own, dict) or not _above_zero(own.get("a")) or not _above_zero(own.get("b")):
+        return None
+    return own["a"], own["b"]
+
+
+def own_height(record: PartRecord) -> float | None:
+    own = record.own_size
+    height = own.get("height") if isinstance(own, dict) else None
+    return height if _above_zero(height) else None
+
+
+def own_length_width(record: PartRecord) -> tuple[float, float] | None:
+    """The part's own size as placement takes it: length along the head, width across it."""
+    sizes = own_a_b(record)
+    if sizes is None:
+        return None
+    a, b = sizes
+    return (b, a) if record.head in ("+y", "-y") else (a, b)
+
+
 def object_fields(record: PartRecord, center: dict, length: float, width: float, height: float,
                   head: dict, mirrored: bool, warnings: list[str] | None = None) -> dict:
     """Tapir's fields for an object whose footprint is centred on `center` with its head

@@ -693,8 +693,7 @@ def test_object_without_height_falls_back_to_the_record_then_skips(tmp_path):
     assert item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.45}
     [skip] = result["skipped"]
     assert skip["index"] == 1
-    assert skip["reason"] == ("give size.height in metres: Tapir 1.7.2 cannot read a "
-                              "part's own height")
+    assert "holds no height" in skip["reason"]
 
 
 def test_a_footprint_of_no_width_is_skipped_and_one_off_the_size_asked_warns(tmp_path):
@@ -1471,3 +1470,112 @@ def test_a_label_for_another_database_keeps_its_parent_unchecked_and_says_so():
 
 def test_a_text_for_another_database_has_no_host_to_warn_about():
     assert create_elements(Plan().connection(), "text", [TEXT], database=DB)["warnings"] == []
+
+
+# ---------- a placement without a size: the part's own (Tapir's main after 1.8.0) ----------
+
+OWN = {"a": 1.6, "b": 2.0, "height": 0.6}
+ON_ORIGIN = {"center": {"x": 0.0, "y": 0.0}, "head": {"x": 0.0, "y": 1.0}}
+
+
+def placed_bed(**placement) -> dict:
+    return {"libraryPartName": "Bed Double 01", "placement": {**ON_ORIGIN, **placement}}
+
+
+def _bed_result(tmp_path, record, item, **plan):
+    conn = Plan(library=["Bed Double 01"], **plan).connection()
+    return create_elements(conn, "object", [item], records=store(tmp_path, record))
+
+
+def test_a_placement_without_size_takes_the_parts_own(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size=OWN), placed_bed())
+    [sent] = result["payload"]["objectsData"]
+    assert sent["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    # The footprint's middle lies 1.0 along +y from the insertion point.
+    assert sent["coordinates"]["x"] == pytest.approx(0.0)
+    assert sent["coordinates"]["y"] == pytest.approx(-1.0)
+    assert result["placements"][0]["derived"]["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    assert result["skipped"] == []
+
+
+def test_a_placement_without_size_follows_a_head_along_x(tmp_path):
+    result = _bed_result(tmp_path, bed_record(head="+x", own_size=OWN),
+                         placed_bed(head={"x": 1.0, "y": 0.0}))
+    [sent] = result["payload"]["objectsData"]
+    assert sent["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    assert sent["angle"] == pytest.approx(0.0)
+
+
+def test_a_placement_with_size_sends_what_it_always_sent(tmp_path):
+    size = {"length": 2.1, "width": 1.5, "height": 0.5}
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    without = _bed_result(tmp_path / "a", bed_record(), placed_bed(size=size))
+    with_own = _bed_result(tmp_path / "b", bed_record(own_size=OWN), placed_bed(size=size))
+    assert with_own["payload"] == without["payload"]
+
+
+def test_a_placement_without_size_or_own_size_is_skipped(tmp_path):
+    result = _bed_result(tmp_path, bed_record(), placed_bed())
+    [skipped] = result["skipped"]
+    assert "size" in skipped["reason"] and "learn the part again" in skipped["reason"]
+
+
+@pytest.mark.parametrize("size_height, recorded, own_height, expected", [
+    (0.9, 0.7, 0.6, 0.9), (None, 0.7, 0.6, 0.7), (None, None, 0.6, 0.6)])
+def test_the_height_comes_from_the_size_then_the_record_then_the_part(
+        tmp_path, size_height, recorded, own_height, expected):
+    size = {"length": 2.0, "width": 1.6}
+    if size_height is not None:
+        size["height"] = size_height
+    record = bed_record(height=recorded, own_size={**OWN, "height": own_height})
+    result = _bed_result(tmp_path, record, placed_bed(size=size))
+    assert result["payload"]["objectsData"][0]["dimensions"]["z"] == expected
+
+
+def test_with_no_height_anywhere_the_item_is_skipped_without_blaming_tapir(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size={**OWN, "height": None}), placed_bed())
+    [skipped] = result["skipped"]
+    assert "holds no height" in skipped["reason"] and "1.7.2" not in skipped["reason"]
+
+
+def test_a_size_with_only_a_height_is_refused(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size=OWN), placed_bed(size={"height": 1.0}))
+    [skipped] = result["skipped"]
+    assert "length" in skipped["reason"]
+
+
+def _opening_result(tmp_path, element_type, record, item):
+    conn = Plan(walls={W1: WALL_ALONG_X}, library=["Door"]).connection()
+    return create_elements(conn, element_type, [item], records=store(tmp_path, record))
+
+
+@pytest.mark.parametrize("element_type, key", [("door", "doorsData"), ("window", "windowsData")])
+def test_an_openings_width_and_height_come_from_the_part(tmp_path, element_type, key):
+    record = door_record(kind=element_type, own_size={"a": 0.9, "b": 2.1, "height": None})
+    result = _opening_result(tmp_path, element_type, record, placed_door(1.4, 2.0))
+    [sent] = result["payload"][key]
+    assert (sent["width"], sent["height"]) == (0.9, 2.1)
+    derived = result["placements"][0]["derived"]
+    assert (derived["width"], derived["height"]) == (0.9, 2.1)
+
+
+def test_an_openings_own_width_and_height_stay(tmp_path):
+    record = door_record(own_size={"a": 0.9, "b": 2.1, "height": None})
+    item = {**placed_door(1.4, 2.0), "width": 1.0}
+    result = _opening_result(tmp_path, "door", record, item)
+    [sent] = result["payload"]["doorsData"]
+    assert (sent["width"], sent["height"]) == (1.0, 2.1)
+
+
+def test_an_opening_without_own_size_leaves_them_out(tmp_path):
+    result = _opening_result(tmp_path, "door", door_record(), placed_door(1.4, 2.0))
+    [sent] = result["payload"]["doorsData"]
+    assert "width" not in sent and "height" not in sent
+
+
+def test_an_openings_sill_is_not_filled(tmp_path):
+    record = door_record(own_size={"a": 0.9, "b": 2.1, "height": None})
+    item = {k: v for k, v in placed_door(1.4, 2.0).items() if k != "sillHeight"}
+    result = _opening_result(tmp_path, "door", record, item)
+    assert "sillHeight" not in result["payload"]["doorsData"][0]

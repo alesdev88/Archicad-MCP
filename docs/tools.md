@@ -190,7 +190,11 @@ points and which leaves open. The records are one JSON file on this machine,
 shared by every project. Learning needs Tapir 1.7.2. On Tapir 1.8.0 and older a door
 or window learned leaves the Door or Window tool holding the part, with parameters
 that cannot be read. On a newer Tapir, learning samples an object or lamp at the part's
-own size and 1.5 times it, and the record keeps that own size.
+own size and 1.5 times it, and the record keeps that own size: `create_elements` then
+takes an object's `placement` without `size`, and fills a door's or window's width and
+height when the item leaves them out. `modify_elements` still needs `size`, since an
+element already placed has one. The part's own values are as stored in it, so one that
+clamps its size may draw otherwise; the existing warning catches that.
 
 The tool descriptions carry the rules for reading a sketch, so the agent follows
 them without being told: learn a part before placing it; choose the part from

@@ -23,7 +23,7 @@ from archicad_mcp.core.create_placement import (
     NO_HEIGHT,
     OBJECT_KINDS,
     OPENING_KINDS,
-    PLACEMENT_SCHEMAS,
+    MODIFY_PLACEMENT_SCHEMAS,
     Host,
     _check_identity,
     _derived_problem,
@@ -140,7 +140,7 @@ def _learned(placement: object, given: dict, entry: dict,
     center = placement.get("center") if isinstance(placement, dict) else None
     if kind in OBJECT_KINDS and isinstance(center, dict) and "z" in center:
         raise _Skip(_KEEPS_HEIGHT)
-    problem = (_shape_problem(placement, PLACEMENT_SCHEMAS[kind], _SCHEMA_HINT)
+    problem = (_shape_problem(placement, MODIFY_PLACEMENT_SCHEMAS[kind], _SCHEMA_HINT)
                or _derived_problem(kind, given))
     if problem is not None:
         raise _Skip(problem)

@@ -9,8 +9,10 @@ from archicad_mcp.core.part_placement import (
     footprint_at,
     object_fields,
     opening_fields,
+    own_length_width,
 )
 from archicad_mcp.core.part_records import PartRecord
+from tests.fixtures.learned_parts import bed_record
 
 
 def record(**overrides) -> PartRecord:
@@ -438,3 +440,17 @@ def test_a_wall_without_length_is_an_error():
     with pytest.raises(ValueError):
         opening_fields(DOOR, {"x": 3, "y": 3}, {"x": 3, "y": 3}, 0.0,
                        hinge_near={"x": 3, "y": 3}, opens_toward={"x": 3, "y": 4})
+
+
+OWN = {"a": 1.6, "b": 2.0, "height": 0.6}
+
+
+@pytest.mark.parametrize("head, expected", [("+y", (2.0, 1.6)), ("-y", (2.0, 1.6)),
+                                            ("+x", (1.6, 2.0)), ("-x", (1.6, 2.0))])
+def test_own_length_and_width_follow_the_head(head, expected):
+    assert own_length_width(bed_record(head=head, own_size=OWN)) == expected
+
+
+@pytest.mark.parametrize("own", [None, "x", {"a": 1.6}, {"a": 0, "b": 2.0}, {"a": True, "b": 2.0}])
+def test_no_usable_own_size_gives_nothing(own):
+    assert own_length_width(bed_record(own_size=own)) is None
