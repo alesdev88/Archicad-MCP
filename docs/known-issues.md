@@ -397,7 +397,10 @@ are `null` even though the instance is otherwise fine.
   favourite, or the part picked again in the tool's settings, puts the tool right;
   openings already placed keep the fault. `create_elements` warns about doors and
   windows sent by `libraryPartName`, and a learned door or window shows no
-  parameters, so a placement's `leaves` end in `placed_not_set`.
+  parameters, so a placement's `leaves` end in `placed_not_set`. Tapir's main after
+  1.8.0 sets the part on the created opening only and leaves the tool alone, so on
+  a Tapir newer than 1.8.0 the warnings stop. Tapir's change says it is untested in
+  Archicad, so this still needs a live check before release.
 - **"Double Window" draws at least 1.5 m wide** (live 22.10.2026). Sent 1.0, 1.2,
   1.5 and 2.0 m wide, its plan boxes were 1.5, 1.5, 1.5 and 2.0 m, while
   `GetDetailsOfElements` kept the width sent. A sketch's 1.2 m double window comes
@@ -558,10 +561,16 @@ the item schema (`items=[]`) and warns where it can check them.
 - **Stairs.** `baseLinePoints` is the stair's left edge and the flight lies
   `flightWidth` to its right. A U given as its centre line overlaps itself and
   Archicad answers only "Failed to create new Stair"; the dry run now warns.
-  CreateStairs has no turn or winder setting, so a tight U (16 risers in
-  2.2 x 2.0 m) ran its top flight 1.65 m past the baseline and through the slab
-  above; this cannot be fixed here, and the create reports such a stair. Shape
-  it in Archicad's stair editing.
+  Up to Tapir 1.8.0, CreateStairs has no turn or winder setting, so a tight U (16
+  risers in 2.2 x 2.0 m) ran its top flight 1.65 m past the baseline and through
+  the slab above, and the create reports such a stair. A Tapir newer than 1.8.0
+  takes `baselinePosition`, `baselineOffset`, `baseLineEdges` and
+  `baseLineVertices`, and pins `treadDepth` as the going; none of it tried live yet.
+  The overlap check follows `baselinePosition` and stands down when an item gives
+  its own edges or turns. It also stands down on a non-zero `baselineOffset`,
+  because neither Tapir's schema nor the DevKit says which way a positive offset
+  runs. A stair that leaves its position to a favourite or the Stair tool is still
+  checked as if the baseline were its left edge.
 - **Element IDs.** Doors and windows placed from a favourite took the
   favourite's ID, and zones the tool's: 14 doors were all `DOO - 004`. The
   create warns and points to `set_element_data` (`General_ElementID`).

@@ -123,14 +123,17 @@ def _absolute_note(name: str) -> str:
 # flights overlap, and Archicad answered only "Failed to create new Stair"; the same U
 # as its outer edge was created, but Archicad laid the risers out at its own going and
 # the top flight ran 1.65 m past the baseline's end (16 risers in a 2.2 x 2.0 m U).
+# Tapir's main after 1.8.0 takes the baseline's position and each turn (not tried live).
 _STAIR_NOTES = (
-    "baseLinePoints is the stair's left edge, looking up the stair: the flight lies "
-    "flightWidth to its right. When a U turns towards its flights, the middle segment "
-    "must be at least twice flightWidth long, or the flights overlap and Archicad "
-    "answers only 'Failed to create new Stair'.",
-    "Archicad lays the risers out at its own going, and CreateStairs has no turn or "
-    "winder setting: a tight turn can push the top flight past the baseline's end. "
-    "create_elements reports a stair that does.")
+    "baseLinePoints is the stair's left edge, looking up the stair, with the flight "
+    "flightWidth to its right, unless baselinePosition, the favourite or the Stair tool "
+    "puts it elsewhere. When a U turns towards its flights, the middle segment must be "
+    "at least twice flightWidth long, or the flights overlap and Archicad answers only "
+    "'Failed to create new Stair'.",
+    "Archicad lays the risers out at its own going, so a tight turn can push the top "
+    "flight past the baseline's end; create_elements reports a stair that does. On a "
+    "Tapir newer than 1.8.0, treadDepth pins the going, baseLineEdges and baseLineVertices "
+    "set the landing or winder at each turn, and baselinePosition places the baseline.")
 
 # Sides, live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
 # clockwise with referenceLineLocation Outside stood outside the outline; doors with
@@ -463,20 +466,33 @@ def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str
     return warnings
 
 
-def _tool_part_warnings(name: str, items: list[dict], ready: list[int],
-                        dry_run: bool) -> list[str]:
+# The newest Tapir whose CreateDoors and CreateWindows change the tool for a part named
+# by libraryPartName. On its main after that the part is set on the created opening only;
+# Tapir's own change says it is untested in Archicad, so this rests on the live check.
+TOOL_PART_FAULT_TAPIR = (1, 8, 0)
+
+
+def _part_name_faults_tool(conn: ArchicadConnection) -> bool:
+    """Whether a door or window by part name leaves the fault in its tool; a Tapir that
+    does not say is taken to."""
+    version = installed_version(conn)
+    return version is None or _key(version) <= TOOL_PART_FAULT_TAPIR
+
+
+def _tool_part_warnings(conn: ArchicadConnection, name: str, items: list[dict],
+                        ready: list[int], dry_run: bool) -> list[str]:
     """A door or window placed by libraryPartName leaves its tool holding the part: live
     22.10.2026, Tapir 1.7.2's CreateDoors and CreateWindows set the tool's defaults to
     it and never set them back."""
     tool = _TOOL_SILL.get(name)
     named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
-    if tool is None or not named:
+    if tool is None or not named or not _part_name_faults_tool(conn):
         return []
     part = items[named[-1]]["libraryPartName"]
     holds = "will hold" if dry_run else "now holds"
     return [f"After this create, the {tool} {holds} '{part}' (the part of the last {name} "
-            f"in it named by libraryPartName): Tapir 1.7.2 sets the tool to that part and "
-            f"never sets it back, so the next {name} drawn by hand gets it. Set the {tool} "
+            f"in it named by libraryPartName): Tapir 1.8.0 and older set the tool to that part "
+            f"and never set it back, so the next {name} drawn by hand gets it. Set the {tool} "
             "back by hand if that is not wanted."]
 
 
@@ -488,7 +504,7 @@ def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: Cre
     openings inherit it. The same part placed from a favourite read and wrote them all."""
     tool = _TOOL_SILL.get(name)
     named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
-    if tool is None or not named:
+    if tool is None or not named or not _part_name_faults_tool(conn):
         return []
     try:
         favorites = conn.tapir("GetFavoritesByType",
@@ -506,8 +522,8 @@ def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: Cre
     else:
         listed = ""
     return [f"{_named(named)}: a {name} placed by libraryPartName gets a GDL parameter list "
-            "Archicad will not open (Tapir 1.7.2), so its parameters, the opening types of "
-            "its sashes or leaves among them, can be neither read nor written, and the "
+            "Archicad will not open (Tapir 1.8.0 and older), so its parameters, the opening "
+            "types of its sashes or leaves among them, can be neither read nor written, and the "
             f"{tool} keeps that list: every later {name} from the {tool}, hand-placed ones "
             f"too, has the same fault. Send favoriteName instead{listed}. One {name} placed "
             f"from a favourite, or the part picked again in the {tool} settings, puts the "
@@ -571,24 +587,35 @@ def _absolute_height_warnings(conn: ArchicadConnection, name: str, items: list[d
             f"plus the offset."]
 
 
+# Where a flight lies across its baseline, in flight widths to the right of it.
+_FLIGHT_ACROSS = {"Left": (0.0, 1.0), "Right": (-1.0, 0.0), "Center": (-0.5, 0.5)}
+
+
 def _flights(item: dict) -> list[list[tuple[float, float]]] | None:
-    """Each baseline segment's flight: the rectangle flightWidth to the right of it.
-    None when the item gives no width (a favourite's or the tool's applies) or bad points."""
+    """Each baseline segment's flight rectangle, with the baseline on its left edge unless
+    the item says where. None when the item gives no width (a favourite's or the tool's
+    applies), bad points, or an offset from an edge: neither Tapir's schema nor the DevKit
+    says which way a positive offset runs, so the flight's place is not known."""
     width = item.get("flightWidth")
     points = item.get("baseLinePoints")
-    if not isinstance(width, (int, float)) or not isinstance(points, list):
+    position = item.get("baselinePosition", "Left")
+    if (not isinstance(width, (int, float)) or not isinstance(points, list)
+            or position not in _FLIGHT_ACROSS
+            or (position != "Center" and item.get("baselineOffset"))):
         return None
     try:
         xy = [(float(p["x"]), float(p["y"])) for p in points]
     except (KeyError, TypeError, ValueError):
         return None
+    near, far = (width * across for across in _FLIGHT_ACROSS[position])
     flights = []
     for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
         length = math.hypot(x1 - x0, y1 - y0)
         if length < 1e-9:
             return None
-        nx, ny = (y1 - y0) / length * width, -(x1 - x0) / length * width
-        flights.append([(x0, y0), (x1, y1), (x1 + nx, y1 + ny), (x0 + nx, y0 + ny)])
+        rx, ry = (y1 - y0) / length, -(x1 - x0) / length
+        flights.append([(x0 + rx * near, y0 + ry * near), (x1 + rx * near, y1 + ry * near),
+                        (x1 + rx * far, y1 + ry * far), (x0 + rx * far, y0 + ry * far)])
     return flights
 
 
@@ -610,6 +637,9 @@ def _stair_overlap_warnings(name: str, items: list[dict], ready: list[int]) -> l
         return []
     crossing = []
     for index in ready:
+        # The check assumes a flight on every segment; these items say otherwise.
+        if "baseLineEdges" in items[index] or "baseLineVertices" in items[index]:
+            continue
         flights = _flights(items[index]) or []
         if any(_overlap(flights[i], flights[j])
                for i in range(len(flights)) for j in range(i + 2, len(flights))):
@@ -617,9 +647,11 @@ def _stair_overlap_warnings(name: str, items: list[dict], ready: list[int]) -> l
     if not crossing:
         return []
     return [f"The flights of {_named(crossing)} overlap: baseLinePoints is the stair's "
-            "left edge, looking up the stair, and each flight lies flightWidth to its "
-            "right. Archicad refuses such a stair with only 'Failed to create new Stair'. "
-            "Give the edge the flights turn away from, or a longer middle segment."]
+            "left edge, looking up the stair, with each flight flightWidth to its right, "
+            "unless baselinePosition says otherwise (a favourite or the Stair tool may too, "
+            "which is not checked here). Archicad refuses such a stair with only 'Failed to "
+            "create new Stair'. Give the edge the flights turn away from, or a longer middle "
+            "segment."]
 
 
 def _stair_overrun_warnings(conn: ArchicadConnection, items: list[dict],
@@ -648,9 +680,10 @@ def _stair_overrun_warnings(conn: ArchicadConnection, items: list[dict],
     if not out:
         return []
     return [f"A created stair reaches past its baseline and flights ({'; '.join(out)}): "
-            "Archicad lays the risers out at its own going, and CreateStairs has no turn "
-            "or winder setting, so a tight turn pushes the top flight out. Check it in "
-            "plan before building on it: it can run through walls or the slab above."]
+            "Archicad lays the risers out at its own going, so a tight turn pushes the top "
+            "flight out. Check it in plan before building on it: it can run through walls "
+            "or the slab above. On a Tapir newer than 1.8.0, treadDepth pins the going, and "
+            "baseLineEdges and baseLineVertices set the landing or winder at each turn."]
 
 
 def _shared_id_warnings(conn: ArchicadConnection, name: str,
@@ -869,7 +902,7 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                 + [text for i, texts in sorted(placed_warnings.items()) if i not in skipped
                    for text in texts]
                 + _object_warnings(name, items, ready)
-                + _tool_part_warnings(name, items, ready, dry_run)
+                + _tool_part_warnings(conn, name, items, ready, dry_run)
                 + _part_name_parameter_warnings(conn, name, spec, items, ready)
                 + _absolute_height_warnings(conn, name, items, ready)
                 + _stair_overlap_warnings(name, items, ready)

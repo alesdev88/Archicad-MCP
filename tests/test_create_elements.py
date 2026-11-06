@@ -885,8 +885,8 @@ def test_a_refused_leaves_write_keeps_the_door_and_reports_it(tmp_path, answer, 
 @pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
 def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
     # Live 22.10.2026 (Tapir 1.7.2): CreateDoors and CreateWindows set the tool to the
-    # part named and never set it back.
-    plan = Plan(types={W1: "Wall"}, library=["Door 26", "Door 27"])
+    # part named and never set it back. Still so in 1.8.0.
+    plan = Plan(types={W1: "Wall"}, library=["Door 26", "Door 27"], tapir_version="1.8.0")
     conn = plan.connection()
     items = [door(W1, libraryPartName="Door 26", sillHeight=0.0),
              door(W1, libraryPartName="Door 27", sillHeight=0.0)]
@@ -897,7 +897,7 @@ def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
     [warning] = [w for w in committed["warnings"] if "now holds" in w]
     assert f"the {tool} now holds 'Door 27'" in warning
     plain = create_elements(conn, element_type, [door(W1, sillHeight=0.0)])
-    assert plain["warnings"] == []
+    assert not [w for w in plain["warnings"] if "hold" in w]
 
 
 @pytest.mark.parametrize("element_type, tool, favorite_type",
@@ -908,7 +908,7 @@ def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_
     # parameter list Archicad will not open, and the tool keeps it, so later openings
     # from the tool, hand-placed ones too, have the same fault. The same part placed
     # from a favourite read and wrote all its parameters.
-    plan = Plan(types={W1: "Wall"}, library=["Door"],
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version="1.8.0",
                 favorites={favorite_type: ["Generic", "Internal"]})
     items = [door(W1, libraryPartName="Door", sillHeight=0.0),
              door(W1, favoriteName="Generic", sillHeight=0.0)]
@@ -922,8 +922,29 @@ def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_
     assert not [w for w in from_favorite["warnings"] if "neither read nor written" in w]
 
 
+@pytest.mark.parametrize("version", ["1.8.1", "1.8.2", "2.0.0"])
+@pytest.mark.parametrize("element_type", ["door", "window"])
+def test_doors_by_part_name_do_not_warn_on_a_tapir_newer_than_1_8_0(element_type, version):
+    # Tapir's main after 1.8.0 sets the part on the created opening only: the tool's
+    # defaults are not changed and the opening's parameter list is its own.
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version=version,
+                favorites={"Door": ["Generic"], "Window": ["Generic"]})
+    result = create_elements(plan.connection(), element_type,
+                             [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    assert result["warnings"] == []
+
+
+def test_doors_by_part_name_still_warn_on_a_tapir_of_unknown_version():
+    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={"Door": ["Generic"]})
+    conn = plan.connection()
+    del plan.core.tapir_responses["GetAddOnVersion"]
+    result = create_elements(conn, "door", [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    assert any("will hold" in w for w in result["warnings"])
+    assert any("neither read nor written" in w for w in result["warnings"])
+
+
 def test_the_parameter_warning_says_when_there_is_no_favourite_to_send():
-    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={})
+    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={}, tapir_version="1.8.0")
     result = create_elements(plan.connection(), "door",
                              [door(W1, libraryPartName="Door", sillHeight=0.0)])
     [warning] = [w for w in result["warnings"] if "neither read nor written" in w]
@@ -932,7 +953,7 @@ def test_the_parameter_warning_says_when_there_is_no_favourite_to_send():
 
 
 def test_a_placed_door_warns_about_the_tool_too(tmp_path):
-    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"], tapir_version="1.8.0")
     result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
                              records=store(tmp_path, door_record()))
     assert any("the Door tool will hold 'Door'" in w for w in result["warnings"])
@@ -1148,6 +1169,96 @@ def test_a_stair_within_its_baseline_and_flights_is_not_reported():
 def test_the_stair_schema_reply_says_the_baseline_is_the_left_edge():
     result = create_elements(Plan().connection(), "stair", [])
     assert any("left edge" in note for note in result["notes"])
+
+
+def test_the_stair_schema_reply_names_the_fields_that_shape_a_turn():
+    notes = " ".join(create_elements(Plan().connection(), "stair", [])["notes"])
+    for field in ("baselinePosition", "baseLineEdges", "baseLineVertices", "treadDepth"):
+        assert field in notes
+    assert "no turn or winder setting" not in notes
+
+
+# The same U turning the other way, and one whose middle is shorter than a flight's width.
+U_TURNING_LEFT = [(7.3, 5.92), (5.615, 5.92), (5.615, 4.82), (7.3, 4.82)]
+TIGHT_U = [(0.0, 0.0), (-2.0, 0.0), (-2.0, 0.5), (0.0, 0.5)]
+
+
+@pytest.mark.parametrize("points, position, overlaps", [
+    # The centre-line U: y 4.82 to 5.68 against 5.06 to 5.92 with the flights inside it.
+    (U_AS_CENTRE_LINE, "Left", True),
+    # Outside it: y 3.96 to 4.82 against 5.92 to 6.78.
+    (U_AS_CENTRE_LINE, "Right", False),
+    # Straddling it: y 4.39 to 5.25 against 5.49 to 6.35.
+    (U_AS_CENTRE_LINE, "Center", False),
+    (U_TURNING_LEFT, "Left", False),
+    (U_TURNING_LEFT, "Right", True),
+    # y -0.43 to 0.43 against 0.07 to 0.93.
+    (TIGHT_U, "Center", True),
+])
+def test_the_overlap_check_follows_where_the_baseline_runs(points, position, overlaps):
+    item = {**stair(points), "baselinePosition": position}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert any("overlap" in w for w in result["warnings"]) is overlaps
+
+
+def test_a_baseline_offset_stops_the_stair_checks_as_its_side_is_not_known():
+    # Neither Tapir's schema nor the DevKit says which way a positive offset runs.
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((0.0, 9.0, 0.0, 9.0, 0.0, 3.0))
+    item = {**stair(U_AS_CENTRE_LINE), "baselinePosition": "Left", "baselineOffset": 0.2}
+    assert not [w for w in create_elements(conn, "stair", [item])["warnings"] if "overlap" in w]
+    assert "warnings" not in create_elements(conn, "stair", [item], dry_run=False)
+
+
+@pytest.mark.parametrize("extra", [
+    {"baselinePosition": "Left", "baselineOffset": 0},
+    # "Not used with Center", as Tapir's schema says.
+    {"baselinePosition": "Center", "baselineOffset": 0.2},
+])
+def test_a_baseline_offset_that_changes_nothing_keeps_the_checks(extra):
+    item = {**stair(TIGHT_U), **extra}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert any("overlap" in w for w in result["warnings"])
+
+
+@pytest.mark.parametrize("shape", [
+    {"baseLineEdges": [{"segmentType": "Flight"}, {"segmentType": "Landing"},
+                       {"segmentType": "Flight"}]},
+    {"baseLineVertices": [{"turnType": "None"}, {"turnType": "Landing"},
+                          {"turnType": "Landing"}, {"turnType": "None"}]},
+])
+def test_a_stair_that_gives_its_own_turns_is_not_warned_of_overlap(shape):
+    # The check assumes a flight on every segment, which these say is not so.
+    item = {**stair(U_AS_CENTRE_LINE), **shape}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert not [w for w in result["warnings"] if "overlap" in w]
+
+
+@pytest.mark.parametrize("position, box_y, overruns", [
+    # Baseline along y 0 going +x, flight 1 wide: on its left with Right...
+    ("Right", (0.0, 1.0), False),
+    # ...half a flight each side with Center...
+    ("Center", (-0.5, 0.5), False),
+    # ...and on its right with Left, so a box up to y 1.0 is 1.0 past the flight.
+    ("Left", (-1.0, 1.0), True),
+])
+def test_the_overrun_check_follows_where_the_baseline_runs(position, box_y, overruns):
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((0.0, 4.0, *box_y, 0.0, 3.0))
+    item = {**stair([(0.0, 0.0), (4.0, 0.0)], width=1.0), "baselinePosition": position}
+    result = create_elements(conn, "stair", [item], dry_run=False)
+    assert any("past" in w for w in result.get("warnings", [])) is overruns
+
+
+def test_the_overrun_warning_points_at_the_fields_that_shape_a_turn():
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((5.19, 8.95, 4.39, 6.4, -0.15, 2.8))
+    result = create_elements(conn, "stair", [stair(U_AS_OUTER_EDGE)], dry_run=False)
+    [warning] = [w for w in result["warnings"] if "past" in w]
+    assert "baseLineEdges" in warning and "no turn or winder setting" not in warning
 
 
 # Sides. Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
