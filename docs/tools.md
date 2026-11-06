@@ -198,11 +198,12 @@ file without `overwrite=true`, checks the file is there afterwards, and never
 opens or merges IFC. Needs Tapir 1.6.0. `publish` runs a Publisher set.
 
 `reserve_elements` and `release_elements` are confirm-gated. A dry run reports
-unknown GUIDs, elements already in your workspace and, on Tapir 1.7.3, who holds
-the rest; on older Tapir that is only learned by attempting. A reservation
-reports what was reserved, what others hold (with their names) and what Archicad
-pulled in on the side: reserving one door also reserved its wall and the wall's
-other door. Both also take `object_sets`: an attribute type, `Properties`,
+unknown GUIDs, elements already in your workspace and, on a Tapir newer than
+1.8.0, who holds the rest; on older Tapir that is only learned by attempting. A
+reservation reports what was reserved, what others hold (with their names), any
+GUIDs that are not elements, and what Archicad pulled in on the side: reserving
+one door also reserved its wall and the wall's other door. Both also take
+`object_sets`: an attribute type, `Properties`,
 `Classifications` or any Archicad set name (`Favorites`, `ProjectInfo`, ...),
 for which the dry run always says who holds them. In a Teamwork project the
 definition tools and `edit_attributes` refuse an edit whose set is not reserved

@@ -111,15 +111,31 @@ def _statuses(p):
     return {"reservationStatuses": out}
 
 
-def test_reserve_dry_run_names_who_holds_what_on_tapir_1_7_3():
+def test_reserve_dry_run_names_who_holds_what_on_tapir_newer_than_1_8_0():
     # GetReservationStatusOfElements reads the holder without attempting.
     conn, _ = make(mine=["z-1"])
+    conn._core.tapir_responses["GetAddOnVersion"] = {"version": "1.8.1"}
     conn._core.tapir_responses["GetReservationStatusOfElements"] = _statuses
     payload = reserve_elements(conn, ["w-1", "W-2", "z-1"])
     assert payload["would_attempt"] == ["w-1"]
     assert payload["held_by_others"] == [{"guid": "W-2", "user": "Someone Else", "user_id": 7}]
     assert "note" not in payload
     assert calls(conn, "ReserveElements") == []
+
+
+@pytest.mark.parametrize("answer", [{"version": "1.7.3"}, {"version": "1.8.0"}, {}])
+def test_reserve_dry_run_does_not_trust_a_status_read_that_cannot_see_reservations(answer):
+    # Up to 1.8.0 the status came from the element's lock (Edit > Locking), so an
+    # element a teammate holds answered Free. A version it cannot name is no better.
+    conn, _ = make()
+    conn._core.tapir_responses["GetAddOnVersion"] = answer
+    conn._core.tapir_responses["GetReservationStatusOfElements"] = {
+        "reservationStatuses": [{"status": "Free"}, {"status": "Free"}]}
+    payload = reserve_elements(conn, ["w-1", "w-2"])
+    assert payload["would_attempt"] == ["w-1", "w-2"]
+    assert "held_by_others" not in payload
+    assert "only learned by attempting" in payload["note"]
+    assert calls(conn, "GetReservationStatusOfElements") == []
 
 
 def test_reserve_commit_separates_the_four_outcomes():
@@ -150,6 +166,36 @@ def test_reserve_reports_an_archicad_refusal():
         "executionResult": {"success": False, "error": {"code": 1, "message": "offline"}}}
     payload = reserve_elements(conn, ["w-1"], confirm=True)
     assert "offline" in payload["error"]
+
+
+def _reserves_w_1_but_fails_over(conn, ws, message, reserves=True):
+    """Tapir newer than 1.8.0: a GUID that is no element fails executionResult, and is
+    listed, whether or not the elements beside it were reserved."""
+    def reserve(p):
+        if reserves:
+            ws.mine.add("w-1")
+        return {"executionResult": {"success": False, "error": {"code": 1, "message": message}},
+                "notElements": [{"elementId": {"guid": "Z-1"}}]}
+    conn._core.tapir_responses["ReserveElements"] = reserve
+
+
+def test_reserve_commit_keeps_what_it_reserved_beside_a_guid_that_is_no_element():
+    conn, ws = make()
+    _reserves_w_1_but_fails_over(conn, ws, "1 of the given GUIDs are not elements")
+    payload = reserve_elements(conn, ["w-1", "z-1"], confirm=True)
+    assert "error" not in payload
+    assert payload["reserved"] == ["w-1"]
+    assert payload["not_elements"] == ["z-1"]
+
+
+def test_reserve_commit_says_why_when_the_failure_beside_a_non_element_was_real():
+    # The same shape answers a refusal of the whole attempt, so the message stays.
+    conn, ws = make()
+    _reserves_w_1_but_fails_over(conn, ws, "Failed to reserve elements.", reserves=False)
+    payload = reserve_elements(conn, ["w-1", "z-1"], confirm=True)
+    assert payload["reserved"] == []
+    assert payload["not_elements"] == ["z-1"]
+    assert "Failed to reserve elements." in payload["note"]
 
 
 def test_reserve_takes_guids_in_any_case():

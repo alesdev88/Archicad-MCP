@@ -474,10 +474,22 @@ answers with an `executionResult` only. So of the four outcomes
 | `already_mine` | Tapir `FilterElements` with `InMyWorkspace`, before the attempt |
 | `indirectly_reserved` | `InMyWorkspace` over the whole plan before and after the attempt, minus what was asked for |
 
-There is **no read that says who holds an element** without trying to reserve
-it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object sets (attributes),
-not elements. That is why the dry run stops at not-found and already-mine, and
-why the tool is confirm-gated instead of dry-run-by-default in the usual sense.
+Up to Tapir 1.8.0 there is **no read that says who holds an element** without
+trying to reserve it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object
+sets (attributes), not elements. `GetReservationStatusOfElements` (1.7.3) looks
+like one, but it takes its answer from `elemHead.lockId`, the Edit > Locking
+state, so an element a teammate has reserved answers `Free`. That is why the dry
+run there stops at not-found and already-mine, and why the tool is confirm-gated
+instead of dry-run-by-default in the usual sense.
+
+Tapir's `main`, after 1.8.0, reads `elemHead.userId`, so `reserve_elements` trusts
+the status only on a Tapir newer than 1.8.0 and there lists the holders under
+`held_by_others`. That Tapir's `ReserveElements` also fails its `executionResult`
+over a GUID that is no element (a navigator item, a layout), and lists it under
+`notElements`, even when it reserved the elements beside it. A real refusal of
+the whole attempt can arrive with the same list, so the tool reads the reservation
+back as usual, reports the GUIDs as `not_elements` and passes the message on as
+`note`. Both are read from Tapir's source and not yet tried on a Teamwork project.
 
 **Verified live (03.09.2026, AC 29/5101, Tapir 1.5.9)** on a BIMcloud Teamwork
 project with 62,997 elements, with the owner's go-ahead, on one selected door:
