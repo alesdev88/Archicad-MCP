@@ -16,7 +16,9 @@ and it shows neither a door's hinge nor its swing. Tapir cannot set the zoom
 back, so the reply says the plan stays zoomed there.
 
 Objects and lamps are sampled at two explicit sizes, because on Tapir 1.7.2 a
-part sent without dimensions takes the Object tool's size. Each axis of the
+part sent without dimensions takes the Object tool's size: the part's own, read
+from GetGDLParametersOfLibraryParts, and 1.5 times it, or SAMPLE_SIZES on a Tapir
+that cannot read them. Each axis of the
 footprint is fitted against whichever of the A and B read back from the GDL and
 the A and B sent its plan box follows (part_placement.fit_axis): Bed Double 01
 clamps B to at least 1.2, so a sample sent at 1.0 x 1.0 is drawn 1.0 x 1.2 and
@@ -36,7 +38,7 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.actions import fit_in_window
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.core.create import FLOOR_PLAN, closest_names
+from archicad_mcp.core.create import FLOOR_PLAN, _part_name_faults_tool, closest_names
 from archicad_mcp.core.editability import active_window, present
 from archicad_mcp.core.element_data import error_fields
 from archicad_mcp.core.mutate import _refused_deletions, _survivor_reason
@@ -50,7 +52,7 @@ from archicad_mcp.core.part_records import (
     RecordsFileError,
     identity_problem,
 )
-from archicad_mcp.core.part_symbols import parameter_number
+from archicad_mcp.core.part_symbols import default_parameters, own_size_of, parameter_number
 from archicad_mcp.core.window_image import capture_window
 from archicad_mcp.extract import _fetch_types, element_payload, get_all_element_ids
 from archicad_mcp.tapir_requirements import installed_version
@@ -59,6 +61,10 @@ from archicad_mcp.tapir_requirements import installed_version
 # function of the size; the mirrored and variant samples take the first one.
 SAMPLE_SIZES = ((1.0, 1.0), (2.0, 1.5))
 SAMPLE_HEIGHT = 1.0
+
+# With the part's own size read: the second size sampled, as a multiple of it. Any factor
+# that varies the size enough for fit_axis serves; 1.5 is a choice, not a measured value.
+SECOND_SIZE_FACTOR = 1.5
 
 # Metres from the model's right edge to the first sample.
 CLEARANCE = 5.0
@@ -168,6 +174,8 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
     part_guid, problem, notes = _loaded_part(conn, name)
     if problem is not None:
         return {"error": problem}
+    defaults = default_parameters(conn, name)
+    own_size = own_size_of(defaults)
     try:
         earlier = records.get(name)
     except RecordsFileError as error:
@@ -185,7 +193,7 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
                          "level, so the samples could not be put where the capture sees "
                          "them. Nothing was placed."}
 
-    learning = _Learning(conn, name, kind, origin, story, variants)
+    learning = _Learning(conn, name, kind, origin, story, variants, own_size, defaults)
     learning.warnings.extend(notes)
     left: dict[str, str] = {}
     try:
@@ -213,7 +221,7 @@ def learn_library_part(conn: ArchicadConnection, records: PartRecords, name: str
                          "again; nothing was recorded.", **side_effects}
 
     record = _record(earlier, name, part_guid, kind, tapir, outcome["measured"],
-                     outcome.get("wall_flipped"))
+                     outcome.get("wall_flipped"), own_size)
     try:
         records.save(record)
     except RecordsFileError as error:
@@ -371,8 +379,11 @@ class _Learning:
 
     def __init__(self, conn: ArchicadConnection, name: str, kind: str,
                  origin: tuple[float, float], story: tuple[int, float],
-                 variants: list[dict]):
+                 variants: list[dict], own_size: dict | None = None,
+                 defaults: list[dict] | None = None):
         self.conn, self.name, self.kind = conn, name, kind
+        self.own_size = own_size             # the part's own, for its samples' sizes
+        self.defaults = defaults             # its default parameters, when a sample has none
         self.origin = origin
         self.story = story                   # (index, level) of the story on screen
         self.variants = variants
@@ -397,7 +408,8 @@ class _Learning:
 
     def _objects(self) -> dict:
         command, key = _CREATE[self.kind]
-        placed = _object_samples(self.name, self.origin, self.story, self.variants)
+        placed = _object_samples(self.name, self.origin, self.story, self.variants,
+                                 self.own_size)
         self._create(command, key, placed)
         self._apply_variants(placed)
         footprint, parameters = self._measure(placed)
@@ -421,9 +433,11 @@ class _Learning:
         try:
             self._create(command, key, placed)
         finally:
-            self.warnings.append(
-                f"The {tool} tool now holds '{self.name}': Tapir 1.7.2 places a {self.kind} "
-                f"by part name through the {tool} tool's settings and does not set them back.")
+            if _part_name_faults_tool(self.conn):
+                self.warnings.append(
+                    f"The {tool} tool now holds '{self.name}': Tapir 1.8.0 and older place a "
+                    f"{self.kind} by part name through the {tool} tool's settings and do not "
+                    "set them back.")
         self._apply_variants(placed)
         parameters = self._opening_parameters(placed[0])
         png = self._look([wall.guid] + [p.guid for p in placed])
@@ -598,12 +612,18 @@ class _Learning:
         if parameters is None:
             if why is None and isinstance(entry, dict):
                 why = (entry.get("error") or {}).get("message")
+            said = f" ({why})" if why else ""
+            if self.defaults:
+                self.warnings.append(
+                    f"The {self.kind} sample's GDL parameters could not be read{said}, so "
+                    "those listed are the part's defaults, not the sample's.")
+                return _named_values(self.defaults)
+            cause = (", probably because Tapir 1.8.0 and older place doors and windows by part "
+                     "name with a parameter list Archicad will not open (one placed from a "
+                     "favourite has no such fault)") if _part_name_faults_tool(self.conn) else ""
             self.warnings.append(
-                f"The {self.kind}'s GDL parameters could not be read, probably because "
-                "Tapir 1.7.2 places doors and windows by part name with a parameter list "
-                "Archicad will not open (one placed from a favourite has no such fault)"
-                + (f" ({why})" if why else "") + ". Which sash or leaf a parameter opens "
-                "cannot be read from this sample.")
+                f"The {self.kind}'s GDL parameters could not be read{cause}{said}. Which sash "
+                "or leaf a parameter opens cannot be read from this sample.")
             return []
         return _named_values(parameters)
 
@@ -627,10 +647,20 @@ class _Learning:
         return image["png"]
 
 
+def _sample_sizes(own_size: dict | None) -> tuple[tuple[float, float], ...]:
+    if own_size is None:
+        return SAMPLE_SIZES
+    a, b = own_size["a"], own_size["b"]
+    # Rounded, as 0.8 * 1.5 is not quite 1.2 and the sample's label shows it.
+    return (a, b), (round(a * SECOND_SIZE_FACTOR, 6), round(b * SECOND_SIZE_FACTOR, 6))
+
+
 def _object_samples(name: str, origin: tuple[float, float], story: tuple[int, float],
-                    variants: list[dict]) -> list[_Placed]:
-    a0, b0 = SAMPLE_SIZES[0]
-    specs = [(f"{a} x {b} m", a, b, False, None) for a, b in SAMPLE_SIZES]
+                    variants: list[dict], own_size: dict | None = None) -> list[_Placed]:
+    sizes = _sample_sizes(own_size)
+    height = (own_size or {}).get("height") or SAMPLE_HEIGHT
+    a0, b0 = sizes[0]
+    specs = [(f"{a} x {b} m", a, b, False, None) for a, b in sizes]
     specs.append((f"{a0} x {b0} m mirrored", a0, b0, True, None))
     specs += [(f"{a0} x {b0} m, variant {n}: {_said(v)}", a0, b0, False, v)
               for n, v in enumerate(variants, 1)]
@@ -644,7 +674,7 @@ def _object_samples(name: str, origin: tuple[float, float], story: tuple[int, fl
         placed.append(_Placed(label, {"libraryPartName": name,
                                       "coordinates": {"x": x, "y": y, "z": level},
                                       "floorIndex": index,
-                                      "dimensions": {"x": a, "y": b, "z": SAMPLE_HEIGHT},
+                                      "dimensions": {"x": a, "y": b, "z": height},
                                       "angle": 0.0, "reflected": mirrored},
                               a, b, variant))
         # The next sample stands this one's A plus SPACING on, so neighbours keep
@@ -812,14 +842,17 @@ def _remove(conn: ArchicadConnection, guids: list[str]) -> dict[str, str]:
 
 
 def _record(earlier: PartRecord | None, name: str, guid: str, kind: str, tapir: str | None,
-            footprint: dict | None, wall_flipped: bool | None) -> PartRecord:
+            footprint: dict | None, wall_flipped: bool | None,
+            own_size: dict | None = None) -> PartRecord:
     learned = date.today().isoformat()
     if earlier is not None and identity_problem(earlier, guid) is None:
-        # The same part learned again: what the agent recorded about it stays.
+        # The same part learned again: what the agent recorded about it stays, and so does
+        # its own size when this read failed.
         return replace(earlier, guid=guid, kind=kind, learned=learned, tapir=tapir,
-                       footprint=footprint, wall_flipped=wall_flipped)
+                       footprint=footprint, wall_flipped=wall_flipped,
+                       own_size=own_size or earlier.own_size)
     return PartRecord(name=name, guid=guid, kind=kind, learned=learned, tapir=tapir,
-                      footprint=footprint, wall_flipped=wall_flipped)
+                      footprint=footprint, wall_flipped=wall_flipped, own_size=own_size)
 
 
 def _turned(rotation: float) -> bool:

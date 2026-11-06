@@ -907,7 +907,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "them, the first sample's GDL parameters, warnings, and 'next', the fields "
         "still to give record_library_part. variants: optional sets of GDL parameter "
         "values (parameter name to value), each placed as one more sample, such as a "
-        "leaf or one of a window's sashes opened. On Tapir 1.7.2 a door or window placed "
+        "leaf or one of a window's sashes opened. On a Tapir newer than 1.8.0 samples are "
+        "placed at the part's own size and 1.5 times it, and the record keeps its own size. "
+        "On Tapir 1.8.0 and older a door or window placed "
         "by part name, as its samples are, has GDL parameters that can be neither read "
         "nor written, and the Door or Window tool keeps that fault for later openings, "
         "so a door's or window's samples show no parameters and a placement's leaves "
@@ -917,8 +919,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "own A and B gets no footprint (the reply's note says so) and is placed by "
         "coordinates. Lengths are metres. The floor plan must be the active window, "
         "with its view not rotated. It zooms the plan to the samples and leaves it "
-        "zoomed, since Tapir cannot set the zoom back; a door or window learned may "
-        "leave the Door or Window tool holding the part. Needs Tapir 1.7.2."),
+        "zoomed, since Tapir cannot set the zoom back; on Tapir 1.8.0 and older a door or "
+        "window learned may leave the Door or Window tool holding the part. Needs Tapir "
+        "1.7.2."),
               **_tool_meta("Learn a library part", read_only=False, destructive=True))
     @_guarded
     def learn_library_part(name: str, kind: str, variants: list[dict] | None = None,

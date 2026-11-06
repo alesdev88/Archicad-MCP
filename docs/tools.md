@@ -187,7 +187,10 @@ shows with `record_library_part`. Then `create_elements` and `modify_elements`
 take `placement` instead of coordinates, angle, `reflected` and sizes: an
 object's footprint centre, size and head direction, or a door's or window's two
 points and which leaves open. The records are one JSON file on this machine,
-shared by every project. Learning needs Tapir 1.7.2.
+shared by every project. Learning needs Tapir 1.7.2. On Tapir 1.8.0 and older a door
+or window learned leaves the Door or Window tool holding the part, with parameters
+that cannot be read. On a newer Tapir, learning samples an object or lamp at the part's
+own size and 1.5 times it, and the record keeps that own size.
 
 The tool descriptions carry the rules for reading a sketch, so the agent follows
 them without being told: learn a part before placing it; choose the part from
