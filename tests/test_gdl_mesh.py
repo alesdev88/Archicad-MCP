@@ -104,8 +104,8 @@ def test_parse_obj_uv_corners(tmp_path):
 def test_obj_group_names_are_read_as_utf8_where_the_system_default_is_not(tmp_path, monkeypatch):
     real = Path.read_text
 
-    def windows_default(self, encoding=None, errors=None, newline=None):
-        return real(self, encoding=encoding or "cp1252", errors=errors, newline=newline)
+    def windows_default(self, encoding=None, errors=None):
+        return real(self, encoding=encoding or "cp1252", errors=errors)
 
     monkeypatch.setattr(Path, "read_text", windows_default)
     obj = tmp_path / "miza.obj"
