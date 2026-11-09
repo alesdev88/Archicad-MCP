@@ -284,6 +284,11 @@ shows which commands have a tool of their own.
 `install_tapir` is the tool form of `archicad-mcp install-tapir`
 ([Install](install.md#tapir)).
 
+`update_extension` moves the Claude Desktop bundle to the newest release. A dry
+run compares the versions; `confirm=true` downloads the bundle, checks its sha256
+and opens Desktop's install dialog
+([Install](install.md#claude-desktop-extension)).
+
 `run_script` and `apply_changeset` are off by default. `run_script` runs a short
 Python script next to Archicad and returns what it returns; its writes are
 planned into a changeset, which `apply_changeset` writes after `confirm=true`.

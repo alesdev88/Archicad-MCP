@@ -608,15 +608,21 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description=(
         "Place a Road Marking (lane lines, zebra crossings, stop and give way lines, "
-        "parking rows, disabled, taxi and EV bays, bus and taxi stops, BUS and TAXI "
-        "lettering) as the 'Road Marking' library part, and drape it onto Meshes and "
-        "Slabs. The path comes from source_guid (a Morph line, Polyline, Line or Arc) "
-        "or points [{x, y, z}] in metres. marking is a preset name, for example "
-        "'5121 Broken divider, in settlements', '5352-1 Disabled bays, shared zone' or "
+        "bus and taxi stops, BUS and TAXI lettering) or a Road Parking (parking rows, "
+        "disabled, taxi and EV bays) as the 'Road Marking' or 'Road Parking' library "
+        "part, and drape it onto Meshes and Slabs. A parking preset name places a Road "
+        "Parking; any other name, 'Custom' or none places a Road Marking; update_guid takes "
+        "the element's own part, and a name of the other part is refused. The path comes "
+        "from source_guid (a Morph line, Polyline, Line or Arc) or points [{x, y, z}] in "
+        "metres. marking is a preset name, for example '5121 Broken divider, in "
+        "settlements', 'Parking 60 degrees', '5352-1 Disabled bays, shared zone' or "
         "'5333-2 Bus stop on the carriageway', or 'Custom'. stripes changes stripes: "
-        "{\"1\": {on, offset, width, dash, gap, angle, shape}}; bays sets {layout, "
-        "width, depth, zone_width, zone_first, bar_width, symbol}; lettering sets "
-        "{text, length, width, gap, offset, align, shift, repeat}. Offsets, bays and "
+        "{\"1\": {on, offset, width, dash, gap, angle, shape}}; a Road Parking takes "
+        "only width, dash, gap and angle on stripe 1 and on for 2 and 3 ({\"3\": "
+        "{\"on\": true}} is its kerb line); bays sets {layout, depth} and, on a Road "
+        "Parking, {width, zone_width, zone_first, symbol}, on a Road Marking {bar_width}; "
+        "lettering (Road Marking only) sets {text, length, width, gap, offset, align, "
+        "shift, repeat}. Offsets, bays and "
         "the word lie to the right looking from the first point to the last. drape_on "
         "lists Mesh and Slab GUIDs: the cross fall follows the surface, the paint never "
         "sinks below it, and nodes are added until the marking is within "
@@ -1242,6 +1248,23 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         result["restart_required"] = [o.version for o in report.outcomes if o.installed]
         result["backups"] = [str(o.backup) for o in report.outcomes if o.backup]
         return result
+
+    @mcp.tool(description=(
+        "Update this extension to the newest release. Dry run by default: it compares "
+        "the installed version with the latest release on GitHub and says what it would "
+        "do. confirm=true downloads the bundle for this computer, checks its sha256 and "
+        "opens it, so Claude Desktop shows its own install dialog; nothing is installed "
+        "until the user accepts there. Never downgrades. Reaches GitHub only when "
+        "called. A server not installed as a Claude Desktop bundle gets the upgrade "
+        "command instead. Needs no running Archicad."),
+        **_tool_meta("Update this extension", read_only=False, destructive=True))
+    def update_extension(confirm: bool = False) -> dict:
+        from archicad_mcp import extension_update as _extension_update
+        from archicad_mcp.tapir_install import InstallError
+        try:
+            return _extension_update.run(confirm=confirm)
+        except InstallError as exc:
+            return {"error": str(exc)}
 
     @mcp.tool(description="Describe an exported Archicad schedule scheme XML: its "
                           "criteria and its ordered columns, with what each column "

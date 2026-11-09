@@ -1,21 +1,38 @@
 # Road Marking
 
-`create_road_marking` places the Road Marking library part along a line or points and
-drapes it onto Meshes and Slabs. The part draws lane lines (solid, broken, double,
-combined), zebra crossings, stop and give way lines with shark teeth, parking rows,
-disabled, taxi and EV bays, bus and taxi stops and the BUS and TAXI lettering, with
-presets from the Slovenian rulebook (Uradni list RS 26/24) and TSC 02.401. The part is
-not in this repo: it lives in the office GDL library.
+`create_road_marking` places a Road Marking or a Road Parking along a line or points and
+drapes it onto Meshes and Slabs. The Road Marking draws lane lines (solid, broken, double,
+combined), zebra crossings, stop and give way lines with shark teeth, bus and taxi stops
+and the BUS and TAXI lettering (28 presets). The Road Parking draws parking rows and
+disabled, taxi and EV bays along a kerb (10 presets). The presets come from the Slovenian
+rulebook (Uradni list RS 26/24) and TSC 02.401. The parts are not in this repo: they live
+in the office GDL library. Road Parking's own guide is `road_parking/README.md` there.
+
+## Which part
+
+- **New element:** the preset's name decides, without regard to case. A parking name
+  (`Parking 90 degrees`, `Parking 60 degrees`, `Parking 45 degrees`, `Parking 30 degrees`,
+  `Parallel parking`, `5352 Disabled bay`, `5352-1 Disabled bays, shared zone`,
+  `5352-2 Disabled bay, parallel`, `5351 Taxi bay`, `5354 EV charging bay`) places a Road
+  Parking; any other name, `Custom` or no name places a Road Marking, with the Road Marking's
+  defaults. The report's `marking` names the preset used.
+- **Update (`update_guid`):** the element's own part decides (its library part's name).
+  A name of the other part is refused: "5352 Disabled bay belongs to Road Parking and this
+  element is a Road Marking: place a new one." `Custom` is valid on both. An element of
+  neither part is refused. Nothing is written in any of these cases.
+- **Old parking rows:** a Road Marking placed before the split keeps its parking stripes and
+  turns to `Custom` when the part first runs; it does not gain the kerb line. Place a new
+  Road Parking for that.
 
 ## Install
 
-1. Load `Road Marking.gsm` (`Library/Site/Road Marking` in the office GDL library) in
-   Library Manager.
+1. Load `Road Marking.gsm` and `Road Parking.gsm` (`Library/Site/Road Marking` and
+   `Library/Site/Road Parking` in the office GDL library) in Library Manager.
 2. After every new build of the part, reload libraries (File > Libraries and Objects >
    Reload Libraries). Archicad keeps the old part until then.
 
-Without the part the tool still dry-runs, with a warning that it is not loaded; a write
-is refused.
+Without the chosen part the tool still dry-runs, with a warning naming that part as not
+loaded; a write is refused.
 
 ## Draw
 
@@ -23,26 +40,56 @@ is refused.
   z}]` in metres). Always run a dry run first: it reports the nodes, the marking's reach
   and anything that will not sit on the surface.
 - **Direction:** offsets, bays and the word lie to the right looking from the first point
-  to the last; `flip_sides` puts them on the left. Draw a parking kerb in the direction
-  of travel in the aisle, a lane line in the direction of traffic (the letters' tops face
+  to the last; `flip_sides` puts them on the left. Draw a parking kerb (the Road Parking's path) in
+  the direction of travel in the aisle, a lane line in the direction of traffic (the letters' tops face
   the last point), a zebra's path across the road.
-- **Preset:** `marking`, any case: one of the part's 38 presets or `Custom`. Changing a
+- **Preset:** `marking`, any case: one of the 38 presets of the two parts or `Custom`. Changing a
   value the preset sets (a 0.12 m line on a 5121) makes the part read Custom, and the
   report's `marking_after` says so.
 - **Changes**, as objects (JSON text works too):
   - `stripes`: `{"1": {"width": 0.12}, "2": {"on": true, "offset": 0.3}}`, keys `on`,
     `offset`, `width`, `dash`, `gap`, `angle` (degrees, -80 to 80), `shape` (`Bar`,
     `Triangle, point left`, `Triangle, point right`).
-  - `bays`: `{"layout": "Taxi bay", "depth": 4.5}`, keys `layout`, `width`, `depth`,
-    `zone_width`, `zone_first`, `bar_width`, `symbol`.
-  - `lettering`: `{"text": "BUS", "align": "Centre", "repeat": 20}`, keys `text` (`None`,
-    `BUS`, `TAXI`), `length`, `width`, `gap`, `offset`, `align` (`Start`, `Centre`, `End`),
-    `shift`, `repeat`.
+  - `bays`: `{"layout": "Taxi bay", "depth": 4.5}`, keys `layout`, `depth`; Road Parking
+    adds `width`, `zone_width`, `zone_first`, `symbol`, Road Marking adds `bar_width`.
+    Layouts: Road Marking `None`, `Stop end bars`; Road Parking `None`, `Disabled bay`,
+    `Disabled bays, shared zone`, `Disabled bay, parallel`, `Taxi bay`, `EV charging bay`.
+    On a Road Parking row the bay fields of the dialog are stripe 1's: bay depth is
+    `stripes.1.width` (`s1Width`), line width is `stripes.1.dash` (`s1Dash`), space between lines
+    is `stripes.1.gap` (`s1Gap`) and angle is `stripes.1.angle` (`s1Angle`). `bays.depth`
+    (`bayDepth`) is the depth of a bay (disabled, taxi, EV) only; on a row it has no effect and
+    the call warns. The layout comes with the preset, so `bays.layout` is not the way to choose a
+    bay: name the preset in `marking`.
+  - `lettering` (Road Marking only): `{"text": "BUS", "align": "Centre", "repeat": 20}`,
+    keys `text` (`None`, `BUS`, `TAXI`), `length`, `width`, `gap`, `offset`, `align`
+    (`Start`, `Centre`, `End`), `shift`, `repeat`.
+  - `pattern_align`: `Start`, `Centre`, `End`, and `Both ends` on a Road Marking only (Road
+    Parking refuses it with "patternAlign must be one of: Start, Centre, End").
+- **Kerb line (Road Parking):** the kerb line is stripe 3, off in every preset. Switch it on
+  with `stripes: {"3": {"on": true}}`; it takes nothing else of stripe 3. Its width and place
+  come from the part, and the reach counts it. On a row the part also moves stripe 1's offset
+  and stripes 2 and 3 with `width` and `dash` of stripe 1; the reach follows that rule.
+- **Refused, naming the part:**
+  - Road Parking: any `lettering` value; `bays.bar_width`; on `stripes`, anything but
+    `width`, `dash`, `gap` and `angle` for stripe 1 and `on` for stripes 2 and 3 (the part's
+    Parameter Script sets the rest: the offsets, the shapes, and stripes 2 and 3's widths,
+    dashes, gaps and angles from stripe 1).
+  - Road Parking bays (a preset or current layout other than `None`: disabled, taxi, EV): any
+    `stripes` value, because a bay keeps no stripes (so no kerb line either): "Road Parking
+    bays take no stripes". Use a parking row preset for stripes.
+  - Road Marking: `bays.width`, `bays.zone_width`, `bays.zone_first`, `bays.symbol`.
 - **Look:** `pattern_align`, `pattern_shift`, `whole_dashes`, `thickness`, and
   `paint_surface` (a Surface name or index: 18 white, 78 yellow, 76 green in the office
   template).
 - **Rewrite:** `update_guid` rewrites a placed marking and keeps its GUID and settings
   unless the call sets them; a new preset replaces what it sets, as in the dialog.
+- **Settings the call leaves out:** Archicad's Object tool keeps same-named values from the
+  last marking or from other parts (a plan fill switched off, a thickness, a preset), so a
+  new marking is read back after it is placed and the tool writes the part's default, or the
+  named preset's value, for anything it holds differently. Grip helpers and their markers are
+  not settings and are left to the path writes. An update keeps the marking's own values. A
+  dry run cannot show these writes. If the read back or the write fails, the report still
+  names the marking placed (`element`, `elements_placed`, `error`).
 
 ## Draping
 
@@ -76,7 +123,7 @@ Limits:
   cell's twist (its corner heights z1 + z3 - z2 - z4), 25 mm on the 1 m cells of the
   live check's saddle (5 cm a metre squared). Archicad's choice showed no rule the tool
   could copy.
-- A bay row or word reaching past the path's ends is drawn there by the part but not
+- A bay row (Road Parking) or word (Road Marking) reaching past the path's ends is drawn there by the part but not
   draped; a warning says how far.
 - More than 500 nodes is refused: use a coarser `drape_tolerance` or a shorter source.
 

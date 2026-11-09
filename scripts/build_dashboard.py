@@ -282,6 +282,9 @@ TOOLS: list[dict] = [
     # command wraps it.
     {"name": "install_tapir", "cat": "Discovery & model", "mode": "full", "mutates": True,
      "desc": "Install the pinned Tapir add-on into Archicad's Add-Ons folder. Dry run by default; never replaces an existing Tapir unless asked, and keeps a backup."},
+    # Setup too. Downloads the bundle and opens it; Claude Desktop does the installing.
+    {"name": "update_extension", "cat": "Discovery & model", "mode": "full", "mutates": True,
+     "desc": "Update this extension to the newest release through Claude Desktop's install dialog. Dry run by default; never downgrades."},
     # Schedules. No API command wraps these: Archicad exposes no schedule API at
     # any level, so they work on an exported Scheme Settings XML file instead.
     # That is also why none of them appears in WRAPPED_BY.

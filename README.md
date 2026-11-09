@@ -29,8 +29,11 @@ nothing else to install.
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-0.13.1-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-0.13.1-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-0.14.0-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-0.14.0-darwin-arm64.mcpb` |
+
+To update, ask Claude to **update the extension**: it downloads the newest
+release, checks it and opens Claude Desktop's install dialog.
 
 **Claude Code** (needs [uv](https://docs.astral.sh/uv/)):
 
