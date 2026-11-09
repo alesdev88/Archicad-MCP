@@ -18,3 +18,8 @@
   applies_to: { element_type: Wall }
   severity: warning
   tags: [ifc-delivery]
+
+- id: library-parts-loaded
+  type: library-parts-loaded
+  severity: error
+  tags: [delivery]

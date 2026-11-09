@@ -41,7 +41,7 @@ class Plan:
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
-                 unread=(), archicad=29, tapir_version="1.8.2", walls=None,
+                 unread=(), archicad=29, tapir_version="2.0.0", walls=None,
                  parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0,
                  wall_details=None):
         self.types = dict(types or {})
@@ -144,7 +144,7 @@ class Plan:
 
     def _creator(self, command):
         def create(p):
-            [items] = p.values()
+            [items] = [value for key, value in p.items() if key != "databaseId"]
             self.created.append((command, p))
             return {"elements": [
                 self.create_errors.get(i) or {"elementId": {"guid": f"new-{i}"}}
@@ -693,8 +693,7 @@ def test_object_without_height_falls_back_to_the_record_then_skips(tmp_path):
     assert item["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.45}
     [skip] = result["skipped"]
     assert skip["index"] == 1
-    assert skip["reason"] == ("give size.height in metres: Tapir 1.7.2 cannot read a "
-                              "part's own height")
+    assert "holds no height" in skip["reason"]
 
 
 def test_a_footprint_of_no_width_is_skipped_and_one_off_the_size_asked_warns(tmp_path):
@@ -885,8 +884,8 @@ def test_a_refused_leaves_write_keeps_the_door_and_reports_it(tmp_path, answer, 
 @pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
 def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
     # Live 22.10.2026 (Tapir 1.7.2): CreateDoors and CreateWindows set the tool to the
-    # part named and never set it back.
-    plan = Plan(types={W1: "Wall"}, library=["Door 26", "Door 27"])
+    # part named and never set it back. Still so in 1.8.0.
+    plan = Plan(types={W1: "Wall"}, library=["Door 26", "Door 27"], tapir_version="1.8.0")
     conn = plan.connection()
     items = [door(W1, libraryPartName="Door 26", sillHeight=0.0),
              door(W1, libraryPartName="Door 27", sillHeight=0.0)]
@@ -897,7 +896,7 @@ def test_doors_by_part_name_warn_that_the_tool_now_holds_it(element_type, tool):
     [warning] = [w for w in committed["warnings"] if "now holds" in w]
     assert f"the {tool} now holds 'Door 27'" in warning
     plain = create_elements(conn, element_type, [door(W1, sillHeight=0.0)])
-    assert plain["warnings"] == []
+    assert not [w for w in plain["warnings"] if "hold" in w]
 
 
 @pytest.mark.parametrize("element_type, tool, favorite_type",
@@ -908,7 +907,7 @@ def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_
     # parameter list Archicad will not open, and the tool keeps it, so later openings
     # from the tool, hand-placed ones too, have the same fault. The same part placed
     # from a favourite read and wrote all its parameters.
-    plan = Plan(types={W1: "Wall"}, library=["Door"],
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version="1.8.0",
                 favorites={favorite_type: ["Generic", "Internal"]})
     items = [door(W1, libraryPartName="Door", sillHeight=0.0),
              door(W1, favoriteName="Generic", sillHeight=0.0)]
@@ -922,8 +921,41 @@ def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_
     assert not [w for w in from_favorite["warnings"] if "neither read nor written" in w]
 
 
+@pytest.mark.parametrize("version", ["2.0.0", "2.1.0"])
+@pytest.mark.parametrize("element_type", ["door", "window"])
+def test_doors_by_part_name_do_not_warn_on_a_tapir_newer_than_1_8_0(element_type, version):
+    # Tapir's main after 1.8.0 sets the part on the created opening only: the tool's
+    # defaults are not changed and the opening's parameter list is its own.
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version=version,
+                favorites={"Door": ["Generic"], "Window": ["Generic"]})
+    result = create_elements(plan.connection(), element_type,
+                             [door(W1, libraryPartName="Door", sillHeight=0.0, width=0.9)])
+    assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
+def test_a_named_part_without_a_width_warns_that_it_takes_the_tool_width(element_type, tool):
+    # Live 09.11.2026 (AC 29, Tapir 2.0.0): Empty Door, whose own A is 1.2 m, came in at the
+    # Door tool's 0.9 m. The tool's own part stayed as it was.
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version="2.0.0",
+                favorites={"Door": ["Generic"], "Window": ["Generic"]})
+    result = create_elements(plan.connection(), element_type,
+                             [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    [warning] = result["warnings"]
+    assert "width" in warning and tool in warning and "not the part's own" in warning
+
+
+def test_doors_by_part_name_still_warn_on_a_tapir_of_unknown_version():
+    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={"Door": ["Generic"]})
+    conn = plan.connection()
+    del plan.core.tapir_responses["GetAddOnVersion"]
+    result = create_elements(conn, "door", [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    assert any("will hold" in w for w in result["warnings"])
+    assert any("neither read nor written" in w for w in result["warnings"])
+
+
 def test_the_parameter_warning_says_when_there_is_no_favourite_to_send():
-    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={})
+    plan = Plan(types={W1: "Wall"}, library=["Door"], favorites={}, tapir_version="1.8.0")
     result = create_elements(plan.connection(), "door",
                              [door(W1, libraryPartName="Door", sillHeight=0.0)])
     [warning] = [w for w in result["warnings"] if "neither read nor written" in w]
@@ -932,7 +964,7 @@ def test_the_parameter_warning_says_when_there_is_no_favourite_to_send():
 
 
 def test_a_placed_door_warns_about_the_tool_too(tmp_path):
-    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"])
+    plan = Plan(walls={W1: WALL_ALONG_X}, library=["Door"], tapir_version="1.8.0")
     result = create_elements(plan.connection(), "door", [placed_door(1.4, 2.0)],
                              records=store(tmp_path, door_record()))
     assert any("the Door tool will hold 'Door'" in w for w in result["warnings"])
@@ -1150,6 +1182,96 @@ def test_the_stair_schema_reply_says_the_baseline_is_the_left_edge():
     assert any("left edge" in note for note in result["notes"])
 
 
+def test_the_stair_schema_reply_names_the_fields_that_shape_a_turn():
+    notes = " ".join(create_elements(Plan().connection(), "stair", [])["notes"])
+    for field in ("baselinePosition", "baseLineEdges", "baseLineVertices", "treadDepth"):
+        assert field in notes
+    assert "no turn or winder setting" not in notes
+
+
+# The same U turning the other way, and one whose middle is shorter than a flight's width.
+U_TURNING_LEFT = [(7.3, 5.92), (5.615, 5.92), (5.615, 4.82), (7.3, 4.82)]
+TIGHT_U = [(0.0, 0.0), (-2.0, 0.0), (-2.0, 0.5), (0.0, 0.5)]
+
+
+@pytest.mark.parametrize("points, position, overlaps", [
+    # The centre-line U: y 4.82 to 5.68 against 5.06 to 5.92 with the flights inside it.
+    (U_AS_CENTRE_LINE, "Left", True),
+    # Outside it: y 3.96 to 4.82 against 5.92 to 6.78.
+    (U_AS_CENTRE_LINE, "Right", False),
+    # Straddling it: y 4.39 to 5.25 against 5.49 to 6.35.
+    (U_AS_CENTRE_LINE, "Center", False),
+    (U_TURNING_LEFT, "Left", False),
+    (U_TURNING_LEFT, "Right", True),
+    # y -0.43 to 0.43 against 0.07 to 0.93.
+    (TIGHT_U, "Center", True),
+])
+def test_the_overlap_check_follows_where_the_baseline_runs(points, position, overlaps):
+    item = {**stair(points), "baselinePosition": position}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert any("overlap" in w for w in result["warnings"]) is overlaps
+
+
+def test_a_baseline_offset_stops_the_stair_checks_as_its_side_is_not_known():
+    # Neither Tapir's schema nor the DevKit says which way a positive offset runs.
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((0.0, 9.0, 0.0, 9.0, 0.0, 3.0))
+    item = {**stair(U_AS_CENTRE_LINE), "baselinePosition": "Left", "baselineOffset": 0.2}
+    assert not [w for w in create_elements(conn, "stair", [item])["warnings"] if "overlap" in w]
+    assert "warnings" not in create_elements(conn, "stair", [item], dry_run=False)
+
+
+@pytest.mark.parametrize("extra", [
+    {"baselinePosition": "Left", "baselineOffset": 0},
+    # "Not used with Center", as Tapir's schema says.
+    {"baselinePosition": "Center", "baselineOffset": 0.2},
+])
+def test_a_baseline_offset_that_changes_nothing_keeps_the_checks(extra):
+    item = {**stair(TIGHT_U), **extra}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert any("overlap" in w for w in result["warnings"])
+
+
+@pytest.mark.parametrize("shape", [
+    {"baseLineEdges": [{"segmentType": "Flight"}, {"segmentType": "Landing"},
+                       {"segmentType": "Flight"}]},
+    {"baseLineVertices": [{"turnType": "None"}, {"turnType": "Landing"},
+                          {"turnType": "Landing"}, {"turnType": "None"}]},
+])
+def test_a_stair_that_gives_its_own_turns_is_not_warned_of_overlap(shape):
+    # The check assumes a flight on every segment, which these say is not so.
+    item = {**stair(U_AS_CENTRE_LINE), **shape}
+    result = create_elements(Plan().connection(), "stair", [item])
+    assert not [w for w in result["warnings"] if "overlap" in w]
+
+
+@pytest.mark.parametrize("position, box_y, overruns", [
+    # Baseline along y 0 going +x, flight 1 wide: on its left with Right...
+    ("Right", (0.0, 1.0), False),
+    # ...half a flight each side with Center...
+    ("Center", (-0.5, 0.5), False),
+    # ...and on its right with Left, so a box up to y 1.0 is 1.0 past the flight.
+    ("Left", (-1.0, 1.0), True),
+])
+def test_the_overrun_check_follows_where_the_baseline_runs(position, box_y, overruns):
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((0.0, 4.0, *box_y, 0.0, 3.0))
+    item = {**stair([(0.0, 0.0), (4.0, 0.0)], width=1.0), "baselinePosition": position}
+    result = create_elements(conn, "stair", [item], dry_run=False)
+    assert any("past" in w for w in result.get("warnings", [])) is overruns
+
+
+def test_the_overrun_warning_points_at_the_fields_that_shape_a_turn():
+    plan = Plan()
+    conn = plan.connection()
+    plan.core.tapir_responses["Get3DBoundingBoxes"] = boxes((5.19, 8.95, 4.39, 6.4, -0.15, 2.8))
+    result = create_elements(conn, "stair", [stair(U_AS_OUTER_EDGE)], dry_run=False)
+    [warning] = [w for w in result["warnings"] if "past" in w]
+    assert "baseLineEdges" in warning and "no turn or winder setting" not in warning
+
+
 # Sides. Live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
 # clockwise with referenceLineLocation Outside stood outside the outline; doors with
 # oSide false swung to the right of their wall's direction, and flipping oSide also
@@ -1215,3 +1337,268 @@ def test_an_element_id_on_create_waits_for_tapir_1_7_3():
     assert "set_element_data" in old["skipped"][0]["reason"]
     new = create_elements(Plan(tapir_version="1.7.3").connection(), "wall", [item])
     assert new["ready"] == 1 and new["payload"]["wallsData"][0]["id"] == "W-01"
+
+
+# The seven create commands of Tapir's main after 1.8.0, and `database`, which the 2D
+# commands take there: its elements go into that database, not the active window's.
+
+R1 = "00000000-0000-4000-8000-0000000000c1"
+SKYLIGHT = {"ownerId": {"guid": R1}, "anchorPosition": {"x": 1.0, "y": 1.0}}
+TAKE_OFF = {"segmentId": {"guid": GONE}, "distanceFromBeginning": 0.5}
+MARKER = {"clipPolygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]}
+TEXT = {"coordinate": {"x": 0, "y": 0, "z": 0}, "text": "A"}
+DB = {"guid": "00000000-0000-4000-8000-0000000000d1"}
+
+
+@pytest.mark.parametrize("owner", ["Roof", "Shell"])
+def test_a_skylight_goes_in_a_roof_or_a_shell(owner):
+    result = create_elements(Plan(types={R1: owner}).connection(), "skylight", [SKYLIGHT])
+    assert result["ready"] == 1 and result["skipped"] == []
+
+
+def test_a_skylight_in_a_wall_is_skipped_with_the_reason():
+    result = create_elements(Plan(types={R1: "Wall"}).connection(), "skylight", [SKYLIGHT])
+    assert result["ready"] == 0
+    assert "goes in a Roof or Shell" in result["skipped"][0]["reason"]
+
+
+def test_the_skylight_schema_reply_says_its_surface_placement_is_unverified():
+    notes = " ".join(create_elements(Plan().connection(), "skylight", [])["notes"])
+    assert "surface" in notes and "not" in notes
+
+
+@pytest.mark.parametrize("element_type, item, favorite_type", [
+    ("shell", {"shellClass": "Extruded", "profile": {"coordinates": [{"x": 0, "y": 0},
+                                                                     {"x": 1, "y": 0}]}},
+     "Shell"),
+    ("skylight", SKYLIGHT, "Skylight"),
+    ("railing_polyline", {"polylineCoordinates": [{"x": 0, "y": 0, "z": 0},
+                                                  {"x": 1, "y": 0, "z": 0}]}, "Railing"),
+])
+def test_the_new_types_check_their_favourites(element_type, item, favorite_type):
+    plan = Plan(types={R1: "Roof"}, favorites={favorite_type: ["Known"]})
+    conn = plan.connection()
+    result = create_elements(conn, element_type, [{**item, "favoriteName": "Known"},
+                                                  {**item, "favoriteName": "Knwon"}])
+    assert [s["index"] for s in result["skipped"]] == [1]
+    assert "closest: Known" in result["skipped"][0]["reason"]
+
+
+@pytest.mark.parametrize("element_type, item", [
+    ("mep_flexible_segment", {"domain": "Piping"}),
+    ("mep_take_off", TAKE_OFF),
+])
+def test_the_new_mep_types_need_archicad_28(element_type, item):
+    plan = Plan(archicad=27)
+    result = create_elements(plan.connection(), element_type, [item], dry_run=False)
+    assert "Archicad 28" in result["error"]
+    assert plan.created == []
+
+
+def test_a_take_off_is_sent_for_archicad_to_judge_its_segment():
+    # A routing segment does not read as an element here, like an electrical circuit:
+    # the other-database guard would refuse every one.
+    plan = Plan()
+    result = create_elements(plan.connection(), "mep_take_off", [TAKE_OFF], dry_run=False)
+    assert result["created"] == 1
+    assert plan.sent("CreateMEPTakeOffs") == [{"takeOffsData": [TAKE_OFF]}]
+
+
+@pytest.mark.parametrize("element_type, command, key", [
+    ("detail_marker", "CreateDetailMarkers", "detailMarkersData"),
+    ("worksheet_marker", "CreateWorksheetMarkers", "worksheetMarkersData"),
+])
+@pytest.mark.parametrize("window", ["FloorPlan", "Section"])
+def test_a_marker_is_placed_from_any_drawing_window(element_type, command, key, window):
+    plan = Plan(window=window)
+    conn = plan.connection()
+    assert create_elements(conn, element_type, [MARKER])["warnings"] == []
+    create_elements(conn, element_type, [MARKER], dry_run=False)
+    assert plan.sent(command) == [{key: [MARKER]}]
+
+
+def test_an_elevation_is_placed_from_the_floor_plan():
+    item = {"startCoordinate": {"x": 0, "y": 0}, "endCoordinate": {"x": 5, "y": 0}}
+    plan = Plan()
+    conn = plan.connection()
+    assert create_elements(conn, "elevation", [item])["warnings"] == []
+    create_elements(conn, "elevation", [item], dry_run=False)
+    assert plan.sent("CreateElevations") == [{"elevationsData": [item]}]
+    result = create_elements(Plan(window="Section").connection(), "elevation", [item])
+    assert any("floor plan" in w for w in result["warnings"])
+
+
+def test_a_shell_is_placed_from_the_floor_plan():
+    item = {"shellClass": "Extruded", "profile": {"coordinates": [{"x": 0, "y": 0},
+                                                                  {"x": 1, "y": 0}]}}
+    result = create_elements(Plan(window="Section").connection(), "shell", [item])
+    assert any("floor plan or the 3D window" in w for w in result["warnings"])
+
+
+def test_database_goes_out_beside_the_items():
+    plan = Plan()
+    conn = plan.connection()
+    dry = create_elements(conn, "text", [TEXT], database=DB)
+    assert dry["payload"] == {"textsData": [TEXT], "databaseId": DB}
+    assert plan.created == []
+    create_elements(conn, "text", [TEXT], dry_run=False, database=DB)
+    assert plan.sent("CreateTexts") == [{"textsData": [TEXT], "databaseId": DB}]
+
+
+def test_without_database_nothing_says_one():
+    plan = Plan()
+    create_elements(plan.connection(), "text", [TEXT], dry_run=False)
+    assert plan.sent("CreateTexts") == [{"textsData": [TEXT]}]
+
+
+def test_database_is_refused_for_a_type_that_cannot_take_it():
+    plan = Plan()
+    result = create_elements(plan.connection(), "wall", [WALL], dry_run=False, database=DB)
+    assert "'wall'" in result["error"] and "text" in result["error"]
+    assert plan.created == []
+
+
+@pytest.mark.parametrize("version", ["1.8.0", None])
+def test_database_is_refused_on_a_tapir_not_known_to_take_it(version):
+    plan = Plan(tapir_version=version)
+    conn = plan.connection()
+    if version is None:
+        del plan.core.tapir_responses["GetAddOnVersion"]
+    result = create_elements(conn, "text", [TEXT], dry_run=False, database=DB)
+    assert "newer than 1.8.0" in result["error"]
+    assert plan.created == []
+
+
+@pytest.mark.parametrize("bad", [{"guid": "not-a-guid"}, {}, {"guid": DB["guid"], "x": 1}, "text"])
+def test_a_database_that_is_no_database_id_is_refused(bad):
+    plan = Plan()
+    result = create_elements(plan.connection(), "text", [TEXT], dry_run=False, database=bad)
+    assert "database" in result["error"]
+    assert plan.created == []
+
+
+LABEL = {"begCoordinate": {"x": 0, "y": 0}, "parentElementId": {"guid": W2}}
+
+
+def test_a_label_for_another_database_keeps_its_parent_unchecked_and_says_so():
+    # The guard knows only the active window's elements, so it would refuse this parent.
+    plan = Plan(types={W1: "Wall", W2: "Wall"}, elsewhere={W2})
+    conn = plan.connection()
+    without = create_elements(conn, "label", [LABEL])
+    assert without["ready"] == 0
+    result = create_elements(conn, "label", [LABEL], database=DB)
+    assert result["ready"] == 1
+    assert any("not checked" in w for w in result["warnings"])
+
+
+def test_a_text_for_another_database_has_no_host_to_warn_about():
+    assert create_elements(Plan().connection(), "text", [TEXT], database=DB)["warnings"] == []
+
+
+# ---------- a placement without a size: the part's own (Tapir's main after 1.8.0) ----------
+
+OWN = {"a": 1.6, "b": 2.0, "height": 0.6}
+ON_ORIGIN = {"center": {"x": 0.0, "y": 0.0}, "head": {"x": 0.0, "y": 1.0}}
+
+
+def placed_bed(**placement) -> dict:
+    return {"libraryPartName": "Bed Double 01", "placement": {**ON_ORIGIN, **placement}}
+
+
+def _bed_result(tmp_path, record, item, **plan):
+    conn = Plan(library=["Bed Double 01"], **plan).connection()
+    return create_elements(conn, "object", [item], records=store(tmp_path, record))
+
+
+def test_a_placement_without_size_takes_the_parts_own(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size=OWN), placed_bed())
+    [sent] = result["payload"]["objectsData"]
+    assert sent["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    # The footprint's middle lies 1.0 along +y from the insertion point.
+    assert sent["coordinates"]["x"] == pytest.approx(0.0)
+    assert sent["coordinates"]["y"] == pytest.approx(-1.0)
+    assert result["placements"][0]["derived"]["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    assert result["skipped"] == []
+
+
+def test_a_placement_without_size_follows_a_head_along_x(tmp_path):
+    result = _bed_result(tmp_path, bed_record(head="+x", own_size=OWN),
+                         placed_bed(head={"x": 1.0, "y": 0.0}))
+    [sent] = result["payload"]["objectsData"]
+    assert sent["dimensions"] == {"x": 1.6, "y": 2.0, "z": 0.6}
+    assert sent["angle"] == pytest.approx(0.0)
+
+
+def test_a_placement_with_size_sends_what_it_always_sent(tmp_path):
+    size = {"length": 2.1, "width": 1.5, "height": 0.5}
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    without = _bed_result(tmp_path / "a", bed_record(), placed_bed(size=size))
+    with_own = _bed_result(tmp_path / "b", bed_record(own_size=OWN), placed_bed(size=size))
+    assert with_own["payload"] == without["payload"]
+
+
+def test_a_placement_without_size_or_own_size_is_skipped(tmp_path):
+    result = _bed_result(tmp_path, bed_record(), placed_bed())
+    [skipped] = result["skipped"]
+    assert "size" in skipped["reason"] and "learn the part again" in skipped["reason"]
+
+
+@pytest.mark.parametrize("size_height, recorded, own_height, expected", [
+    (0.9, 0.7, 0.6, 0.9), (None, 0.7, 0.6, 0.7), (None, None, 0.6, 0.6)])
+def test_the_height_comes_from_the_size_then_the_record_then_the_part(
+        tmp_path, size_height, recorded, own_height, expected):
+    size = {"length": 2.0, "width": 1.6}
+    if size_height is not None:
+        size["height"] = size_height
+    record = bed_record(height=recorded, own_size={**OWN, "height": own_height})
+    result = _bed_result(tmp_path, record, placed_bed(size=size))
+    assert result["payload"]["objectsData"][0]["dimensions"]["z"] == expected
+
+
+def test_with_no_height_anywhere_the_item_is_skipped_without_blaming_tapir(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size={**OWN, "height": None}), placed_bed())
+    [skipped] = result["skipped"]
+    assert "holds no height" in skipped["reason"] and "1.7.2" not in skipped["reason"]
+
+
+def test_a_size_with_only_a_height_is_refused(tmp_path):
+    result = _bed_result(tmp_path, bed_record(own_size=OWN), placed_bed(size={"height": 1.0}))
+    [skipped] = result["skipped"]
+    assert "length" in skipped["reason"]
+
+
+def _opening_result(tmp_path, element_type, record, item):
+    conn = Plan(walls={W1: WALL_ALONG_X}, library=["Door"]).connection()
+    return create_elements(conn, element_type, [item], records=store(tmp_path, record))
+
+
+@pytest.mark.parametrize("element_type, key", [("door", "doorsData"), ("window", "windowsData")])
+def test_an_openings_width_and_height_come_from_the_part(tmp_path, element_type, key):
+    record = door_record(kind=element_type, own_size={"a": 0.9, "b": 2.1, "height": None})
+    result = _opening_result(tmp_path, element_type, record, placed_door(1.4, 2.0))
+    [sent] = result["payload"][key]
+    assert (sent["width"], sent["height"]) == (0.9, 2.1)
+    derived = result["placements"][0]["derived"]
+    assert (derived["width"], derived["height"]) == (0.9, 2.1)
+
+
+def test_an_openings_own_width_and_height_stay(tmp_path):
+    record = door_record(own_size={"a": 0.9, "b": 2.1, "height": None})
+    item = {**placed_door(1.4, 2.0), "width": 1.0}
+    result = _opening_result(tmp_path, "door", record, item)
+    [sent] = result["payload"]["doorsData"]
+    assert (sent["width"], sent["height"]) == (1.0, 2.1)
+
+
+def test_an_opening_without_own_size_leaves_them_out(tmp_path):
+    result = _opening_result(tmp_path, "door", door_record(), placed_door(1.4, 2.0))
+    [sent] = result["payload"]["doorsData"]
+    assert "width" not in sent and "height" not in sent
+
+
+def test_an_openings_sill_is_not_filled(tmp_path):
+    record = door_record(own_size={"a": 0.9, "b": 2.1, "height": None})
+    item = {k: v for k, v in placed_door(1.4, 2.0).items() if k != "sillHeight"}
+    result = _opening_result(tmp_path, "door", record, item)
+    assert "sillHeight" not in result["payload"]["doorsData"][0]

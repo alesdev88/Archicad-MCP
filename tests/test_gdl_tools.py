@@ -4,6 +4,7 @@ import base64
 import json
 
 import pytest
+from multiconn_archicad.errors import TapirCommandError
 
 from archicad_mcp.core import mutate as _mutate
 from archicad_mcp.gdl import deploy as deploy_mod
@@ -486,6 +487,9 @@ def test_build_handles_assets_json_as_directory(ws, monkeypatch):
     assert result["gsm"] == "Cube.gsm"
 
 
+SCRIPT_BOX = {"xMin": 0.0, "yMin": 0.0, "zMin": 0.0, "xMax": 0.5, "yMax": 0.5, "zMax": 0.9}
+
+
 class FakeConn:
     """Places ABC-123 and, unless `delete_works` is off, deletes it again.
 
@@ -495,19 +499,43 @@ class FakeConn:
     """
     port = 19723
 
-    def __init__(self, delete_works=True):
+    def __init__(self, delete_works=True, archicad=29, version="1.8.2", missing=(),
+                 script=None, script_error=None, libraries=(), add_result=None):
         self.calls = []
         self.delete_works = delete_works
         self.placed = set()
+        self.archicad = archicad
+        self.version = version
+        self.missing = set(missing)
+        self.script = script if script is not None else {
+            "success": True, "elementCount": 12, "boundingBox3D": SCRIPT_BOX}
+        self.script_error = script_error
+        self.libraries = list(libraries)
+        self.add_result = add_result if add_result is not None else {"success": True}
 
     def tapir_available(self):
         return True
 
     def tapir_command_available(self, command):
-        return True
+        return command not in self.missing
+
+    def archicad_version(self):
+        return self.archicad
 
     def tapir(self, command, params=None):
         self.calls.append((command, params))
+        if command == "GetAddOnVersion":
+            if self.version is None:
+                raise TapirCommandError(message="no version", code=None)
+            return {"version": self.version}
+        if command == "InterpretGDLScript3D":
+            if self.script_error is not None:
+                raise TapirCommandError(message=self.script_error, code=-2130312312)
+            return self.script
+        if command == "GetLibraries":
+            return {"libraries": self.libraries}
+        if command == "ModifyLibraryList":
+            return {"addResults": [self.add_result], "removeResults": []}
         if command == "GetElementPreviewImage":
             return {"previewImage": base64.b64encode(PNG).decode()}
         if command == "CreateObjects":
@@ -552,7 +580,7 @@ def test_deploy_reloads_places_renders_and_deletes(ws):
                                             keep=False, embed=False)
     # the window is read before the database check (GetContainingDatabases answers
     # from the floor plan only); this fake names none, so the listing decides
-    assert _commands(conn) == ["ReloadLibraries", "CreateObjects",
+    assert _commands(conn) == ["ReloadLibraries", "InterpretGDLScript3D", "CreateObjects",
                                "GetElementPreviewImage", "FilterElements",
                                "GetCurrentWindowType", "GetAllElements", "DeleteElements",
                                "GetDetailsOfElements"]
@@ -599,11 +627,11 @@ def test_deploy_embeds_when_asked(ws):
 
 
 def test_deploy_reports_a_failed_gsm_embed_instead_of_rendering_the_stale_one(ws):
-    """Tapir cannot overwrite an existing embedded file. A second embed=true
+    """Without replace_embedded a name already embedded stays. A second embed=true
     deploy of the same name must fail loudly, not silently reload/place/render
     the object that is already embedded under a success payload."""
     conn = FailingEmbedConn()
-    with pytest.raises(gdl_tools.ToolchainError, match="embed"):
+    with pytest.raises(gdl_tools.ToolchainError, match="replace_embedded"):
         gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
                                  keep=False, embed=True)
     # Must not continue on to ReloadLibraries/CreateObjects/GetElementPreviewImage.
@@ -625,6 +653,187 @@ def test_deploy_refuses_a_name_outside_the_workspace(ws):
 
 
 @pytest.mark.asyncio
+def _deploy(ws, conn, **options):
+    return gdl_tools._deploy_object(ws, conn, "Chair", place=(0.0, 0.0),
+                                    keep=options.pop("keep", False),
+                                    embed=options.pop("embed", False), **options)
+
+
+# gdl_check: InterpretGDLScript3D (Tapir's main after 1.8.0) runs the part's master and 3D
+# scripts with its default parameters. The transport raises on a top-level error, which
+# is how an interpreter that stopped arrives.
+
+def test_deploy_reports_what_the_script_made(ws):
+    conn = FakeConn()
+    payload, _ = _deploy(ws, conn)
+    assert payload["gdl_check"] == {"ran": True, "element_count": 12, "bounding_box": SCRIPT_BOX}
+    assert "warnings" not in payload
+    names = _commands(conn)
+    assert names.index("ReloadLibraries") < names.index("InterpretGDLScript3D") \
+        < names.index("CreateObjects")
+    assert dict(conn.calls)["InterpretGDLScript3D"] == {"libraryPartName": "Chair"}
+
+
+def test_deploy_warns_when_the_script_makes_nothing_and_still_renders(ws):
+    conn = FakeConn(script={"success": True, "elementCount": 0})
+    payload, png = _deploy(ws, conn)
+    assert payload["gdl_check"] == {"ran": True, "element_count": 0}
+    assert any("no 3D" in w for w in payload["warnings"])
+    assert png == PNG
+
+
+def test_deploy_warns_when_the_script_stops_and_still_renders(ws):
+    conn = FakeConn(script_error="The GDL interpreter stopped with an error.")
+    payload, png = _deploy(ws, conn)
+    assert payload["gdl_check"] == {"ran": False,
+                                    "message": "The GDL interpreter stopped with an error."}
+    assert any("did not run" in w for w in payload["warnings"])
+    assert png == PNG
+
+
+def test_deploy_leaves_the_check_out_on_a_tapir_without_it(ws):
+    conn = FakeConn(missing=["InterpretGDLScript3D"])
+    payload, _ = _deploy(ws, conn)
+    assert "gdl_check" not in payload and "warnings" not in payload
+    assert "InterpretGDLScript3D" not in _commands(conn)
+
+
+# link_workspace: ModifyLibraryList (Tapir's main after 1.8.0, Archicad 28).
+
+def test_link_workspace_adds_the_folder_before_the_reload(ws):
+    conn = FakeConn()
+    payload, _ = _deploy(ws, conn, link_workspace=True)
+    assert dict(conn.calls)["ModifyLibraryList"] == {"add": [{"path": str(ws.root)}]}
+    names = _commands(conn)
+    assert names.index("ModifyLibraryList") < names.index("ReloadLibraries")
+    assert payload["workspace_library"] == {"path": str(ws.root), "added": True}
+
+
+@pytest.mark.parametrize("suffix", ["", "/"])
+def test_link_workspace_leaves_a_folder_already_loaded(ws, suffix):
+    conn = FakeConn(libraries=[{"name": "Other", "type": "LocalLibrary", "path": "/somewhere"},
+                               {"name": "GDL", "type": "LocalLibrary",
+                                "path": f"{ws.root}{suffix}"}])
+    payload, _ = _deploy(ws, conn, link_workspace=True)
+    assert "ModifyLibraryList" not in _commands(conn)
+    assert payload["workspace_library"] == {"path": str(ws.root), "added": False}
+
+
+def test_a_library_without_a_path_does_not_stop_the_link(ws):
+    conn = FakeConn(libraries=[{"name": "BIMcloud", "type": "ServerLibrary", "path": ""}])
+    payload, _ = _deploy(ws, conn, link_workspace=True)
+    assert payload["workspace_library"]["added"] is True
+
+
+def test_the_library_list_is_left_alone_by_default(ws):
+    conn = FakeConn()
+    payload, _ = _deploy(ws, conn)
+    assert not {"GetLibraries", "ModifyLibraryList"} & set(_commands(conn))
+    assert "workspace_library" not in payload
+
+
+@pytest.mark.parametrize("options, match", [
+    ({"archicad": 27}, "Archicad 28"),
+    ({"missing": ["ModifyLibraryList"]}, "ModifyLibraryList"),
+])
+def test_link_workspace_is_refused_before_anything_is_sent(ws, options, match):
+    conn = FakeConn(**options)
+    with pytest.raises(gdl_tools.ToolchainError, match=match):
+        _deploy(ws, conn, link_workspace=True)
+    assert not {"ModifyLibraryList", "ReloadLibraries", "CreateObjects"} & set(_commands(conn))
+
+
+def test_a_refused_link_stops_the_deploy_with_archicads_reason(ws):
+    conn = FakeConn(add_result={"success": False, "error": {
+        "code": 1, "message": "Failed to add the library on the path"}})
+    with pytest.raises(gdl_tools.ToolchainError, match="Failed to add the library"):
+        _deploy(ws, conn, link_workspace=True)
+    assert "CreateObjects" not in _commands(conn)
+
+
+# replace_embedded: overwriteExisting, in the bundled definitions from 1.7.1, Archicad 27.
+
+def _embedded(conn):
+    return [params for command, params in conn.calls if command == "AddFilesToEmbeddedLibrary"]
+
+
+def test_replace_embedded_replaces_the_part_and_not_its_textures(ws):
+    # A texture's name carries a hash of its content, so one already there is the same file.
+    conn = FakeConn()
+    _deploy(ws, conn, embed=True, replace_embedded=True)
+    part, textures = _embedded(conn)
+    assert part["overwriteExisting"] is True
+    assert "overwriteExisting" not in textures
+
+
+def test_an_embed_does_not_replace_unless_told_to(ws):
+    conn = FakeConn()
+    _deploy(ws, conn, embed=True)
+    assert "overwriteExisting" not in _embedded(conn)[0]
+
+
+def test_replace_embedded_needs_embed(ws):
+    conn = FakeConn()
+    with pytest.raises(gdl_tools.ToolchainError, match="embed=true"):
+        _deploy(ws, conn, replace_embedded=True)
+    assert conn.calls == []
+
+
+@pytest.mark.parametrize("options, match", [
+    ({"archicad": 26}, "Archicad 27"),
+    ({"version": "1.7.0"}, "1.7.1"),
+    ({"version": None}, "1.7.1"),
+])
+def test_replace_embedded_is_refused_before_anything_is_sent(ws, options, match):
+    conn = FakeConn(**options)
+    with pytest.raises(gdl_tools.ToolchainError, match=match):
+        _deploy(ws, conn, embed=True, replace_embedded=True)
+    assert _embedded(conn) == []
+
+
+@pytest.mark.parametrize("options", [{"version": "1.7.1"}, {"version": "2.0.0"}])
+def test_replace_embedded_goes_out_from_tapir_1_7_1(ws, options):
+    conn = FakeConn(**options)
+    _deploy(ws, conn, embed=True, replace_embedded=True)
+    assert _embedded(conn)[0]["overwriteExisting"] is True
+
+
+def test_a_refused_replace_stops_the_deploy_with_archicads_reason(ws):
+    class Refuses(FakeConn):
+        def tapir(self, command, params=None):
+            if command == "AddFilesToEmbeddedLibrary":
+                self.calls.append((command, params))
+                return {"executionResults": [{"success": False, "error": {
+                    "code": 1, "message": "Failed to delete the existing embedded item"}}]}
+            return super().tapir(command, params)
+
+    conn = Refuses()
+    with pytest.raises(gdl_tools.ToolchainError, match="Failed to delete the existing"):
+        _deploy(ws, conn, embed=True, replace_embedded=True)
+    assert "ReloadLibraries" not in _commands(conn)
+
+
+async def test_deploy_gdl_object_takes_the_new_arguments_through_the_client(ws):
+    import fastmcp
+
+    mcp = fastmcp.FastMCP("test", "1.0.0")
+    conn = FakeConn()
+    original = gdl_tools.get_connection
+    try:
+        gdl_tools.get_connection = lambda port: conn
+        gdl_tools.register(mcp, 8080, ws,
+                           lambda title, read_only, destructive: {"title": title},
+                           lambda func: func)
+        async with fastmcp.Client(mcp) as client:
+            await client.call_tool("deploy_gdl_object", {
+                "name": "Chair", "embed": True, "replace_embedded": True,
+                "link_workspace": True})
+    finally:
+        gdl_tools.get_connection = original
+    assert "ModifyLibraryList" in _commands(conn)
+    assert _embedded(conn)[0]["overwriteExisting"] is True
+
+
 async def test_deploy_gdl_object_through_client(ws):
     """Integration test: verify the tool works end-to-end through FastMCP client.
 

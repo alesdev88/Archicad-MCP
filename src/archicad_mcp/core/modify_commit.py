@@ -66,7 +66,7 @@ def _setdetails_item(p: Planned) -> dict:
 def _modify_item(p: Planned) -> dict:
     if p.command == "ModifyMeshes":
         return {"elementId": {"guid": p.guid}, "meshData": p.item}
-    return {"elementId": {"guid": p.guid}, **p.item}
+    return {"elementId": {"guid": p.guid}, **mf.wire_item(p.command, p.item)}
 
 
 def _command_of(p: Planned, name: str) -> str | None:

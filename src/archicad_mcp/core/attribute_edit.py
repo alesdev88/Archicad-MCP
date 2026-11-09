@@ -1,6 +1,6 @@
-"""edit_attributes: create, modify and delete attributes, and set their
-property values, over Tapir's Create* attribute commands, DeleteAttributes and
-Get/SetPropertyValuesOfAttributes.
+"""edit_attributes: create, modify, delete and replace attributes, and set their
+property values, over Tapir's Create* attribute commands, DeleteAttributes,
+DeleteAndReplaceAttributes and Get/SetPropertyValuesOfAttributes.
 
 Tapir's Create* commands create OR overwrite, and an overwrite keeps only what
 Tapir happens to keep (docs/superpowers/specs/2026-10-19-edit-attributes-design.md,
@@ -9,6 +9,11 @@ overwriteExisting off and can never replace anything, a `modify` names the
 attribute it changes and is sent with what that type's overwrite would
 otherwise lose, and values Tapir would silently replace with a default are
 refused here instead.
+
+A `replace` (Tapir's main after 1.8.0, read from its source, not tried live yet)
+rewrites every reference to the attribute and deletes it: one call changes the whole
+project. Its dry run is Tapir's own, which lists what uses it. The read-back goes by
+GUID, as Tapir keeps a copy with the old name and a new GUID of what it cannot rewrite.
 """
 from __future__ import annotations
 
@@ -36,10 +41,13 @@ from archicad_mcp.core.attributes import (
     read_records,
 )
 from archicad_mcp.core.definition_edit import Definitions, group_by_error
-from archicad_mcp.core.element_data import error_fields
+from archicad_mcp.core.element_data import cap_list, error_fields
 
 TOOL = "edit_attributes"
-ACTIONS = ("create", "modify", "delete")
+ACTIONS = ("create", "modify", "delete", "replace")
+REPLACE_COMMAND = "DeleteAndReplaceAttributes"
+REPLACEABLE = ("Fill", "Line", "Surface", "BuildingMaterial")
+REPLACE_ARCHICAD = 27
 PENDING = "00000000-0000-0000-0000-000000000000"
 PROBLEMS_PER_CHANGE = 3
 DETAIL_CHUNK = 500
@@ -61,6 +69,10 @@ _PROPERTY_COMMANDS = ("GetPropertyValuesOfAttributes", "SetPropertyValuesOfAttri
 
 _DELETE_WARNING = ("elements and attributes using it keep pointing at a missing "
                    "attribute, and a delete cannot be undone")
+_REPLACE_HINT = ("; 'replace' rewrites them to another attribute first")
+_REPLACE_WARNING = ("this changes the whole project in one undo step: elements on hidden or "
+                    "locked layers change too (Tapir shows and unlocks those layers and puts "
+                    "them back), and indices typed into GDL scripts are not found")
 _LAYER_DELETE_WARNING = ("deleting a layer deletes every element on it, in every view: "
                          "only the floor plan was counted, so elements on it in sections, "
                          "elevations, interior elevations, details, worksheets and "
@@ -103,7 +115,7 @@ def field_lists() -> dict:
         types[attr.name] = {"fields": _settable(attr), "name_fields": names,
                             "refused_in_modify": dict(attr.refused_in_modify),
                             "create_requires": ["name", *attr.create_requires]}
-    return {"types": types,
+    return {"types": types, "replaceable": list(REPLACEABLE),
             "note": "Fields use Tapir's names and units (metres, radians, pen numbers, "
                     "colours 0 to 1). name_fields take another attribute's name. "
                     "list_attributes(details=true) shows current values in this form."}
@@ -130,6 +142,9 @@ class Plan:
     set_name: str | None = None
     advisory_set: bool = False                       # a missing reservation only warns
     send_fields: bool = False
+    replacement: str | None = None                   # a replace: what takes its place
+    replacement_guid: str | None = None
+    uses: dict | None = None                         # a replace: what its dry run listed
 
     def head(self) -> dict:
         return {"action": self.action, "type": self.type_name, "target": self.target}
@@ -138,6 +153,10 @@ class Plan:
         out = self.head()
         if self.action == "create" and not self.errors:
             out["fields"] = self.asked
+        if self.action == "replace" and self.replacement is not None:
+            out["with"] = self.replacement
+        if self.uses is not None:
+            out["uses"] = self.uses
         if self.changes:
             out["changes"] = self.changes
         if self.warnings:
@@ -261,8 +280,8 @@ def _plan(ctx: _Context, change, position: int) -> Plan:
     label = str(change.get("name") or change.get("attribute") or f"change {position}")
     if len(actions) != 1:
         return Plan("?", None, label, errors=[
-            "give exactly one of 'create', 'modify' or 'delete', whose value is the "
-            "attribute type"])
+            "give exactly one of 'create', 'modify', 'delete' or 'replace', whose value is "
+            "the attribute type"])
     action = actions[0]
     attr = lookup_type(change[action])
     if attr is None:
@@ -273,6 +292,8 @@ def _plan(ctx: _Context, change, position: int) -> Plan:
         _plan_create(ctx, plan, change)
     elif action == "modify":
         _plan_modify(ctx, plan, change)
+    elif action == "replace":
+        _plan_replace(ctx, plan, change)
     else:
         _plan_delete(ctx, plan, change)
     return plan
@@ -653,8 +674,123 @@ def _plan_delete(ctx: _Context, plan: Plan, change: dict) -> None:
                 f"they could be on layer '{plan.target}'; nothing is deleted")
             return
         plan.warnings.append(_LAYER_DELETE_WARNING)
+    elif attr.name in REPLACEABLE and not ctx.refusal(REPLACE_COMMAND):
+        plan.warnings.append(_DELETE_WARNING + _REPLACE_HINT)
     else:
         plan.warnings.append(_DELETE_WARNING)
+
+
+# ---------- replace ----------
+
+def _plan_replace(ctx: _Context, plan: Plan, change: dict) -> None:
+    attr = plan.attr
+    extra = sorted(set(change) - {"replace", "attribute", "with"})
+    if extra:
+        plan.errors.append(f"a replace takes only 'replace', 'attribute' and 'with', not {extra}")
+        return
+    if attr.name not in REPLACEABLE:
+        plan.errors.append(f"a {attr.name} cannot be replaced: Tapir replaces only Fill, Line, "
+                           "Surface and BuildingMaterial")
+        return
+    for key, what in (("attribute", "the name or GUID of the one to delete"),
+                      ("with", "the name or GUID of the one that takes its place")):
+        if key not in change:
+            plan.errors.append(f"a replace needs '{key}': {what}")
+            return
+    header, err = _resolve_attribute(ctx, attr, change["attribute"])
+    if err:
+        plan.errors.append(err)
+        return
+    plan.target, plan.guid, plan.index = header["name"], header["guid"], header["index"]
+    if not _need(ctx, plan, REPLACE_COMMAND):
+        return
+    archicad = ctx.conn.archicad_version()
+    if archicad and archicad < REPLACE_ARCHICAD:
+        plan.errors.append(f"a replace needs Archicad {REPLACE_ARCHICAD} or later, and this is "
+                           f"Archicad {archicad}")
+        return
+    other, err = _resolve_attribute(ctx, attr, change["with"])
+    if err:
+        plan.errors.append(err)
+        return
+    plan.replacement, plan.replacement_guid = other["name"], other["guid"]
+    if other["guid"] == plan.guid:
+        plan.errors.append(f"{attr.name} '{plan.target}' cannot be replaced by itself")
+        return
+    record = None
+    if attr.name == "Fill" and _need(ctx, plan, attr.get):
+        record = ctx.record(attr, plan.guid)
+    builtin = _builtin_reason(attr, plan.index, record, plan.target)
+    if builtin:
+        plan.errors.append(builtin)
+        return
+    plan.warnings.append(_REPLACE_WARNING)
+
+
+def _no_replace_chains(plans: list[Plan]) -> None:
+    """A replacement leaving in the same call would leave the references pointing at it."""
+    leaving = {(p.type_name, p.guid): p for p in plans
+               if not p.errors and p.action in ("delete", "replace")}
+    for p in plans:
+        other = leaving.get((p.type_name, p.replacement_guid))
+        if p.action == "replace" and not p.errors and other is not None:
+            p.errors.append(f"'{other.target}' is {other.action}d in this call, so it cannot "
+                            f"take the place of '{p.target}'")
+
+
+def replace_items(batch: list[Plan]) -> list[dict]:
+    return [{"attributeId": {"guid": p.guid},
+             "replacementAttributeId": {"guid": p.replacement_guid}} for p in batch]
+
+
+def replace_answered(answer) -> bool:
+    return isinstance(answer, dict) and "attributeId" in answer and "error" not in answer
+
+
+def replace_uses(answer: dict) -> dict:
+    """What Tapir listed as using the attribute, by count where a list can be long."""
+    guids = [e["elementId"]["guid"] for e in answer.get("elements", [])]
+    shown, rest = cap_list(guids)
+    uses = {"elements": len(guids), "element_guids": shown,
+            "hotlink_elements": len(answer.get("hotlinkElements", [])),
+            "tool_defaults": answer.get("toolDefaults", []),
+            "favorites": answer.get("favorites", []),
+            "attributes": [f"{a.get('attributeType')}/{a.get('name')}"
+                           for a in answer.get("attributes", [])],
+            "override_rules": answer.get("overrideRules", [])}
+    if rest:
+        uses["elements_not_shown"] = rest
+    return uses
+
+
+def _scan_replacements(ctx: _Context, plans: list[Plan]) -> None:
+    """Tapir's own dry run of each planned replace, one call per type. It changes nothing."""
+    for type_name in REPLACEABLE:
+        batch = [p for p in plans
+                 if p.action == "replace" and p.type_name == type_name and not p.errors]
+        if not batch:
+            continue
+        try:
+            answers = ctx.conn.tapir(REPLACE_COMMAND, {
+                "attributeType": type_name, "attributes": replace_items(batch),
+                "dryRun": True}).get("attributes", [])
+        except (APIErrorBase, ArchicadUnavailableError) as exc:
+            message = error_fields(exc)["message"]
+            for p in batch:
+                p.warnings.append(f"what uses it could not be listed: {message}")
+            continue
+        for i, p in enumerate(batch):
+            answer = answers[i] if i < len(answers) else {}
+            if not replace_answered(answer):
+                error = answer.get("error", {}) if isinstance(answer, dict) else {}
+                p.errors.append(error.get("message", "no answer for this attribute"))
+                continue
+            p.uses = replace_uses(answer)
+            if p.uses["hotlink_elements"]:
+                p.warnings.append(f"{p.uses['hotlink_elements']} elements from hotlinked modules "
+                                  "use it and cannot be changed: replace it in their module "
+                                  "file")
+            p.warnings.extend(answer.get("warnings", []))
 
 
 # ---------- references, values, schema ----------
@@ -916,7 +1052,7 @@ def _project(full, like):
 def _teamwork(ctx: _Context, plans: list[Plan], result: dict) -> None:
     from archicad_mcp.core.teamwork import object_set_states, set_problem, teamwork_entries
     live = [p for p in plans if not p.errors and (p.send_fields or p.props
-                                                  or p.action == "delete")]
+                                                  or p.action in ("delete", "replace"))]
     if not live:
         return
     states = object_set_states(ctx.conn, sorted({p.set_name for p in live}))
@@ -945,9 +1081,12 @@ def edit_attributes(conn: ArchicadConnection, changes: list[dict],
     ctx = _Context(conn)
     plans = [_plan(ctx, change, i) for i, change in enumerate(changes)]
     _one_change_per_attribute(plans)
+    _no_replace_chains(plans)
     _check_payloads(ctx, plans)
     result: dict = {"dry_run": dry_run}
     _teamwork(ctx, plans, result)
+    if dry_run:
+        _scan_replacements(ctx, plans)
     # Only renames that will be sent count when the read-back compares names.
     ctx.renamed, ctx.rename_to = {}, {}
     for p in plans:

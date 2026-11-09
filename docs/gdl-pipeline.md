@@ -23,7 +23,9 @@ four tools instead, which execute inside the server process:
 These tools require two things: the extension mode must be set to `full` (not
 `verdicts`), and a GDL workspace folder must be configured in the extension
 settings. Set the workspace folder and add that same folder to Archicad once via
-File > Libraries and Objects > Library Manager. Source meshes and texture files
+File > Libraries and Objects > Library Manager, or, on a Tapir newer than 1.8.0 and
+Archicad 28 or later, pass `link_workspace=true` to `deploy_gdl_object` to add it to
+the open project's library list. Source meshes and texture files
 go in it by hand; everything else the tools write lands there too. If either
 requirement is not met, the tools do not register and the startup banner reports
 that GDL tools are off.
@@ -32,14 +34,25 @@ that GDL tools are off.
 repeated builds do not stack objects at the origin. Pass `keep=true` when you
 want the object left in the project.
 
+On a Tapir newer than 1.8.0 the reply also carries `gdl_check`: whether the part's
+master and 3D scripts ran with its default parameters, how many 3D elements they
+made and their bounding box. `warnings` flags a script that stopped or made nothing.
+It never stops the deploy, and the render stays the check to look at: Archicad gives
+no message of the GDL's own or line number, and other parameter values can behave
+differently.
+
 Pass `embed=true` to also push the `.gsm` and its textures into the open
 project's embedded library, for when the object must travel inside the `.pln`
 itself rather than sitting in the linked library folder. This is the fallback
-path if the linked-library folder does not work in your setup. Tapir cannot
-overwrite an existing embedded file, so every `embed=true` deploy of the same
-object needs a fresh name once one has been embedded; deploying under a name
-already there fails with a clear error instead of silently rendering the
-previous build.
+path if the linked-library folder does not work in your setup. Deploying under a
+name already there fails with a clear error instead of silently rendering the
+previous build. Pass `replace_embedded=true` as well to replace it (Tapir 1.7.1,
+Archicad 27), or deploy under a fresh name. Instances already placed follow the new
+build, but not entirely: live on MCP-Test (06.11.2026, Archicad 29, Tapir 1.8.0), an
+instance of a 1 m cube replaced by a 2 m cube read A and B 2 and kept its height of 1,
+so it came out 2 x 2 x 1, while a new instance was 2 x 2 x 2. Re-place an instance whose
+height changed. `DeleteEmbeddedLibraryItems`, through the gateway, takes a part out of
+the embedded library again.
 
 ## What build does
 
@@ -88,9 +101,10 @@ archicad-gdl deploy out.gsm --place 0 0 --preview check.png
 ## Deployment and iteration
 
 `deploy` embeds the .gsm into the open project's embedded library and
-reloads. Tapir (1.5.3) cannot overwrite an existing embedded file, and fails
-with a misleading "outputPath is not a valid relative path" error, so
-iterating inside one project means fresh names each round.
+reloads. Unless told to replace it, Tapir refuses a name already embedded, with
+a misleading "outputPath is not a valid relative path" error, so iterating inside
+one project with the CLI means fresh names each round; the `deploy_gdl_object` tool
+takes `replace_embedded=true`.
 
 The better setup for real work is a **linked library folder**: add your build
 folder once via File > Libraries and Objects > Library Manager. From then on

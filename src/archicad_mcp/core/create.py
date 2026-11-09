@@ -123,14 +123,17 @@ def _absolute_note(name: str) -> str:
 # flights overlap, and Archicad answered only "Failed to create new Stair"; the same U
 # as its outer edge was created, but Archicad laid the risers out at its own going and
 # the top flight ran 1.65 m past the baseline's end (16 risers in a 2.2 x 2.0 m U).
+# Tapir's main after 1.8.0 takes the baseline's position and each turn (not tried live).
 _STAIR_NOTES = (
-    "baseLinePoints is the stair's left edge, looking up the stair: the flight lies "
-    "flightWidth to its right. When a U turns towards its flights, the middle segment "
-    "must be at least twice flightWidth long, or the flights overlap and Archicad "
-    "answers only 'Failed to create new Stair'.",
-    "Archicad lays the risers out at its own going, and CreateStairs has no turn or "
-    "winder setting: a tight turn can push the top flight past the baseline's end. "
-    "create_elements reports a stair that does.")
+    "baseLinePoints is the stair's left edge, looking up the stair, with the flight "
+    "flightWidth to its right, unless baselinePosition, the favourite or the Stair tool "
+    "puts it elsewhere. When a U turns towards its flights, the middle segment must be "
+    "at least twice flightWidth long, or the flights overlap and Archicad answers only "
+    "'Failed to create new Stair'.",
+    "Archicad lays the risers out at its own going, so a tight turn can push the top "
+    "flight past the baseline's end; create_elements reports a stair that does. On a "
+    "Tapir newer than 1.8.0, treadDepth pins the going, baseLineEdges and baseLineVertices "
+    "set the landing or winder at each turn, and baselinePosition places the baseline.")
 
 # Sides, live 23.10.2026 (AC 29, Tapir 1.7.2, Test.pln): composite walls drawn
 # clockwise with referenceLineLocation Outside stood outside the outline; doors with
@@ -163,6 +166,11 @@ _ZONE_NOTES = (
     "with the Label tool) shows none, before or after UpdateZones. That is a view "
     "setting, not a missing stamp.",)
 
+_SKYLIGHT_NOTES = (
+    "Tapir's own description says surface placement is left to Archicad and has not been "
+    "verified for this command: look at the skylight on its roof after creating it.",)
+_MARKER_NOTES = ("Placed in the active window: a floor plan, section or elevation.",)
+
 # How far a created stair may reach past its baseline and flights before it is
 # reported: the straight stair of 23.10.2026 reached 0.14 m past its baseline's end.
 STAIR_OVERRUN_TOLERANCE = 0.3
@@ -179,9 +187,12 @@ CREATE_TYPES: dict[str, CreateType] = {
     "roof": CreateType("CreateRoofs", "roofsData"),
     "morph": CreateType("CreateMorphs", "morphsData"),
     "mesh": CreateType("CreateMeshes", "meshesData", favorite_type="Mesh"),
+    "shell": CreateType("CreateShells", "shellsData", favorite_type="Shell"),
     "stair": CreateType("CreateStairs", "stairsData", favorite_type="Stair",
                         notes=(*_STAIR_NOTES, _absolute_note("stair"))),
     "railing": CreateType("CreateRailings", "railingsData"),
+    "railing_polyline": CreateType("CreateRailingsFromPolyline", "railingsData",
+                                   favorite_type="Railing"),
     "zone": CreateType("CreateZones", "zonesData", favorite_type="Zone", notes=_ZONE_NOTES),
     "curtain_wall": CreateType("CreateCurtainWalls", "curtainWallsData",
                                favorite_type="CurtainWall"),
@@ -193,6 +204,9 @@ CREATE_TYPES: dict[str, CreateType] = {
                        hosts=("ownerWallId",), host_types=_WALL, notes=_DOOR_NOTES),
     "window": CreateType("CreateWindows", "windowsData", favorite_type="Window",
                          hosts=("ownerWallId",), host_types=_WALL, notes=_WINDOW_NOTES),
+    "skylight": CreateType("CreateSkylights", "skylightsData", favorite_type="Skylight",
+                           hosts=("ownerId",), host_types=frozenset({"Roof", "Shell"}),
+                           notes=_SKYLIGHT_NOTES),
     "opening": CreateType("CreateOpenings", "openingsData", hosts=("ownerElementId",)),
     # From the Opening tool's settings, each item changing only its own (Tapir 1.8.0).
     "tool_opening": CreateType("PlaceOpenings", "openingsData", hosts=("parentElementId",),
@@ -205,6 +219,11 @@ CREATE_TYPES: dict[str, CreateType] = {
     # MEP (Archicad 28 and later)
     "mep_route": CreateType("CreateMEPRoutingElements", "routingElementsData", archicad=28),
     "mep_element": CreateType("CreateMEPElements", "elementsData", archicad=28),
+    "mep_flexible_segment": CreateType("CreateMEPFlexibleSegments", "flexibleSegmentsData",
+                                       archicad=28),
+    # segmentId is no host: native MEP elements read as Unknown here, and a routing
+    # segment may not read at all, as with a circuit below, so the guard could refuse it.
+    "mep_take_off": CreateType("CreateMEPTakeOffs", "takeOffsData", archicad=28),
     # Electrical. Live 21.10.2026 (Tapir 1.7.2): registered on Archicad 29 as
     # well, where each answers "This command requires Archicad 30 or newer."
     "electrical_panel": CreateType("CreateElectricalPanels", "electricalPanelsData",
@@ -219,8 +238,14 @@ CREATE_TYPES: dict[str, CreateType] = {
                                      archicad=30),
     # Markers placed on the floor plan
     "section": CreateType("CreateSections", "sectionsData"),
+    "elevation": CreateType("CreateElevations", "elevationsData"),
     "interior_elevation": CreateType("CreateInteriorElevations", "interiorElevationsData"),
     "hotlink_instance": CreateType("CreateHotlinkInstances", "hotlinkInstances"),
+    # In the active floor plan, section or elevation, each with a new viewpoint.
+    "detail_marker": CreateType("CreateDetailMarkers", "detailMarkersData", window=None,
+                                notes=_MARKER_NOTES),
+    "worksheet_marker": CreateType("CreateWorksheetMarkers", "worksheetMarkersData",
+                                   window=None, notes=_MARKER_NOTES),
     # 2D, in the active drawing window
     "line": CreateType("CreateLineElements", "linesData", window=None, favorite_type="Line"),
     "arc": CreateType("CreateArcs", "arcsData", window=None, favorite_type="Arc"),
@@ -363,6 +388,25 @@ class LoadedParts:
         self.answer()
         return self._parts
 
+    def complete(self) -> bool:
+        """Whether every part is listed. Entries Archicad could not read past the last
+        listed one are not parts (live 21.10.2026, MCP-Test: 123 indices after 7402
+        parts); one among them could be."""
+        response = self.answer() or {}
+        entries = response.get("libraryParts") or []
+        listed = sorted(e.get("index") for e in entries if isinstance(e.get("index"), int))
+        return not response.get("skippedCount") or listed == list(range(1, len(entries) + 1))
+
+    def spellings(self) -> dict[str, str]:
+        """Every name a loaded part goes by, without case -> its document name."""
+        out: dict[str, str] = {}
+        for e in self.parts():
+            file_name = str(e.get("fileName"))
+            for spelling in (str(e.get("documentName")), file_name,
+                             file_name.removesuffix(".gsm")):
+                out.setdefault(spelling.casefold(), str(e.get("documentName")))
+        return out
+
     def guid_of(self, name: str) -> tuple[str | None, str | None]:
         """(the main GUID of the loaded part named name, why there is none). With
         several parts of that name it is the first, as learn_library_part takes it."""
@@ -400,21 +444,11 @@ def _library_part_checks(library: LoadedParts, items: list[dict],
     response = library.answer()
     if response is None:
         return {}, []  # unreadable: let Archicad judge the names
-    entries = response["libraryParts"]
-    parts = library.parts()
-    names = {str(e.get("documentName")) for e in parts}
+    names = {str(e.get("documentName")) for e in library.parts()}
     ordered = sorted(names)
-    spellings = {}
-    for e in parts:
-        file_name = str(e.get("fileName"))
-        for spelling in (str(e.get("documentName")), file_name,
-                         file_name.removesuffix(".gsm")):
-            spellings.setdefault(spelling.casefold(), str(e.get("documentName")))
-    # Entries Archicad could not read past the last listed one are not parts (live
-    # 21.10.2026, MCP-Test: 123 indices after 7402 parts); one among them could be.
+    spellings = library.spellings()
     unread = response.get("skippedCount") or 0
-    listed = sorted(e.get("index") for e in entries if isinstance(e.get("index"), int))
-    complete = not unread or listed == list(range(1, len(entries) + 1))
+    complete = library.complete()
     skips, warnings = {}, []
     for name, indices in wanted.items():
         if name in names:
@@ -438,13 +472,20 @@ def _library_part_checks(library: LoadedParts, items: list[dict],
 def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str]:
     sill_tool = _TOOL_SILL.get(name)
     if sill_tool is not None:
-        unsilled = [i for i in ready
-                    if "sillHeight" not in items[i] and "favoriteName" not in items[i]]
-        if not unsilled:
-            return []
-        return [f"No sillHeight on {_named(unsilled)}: a {name} without one takes the "
-                f"{sill_tool}'s current sill height. Send sillHeight in metres (0 for a "
-                "door on the floor)."]
+        own = [i for i in ready if "favoriteName" not in items[i]]
+        warnings = []
+        unsilled = [i for i in own if "sillHeight" not in items[i]]
+        if unsilled:
+            warnings.append(f"No sillHeight on {_named(unsilled)}: a {name} without one takes "
+                            f"the {sill_tool}'s current sill height. Send sillHeight in "
+                            "metres (0 for a door on the floor).")
+        # Live 09.11.2026 (Tapir 2.0.0): Empty Door, 1.2 m of its own, came in at the tool's 0.9.
+        unwide = [i for i in own if "libraryPartName" in items[i] and "width" not in items[i]]
+        if unwide:
+            warnings.append(f"No width on {_named(unwide)}: a {name} named by libraryPartName "
+                            f"without one takes the {sill_tool}'s current width, not the "
+                            "part's own. Send width in metres.")
+        return warnings
     tool = _TOOL_SIZED.get(name)
     if tool is None:
         return []
@@ -463,20 +504,33 @@ def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str
     return warnings
 
 
-def _tool_part_warnings(name: str, items: list[dict], ready: list[int],
-                        dry_run: bool) -> list[str]:
+# The newest Tapir whose CreateDoors and CreateWindows change the tool for a part named
+# by libraryPartName. On its main after that the part is set on the created opening only;
+# Tapir's own change says it is untested in Archicad, so this rests on the live check.
+TOOL_PART_FAULT_TAPIR = (1, 8, 0)
+
+
+def _part_name_faults_tool(conn: ArchicadConnection) -> bool:
+    """Whether a door or window by part name leaves the fault in its tool; a Tapir that
+    does not say is taken to."""
+    version = installed_version(conn)
+    return version is None or _key(version) <= TOOL_PART_FAULT_TAPIR
+
+
+def _tool_part_warnings(conn: ArchicadConnection, name: str, items: list[dict],
+                        ready: list[int], dry_run: bool) -> list[str]:
     """A door or window placed by libraryPartName leaves its tool holding the part: live
     22.10.2026, Tapir 1.7.2's CreateDoors and CreateWindows set the tool's defaults to
     it and never set them back."""
     tool = _TOOL_SILL.get(name)
     named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
-    if tool is None or not named:
+    if tool is None or not named or not _part_name_faults_tool(conn):
         return []
     part = items[named[-1]]["libraryPartName"]
     holds = "will hold" if dry_run else "now holds"
     return [f"After this create, the {tool} {holds} '{part}' (the part of the last {name} "
-            f"in it named by libraryPartName): Tapir 1.7.2 sets the tool to that part and "
-            f"never sets it back, so the next {name} drawn by hand gets it. Set the {tool} "
+            f"in it named by libraryPartName): Tapir 1.8.0 and older set the tool to that part "
+            f"and never set it back, so the next {name} drawn by hand gets it. Set the {tool} "
             "back by hand if that is not wanted."]
 
 
@@ -488,7 +542,7 @@ def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: Cre
     openings inherit it. The same part placed from a favourite read and wrote them all."""
     tool = _TOOL_SILL.get(name)
     named = [i for i in ready if isinstance(items[i].get("libraryPartName"), str)]
-    if tool is None or not named:
+    if tool is None or not named or not _part_name_faults_tool(conn):
         return []
     try:
         favorites = conn.tapir("GetFavoritesByType",
@@ -506,8 +560,8 @@ def _part_name_parameter_warnings(conn: ArchicadConnection, name: str, spec: Cre
     else:
         listed = ""
     return [f"{_named(named)}: a {name} placed by libraryPartName gets a GDL parameter list "
-            "Archicad will not open (Tapir 1.7.2), so its parameters, the opening types of "
-            "its sashes or leaves among them, can be neither read nor written, and the "
+            "Archicad will not open (Tapir 1.8.0 and older), so its parameters, the opening "
+            "types of its sashes or leaves among them, can be neither read nor written, and the "
             f"{tool} keeps that list: every later {name} from the {tool}, hand-placed ones "
             f"too, has the same fault. Send favoriteName instead{listed}. One {name} placed "
             f"from a favourite, or the part picked again in the {tool} settings, puts the "
@@ -571,24 +625,35 @@ def _absolute_height_warnings(conn: ArchicadConnection, name: str, items: list[d
             f"plus the offset."]
 
 
+# Where a flight lies across its baseline, in flight widths to the right of it.
+_FLIGHT_ACROSS = {"Left": (0.0, 1.0), "Right": (-1.0, 0.0), "Center": (-0.5, 0.5)}
+
+
 def _flights(item: dict) -> list[list[tuple[float, float]]] | None:
-    """Each baseline segment's flight: the rectangle flightWidth to the right of it.
-    None when the item gives no width (a favourite's or the tool's applies) or bad points."""
+    """Each baseline segment's flight rectangle, with the baseline on its left edge unless
+    the item says where. None when the item gives no width (a favourite's or the tool's
+    applies), bad points, or an offset from an edge: neither Tapir's schema nor the DevKit
+    says which way a positive offset runs, so the flight's place is not known."""
     width = item.get("flightWidth")
     points = item.get("baseLinePoints")
-    if not isinstance(width, (int, float)) or not isinstance(points, list):
+    position = item.get("baselinePosition", "Left")
+    if (not isinstance(width, (int, float)) or not isinstance(points, list)
+            or position not in _FLIGHT_ACROSS
+            or (position != "Center" and item.get("baselineOffset"))):
         return None
     try:
         xy = [(float(p["x"]), float(p["y"])) for p in points]
     except (KeyError, TypeError, ValueError):
         return None
+    near, far = (width * across for across in _FLIGHT_ACROSS[position])
     flights = []
     for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
         length = math.hypot(x1 - x0, y1 - y0)
         if length < 1e-9:
             return None
-        nx, ny = (y1 - y0) / length * width, -(x1 - x0) / length * width
-        flights.append([(x0, y0), (x1, y1), (x1 + nx, y1 + ny), (x0 + nx, y0 + ny)])
+        rx, ry = (y1 - y0) / length, -(x1 - x0) / length
+        flights.append([(x0 + rx * near, y0 + ry * near), (x1 + rx * near, y1 + ry * near),
+                        (x1 + rx * far, y1 + ry * far), (x0 + rx * far, y0 + ry * far)])
     return flights
 
 
@@ -610,6 +675,9 @@ def _stair_overlap_warnings(name: str, items: list[dict], ready: list[int]) -> l
         return []
     crossing = []
     for index in ready:
+        # The check assumes a flight on every segment; these items say otherwise.
+        if "baseLineEdges" in items[index] or "baseLineVertices" in items[index]:
+            continue
         flights = _flights(items[index]) or []
         if any(_overlap(flights[i], flights[j])
                for i in range(len(flights)) for j in range(i + 2, len(flights))):
@@ -617,9 +685,11 @@ def _stair_overlap_warnings(name: str, items: list[dict], ready: list[int]) -> l
     if not crossing:
         return []
     return [f"The flights of {_named(crossing)} overlap: baseLinePoints is the stair's "
-            "left edge, looking up the stair, and each flight lies flightWidth to its "
-            "right. Archicad refuses such a stair with only 'Failed to create new Stair'. "
-            "Give the edge the flights turn away from, or a longer middle segment."]
+            "left edge, looking up the stair, with each flight flightWidth to its right, "
+            "unless baselinePosition says otherwise (a favourite or the Stair tool may too, "
+            "which is not checked here). Archicad refuses such a stair with only 'Failed to "
+            "create new Stair'. Give the edge the flights turn away from, or a longer middle "
+            "segment."]
 
 
 def _stair_overrun_warnings(conn: ArchicadConnection, items: list[dict],
@@ -648,9 +718,10 @@ def _stair_overrun_warnings(conn: ArchicadConnection, items: list[dict],
     if not out:
         return []
     return [f"A created stair reaches past its baseline and flights ({'; '.join(out)}): "
-            "Archicad lays the risers out at its own going, and CreateStairs has no turn "
-            "or winder setting, so a tight turn pushes the top flight out. Check it in "
-            "plan before building on it: it can run through walls or the slab above."]
+            "Archicad lays the risers out at its own going, so a tight turn pushes the top "
+            "flight out. Check it in plan before building on it: it can run through walls "
+            "or the slab above. On a Tapir newer than 1.8.0, treadDepth pins the going, and "
+            "baseLineEdges and baseLineVertices set the landing or winder at each turn."]
 
 
 def _shared_id_warnings(conn: ArchicadConnection, name: str,
@@ -741,6 +812,44 @@ def _host_skips(conn: ArchicadConnection, name: str, spec: CreateType,
     return skips
 
 
+# The newest Tapir whose Create* commands take no databaseId.
+NO_DATABASE_TAPIR = (1, 8, 0)
+
+
+def _database_field(spec: CreateType) -> dict | None:
+    schema = build_registry()[spec.command].input_schema or {}
+    return schema.get("properties", {}).get("databaseId")
+
+
+def _database_refusal(conn: ArchicadConnection, name: str, spec: CreateType,
+                      database: object) -> str | None:
+    """Why this create cannot go into `database`; None when it can."""
+    field = _database_field(spec)
+    if field is None:
+        takers = sorted(n for n, s in CREATE_TYPES.items() if _database_field(s))
+        return (f"'{name}' elements cannot be sent to another database, so nothing was sent. "
+                f"The types that can: {', '.join(takers)}.")
+    version = installed_version(conn)
+    if version is None or _key(version) <= NO_DATABASE_TAPIR:
+        return (f"database needs a Tapir newer than 1.8.0, and this Archicad has "
+                f"{version or 'a Tapir of unknown version'}. Nothing was sent.")
+    error = next(jsonschema.validators.validator_for(field)(field).iter_errors(database), None)
+    if error is not None:
+        return (f"database must be a database's id, {{\"guid\": \"...\"}}: {error.message}. "
+                "Nothing was sent.")
+    return None
+
+
+def _database_warnings(spec: CreateType, items: list[dict], ready: list[int]) -> list[str]:
+    hosted = [i for i in ready
+              if any(_host_guids(items[i], field) for field in spec.hosts)]
+    if not hosted:
+        return []
+    return [f"The hosts of {_named(hosted)} are not checked: the check knows only the "
+            "active window's elements, so it would refuse a host in the database given. "
+            "Archicad judges them when they are sent."]
+
+
 def _window_warnings(name: str, spec: CreateType, items: list[dict],
                      window: str | None) -> list[str]:
     if spec.window is None or window is None or window in _WORKS_FROM[spec.window]:
@@ -776,8 +885,8 @@ def _write_leaves(conn: ArchicadConnection, leaf_writes: dict[int, dict],
 
 def _commit(conn: ArchicadConnection, name: str, spec: CreateType, items: list[dict],
             ready: list[int], skipped: dict[int, str], warnings: list[str],
-            placements: list[dict], leaf_writes: dict[int, dict]) -> dict:
-    response = conn.tapir(spec.command, {spec.payload_key: [items[i] for i in ready]})
+            placements: list[dict], leaf_writes: dict[int, dict], payload: dict) -> dict:
+    response = conn.tapir(spec.command, payload)
     entries = response.get("elements", [])
     by_index: dict[str, str] = {}
     failed: dict[tuple, list[int]] = {}
@@ -816,9 +925,11 @@ def _skipped_list(skipped: dict[int, str]) -> list[dict]:
 
 def create_elements(conn: ArchicadConnection, element_type: str,
                     items: list[dict], dry_run: bool = True,
-                    records: PartRecords | None = None) -> dict:
+                    records: PartRecords | None = None,
+                    database: dict | None = None) -> dict:
     """`records` is the store of learned parts that `placement` reads; None reads the
-    default one, and only when an item gives a placement."""
+    default one, and only when an item gives a placement. `database` is the id of the
+    database 2D elements go into, instead of the active window's."""
     found = _lookup(element_type)
     if found is None:
         return {"error": f"Unknown element_type '{element_type}'. {_FAMILY_HINT}",
@@ -842,6 +953,10 @@ def create_elements(conn: ArchicadConnection, element_type: str,
     refusal = require_tapir_command(conn, spec.command, "create_elements")
     if refusal is not None:
         return dict(refusal, element_type=name)
+    if database is not None:
+        reason = _database_refusal(conn, name, spec, database)
+        if reason is not None:
+            return {"error": reason, "element_type": name}
     library = LoadedParts(conn)
     # Before the schema check: Tapir's item schema has no placement field.
     items, skipped, placements, leaf_writes, placed_warnings = resolve_placements(
@@ -857,7 +972,8 @@ def create_elements(conn: ArchicadConnection, element_type: str,
         return reply
     for index, reason in _favorite_skips(conn, name, spec, items).items():
         skipped.setdefault(index, reason)
-    skipped.update(_host_skips(conn, name, spec, items, skipped))
+    if database is None:
+        skipped.update(_host_skips(conn, name, spec, items, skipped))
     skipped.update(_element_id_skips(conn, spec, items, skipped))
     library_skips, library_warnings = _library_part_checks(library, items, skipped)
     skipped.update(library_skips)
@@ -869,21 +985,24 @@ def create_elements(conn: ArchicadConnection, element_type: str,
                 + [text for i, texts in sorted(placed_warnings.items()) if i not in skipped
                    for text in texts]
                 + _object_warnings(name, items, ready)
-                + _tool_part_warnings(name, items, ready, dry_run)
+                + _tool_part_warnings(conn, name, items, ready, dry_run)
                 + _part_name_parameter_warnings(conn, name, spec, items, ready)
                 + _absolute_height_warnings(conn, name, items, ready)
                 + _stair_overlap_warnings(name, items, ready)
+                + (_database_warnings(spec, items, ready) if database is not None else [])
                 + _stale_tapir_warnings(conn))
+    payload = {spec.payload_key: [items[i] for i in ready]}
+    if database is not None:
+        payload["databaseId"] = database
     if not dry_run:
         if not ready:
             return {"dry_run": False, "created": 0, "elements": [],
                     "skipped": _skipped_list(skipped), "warnings": warnings}
         return _commit(conn, name, spec, items, ready, skipped, warnings, placements,
-                       leaf_writes)
+                       leaf_writes, payload)
     result = {"dry_run": True, "element_type": name, "command": spec.command,
               "items": len(items), "ready": len(ready), "skipped": _skipped_list(skipped),
-              "warnings": warnings, "active_window": window,
-              "payload": {spec.payload_key: [items[i] for i in ready]}}
+              "warnings": warnings, "active_window": window, "payload": payload}
     if placements:
         result["placements"] = placements
     return result

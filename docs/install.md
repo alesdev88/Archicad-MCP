@@ -209,11 +209,11 @@ icacls "C:\Program Files\Graphisoft\Archicad 29\Add-Ons\Tapir" /reset /T /C
 
 **By hand:** download `TapirAddOn_AC<version>_Mac.zip` or
 `TapirAddOn_AC<version>_Win.apx` for your Archicad version from the
-[Tapir 1.8.0 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/1.8.0),
+[Tapir 2.0.0 release](https://github.com/ENZYME-APD/tapir-archicad-automation/releases/tag/2.0.0),
 unzip it (macOS) or copy it (Windows) into `Add-Ons/Tapir/` inside the Archicad
 folder, and restart Archicad.
 
-The bundled command definitions come from Tapir 1.8.0. A newer add-on than the
+The bundled command definitions come from Tapir 2.0.0. A newer add-on than the
 definitions is fine; a tool that needs a newer Tapir than the one installed
 refuses before sending anything and names both versions.
 

@@ -79,9 +79,22 @@ SETTINGS = {
 }
 
 
+# GetFavoriteDefaults, Tapir's main after 1.8.0 on Archicad 29: the settings plus the
+# layer and the Element ID, which it leaves out when the favourite's is empty.
+DEFAULTS = {
+    "Partition Wall": {"favorite": "Partition Wall", "elementType": "Wall", "layerIndex": 33,
+                       "elementId": "SW - 001", "folder": ["Walls"], "parameters": []},
+    "Structural Wall": {"favorite": "Structural Wall", "elementType": "Wall", "layerIndex": 99,
+                        "folder": [], "parameters": []},
+    "Entrance Door": {**SETTINGS["Entrance Door"], "layerIndex": 54, "elementId": "DOO - 002"},
+}
+
+
 class Project:
-    def __init__(self, elements=None, elsewhere=(), fail_apply=None, version=None):
+    def __init__(self, elements=None, elsewhere=(), fail_apply=None, version=None,
+                 defaults=None):
         self.version = version               # GetAddOnVersion; None answers nothing
+        self.defaults = defaults             # GetFavoriteDefaults; None answers nothing
         self.elements = copy.deepcopy(elements if elements is not None else
                                       {WALL: WALL_DETAILS, DOOR: DOOR_DETAILS})
         self.elsewhere = set(elsewhere)      # passes IsEditable, not in this database
@@ -186,6 +199,9 @@ class Project:
                 "GetFavoriteSettings": lambda p: {"favoriteSettings": [
                     SETTINGS.get(n, {"error": {"code": -1, "message": "no favorite"}})
                     for n in p["favorites"]]}} if self.version else {}),
+            **({"GetFavoriteDefaults": lambda p: {"favoriteDefaults": [
+                self.defaults.get(n, {"error": {"code": -1, "message": "no favorite"}})
+                for n in p["favorites"]]}} if self.defaults is not None else {}),
         }
 
 
@@ -310,6 +326,95 @@ def test_the_dry_run_shows_what_the_favourite_holds():
                                            "library_part": "Entrance Door",
                                            "marker": "Door Marker"}
     assert "favorite_settings" not in run(Project(), [DOOR], "Entrance Door")
+
+
+NEW = "1.8.2"
+
+
+def test_the_dry_run_shows_the_favourites_layer_and_element_id():
+    result = run(Project(version=NEW, defaults=DEFAULTS), [WALL], "Partition Wall")
+    assert result["favorite_settings"] == {"folder": "Walls", "layer": "Structural - Bearing",
+                                           "element_id": "SW - 001"}
+
+
+def test_the_warnings_name_the_layer_and_the_id_it_takes():
+    wall = warnings_of(run(Project(version=NEW, defaults=DEFAULTS), [WALL], "Partition Wall",
+                           keep=[]), WALL)
+    assert "takes the favourite's layer 'Structural - Bearing'" in wall
+    assert any("takes the favourite's Element ID 'SW - 001'" in w for w in wall)
+    assert favorites._LAYER_WARNING not in wall and favorites._ID_WARNING not in wall
+
+
+def test_an_element_already_on_the_favourites_layer_gets_no_layer_warning():
+    on_it = {WALL: {**WALL_DETAILS, "layerIndex": 33}}
+    wall = warnings_of(run(Project(on_it, version=NEW, defaults=DEFAULTS), [WALL],
+                           "Partition Wall", keep=[]), WALL)
+    assert not any("layer" in w for w in wall)
+    assert any("Element ID" in w for w in wall)
+
+
+def test_an_element_already_carrying_the_favourites_id_gets_no_id_warning():
+    same = {WALL: {**WALL_DETAILS, "id": "SW - 001"}}
+    wall = warnings_of(run(Project(same, version=NEW, defaults=DEFAULTS), [WALL],
+                           "Partition Wall", keep=[]), WALL)
+    assert not any("Element ID" in w for w in wall)
+    assert any("layer" in w for w in wall)
+
+
+def test_each_element_is_warned_on_its_own_layer():
+    second = "3E618D06-949F-4B46-A01F-CA890F434A33"
+    both = {WALL: WALL_DETAILS, second: {**WALL_DETAILS, "layerIndex": 33}}
+    result = run(Project(both, version=NEW, defaults=DEFAULTS), [WALL, second], "Partition Wall")
+    assert any("layer" in w for w in warnings_of(result, WALL))
+    assert not any("layer" in w for w in warnings_of(result, second))
+
+
+def test_a_favourite_with_no_id_keeps_the_generic_warning():
+    # Tapir leaves elementId out when it is empty, and what that does is not known.
+    result = run(Project(version=NEW, defaults=DEFAULTS), [WALL], "Structural Wall", keep=[])
+    assert "element_id" not in result["favorite_settings"]
+    assert favorites._ID_WARNING in warnings_of(result, WALL)
+
+
+def test_a_layer_the_table_does_not_name_shows_by_its_index():
+    result = run(Project(version=NEW, defaults=DEFAULTS), [WALL], "Structural Wall")
+    assert result["favorite_settings"]["layer"] == 99
+    assert "takes the favourite's layer '99'" in warnings_of(result, WALL)
+
+
+def test_what_is_kept_is_not_warned_about_even_with_the_values_known():
+    wall = warnings_of(run(Project(version=NEW, defaults=DEFAULTS), [WALL], "Partition Wall",
+                           keep=["id", "layer"]), WALL)
+    assert not any("layer" in w or "Element ID" in w for w in wall)
+
+
+def test_a_door_that_keeps_its_own_part_still_gets_only_that_warning():
+    # From Tapir 1.8.0 it keeps its layer and ID, so naming the favourite's would mislead.
+    door = warnings_of(run(Project(version=NEW, defaults=DEFAULTS), [DOOR], "Entrance Door",
+                           keep=[]), DOOR)
+    assert door == [favorites._OWN_PART_WARNING]
+
+
+def test_the_dry_run_falls_back_where_the_defaults_cannot_be_read():
+    # Older Archicad: Tapir registers it and refuses it, so the fake's missing answer raises.
+    p = Project(version=NEW)
+    result = run(p, [DOOR], "Entrance Door")
+    assert p.sent("GetFavoriteDefaults")
+    assert result["favorite_settings"] == {"folder": "Doors/External",
+                                           "library_part": "Entrance Door",
+                                           "marker": "Door Marker"}
+
+
+def test_the_dry_run_falls_back_when_the_defaults_miss_that_favourite():
+    p = Project(version=NEW, defaults={})
+    result = run(p, [DOOR], "Entrance Door")
+    assert result["favorite_settings"]["marker"] == "Door Marker"
+    assert "layer" not in result["favorite_settings"]
+
+
+def test_the_generic_warnings_stay_without_the_defaults():
+    wall = warnings_of(run(Project(version=NEW), [WALL], "Partition Wall", keep=[]), WALL)
+    assert favorites._LAYER_WARNING in wall and favorites._ID_WARNING in wall
 
 
 def test_to_defaults_dry_run():

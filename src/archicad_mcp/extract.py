@@ -451,7 +451,8 @@ def _fetch_floor_indices(conn, guids: list[str]) -> dict[str, int | None]:
 def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                    property_names: frozenset[str] = frozenset(),
                    element_types: frozenset[str] | None = None,
-                   collision_queries: frozenset = frozenset()) -> ModelSnapshot:
+                   collision_queries: frozenset = frozenset(),
+                   ifc_story_types: frozenset[str] = frozenset()) -> ModelSnapshot:
     """Build a ModelSnapshot fetching only what `needs` demands.
 
     When `element_types` is given, the per-element data (types, properties,
@@ -461,6 +462,7 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
     narrowing (fetch every element). Zones and the layer name list are
     independent of this filter. `collision_queries` (core.collisions
     CollisionQuery) are answered when `needs` has "collisions", once each.
+    `ifc_story_types` are the types whose IFC story "ifc_structure" reads.
     """
     elements: tuple[ElementInfo, ...] = ()
     layers: tuple[str, ...] = ()
@@ -531,5 +533,15 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                 message = getattr(exc, "message", None) or str(exc)
                 collisions[query] = f"Archicad refused the check ({message})"
 
+    missing_parts = ifc_structure = None
+    if needs & {"library_parts", "ifc_structure"}:
+        # Imported here: core.qa_reads imports this module.
+        from archicad_mcp.core.qa_reads import read_ifc_structure, read_missing_parts
+        if "library_parts" in needs:
+            missing_parts = read_missing_parts(conn)
+        if "ifc_structure" in needs:
+            ifc_structure = read_ifc_structure(conn, ifc_story_types)
+
     return ModelSnapshot(elements=elements, layers=layers, zones=zones, ifc_properties=ifc,
-                         collisions=collisions)
+                         collisions=collisions, missing_parts=missing_parts,
+                         ifc_structure=ifc_structure)

@@ -820,3 +820,308 @@ def test_an_attribute_and_a_reference_take_a_guid_in_any_case():
     assert "skipped" not in out, out
     assert record(store, "Layer", "Interior - Partition")["isLocked"] is True
     assert out["planned"][1]["changes"] == {"fillId": ["Face Brick", "Concrete Block"]}
+
+
+# ---------- replace ----------
+#
+# DeleteAndReplaceAttributes, Tapir's main after 1.8.0, as its source answers it: one item
+# per attribute, a list of everything that uses it, per-item errors, and with dryRun
+# nothing changed. If a favourite or rule cannot be rewritten, Tapir keeps a copy of the
+# old attribute with its name and a new GUID, named in the warnings.
+
+REPLACE = "DeleteAndReplaceAttributes"
+FACE_BRICK, CONCRETE_BLOCK = G("fil-2"), G("fil-5")
+USES = {"elements": [{"elementId": {"guid": G("w-1")}}, {"elementId": {"guid": G("w-2")}}],
+        "hotlinkElements": [],
+        "toolDefaults": ["Wall"], "favorites": ["Brick Wall"],
+        "attributes": [{"attributeType": "Composite", "attributeId": {"guid": G("com-4")},
+                        "name": "100 Block Plastered"}],
+        "overrideRules": ["Fire Walls"]}
+
+
+class Replacer:
+    """Answers DeleteAndReplaceAttributes and, unless dryRun, takes the attribute away."""
+
+    def __init__(self, store, uses=None, refuse=None, warnings=(), layers_shown=(),
+                 keeps_copy=False, leaves_it=False, removes_replacement=False):
+        self.store = store
+        self.uses = USES if uses is None else uses
+        self.refuse = refuse or {}
+        self.warnings = list(warnings)
+        self.layers_shown = list(layers_shown)
+        self.keeps_copy = keeps_copy
+        self.leaves_it = leaves_it
+        self.removes_replacement = removes_replacement
+
+    def __call__(self, params):
+        answers = []
+        kind = params["attributeType"]
+        for item in params["attributes"]:
+            guid = item["attributeId"]["guid"]
+            if guid in self.refuse:
+                answers.append({"error": {"code": 1, "message": self.refuse[guid]}})
+                continue
+            answer = {"attributeId": {"guid": guid},
+                      "replacementAttributeId": item["replacementAttributeId"], **self.uses}
+            if self.warnings:
+                answer["warnings"] = self.warnings
+            if not params.get("dryRun"):
+                if self.layers_shown:
+                    answer["layersShown"] = [{"attributeId": {"guid": g}}
+                                             for g in self.layers_shown]
+                self._take_away(kind, guid, item["replacementAttributeId"]["guid"])
+            answers.append(answer)
+        return {"attributes": answers}
+
+    def _take_away(self, kind, guid, replacement):
+        records = self.store.records[kind]
+        old = next(r for r in records if r["attributeId"]["guid"] == guid)
+        if not self.leaves_it:
+            records.remove(old)
+        if self.keeps_copy:
+            records.append({**old, "attributeId": {"guid": G("copy")}, "index": 900})
+        if self.removes_replacement:
+            records[:] = [r for r in records if r["attributeId"]["guid"] != replacement]
+
+
+def replacing(**options):
+    conn, store = make()
+    conn._core.tapir_responses[REPLACE] = Replacer(store, **options)
+    return conn, store
+
+
+def fill_change(attribute="Face Brick", replacement="Concrete Block"):
+    return {"replace": "Fill", "attribute": attribute, "with": replacement}
+
+
+def test_the_dry_run_lists_what_uses_the_attribute_and_changes_nothing():
+    conn, store = replacing()
+    out = edit_attributes(conn, [fill_change()])
+    [entry] = out["planned"]
+    assert entry["action"] == "replace" and entry["target"] == "Face Brick"
+    assert entry["with"] == "Concrete Block"
+    assert entry["uses"] == {"elements": 2, "element_guids": [G("w-1"), G("w-2")],
+                             "hotlink_elements": 0, "tool_defaults": ["Wall"],
+                             "favorites": ["Brick Wall"],
+                             "attributes": ["Composite/100 Block Plastered"],
+                             "override_rules": ["Fire Walls"]}
+    assert sent(conn, REPLACE) == [{
+        "attributeType": "Fill", "dryRun": True,
+        "attributes": [{"attributeId": {"guid": FACE_BRICK},
+                        "replacementAttributeId": {"guid": CONCRETE_BLOCK}}]}]
+    assert store.by_name("Fill", "Face Brick") is not None
+
+
+def test_the_dry_run_warns_about_hidden_layers_and_gdl_scripts():
+    conn, _ = replacing()
+    warnings = " ".join(edit_attributes(conn, [fill_change()])["planned"][0]["warnings"])
+    assert "hidden or locked layers" in warnings and "GDL scripts" in warnings
+
+
+def test_the_dry_run_warns_about_hotlinked_elements_and_counts_them():
+    uses = {**USES, "hotlinkElements": [{"elementId": {"guid": G("h-1")}}]}
+    conn, _ = replacing(uses=uses)
+    [entry] = edit_attributes(conn, [fill_change()])["planned"]
+    assert entry["uses"]["hotlink_elements"] == 1
+    assert any("hotlinked" in w for w in entry["warnings"])
+
+
+def test_the_dry_run_passes_on_tapirs_warnings():
+    conn, _ = replacing(warnings=["The curtain wall favourite 'CW' keeps it."])
+    [entry] = edit_attributes(conn, [fill_change()])["planned"]
+    assert "The curtain wall favourite 'CW' keeps it." in entry["warnings"]
+
+
+def test_a_long_list_of_elements_is_capped_and_still_counted():
+    from archicad_mcp.core.element_data import REPORT_CAP
+    many = [{"elementId": {"guid": G(f"e-{i}")}} for i in range(REPORT_CAP + 5)]
+    conn, _ = replacing(uses={**USES, "elements": many})
+    uses = edit_attributes(conn, [fill_change()])["planned"][0]["uses"]
+    assert uses["elements"] == REPORT_CAP + 5
+    assert len(uses["element_guids"]) == REPORT_CAP
+    assert uses["elements_not_shown"] == 5
+
+
+def test_a_refusal_in_the_dry_run_is_skipped_with_tapirs_reason():
+    conn, _ = replacing(refuse={FACE_BRICK: "The Fill to delete was not found."})
+    out = edit_attributes(conn, [fill_change()])
+    assert out["planned"] == []
+    assert "was not found" in out["skipped"][0]["errors"][0]
+
+
+def test_a_scan_that_fails_leaves_the_change_planned_and_says_so():
+    from multiconn_archicad.errors import TapirCommandError
+
+    def fails(params):
+        raise TapirCommandError(message="busy", code=1)
+
+    conn, _ = make()
+    conn._core.tapir_responses[REPLACE] = fails
+    [entry] = edit_attributes(conn, [fill_change()])["planned"]
+    assert "uses" not in entry
+    assert any("could not be listed" in w and "busy" in w for w in entry["warnings"])
+
+
+@pytest.mark.parametrize("change, needle", [
+    ({"replace": "Layer", "attribute": "Interior - Partition", "with": "Interior - Furniture "},
+     "Fill, Line, Surface and BuildingMaterial"),
+    ({"replace": "Composite", "attribute": "100 Block Plastered", "with": "x"},
+     "Fill, Line, Surface and BuildingMaterial"),
+    ({"replace": "Fill", "with": "Concrete Block"}, "needs 'attribute'"),
+    ({"replace": "Fill", "attribute": "Face Brick"}, "needs 'with'"),
+    ({"replace": "Fill", "attribute": "Nope", "with": "Concrete Block"}, "no Fill named 'Nope'"),
+    ({"replace": "Fill", "attribute": "Face Brick", "with": "Nope"}, "no Fill named 'Nope'"),
+    ({"replace": "Fill", "attribute": "Face Brick", "with": "Face Brick"}, "by itself"),
+    ({"replace": "Fill", "attribute": "Empty Fill", "with": "Face Brick"}, "Archicad's own"),
+    ({"replace": "Line", "attribute": "Solid Line", "with": "Dotted Dense"}, "Archicad's own"),
+    ({"replace": "Fill", "attribute": "Face Brick", "with": "Concrete Block", "isHidden": True},
+     "a replace takes only"),
+])
+def test_a_replace_that_cannot_run_is_skipped_before_anything_is_sent(change, needle):
+    conn, _ = replacing()
+    out = edit_attributes(conn, [change])
+    assert needle in " ".join(out["skipped"][0]["errors"])
+    assert out["planned"] == [] and sent(conn, REPLACE) == []
+
+
+def test_archicads_own_attribute_may_take_the_place():
+    conn, _ = replacing()
+    out = edit_attributes(conn, [fill_change(replacement="Empty Fill")])
+    assert out["planned"][0]["with"] == "Empty Fill"
+
+
+@pytest.mark.parametrize("other", [
+    {"replace": "Fill", "attribute": "Concrete Block", "with": "Empty Fill"},
+    {"delete": "Fill", "attribute": "Concrete Block"},
+])
+def test_an_attribute_leaving_in_the_same_call_cannot_take_the_place(other):
+    conn, _ = replacing()
+    out = edit_attributes(conn, [fill_change(), other])
+    [skipped] = [s for s in out["skipped"] if s["target"] == "Face Brick"]
+    assert "'Concrete Block'" in skipped["errors"][0]
+
+
+def test_an_attribute_is_replaced_only_once_in_a_call():
+    conn, _ = replacing()
+    out = edit_attributes(conn, [fill_change(), fill_change(replacement="Empty Fill")])
+    assert "already changed" in out["skipped"][0]["errors"][0]
+
+
+def test_a_tapir_without_the_command_is_refused():
+    conn, _ = make(missing=[REPLACE])
+    out = edit_attributes(conn, [fill_change()])
+    assert REPLACE in out["skipped"][0]["errors"][0]
+
+
+def test_archicad_26_is_refused():
+    conn, _ = replacing()
+    conn._core.official_responses["API.GetProductInfo"] = {"version": 26, "buildNumber": 1}
+    out = edit_attributes(conn, [fill_change()])
+    assert "Archicad 27" in out["skipped"][0]["errors"][0]
+    assert sent(conn, REPLACE) == []
+
+
+def test_teamwork_skips_a_replace_whose_set_is_not_reserved():
+    conn, store = make(teamwork={"FillTypes": "Free"})
+    conn._core.tapir_responses[REPLACE] = Replacer(store)
+    out = edit_attributes(conn, [fill_change()])
+    assert "not reserved" in out["skipped"][0]["errors"][0]
+    assert sent(conn, REPLACE) == []
+
+
+def test_a_commit_sends_one_call_per_type_and_reports_what_changed():
+    conn, store = replacing(layers_shown=[G("lay-2")], warnings=["A rule keeps a copy."])
+    out = edit_attributes(conn, [
+        fill_change(),
+        {"replace": "BuildingMaterial", "attribute": "Plaster",
+         "with": "Concrete Block - Structural"}], dry_run=False)
+    payloads = sent(conn, REPLACE)
+    assert [p["attributeType"] for p in payloads] == ["Fill", "BuildingMaterial"]
+    assert not any(p.get("dryRun") for p in payloads)
+    fill = next(a for a in out["applied"] if a["type"] == "Fill")
+    assert fill["action"] == "replace" and fill["with"] == "Concrete Block"
+    assert fill["uses"]["elements"] == 2
+    assert fill["layers_shown"] == ["Interior - Partition"]
+    assert fill["warnings"] == ["A rule keeps a copy."]
+    assert store.by_name("Fill", "Face Brick") is None
+    assert "not_applied" not in out and "failed" not in out
+
+
+def test_replaces_go_after_writes_and_before_deletes():
+    conn, _ = replacing()
+    edit_attributes(conn, [{"delete": "Fill", "attribute": "Concrete Block"},
+                           {"replace": "BuildingMaterial", "attribute": "Plaster",
+                            "with": "Concrete Block - Structural"},
+                           {"create": "Layer", "name": "MCP-Canary Layer"}], dry_run=False)
+    names = [c for c, _ in conn._core.calls
+             if c in ("CreateLayers", REPLACE, "DeleteAttributes")]
+    assert names == ["CreateLayers", REPLACE, "DeleteAttributes"]
+
+
+def test_a_refusal_at_commit_is_reported_and_the_attribute_stays():
+    conn, store = replacing(refuse={FACE_BRICK: "An element cannot be changed."})
+    out = edit_attributes(conn, [fill_change()], dry_run=False)
+    assert out["applied"] == []
+    assert out["failed"][0]["message"] == "An element cannot be changed."
+    assert store.by_name("Fill", "Face Brick") is not None
+
+
+def test_a_refused_call_stops_what_comes_after():
+    from multiconn_archicad.errors import TapirCommandError
+
+    def fails(params):
+        raise TapirCommandError(message="busy", code=1)
+
+    conn, _ = make()
+    conn._core.tapir_responses[REPLACE] = fails
+    out = edit_attributes(conn, [fill_change(),
+                                 {"delete": "Line", "attribute": "Dotted Dense"}], dry_run=False)
+    assert out["error"]["message"] == "busy"
+    assert out["stopped"] == [{"action": "delete", "type": "Line", "target": "Dotted Dense"}]
+
+
+def test_the_read_back_goes_by_guid_so_a_copy_with_the_old_name_is_not_a_failure():
+    conn, store = replacing(keeps_copy=True, warnings=["The rule 'R' keeps a copy of it."])
+    out = edit_attributes(conn, [fill_change()], dry_run=False)
+    assert store.by_name("Fill", "Face Brick") is not None        # the copy
+    [applied] = out["applied"]
+    assert "The rule 'R' keeps a copy of it." in applied["warnings"]
+    assert "not_applied" not in out
+
+
+def test_an_attribute_still_there_after_a_success_is_not_applied():
+    conn, _ = replacing(leaves_it=True)
+    out = edit_attributes(conn, [fill_change()], dry_run=False)
+    assert out["applied"] == []
+    assert out["not_applied"] == [{"type": "Fill", "target": "Face Brick", "field": "deleted",
+                                   "sent": True, "read": False}]
+
+
+def test_a_replacement_gone_afterwards_is_not_applied():
+    conn, _ = replacing(removes_replacement=True)
+    out = edit_attributes(conn, [fill_change()], dry_run=False)
+    assert out["applied"] == []
+    assert out["not_applied"] == [{"type": "Fill", "target": "Face Brick", "field": "with",
+                                   "sent": "Concrete Block", "read": "not found afterwards"}]
+
+
+@pytest.mark.parametrize("change, mentioned", [
+    ({"delete": "Line", "attribute": "Dotted Dense"}, True),
+    ({"delete": "Profile", "attribute": "Brick Veneer Block Wall"}, False),
+])
+def test_a_delete_points_at_replace_where_it_can_run(change, mentioned):
+    conn, _ = make()
+    [entry] = edit_attributes(conn, [change])["planned"]
+    assert any("'replace'" in w for w in entry["warnings"]) is mentioned
+
+
+def test_a_delete_does_not_point_at_replace_on_a_tapir_without_it():
+    conn, _ = make(missing=[REPLACE])
+    [entry] = edit_attributes(conn, [{"delete": "Line", "attribute": "Dotted Dense"}])["planned"]
+    assert not any("'replace'" in w for w in entry["warnings"])
+
+
+def test_the_field_lists_name_what_can_be_replaced():
+    conn, _ = make()
+    assert edit_attributes(conn, [])["replaceable"] == ["Fill", "Line", "Surface",
+                                                        "BuildingMaterial"]

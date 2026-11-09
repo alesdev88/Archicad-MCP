@@ -1,55 +1,55 @@
 {
-  "version": "1.8.0",
-  "tag": "1.8.0",
-  "published": "2026-11-02",
+  "version": "2.0.0",
+  "tag": "2.0.0",
+  "published": "2026-11-09",
   "assets": {
     "TapirAddOn_AC25_Mac.zip": {
-      "size": 2252511,
-      "sha256": "e2c7e17f89037726362296126ed3b558d0a377d7ef0e4f49fa661a11642d6e06"
+      "size": 3240318,
+      "sha256": "272b98be138f4186199150a9cad2bbbda0ec81582690f2df1a7a5d3b4c3b6a9f"
     },
     "TapirAddOn_AC25_Win.apx": {
-      "size": 7180288,
-      "sha256": "3e3a72cb7b98fae2ea40d0337e935702518019a567fbfc895e45b24e8a357ab0"
+      "size": 9863168,
+      "sha256": "9a6b5dc35ed956cbc2689765a7c40028f961bcaa426afb7672e792fc120a5e77"
     },
     "TapirAddOn_AC26_Mac.zip": {
-      "size": 4340119,
-      "sha256": "e2fd9ebee23df9b09b623b8af0ca8ccbbfbf00a138cec32c7a71171f649f63e2"
+      "size": 6151592,
+      "sha256": "d6ced89d0cadb3ede7fd901e40f6b7bb761aee0d73cd2855ec1286ca0dc53f36"
     },
     "TapirAddOn_AC26_Win.apx": {
-      "size": 7580160,
-      "sha256": "028b5a6e374dbf4b0b97f280e1dc0062ae1bc7a04361126392d381bb6863e819"
+      "size": 10324992,
+      "sha256": "b332e41df388c1651d75c8a631a02f9dae14fd533ea2b334703cbe865617e228"
     },
     "TapirAddOn_AC27_Mac.zip": {
-      "size": 4494416,
-      "sha256": "011c4eddf85dbd92a6a7a8ec40121bc1311fc2ead3c0bed86a02faba4a9be8e1"
+      "size": 6529391,
+      "sha256": "746b28ba9c9d46d4f2dce62c268c0dc2f366aa995cc257b5fcbb93eeae6922bb"
     },
     "TapirAddOn_AC27_Win.apx": {
-      "size": 8749568,
-      "sha256": "c3b0cbbb5d0aa3daaf1dbf87c659ae5c5a4e562a454a7f2d5021ecddddedb247"
+      "size": 12007424,
+      "sha256": "653b6b17f2545bc62cc4c3958f6408761c5632c5461c6ebc31bb9f46c6aa3b4d"
     },
     "TapirAddOn_AC28_Mac.zip": {
-      "size": 4936965,
-      "sha256": "ccc4a3100221be2e07c620370ae490b0430c9707ef58fb56e1eb6d3cd2bbd3ee"
+      "size": 7201528,
+      "sha256": "410ad7f79456298fccbdd4f44ed8c62d16aef47c5898fe2ef9f158ca5068019d"
     },
     "TapirAddOn_AC28_Win.apx": {
-      "size": 9486336,
-      "sha256": "2207af5bed5f5ce8d4130088403192df8635ad963b3a5359371f5aea8c987f8e"
+      "size": 13073920,
+      "sha256": "4a8cac119ecc76af32f089ea8cc14fbdd4d9f1bb4a302fa45bf90b8cf6ef0b70"
     },
     "TapirAddOn_AC29_Mac.zip": {
-      "size": 5337454,
-      "sha256": "c5070b59037a74f63666eeabbf236c3825b00de2095b3712f9341d11da15e9b9"
+      "size": 7702840,
+      "sha256": "72d0c2ff259cc71b92ef1f7b2cef519d9bc1925fe750a3fbe3c59d12a22b6817"
     },
     "TapirAddOn_AC29_Win.apx": {
-      "size": 10405888,
-      "sha256": "6e22aea730dc2c2e6f47fb2b7d12780e6626599241d81507514e4367c9fe31d2"
+      "size": 14148096,
+      "sha256": "37a59f741671382ea68047762e4ebea2714077fae38a5a6abc72513736421071"
     },
     "TapirAddOn_AC30_Mac.zip": {
-      "size": 5436436,
-      "sha256": "8d408258684d0361cf3f725797ce815ba8f015118fd21e24d292c75d70e40f39"
+      "size": 7810606,
+      "sha256": "3048caa17fbb522d9a64e5f61c27605ad4935ea21a91d70ac7eed3716eb303bd"
     },
     "TapirAddOn_AC30_Win.apx": {
-      "size": 10438144,
-      "sha256": "4cd4feb5b37944f45f69f6ed0d89259cb705987738372d87d7fa94a71d5de031"
+      "size": 14239232,
+      "sha256": "9de05a894ee0ccd1647eb796cbe4983e1060f69f61a5763747a9bbc882ecccf1"
     }
   }
 }

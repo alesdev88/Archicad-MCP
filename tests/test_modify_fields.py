@@ -38,7 +38,9 @@ NEW = (1, 7, 1)
 
 def test_every_type_maps_to_a_command_in_the_bundled_definitions():
     assert set(TYPE_COMMANDS) == {"Wall", "Beam", "Slab", "Column", "Window", "Door",
-                                  "Morph", "Roof", "Mesh", "Object", "Lamp", "Text", "Label"}
+                                  "Morph", "Roof", "Mesh", "Object", "Lamp", "Text", "Label",
+                                  "Stair", "Railing", "CutPlane", "Elevation", "Detail",
+                                  "Worksheet"}
     assert all(item_schema(c)["properties"] for c in TYPE_COMMANDS.values())
 
 

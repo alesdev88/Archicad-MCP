@@ -28,6 +28,23 @@ class ZoneInfo:
 
 
 @dataclass(frozen=True)
+class MissingParts:
+    """What the library-parts-loaded rule reads."""
+    checked: int
+    guids: tuple[str, ...]       # the elements whose part no loaded library has
+    unread: int = 0              # elements whose part name could not be read
+
+
+@dataclass(frozen=True)
+class IfcStructure:
+    """What the ifc-spatial-structure rule reads."""
+    reported: frozenset[str]     # which of IfcProject, IfcSite and IfcBuilding Archicad reports
+    # guid -> (element type, IFC story, home story), for the types a rule compares;
+    # either story is None where it could not be read.
+    stories: dict[str, tuple[str, int | None, int | None]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ModelSnapshot:
     elements: tuple[ElementInfo, ...] = ()
     layers: tuple[str, ...] = ()
@@ -38,6 +55,10 @@ class ModelSnapshot:
     # no-collisions rules being run; None when Tapir cannot detect collisions.
     # Typed loosely so this module imports nothing from core.
     collisions: dict | None = None
+    # None when not asked for or this Tapir has no such command; text says why the read
+    # failed.
+    missing_parts: MissingParts | str | None = None
+    ifc_structure: IfcStructure | str | None = None
 
 
 @dataclass(frozen=True)

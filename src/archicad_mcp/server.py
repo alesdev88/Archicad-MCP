@@ -31,6 +31,7 @@ from archicad_mcp.rules.engine import (
     data_needs,
     element_type_scope,
     filter_by_tag,
+    ifc_story_types,
     property_needs,
     run_rules,
 )
@@ -149,7 +150,8 @@ def build_server(
         conn = get_connection(request_port if request_port is not None else default_port)
         snapshot = build_snapshot(conn, data_needs(rules), property_needs(rules),
                                   element_types=element_type_scope(rules),
-                                  collision_queries=collision_queries(rules))
+                                  collision_queries=collision_queries(rules),
+                                  ifc_story_types=ifc_story_types(rules))
         return run_rules(rules, snapshot)
 
     # ---------- Tier 1: verdict tools (both modes) ----------
@@ -233,10 +235,10 @@ def build_server(
               **_tool_meta("Verify IFC export readiness", read_only=True, destructive=False))
     @_guarded
     def verify_ifc_export_readiness(port: int | None = None) -> dict:
-        ifc_rules = [r for r in loaded.rules if "ifc" in r.needs]
+        ifc_rules = [r for r in loaded.rules if r.needs & {"ifc", "ifc_structure"}]
         if not ifc_rules:
-            return {"error": "No IFC rules configured. Add 'ifc-property-required' "
-                             "rules to your rules directory."}
+            return {"error": "No IFC rules configured. Add 'ifc-property-required' or "
+                             "'ifc-spatial-structure' rules to your rules directory."}
         return _verdict_for(ifc_rules, port).to_dict()
 
     highlight_text = ("Highlight the elements failing a rule in the Archicad window and "
@@ -492,11 +494,12 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
 
     @mcp.tool(description=(
         "Create elements of any type Tapir can create. element_type: model wall, "
-        "beam, column, slab, roof, morph, mesh, stair, railing, zone, curtain_wall, "
-        "grid_element, object, lamp; hosted door, window (in a wall), opening; MEP "
-        "mep_route, mep_element (Archicad 28+), electrical_panel, electrical_device, "
-        "electrical_circuit (Archicad 30); markers section, interior_elevation; "
-        "hotlink_instance; 2D "
+        "beam, column, slab, roof, shell, morph, mesh, stair, railing, railing_polyline, "
+        "zone, curtain_wall, grid_element, object, lamp; hosted door, window (in a wall), "
+        "skylight (in a roof or shell), opening; MEP mep_route, mep_element, "
+        "mep_flexible_segment, mep_take_off (Archicad 28+), electrical_panel, "
+        "electrical_device, electrical_circuit (Archicad 30); markers section, "
+        "elevation, interior_elevation, detail_marker, worksheet_marker; hotlink_instance; 2D "
         "line, arc, circle, polyline, spline, hatch, hotspot, text, label, "
         "keynote_label; dimension, level_dimension, wall_thickness_dimension, "
         "section_dimension; "
@@ -527,7 +530,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "wall: a bed's pillow end, a chair's or sofa's back), for coordinates, angle, "
         "reflected and dimensions; a door's or window's hinge_near and opens_toward "
         "points, for reflected and oSide, and leaves (a recorded leaf state, written "
-        "right after the create). items=[] shows its placement_schema; 'placements' "
+        "right after the create). On a part learned with a Tapir newer than 1.8.0, an object's "
+        "size may be left out, as may a door's or window's width and height, which then "
+        "take the part's own. items=[] shows its placement_schema; 'placements' "
         "lists what each one derived, and for a door or window the hinge and swing it "
         "read. Reading a sketch: choose the part from what it draws, the "
         "lines dividing a window give its sashes and the arcs give which sash or leaf "
@@ -541,13 +546,16 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "created GUIDs, plus "
         "Tapir's per-item errors grouped with item indices and by_index (item "
         "index -> GUID) when not every item was created, and 'placed_not_set' for an "
-        "element placed whose leaves Archicad refused."),
+        "element placed whose leaves Archicad refused. On a Tapir newer than 1.8.0, "
+        "database ({\"guid\": ...}, from GetDatabaseIdFromNavigatorItemId) puts lines, "
+        "arcs, circles, polylines, splines, hatches, hotspots, texts or labels into that "
+        "layout's, section's or other view's database instead of the active window's."),
               **_tool_meta("Create elements", read_only=False, destructive=True))
     @_guarded
     def create_elements(element_type: str, items: list[dict], dry_run: bool = True,
-                        port: int | None = None) -> dict:
+                        database: dict | None = None, port: int | None = None) -> dict:
         return _create.create_elements(_conn(port), element_type, items, dry_run,
-                                       records=records)
+                                       records=records, database=database)
 
     from archicad_mcp.core import swept_beam as _swept
 
@@ -731,7 +739,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "General_ElementID). Walls, beams, slabs, columns, windows, doors, morphs, multi-plane "
         "roofs, meshes, objects, lamps, texts and labels also take the fields of "
         "Tapir's Modify<Type> command by its own names (describe_api_command "
-        "ModifyWalls lists them), e.g. height, thickness, sillHeight, lightIsOn. "
+        "ModifyWalls lists them), e.g. height, thickness, sillHeight, lightIsOn. On a "
+        "Tapir newer than 1.8.0 so do stairs (ModifyStairs), railings (ModifyRailings), "
+        "sections and elevations (ModifySections) and detail and worksheet markers "
+        "(ModifyDetailMarkers); on those last two the reference ID shown in the marker is "
+        "reference_id, as id stays the Element ID. "
         "Attribute fields (buildingMaterialId, compositeId, profileId, surfaceId, "
         "lineTypeId, sectionFillId, ...) take a name. Lengths in metres, angles in "
         "radians, text sizes in mm. Partial coordinates, dimensions and visibility "
@@ -778,7 +790,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "\"relativeTopStory\" (walls, columns; keep the three together), so e.g. only "
         "the library part or the wall type changes; on older Tapir use modify_elements "
         "for heights and sizes. On Tapir 1.7.3 the dry run also names the favourite's "
-        "library part, marker and folder (favorite_settings). "
+        "library part, marker and folder (favorite_settings), and on a Tapir newer than "
+        "1.8.0 and Archicad 29 its layer and Element ID as well. "
         "settings, classifications, categories and properties choose what the "
         "favourite applies; classifications are added per system and property values "
         "overwrite. Pass dry_run=false to apply: returns applied, changed (per element "
@@ -858,14 +871,18 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "in front, floor plan elements are shown there across every story. selected "
         "counts what Archicad really selected (not_selectable lists the rest). "
         "highlight=false removes any earlier highlight; guids=[] removes the highlight "
-        "and, with select, the selection, and changes nothing else. Changes only what "
+        "and, with select, the selection, and changes nothing else. in_3d=true (a Tapir "
+        "newer than 1.8.0) opens the 3D window on just the floor plan's elements among "
+        "them, as Show Selection in 3D does, so they always become the selection; there "
+        "guids=[] shows everything, as Show All in 3D does. Changes only what "
         "is on screen, never the project."),
               **_tool_meta("Show elements in Archicad", read_only=False, destructive=False))
     @_guarded
     def show_elements(guids: list[str], select: bool = True, highlight: bool = True,
-                      zoom: bool = True, port: int | None = None) -> dict:
+                      zoom: bool = True, in_3d: bool = False,
+                      port: int | None = None) -> dict:
         return _views.show_elements(_tapir_conn(port, "show_elements"), guids, select,
-                                    highlight, zoom)
+                                    highlight, zoom, in_3d)
 
     from archicad_mcp.core import window_image as _window_image
 
@@ -898,7 +915,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "them, the first sample's GDL parameters, warnings, and 'next', the fields "
         "still to give record_library_part. variants: optional sets of GDL parameter "
         "values (parameter name to value), each placed as one more sample, such as a "
-        "leaf or one of a window's sashes opened. On Tapir 1.7.2 a door or window placed "
+        "leaf or one of a window's sashes opened. On a Tapir newer than 1.8.0 samples are "
+        "placed at the part's own size and 1.5 times it, and the record keeps its own size. "
+        "On Tapir 1.8.0 and older a door or window placed "
         "by part name, as its samples are, has GDL parameters that can be neither read "
         "nor written, and the Door or Window tool keeps that fault for later openings, "
         "so a door's or window's samples show no parameters and a placement's leaves "
@@ -908,14 +927,35 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "own A and B gets no footprint (the reply's note says so) and is placed by "
         "coordinates. Lengths are metres. The floor plan must be the active window, "
         "with its view not rotated. It zooms the plan to the samples and leaves it "
-        "zoomed, since Tapir cannot set the zoom back; a door or window learned may "
-        "leave the Door or Window tool holding the part. Needs Tapir 1.7.2."),
+        "zoomed, since Tapir cannot set the zoom back; on Tapir 1.8.0 and older a door or "
+        "window learned may leave the Door or Window tool holding the part. Needs Tapir "
+        "1.7.2."),
               **_tool_meta("Learn a library part", read_only=False, destructive=True))
     @_guarded
     def learn_library_part(name: str, kind: str, variants: list[dict] | None = None,
                            port: int | None = None):
         result = _part_learning.learn_library_part(
             _tapir_conn(port, "learn_library_part"), records, name, kind, variants)
+        png = result.pop("png", None)
+        if png is None:
+            return result
+        return [Image(data=png, format="png"), result]
+
+    from archicad_mcp.core import part_preview as _part_preview
+
+    @mcp.tool(description=(
+        "Draw the 2D symbols of up to 8 library parts in one image, with nothing placed, to "
+        "choose between candidates before learning one (a Tapir newer than 1.8.0). Each cell "
+        "is numbered and has its own scale, with a red cross at the insertion point; 'parts' "
+        "gives each part's number, default size (a, b, height) and extent in metres, and "
+        "'not_drawn' why a name could not be drawn, with the closest names. It shows the "
+        "default parameters, and only lines, arcs and polygons, so no texts or hotspots. It "
+        "does not replace learn_library_part or the look after placing."),
+              **_tool_meta("Preview library parts", read_only=True, destructive=False))
+    @_guarded
+    def preview_library_parts(names: list[str], port: int | None = None):
+        result = _part_preview.preview_library_parts(
+            _tapir_conn(port, "preview_library_parts"), names)
         png = result.pop("png", None)
         if png is None:
             return result
@@ -1074,7 +1114,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
     from archicad_mcp.core import attribute_edit as _attribute_edit
 
     @mcp.tool(description=(
-        "Create, modify and delete attributes (layers, layer combinations, lines, "
+        "Create, modify, delete and replace attributes (layers, layer combinations, lines, "
         "fills, zone categories, pen tables, profiles, building materials, composites, "
         "surfaces) and set attribute property values (Tapir). DRY-RUN BY DEFAULT; pass "
         "dry_run=false to commit. Each change has one action key whose value is the "
@@ -1085,7 +1125,10 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "their value, including what Tapir's own overwrite would drop: a composite's "
         "useWith, a building material's texts); {\"modify\": ..., \"properties\": "
         "{\"Group/Name\": \"value\"}} sets property values; {\"delete\": \"Fill\", "
-        "\"attribute\": ...} deletes. Fields use Tapir's names and units (metres, "
+        "\"attribute\": ...} deletes; {\"replace\": \"Fill\", \"attribute\": ..., "
+        "\"with\": ...} (fills, lines, surfaces, building materials, a Tapir newer than "
+        "1.8.0, Archicad 27) rewrites every reference across the project and deletes it, "
+        "and its dry run lists what uses it (uses). Fields use Tapir's names and units (metres, "
         "radians, pen numbers); a field holding another attribute (buildingMaterialId, "
         "lineTypeId, fillId, cutFillIndex, a layer combination's layers[].attributeId) "
         "takes its name. changes=[] lists every type's fields; list_attributes"
@@ -1095,7 +1138,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "own index 1 attributes, a layer delete while elements are on the layer (it "
         "would delete them) or without the floor plan active. In Teamwork the "
         "attribute type's set must be reserved (reserve_elements object_sets). "
-        "Attribute writes cannot be undone. A commit returns applied (read back), "
+        "Attribute writes cannot be undone, except a replace, which is one undo step per "
+        "type. A commit returns applied (read back), "
         "not_applied, failed (grouped) and stopped."),
               **_tool_meta("Edit attributes", read_only=False, destructive=True))
     @_guarded
@@ -1172,14 +1216,15 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _ifc_export.export_ifc(_tapir_conn(port, "export_ifc"), path, translator,
                                       scope, overwrite, dry_run)
 
-    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir).",
+    @mcp.tool(description="Fire an Archicad publisher set by name (Tapir). On a Tapir newer "
+                          "than 1.8.0 an unknown name is refused with the project's sets.",
               **_tool_meta("Run a publisher set", read_only=False, destructive=True))
     @_guarded
     def publish(publisher_set_name: str, port: int | None = None) -> dict:
         return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
 
     @mcp.tool(description=(
-        "Install the pinned Tapir add-on (1.8.0) into Archicad's Add-Ons folder. "
+        "Install the pinned Tapir add-on (2.0.0) into Archicad's Add-Ons folder. "
         "Dry run by default: it finds every Archicad on this computer, downloads and "
         "checks the file (sha256) and says what it would do. confirm=true writes. "
         "Never replaces an existing Tapir unless replace_existing=true, and then "

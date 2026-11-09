@@ -340,3 +340,95 @@ def test_an_element_id_goes_through_setdetails_from_tapir_1_7_3():
     assert sent["elementsWithDetails"] == [{"elementId": {"guid": SLAB},
                                             "details": {"id": "SLA - 101"}}]
     assert project.elements[SLAB]["id"] == "SLA - 101"
+
+
+# The Modify commands of Tapir's main after 1.8.0. Details as GetDetailsOfElements
+# reads them there (ElementCommands.cpp): a section's reference ID as idStr, a
+# marker's name and reference ID as detailName and detailIdStr.
+
+def _with(project, guid, kind, **details):
+    project.elements[guid] = {"type": kind, "id": "", "floorIndex": 0, "layerIndex": 1,
+                              "drawIndex": 1, "details": details}
+    return guid
+
+
+def _sent(project, command):
+    return [p for c, p in project.core.calls if c == command]
+
+
+@pytest.mark.parametrize("kind, command, key, before, read_key", [
+    ("CutPlane", "ModifySections", "sectionsWithDetails", {"idStr": "S-1"}, "idStr"),
+    ("Elevation", "ModifySections", "sectionsWithDetails", {"idStr": "E-1"}, "idStr"),
+    ("Detail", "ModifyDetailMarkers", "detailMarkersWithDetails",
+     {"detailIdStr": "D-1"}, "detailIdStr"),
+    ("Worksheet", "ModifyDetailMarkers", "detailMarkersWithDetails",
+     {"detailIdStr": "W-1"}, "detailIdStr"),
+])
+def test_a_reference_id_goes_out_as_tapirs_id_and_is_read_back(kind, command, key, before,
+                                                               read_key):
+    project = ModifyProject(version="1.8.2")
+    guid = _with(project, "MARK-1", kind, **before)
+    out = _commit(project, [{"guid": guid, "reference_id": "NEW"}])
+    assert out == {"dry_run": False, "requested": 1, "modified": 1}
+    assert _sent(project, command) == [{key: [{"elementId": {"guid": guid}, "id": "NEW"}]}]
+    assert project.elements[guid]["details"][read_key] == "NEW"
+    assert "SetDetailsOfElements" not in project.command_names()
+
+
+def test_id_stays_the_element_id_on_a_marker():
+    project = ModifyProject(version="1.8.2")
+    guid = _with(project, "CUT-1", "CutPlane", idStr="S-1")
+    project.elements[guid]["id"] = "OLD"
+    out = _commit(project, [{"guid": guid, "id": "SEC-A", "reference_id": "A"}])
+    assert out["modified"] == 1
+    assert project.elements[guid]["id"] == "SEC-A"
+    assert project.elements[guid]["details"]["idStr"] == "A"
+
+
+def test_a_reference_id_archicad_did_not_take_is_reported():
+    project = ModifyProject(version="1.8.2")
+    guid = _with(project, "MARK-1", "Detail", detailIdStr="D-1")
+    project._WRITE_KEYS = {}     # lands nowhere the read looks
+    out = _commit(project, [{"guid": guid, "reference_id": "NEW"}])
+    assert out["modified"] == 0
+    assert out["not_applied"] == [{"field": "reference_id", "count": 1, "sample": [
+        {"guid": guid, "sent": "NEW", "read": "D-1"}]}]
+
+
+def test_a_marker_name_is_read_from_detail_name():
+    project = ModifyProject(version="1.8.2")
+    guid = _with(project, "MARK-1", "Worksheet", detailName="Old")
+    out = _commit(project, [{"guid": guid, "name": "New"}])
+    assert out["modified"] == 1
+    assert project.elements[guid]["details"]["detailName"] == "New"
+
+
+def test_a_stair_and_a_railing_change_by_their_own_commands():
+    project = ModifyProject(version="1.8.2")
+    stair = _with(project, "STAIR-1", "Stair", flightWidth=1.0, totalHeight=3.0)
+    railing = _with(project, "RAIL-1", "Railing", height=1.0, bottomOffset=0.0)
+    out = _commit(project, [{"guid": stair, "flightWidth": 1.2},
+                            {"guid": railing, "height": 1.1}])
+    assert out["modified"] == 2
+    assert project.elements[stair]["details"]["flightWidth"] == 1.2
+    assert project.elements[railing]["details"]["height"] == 1.1
+
+
+def test_a_step_value_archicad_solved_differently_is_reported():
+    # "Archicad solves the stair again within its baseline, so it may adjust the step values."
+    project = ModifyProject(version="1.8.2")
+    stair = _with(project, "STAIR-1", "Stair", stepNum=16)
+    project._WRITE_KEYS = {("ModifyStairs", "stepNum"): "elsewhere"}
+    out = _commit(project, [{"guid": stair, "stepNum": 14}])
+    assert out["not_applied"] == [{"field": "stepNum", "count": 1, "sample": [
+        {"guid": stair, "sent": 14, "read": 16}]}]
+
+
+def test_stair_settings_no_read_holds_are_counted_as_unverified():
+    project = ModifyProject(version="1.8.2")
+    stair = _with(project, "STAIR-1", "Stair", flightWidth=1.0)
+    out = _commit(project, [{"guid": stair, "treadDepthLocked": True,
+                             "treads": [{"role": "Run", "visible": True}]}])
+    assert out["modified"] == 1
+    assert out["unverified"] == {"treadDepthLocked": 1, "treads": 1}
+    assert "not_applied" not in out

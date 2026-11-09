@@ -68,6 +68,7 @@ TOOL_COMMANDS: dict[str, tuple[str, ...]] = {
                            "SetGDLParametersOfElements", "DeleteElements", "FitInWindow",
                            "SaveCurrentWindowAsImage", "GetAllElements",
                            "GetDetailsOfElements"),
+    "preview_library_parts": ("GetLibraryPart2DPrimitives", "GetGDLParametersOfLibraryParts"),
 }
 
 # Commands the synced definitions do not carry yet. Remove an entry once a

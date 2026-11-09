@@ -20,12 +20,19 @@ Tapir answers every GUID uppercase whatever case it was sent in (live
 19.10.2026), so membership is compared on g.upper() and the results keep the
 caller's spelling.
 
-Up to Tapir 1.7.2 there is no read that says who holds an element without
+Up to Tapir 1.8.0 there is no read that says who holds an element without
 trying to reserve it: ACAPI_Teamwork_GetLockableStatus covers lockable sets
-(attributes), not elements. So that dry run can report not-found and
-already-mine, and must say that reserved-by-other is only learned by
-attempting. Tapir 1.7.3's GetReservationStatusOfElements reads the holder, so
-there the dry run names who holds each element as well.
+(attributes), not elements, and GetReservationStatusOfElements (1.7.3) takes the
+status from the element's lock (Edit > Locking), so an element a teammate holds
+answers Free. That dry run can report not-found and already-mine, and must say
+that reserved-by-other is only learned by attempting. Newer Tapir reads the
+reservation itself (elemHead.userId), so there the dry run names who holds each
+element as well.
+
+Newer Tapir also fails ReserveElements' executionResult over a GUID that is no
+element (a navigator item, a layout) and lists it under notElements, even when
+it reserved the elements beside it. The same shape answers a refusal of the whole
+attempt, so the reservation is read back as usual and the message is passed on.
 
 Non-element lockable object sets (attribute types, property and
 classification definitions, favourites, project info, ...) go through Tapir
@@ -46,12 +53,17 @@ from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import _fetch_types, element_payload, get_all_element_ids
+from archicad_mcp.tapir_requirements import _key, installed_version
 
 FILTER_CHUNK = 2000
 
+# The newest Tapir whose GetReservationStatusOfElements reads the lock, not the
+# reservation. A gate on "newer than", because the release's number is not known yet.
+LOCK_STATUS_TAPIR = (1, 8, 0)
+
 _ATTEMPT_NOTE = ("Whether another user holds an element is only learned by "
-                 "attempting the reservation; Archicad exposes no read for it. "
-                 "Pass confirm=true to attempt.")
+                 "attempting the reservation; this Tapir has no reliable read for it "
+                 "(a Tapir newer than 1.8.0 has). Pass confirm=true to attempt.")
 
 
 def _is_teamwork(conn: ArchicadConnection) -> bool:
@@ -97,10 +109,16 @@ def _partition(conn: ArchicadConnection, guids: list[str]) -> tuple[list[str], l
     return known, not_found, [g for g in known if g.upper() in mine]
 
 
+def _reads_reservations(conn: ArchicadConnection) -> bool:
+    version = installed_version(conn)
+    return (version is not None and _key(version) > LOCK_STATUS_TAPIR
+            and conn.tapir_command_available("GetReservationStatusOfElements"))
+
+
 def _held_by_others(conn: ArchicadConnection, guids: list[str]) -> list[dict] | None:
     """The elements another user holds, with that user, or None when this Tapir cannot
-    say without attempting (GetReservationStatusOfElements came in 1.7.3)."""
-    if not guids or not conn.tapir_command_available("GetReservationStatusOfElements"):
+    say without attempting."""
+    if not guids or not _reads_reservations(conn):
         return None
     held = []
     try:
@@ -148,7 +166,9 @@ def _reserve_guids(conn: ArchicadConnection, guids: list[str], confirm: bool) ->
     plan = get_all_element_ids(conn)
     before = _upper(_in_my_workspace(conn, plan))
     response = conn.tapir("ReserveElements", {"elements": element_payload(candidates)})
-    if (err := _execution_error(response, "reserve elements")) is not None:
+    err = _execution_error(response, "reserve elements")
+    not_elements = response.get("notElements", [])
+    if err is not None and not not_elements:
         return err
     spelled = {g.upper(): g for g in candidates}
     conflicts = []
@@ -163,8 +183,14 @@ def _reserve_guids(conn: ArchicadConnection, guids: list[str], confirm: bool) ->
     reserved = [g for g in candidates if g.upper() in after and g.upper() not in blocked]
     newly_mine = after - before
     indirect = sorted(g for g in plan if g.upper() in newly_mine and g.upper() not in spelled)
-    return {"dry_run": False, **base, "reserved": reserved,
-            "reserved_by_others": conflicts, "indirectly_reserved": indirect}
+    result = {"dry_run": False, **base, "reserved": reserved,
+              "reserved_by_others": conflicts, "indirectly_reserved": indirect}
+    if not_elements:
+        guids_sent = (item.get("elementId", {}).get("guid", "") for item in not_elements)
+        result["not_elements"] = [spelled.get(g.upper(), g) for g in guids_sent]
+    if err is not None:
+        result["note"] = err["error"]
+    return result
 
 
 def _release_guids(conn: ArchicadConnection, guids: list[str], confirm: bool) -> dict:

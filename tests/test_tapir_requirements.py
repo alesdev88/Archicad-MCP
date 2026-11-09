@@ -63,13 +63,15 @@ def test_fork_only_comes_from_the_local_overlay():
 
 def test_pinned_release_meets_every_release_backed_minimum():
     pinned = _v(load_pinned().version)
+    # Definitions generated from Tapir main run ahead of the pin until that Tapir is
+    # released; check_release_version.py holds the release meanwhile. A tool may need that
+    # version only then, and this tightens by itself once the release is pinned.
+    synced = json.loads((DEFS / "tapir_version.json").read_text())
+    held = synced["version"] if synced["source"] != "release" else None
     for tool in req.TOOL_COMMANDS:
         minimum, _ = req.tool_minimum(tool)
-        if minimum is not None:
+        if minimum is not None and minimum != held:
             assert pinned >= _v(minimum), tool
-    # Definitions generated from Tapir main run ahead of the pin until that Tapir is
-    # released; check_release_version.py holds the release meanwhile.
-    synced = json.loads((DEFS / "tapir_version.json").read_text())
     if synced["source"] == "release":
         assert pinned >= _v(synced["version"])
 
@@ -110,7 +112,9 @@ def test_unavailable_tools_lists_editing_tools_on_old_tapir():
 
 
 def test_unavailable_tools_probes_only_what_the_version_cannot_promise():
-    conn, core = fake_conn(version=load_pinned().version)
+    # The definitions' version: it equals the pin once a release is pinned, and while the
+    # definitions run ahead of it, a tool may need more than the pin promises.
+    conn, core = fake_conn(version=req.definitions_version())
     assert req.unavailable_tools(conn) == []
     assert [c for c, _ in core.calls].count("API.IsAddOnCommandAvailable") == 1  # the Tapir probe
 

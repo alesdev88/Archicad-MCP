@@ -20,7 +20,14 @@ import jsonschema
 from multiconn_archicad.errors import APIErrorBase
 
 from archicad_mcp.connection import ArchicadConnection
-from archicad_mcp.core.part_placement import combo_flags, hinge_and_swing, object_fields
+from archicad_mcp.core.part_placement import (
+    combo_flags,
+    hinge_and_swing,
+    object_fields,
+    own_a_b,
+    own_height,
+    own_length_width,
+)
 from archicad_mcp.core.part_records import (
     PartRecord,
     PartRecords,
@@ -59,8 +66,10 @@ OBJECT_PLACEMENT = {
                    "properties": {"x": _NUMBER, "y": _NUMBER, "z": _NUMBER},
                    "required": ["x", "y"], "additionalProperties": False},
         "size": {"type": "object",
-                 "description": ("length along the head direction, width across it, "
-                                 "height (default: the height recorded for the part)."),
+                 "description": ("length along the head direction, width across it, height "
+                                 "(default: the height recorded for the part, then its own). "
+                                 "Without size, a part learned on a Tapir newer than 1.8.0 "
+                                 "takes its own."),
                  "properties": {"length": _LENGTH, "width": _LENGTH, "height": _LENGTH},
                  "required": ["length", "width"], "additionalProperties": False},
         "head": _point("The way the head points, as a plan direction; only its direction "
@@ -69,7 +78,7 @@ OBJECT_PLACEMENT = {
         "mirrored": {"type": "boolean",
                      "description": "Mirrored, as the sketch draws it (default false)."},
     },
-    "required": ["center", "size", "head"],
+    "required": ["center", "head"],
     "additionalProperties": False,
 }
 
@@ -94,13 +103,22 @@ OPENING_PLACEMENT = {
 PLACEMENT_SCHEMAS = {"object": OBJECT_PLACEMENT, "lamp": OBJECT_PLACEMENT,
                      "door": OPENING_PLACEMENT, "window": OPENING_PLACEMENT}
 
+# An existing element has a size, so leaving it out of a modify would have to mean "keep it",
+# not "the part's own".
+_MODIFY_OBJECT_PLACEMENT = {**OBJECT_PLACEMENT, "required": ["center", "size", "head"]}
+MODIFY_PLACEMENT_SCHEMAS = {**PLACEMENT_SCHEMAS, "object": _MODIFY_OBJECT_PLACEMENT,
+                            "lamp": _MODIFY_OBJECT_PLACEMENT}
+
 # The Tapir fields a placement works out: an item gives the one or the other.
 _DERIVED = {"object": ("coordinates", "angle", "reflected", "dimensions"),
             "lamp": ("coordinates", "angle", "reflected", "dimensions"),
             "door": ("reflected", "oSide"),
             "window": ("reflected", "oSide")}
 
-NO_HEIGHT = "give size.height in metres: Tapir 1.7.2 cannot read a part's own height"
+NO_HEIGHT = ("give size.height in metres: this record holds no height, and learning the part "
+             "again on a Tapir newer than 1.8.0 records its own")
+NO_SIZE = ("give size in metres, or learn the part again on a Tapir newer than 1.8.0, so its "
+           "record holds the part's own size")
 
 _SCHEMA_HINT = "create_elements with items=[] shows the placement_schema"
 
@@ -266,8 +284,13 @@ def _object_fields(record: PartRecord, item: dict, placement: dict,
     """Tapir's fields, on the floor of the item's story: Tapir reads coordinates.z as
     absolute, and without floorIndex takes the story from it, so z 0 would put the part
     on the ground floor whatever story the plan shows."""
-    size = placement["size"]
+    size = placement.get("size") or {}
+    lengths = (size["length"], size["width"]) if size else own_length_width(record)
+    if lengths is None:
+        raise _Skip(NO_SIZE)
     height = size.get("height", record.height)
+    if height is None:
+        height = own_height(record)
     if height is None:
         raise _Skip(NO_HEIGHT)
     if isinstance(stories, str):
@@ -283,7 +306,7 @@ def _object_fields(record: PartRecord, item: dict, placement: dict,
                     "stands on is not known")
     center = placement["center"]
     on_floor = {"x": center["x"], "y": center["y"], "z": level + center.get("z", 0.0)}
-    fields = object_fields(record, on_floor, size["length"], size["width"], height,
+    fields = object_fields(record, on_floor, *lengths, height,
                            placement["head"], placement.get("mirrored", False), warnings)
     fields["floorIndex"] = story
     return fields
@@ -309,7 +332,12 @@ def _opening_fields(record: PartRecord, item: dict, placement: dict,
     host = walls[_wall_guid(item)]
     if isinstance(host, str):
         raise _Skip(host)
-    return _opening_placement(record, host, item["centerOffset"], placement, warnings)
+    fields, words = _opening_placement(record, host, item["centerOffset"], placement, warnings)
+    # Tapir takes these as the opening's A and B; without them the tool's values apply.
+    for field, value in zip(("width", "height"), own_a_b(record) or ()):
+        if field not in item:
+            fields[field] = value
+    return fields, words
 
 
 def _opening_placement(record: PartRecord, host: Host, center_offset: float,

@@ -85,6 +85,14 @@ module, locked, not reserved) are named and skipped, never unlocked. A commit
 reads the elements back, so a field Archicad answered success for but did not
 change shows up under `not_applied`. Needs Tapir 1.5.9.
 
+On a Tapir newer than 1.8.0 it also changes stairs and railings, and the name and
+reference ID of sections, elevations and detail and worksheet markers, and a
+marker's clip polygon. `id` stays the Element ID everywhere, so the reference ID in
+the marker is `reference_id`. Archicad solves a stair again after a change and may
+adjust the step values, which show up under `not_applied`. MEP elements stay in the
+gateway (`ModifyMEPElements`): Tapir names them `Unknown`, so the tool cannot choose a
+command from the type.
+
 `apply_favorites` makes elements match an office favourite: "make these 40 doors
 Internal Door". Without a favourite it lists the ones that fit. The dry run
 warns what a favourite takes over besides materials and pens, because Tapir's
@@ -95,7 +103,9 @@ since a favourite's ID is a template value; `keep` also takes the layer. On
 Tapir 1.7.3 Tapir keeps them itself, `keep` also takes `width`, `height`,
 `sillHeight`, `referenceLineLocation`, `topOffset` and `relativeTopStory` (keep
 the last three together), and the dry run names the favourite's library part,
-marker and folder. On Tapir 1.8.0 a door or window keeps its own library part,
+marker and folder. On a Tapir newer than 1.8.0 and Archicad 29 it also names the
+favourite's layer and Element ID, and warns only about elements that would change.
+On Tapir 1.8.0 a door or window keeps its own library part,
 Element ID and layer: live, it took only the favourite's size and the parameters
 both parts have, so changing the part takes `ChangeLibraryPartOfElements`
 through `execute_write_api_command`. A commit reports every field that changed,
@@ -115,6 +125,16 @@ every field it does not change, and values Tapir would silently replace with a
 default are refused. A layer is deleted only when no element is on it. Attribute
 writes cannot be undone in Archicad. Needs Tapir 1.5.4.
 
+On a Tapir newer than 1.8.0 and Archicad 27, `{"replace": "Fill", "attribute": ...,
+"with": ...}` deletes a fill, line, surface or building material and rewrites
+everything that used it to another one of the same type, like Delete and Replace in
+the Attribute Manager. One call changes the whole project, in one undo step per type,
+so read the dry run: it lists the elements, tool defaults, favourites, other attributes
+and override rules that use it. Elements on hidden or locked layers change too, as
+Tapir shows and unlocks those layers and puts them back. Hotlinked elements cannot be
+changed, indices typed into GDL scripts are not found, and if an element cannot be
+changed the attribute stays and the change reports under `failed`.
+
 `edit_property_definitions`, `edit_classifications` and `import_definitions` edit
 property definitions and classification systems in place, instead of the XML
 round trip through Property Manager or Classification Manager. A property can be
@@ -126,13 +146,16 @@ Needs Tapir 1.6.0.
 
 ## Creating
 
-`create_elements` places any of the 44 element types Tapir can create: walls,
-beams, columns, slabs, roofs, morphs, meshes, stairs, railings, zones, curtain
-walls, grid elements, objects, lamps, doors and windows in walls, openings (also
-from the Opening tool's settings, Archicad 29), analytical loads, supports and
-links (Archicad 26), MEP routes and elements, electrical panels, devices and circuits (Archicad 30),
-sections, interior elevations, hotlink instances, 2D lines to texts and labels,
-keynote labels, dimensions and drawings on a layout. Items use Tapir's own
+`create_elements` places any of the 51 element types Tapir can create: walls,
+beams, columns, slabs, roofs, shells, morphs, meshes, stairs, railings (also along
+a 3D polyline), zones, curtain walls, grid elements, objects, lamps, doors and
+windows in walls, skylights in roofs and shells, openings (also from the Opening
+tool's settings, Archicad 29), analytical loads, supports and links (Archicad 26),
+MEP routes, elements, flexible segments and take-offs (Archicad 28), electrical
+panels, devices and circuits (Archicad 30), sections, elevations (Tapir 2.0), interior elevations, detail
+and worksheet markers, hotlink instances, 2D lines to texts and labels, keynote
+labels, dimensions and drawings on a layout. Shells, skylights, polyline railings,
+flexible segments, take-offs and the two markers need a Tapir newer than 1.8.0. Items use Tapir's own
 fields; `items=[]` returns a type's schema with notes on what it leaves out. The
 dry run validates every item, checks that a named favourite or library part
 exists (with the closest names when it does not), and checks hosts for
@@ -141,7 +164,11 @@ reason. It warns about an object without `dimensions` (it would take the tool's
 current size), about `offset` and `useFixedAngle` (Archicad discards them), and
 about a door or window without `sillHeight`. On Tapir 1.7.3 most types also take
 the Element ID as `id`. Model elements are placed from the floor plan or the 3D
-window; 2D elements go into the active drawing window.
+window; 2D elements go into the active drawing window, or, on a Tapir newer than
+1.8.0, into the database given as `database` (a `{"guid": ...}`, for lines, arcs,
+circles, polylines, splines, hatches, hotspots, texts and labels). With `database`,
+a label's parent is not checked, because that check knows only the active window's
+elements.
 
 `create_swept_beam`, `create_road_marking` and `create_road_arrow` place GDL objects
 of this project along a path or an existing element: a beam swept along a 3D path
@@ -160,7 +187,19 @@ shows with `record_library_part`. Then `create_elements` and `modify_elements`
 take `placement` instead of coordinates, angle, `reflected` and sizes: an
 object's footprint centre, size and head direction, or a door's or window's two
 points and which leaves open. The records are one JSON file on this machine,
-shared by every project. Learning needs Tapir 1.7.2.
+shared by every project. Learning needs Tapir 1.7.2. On Tapir 1.8.0 and older a door
+or window learned leaves the Door or Window tool holding the part, with parameters
+that cannot be read. On a newer Tapir, learning samples an object or lamp at the part's
+own size and 1.5 times it, and the record keeps that own size: `create_elements` then
+takes an object's `placement` without `size`, and fills a door's or window's width and
+height when the item leaves them out. `modify_elements` still needs `size`, since an
+element already placed has one. The part's own values are as stored in it, so one that
+clamps its size may draw otherwise; the existing warning catches that.
+
+`preview_library_parts` draws the 2D symbols of up to 8 parts in one image with nothing
+placed, so an agent can compare candidates before learning one. It gives each part's default
+size and extent as JSON. It shows the default parameters, and only lines, arcs and polygons,
+so it does not replace the look after placing. Needs a Tapir newer than 1.8.0.
 
 The tool descriptions carry the rules for reading a sketch, so the agent follows
 them without being told: learn a part before placing it; choose the part from
@@ -177,6 +216,10 @@ detail, worksheet or layout), opens it, selects, highlights and zooms. Archicad
 answers success for selections and zooms it did not make, so the selection is
 read back and the story or window checked after the switch. `guids=[]` removes
 the highlight and the selection. Needs Tapir 1.3.1; the story switch needs 1.7.0.
+On a Tapir newer than 1.8.0, `in_3d=true` opens the 3D window on just the floor
+plan's elements among them, as Show Selection in 3D does, and reports the rest where
+they are. They always become the selection, 2D elements show nothing there, and
+`guids=[]` shows everything.
 
 `capture_window` is how an agent looks: it saves what the current window shows
 (floor plan, section, 3D, layout) as a PNG and returns it as an image, so a
@@ -195,14 +238,16 @@ and BCF files.
 `export_ifc` saves the project as `.ifc` or `.ifczip` with a translator chosen by
 name and one of Archicad's five element scopes. It never replaces an existing
 file without `overwrite=true`, checks the file is there afterwards, and never
-opens or merges IFC. Needs Tapir 1.6.0. `publish` runs a Publisher set.
+opens or merges IFC. Needs Tapir 1.6.0. `publish` runs a Publisher set; on a Tapir
+newer than 1.8.0 an unknown name is refused with the project's sets.
 
 `reserve_elements` and `release_elements` are confirm-gated. A dry run reports
-unknown GUIDs, elements already in your workspace and, on Tapir 1.7.3, who holds
-the rest; on older Tapir that is only learned by attempting. A reservation
-reports what was reserved, what others hold (with their names) and what Archicad
-pulled in on the side: reserving one door also reserved its wall and the wall's
-other door. Both also take `object_sets`: an attribute type, `Properties`,
+unknown GUIDs, elements already in your workspace and, on a Tapir newer than
+1.8.0, who holds the rest; on older Tapir that is only learned by attempting. A
+reservation reports what was reserved, what others hold (with their names), any
+GUIDs that are not elements, and what Archicad pulled in on the side: reserving
+one door also reserved its wall and the wall's other door. Both also take
+`object_sets`: an attribute type, `Properties`,
 `Classifications` or any Archicad set name (`Favorites`, `ProjectInfo`, ...),
 for which the dry run always says who holds them. In a Teamwork project the
 definition tools and `edit_attributes` refuse an edit whose set is not reserved
@@ -220,15 +265,18 @@ schedule API at all. See [Schedules](schedules.md).
 `deploy_gdl_object` turn mesh models (OBJ, 3DS) into placeable library parts
 with finish variants, without the GDL editor. Deploying places the object,
 renders it and returns the image, because Archicad silently drops defective 3D
-bodies that every offline validator passes. Needs the GDL workspace folder set
-and added to Archicad's Library Manager once. See [GDL pipeline](gdl-pipeline.md).
+bodies that every offline validator passes. On a Tapir newer than 1.8.0 it also
+says whether the part's script ran and what it made. Needs the GDL workspace folder
+set and added to Archicad's Library Manager once, which `link_workspace=true` can do
+there. `replace_embedded=true` replaces a part already in the embedded library. See
+[GDL pipeline](gdl-pipeline.md).
 
 ## Gateway and scripting
 
 `list_api_commands`, `describe_api_command`, `execute_read_api_command` and
 `execute_write_api_command` reach the whole official and Tapir command surface:
-715 commands with the Tapir 1.8.0 definitions (73 official, 642 Tapir), 315
-reads and 400 writes. The write half needs `confirm=true`, because it can reach
+863 commands with the Tapir 2.0.0 definitions (73 official, 790 Tapir), 387
+reads and 476 writes. The write half needs `confirm=true`, because it can reach
 `DeleteElements` and `QuitArchicad`. The
 [API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)
 shows which commands have a tool of their own.

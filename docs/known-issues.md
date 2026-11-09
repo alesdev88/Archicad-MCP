@@ -397,7 +397,10 @@ are `null` even though the instance is otherwise fine.
   favourite, or the part picked again in the tool's settings, puts the tool right;
   openings already placed keep the fault. `create_elements` warns about doors and
   windows sent by `libraryPartName`, and a learned door or window shows no
-  parameters, so a placement's `leaves` end in `placed_not_set`.
+  parameters, so a placement's `leaves` end in `placed_not_set`. Tapir's main after
+  1.8.0 sets the part on the created opening only and leaves the tool alone, so on
+  a Tapir newer than 1.8.0 the warnings stop. Tapir's change says it is untested in
+  Archicad, so this still needs a live check before release.
 - **"Double Window" draws at least 1.5 m wide** (live 22.10.2026). Sent 1.0, 1.2,
   1.5 and 2.0 m wide, its plan boxes were 1.5, 1.5, 1.5 and 2.0 m, while
   `GetDetailsOfElements` kept the width sent. A sketch's 1.2 m double window comes
@@ -458,6 +461,42 @@ Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
   (no attribute) and new layers with intersection group 0, so a create without
   them warns.
 
+## Tapir 2.0.0: the live check of 09.11.2026
+
+The work built ahead of the release, against Tapir's `main` at a7d4b075, compared with the
+2.0.0 definitions and then run on MCP-Test (Archicad 29, stock Tapir 2.0.0). What was found:
+
+- **Doors and windows by `libraryPartName`:** the part is set on the created opening and the
+  Door tool keeps its own. Without `width` the opening takes the tool's width, not the part's
+  own (Empty Door, 1.2 m of its own, came in at 0.9 m), and `create_elements` now says so.
+- **Stairs:** `baseLineEdges` builds a landing. `baselinePosition` Left puts the stair to the
+  right of the baseline's direction, Right to the left, Center across it. A positive
+  `baselineOffset` moves the stair across the baseline by that much, so the baseline lies inside
+  it, on Left and on Right alike. A non-zero offset still stops the stair checks.
+- **New `create_elements` types:** shell, skylight, polyline railing, section, elevation and both
+  markers each placed once.
+- **`modify_elements`:** read-backs match on a stair, a railing, a section, an elevation and both
+  markers.
+- **`show_elements(in_3d=true)` from the floor plan:** shows exactly the elements. The selection
+  reads empty while the 3D window is active and is there again on the plan, so the tool no longer
+  reads it back.
+- **`apply_favorites`:** the dry run's layer is the one the commit applies.
+- **`edit_attributes` replace:** on throwaway building materials the dry run named the element the
+  commit changed, and the replaced material is gone.
+- **`library-parts-loaded`:** `GetMissingLibPartNames` answers for loaded parts (0 of 138 failing).
+- **`GetGDLParametersOfLibraryParts` lists A and B**, so parts get an `own_size`.
+- **`preview_library_parts`:** the right way up, the cross at the insertion point.
+- **`learn_library_part`:** runs on Bed Double 01, Chair 01, Door and Window. Chair 01's plan does not
+  follow its A and B, so `placement` refuses it. A bed placed by `placement` without `size` takes its
+  own 1.8 x 2.0 m and the head points where asked.
+- **`set_element_data`:** round trip of a GDL parameter on an object. **`gdl_check`:** answers on a
+  sound part and refuses an unknown name.
+
+Not run: `database` on `create_elements`, `show_elements(in_3d=true)` from a section, a
+favourite that keeps a copy in `edit_attributes`, the one undo step, a library actually removed for
+`library-parts-loaded`, `gdl_check` on a broken part, `link_workspace`, the `ifc-spatial-structure`
+rule (it needs a real project), and a reservation dry run (it needs a Teamwork project).
+
 ## Teamwork reservation: what Tapir reports and what is derived
 
 Tapir 1.5.9's `ReserveElements` (present since 1.1.4, wrapping
@@ -474,10 +513,22 @@ answers with an `executionResult` only. So of the four outcomes
 | `already_mine` | Tapir `FilterElements` with `InMyWorkspace`, before the attempt |
 | `indirectly_reserved` | `InMyWorkspace` over the whole plan before and after the attempt, minus what was asked for |
 
-There is **no read that says who holds an element** without trying to reserve
-it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object sets (attributes),
-not elements. That is why the dry run stops at not-found and already-mine, and
-why the tool is confirm-gated instead of dry-run-by-default in the usual sense.
+Up to Tapir 1.8.0 there is **no read that says who holds an element** without
+trying to reserve it. `ACAPI_Teamwork_GetLockableStatus` covers lockable object
+sets (attributes), not elements. `GetReservationStatusOfElements` (1.7.3) looks
+like one, but it takes its answer from `elemHead.lockId`, the Edit > Locking
+state, so an element a teammate has reserved answers `Free`. That is why the dry
+run there stops at not-found and already-mine, and why the tool is confirm-gated
+instead of dry-run-by-default in the usual sense.
+
+Tapir's `main`, after 1.8.0, reads `elemHead.userId`, so `reserve_elements` trusts
+the status only on a Tapir newer than 1.8.0 and there lists the holders under
+`held_by_others`. That Tapir's `ReserveElements` also fails its `executionResult`
+over a GUID that is no element (a navigator item, a layout), and lists it under
+`notElements`, even when it reserved the elements beside it. A real refusal of
+the whole attempt can arrive with the same list, so the tool reads the reservation
+back as usual, reports the GUIDs as `not_elements` and passes the message on as
+`note`. Both are read from Tapir's source and not yet tried on a Teamwork project.
 
 **Verified live (03.09.2026, AC 29/5101, Tapir 1.5.9)** on a BIMcloud Teamwork
 project with 62,997 elements, with the owner's go-ahead, on one selected door:
@@ -546,10 +597,16 @@ the item schema (`items=[]`) and warns where it can check them.
 - **Stairs.** `baseLinePoints` is the stair's left edge and the flight lies
   `flightWidth` to its right. A U given as its centre line overlaps itself and
   Archicad answers only "Failed to create new Stair"; the dry run now warns.
-  CreateStairs has no turn or winder setting, so a tight U (16 risers in
-  2.2 x 2.0 m) ran its top flight 1.65 m past the baseline and through the slab
-  above; this cannot be fixed here, and the create reports such a stair. Shape
-  it in Archicad's stair editing.
+  Up to Tapir 1.8.0, CreateStairs has no turn or winder setting, so a tight U (16
+  risers in 2.2 x 2.0 m) ran its top flight 1.65 m past the baseline and through
+  the slab above, and the create reports such a stair. A Tapir newer than 1.8.0
+  takes `baselinePosition`, `baselineOffset`, `baseLineEdges` and
+  `baseLineVertices`, and pins `treadDepth` as the going; none of it tried live yet.
+  The overlap check follows `baselinePosition` and stands down when an item gives
+  its own edges or turns. It also stands down on a non-zero `baselineOffset`,
+  because neither Tapir's schema nor the DevKit says which way a positive offset
+  runs. A stair that leaves its position to a favourite or the Stair tool is still
+  checked as if the baseline were its left edge.
 - **Element IDs.** Doors and windows placed from a favourite took the
   favourite's ID, and zones the tool's: 14 doors were all `DOO - 004`. The
   create warns and points to `set_element_data` (`General_ElementID`).

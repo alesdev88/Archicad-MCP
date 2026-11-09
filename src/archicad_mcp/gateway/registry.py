@@ -23,7 +23,22 @@ _READ_VERB = re.compile(r"^(?:Get|Is)(?=[A-Z0-9]|$)")
 # list of GUIDs and returns the subset matching a filter: it inspects, it does not
 # act. Kept as an explicit set rather than more regex, because every entry here is
 # a judgement about one command and should have to be argued for individually.
-_READ_COMMANDS = frozenset({"FilterElements"})
+#
+# The rest came with Tapir's main after 1.8.0, each read from its Execute there:
+# CheckPropertyValues sets a value on its own copy of the property and asks whether
+# it is valid. CompareLibraryPartUnIds compares two strings. FindLibraryParts and
+# SearchLibraryParts list loaded parts. ReadFavoritesFile only fills an array from
+# the file, importing nothing. InterpretAutoTexts resolves autotext keys to values.
+# InterpretGDLScript3D stays out: GDL can read and write files.
+#
+# From Tapir 2.0.0, each read from its Execute there: SearchFavorites and
+# SearchProperties list what match a filter. ResolveNames looks words up among the
+# open project's names.
+_READ_COMMANDS = frozenset({"FilterElements", "CheckPropertyValues",
+                            "CompareLibraryPartUnIds", "FindLibraryParts",
+                            "SearchLibraryParts", "ReadFavoritesFile",
+                            "InterpretAutoTexts", "SearchFavorites",
+                            "SearchProperties", "ResolveNames"})
 
 
 def classify_access(name: str) -> str:

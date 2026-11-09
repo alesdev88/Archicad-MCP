@@ -431,8 +431,8 @@ def test_the_height_falls_back_to_the_record_then_the_element(tmp_path):
     out = modify_elements(project.connect(), [{"guid": OBJECT,
                                                "placement": _bed(size=no_height)}],
                           records=records)
-    assert out == {"error": f"change 1 ({OBJECT}): give size.height in metres: Tapir 1.7.2 "
-                            "cannot read a part's own height"}
+    assert out["error"].startswith(f"change 1 ({OBJECT}): give size.height in metres")
+    assert "holds no height" in out["error"]
 
 
 def test_a_footprint_off_the_size_asked_warns_and_one_of_no_width_is_an_error(tmp_path):
@@ -658,3 +658,85 @@ def test_an_element_id_is_planned_from_tapir_1_7_3():
     assert "1.7.3" in _reason(old, SLAB) and "set_element_data" in _reason(old, SLAB)
     bad = _dry(ModifyProject(version="1.7.3"), [{"guid": SLAB, "id": 101}])
     assert "text" in _reason(bad, SLAB)
+
+
+def _element(project, guid, kind, **details):
+    project.elements[guid] = {"type": kind, "id": "", "floorIndex": 0, "layerIndex": 1,
+                              "drawIndex": 1, "details": details}
+    return guid
+
+
+def test_a_marker_dry_run_shows_the_reference_id_under_its_own_name():
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "MARK-1", "CutPlane", idStr="S-1")
+    changes = _planned(_dry(project, [{"guid": guid, "reference_id": "S-2"}]), guid)["changes"]
+    assert changes == {"reference_id": {"current": "S-1", "new": "S-2"}}
+
+
+@pytest.mark.parametrize("kind, command, change", [
+    ("Stair", "ModifyStairs", {"flightWidth": 1.2}),
+    ("Railing", "ModifyRailings", {"height": 1.1}),
+    ("CutPlane", "ModifySections", {"name": "A"}),
+    ("Detail", "ModifyDetailMarkers", {"reference_id": "A"}),
+])
+def test_the_new_commands_are_refused_on_a_tapir_without_them(kind, command, change):
+    project = ModifyProject(version="1.8.0")
+    project.missing_commands = {command}
+    guid = _element(project, "EL-1", kind)
+    assert f"has no {command}" in _reason(_dry(project, [{"guid": guid, **change}]), guid)
+
+
+def test_a_railing_gives_its_story_as_story():
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "RAIL-1", "Railing", height=1.0)
+    assert "'story'" in _reason(_dry(project, [{"guid": guid, "floorIndex": 1}]), guid)
+
+
+def test_a_railing_bottom_offset_cannot_go_with_keep_elevation():
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "RAIL-1", "Railing", bottomOffset=0.0)
+    out = _dry(project, [{"guid": guid, "story": 1, "keep_elevation": True, "bottomOffset": 0.1}])
+    assert "keep_elevation" in _reason(out, guid)
+
+
+def test_marker_arcs_need_their_clip_polygon():
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "MARK-1", "Detail", clipPolygon=[])
+    arcs = [{"begIndex": 0, "endIndex": 1, "arcAngle": 0.5}]
+    assert "clipPolygon" in _reason(_dry(project, [{"guid": guid, "polygonArcs": arcs}]), guid)
+
+
+def test_a_new_clip_polygon_is_shown_by_its_size():
+    project = ModifyProject(version="1.8.2")
+    square = [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]
+    guid = _element(project, "MARK-1", "Detail", clipPolygon=square)
+    changes = _planned(_dry(project, [{"guid": guid, "clipPolygon": square}]), guid)["changes"]
+    assert changes["clipPolygon"]["new"] == "4 points"
+
+
+@pytest.mark.parametrize("kind, change, word", [
+    ("Stair", {"stepNum": 14}, "solves"),
+    ("Stair", {"flightWidth": 1.2}, "solves"),
+    ("Railing", {"height": 1.1}, "every segment"),
+])
+def test_what_a_field_changes_besides_itself_is_warned(kind, change, word):
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "EL-1", kind)
+    out = _dry(project, [{"guid": guid, **change}])
+    assert any(word in w for w in _warnings(out, guid))
+
+
+def test_finish_visibility_on_a_stair_warns_of_nothing():
+    project = ModifyProject(version="1.8.2")
+    guid = _element(project, "EL-1", "Stair", finishVisible=True)
+    out = _dry(project, [{"guid": guid, "finishVisible": False}])
+    assert not _warnings(out, guid)
+
+
+def test_a_modify_placement_still_needs_a_size(tmp_path):
+    project, records = _bed_project(tmp_path, own_size={"a": 1.6, "b": 2.0, "height": 0.6})
+    placement = _bed()
+    del placement["size"]
+    out = modify_elements(project.connect(), [{"guid": OBJECT, "placement": placement}],
+                          records=records)
+    assert out["error"].startswith(f"change 1 ({OBJECT})") and "size" in out["error"]

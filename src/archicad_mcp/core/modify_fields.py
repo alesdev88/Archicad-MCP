@@ -33,6 +33,10 @@ TYPE_COMMANDS: dict[str, str] = {
     "Morph": "ModifyMorphs", "Roof": "ModifyRoofs", "Mesh": "ModifyMeshes",
     "Object": "ModifyObjects", "Lamp": "ModifyLamps", "Text": "ModifyTexts",
     "Label": "ModifyLabels",
+    # From Tapir's main after 1.8.0, and read from its source, not tried live yet.
+    "Stair": "ModifyStairs", "Railing": "ModifyRailings",
+    "CutPlane": "ModifySections", "Elevation": "ModifySections",
+    "Detail": "ModifyDetailMarkers", "Worksheet": "ModifyDetailMarkers",
 }
 
 LIST_KEYS: dict[str, str] = {
@@ -43,6 +47,15 @@ LIST_KEYS: dict[str, str] = {
     "ModifyMeshes": "meshesData", "ModifyObjects": "objectsWithDetails",
     "ModifyLamps": "lampsWithDetails", "ModifyTexts": "textsWithDetails",
     "ModifyLabels": "labelsWithDetails",
+    "ModifyStairs": "stairsWithDetails", "ModifyRailings": "railingsWithDetails",
+    "ModifySections": "sectionsWithDetails", "ModifyDetailMarkers": "detailMarkersWithDetails",
+}
+
+# This tool's name -> the field Tapir takes. `id` is the Element ID on every element here
+# (COMMON_FIELDS), and these commands' own `id` is the reference ID in the marker.
+_ALIASES: dict[str, dict[str, str]] = {
+    "ModifySections": {"reference_id": "id"},
+    "ModifyDetailMarkers": {"reference_id": "id"},
 }
 
 # GetDetailsOfElements `fields` and `hotlinkId` arrived in 1.5.9.
@@ -98,7 +111,7 @@ ABSOLUTE_Z_FIELDS: dict[str, str] = {
 RELATIVE_Z_FIELDS: dict[str, frozenset[str]] = {
     "ModifyBeams": frozenset({"level"}), "ModifyMeshes": frozenset({"level"}),
     "ModifyMorphs": frozenset({"level"}), "ModifyWalls": frozenset({"bottomOffset"}),
-    "ModifyColumns": frozenset({"bottomOffset"}),
+    "ModifyColumns": frozenset({"bottomOffset"}), "ModifyRailings": frozenset({"bottomOffset"}),
 }
 
 _NOT_SETTABLE = frozenset({"elementId", "floorIndex"})
@@ -114,6 +127,7 @@ _REFUSED: dict[tuple[str, str], str] = {
     ("ModifyLamps", "lightColor"): _DISCARDED,
     ("ModifyMeshes", "floorIndex"): _STORY_NOT_FLOOR,
     ("ModifyTexts", "floorIndex"): _STORY_NOT_FLOOR,
+    ("ModifyRailings", "floorIndex"): _STORY_NOT_FLOOR,
 }
 
 # Fields Tapir ignores unless the outline is sent with them.
@@ -123,6 +137,7 @@ _NEEDS_OUTLINE: dict[tuple[str, str], str] = {
     ("ModifyRoofs", "holes"): "polygonOutline",
     ("ModifyMeshes", "polygonArcs"): "polygonCoordinates",
     ("ModifyMeshes", "holes"): "polygonCoordinates",
+    ("ModifyDetailMarkers", "polygonArcs"): "clipPolygon",
 }
 _POSITIVE_ONLY: dict[str, frozenset[str]] = {
     "ModifyMeshes": frozenset({"contourPen", "levelPen", "lineTypeIndex"}),
@@ -136,11 +151,18 @@ _READ_KEYS: dict[tuple[str, str], str] = {
     ("ModifyObjects", "coordinates"): "origin",
     ("ModifyLamps", "coordinates"): "origin",
     ("ModifyMorphs", "translation"): "origin",
+    ("ModifySections", "reference_id"): "idStr",
+    ("ModifyDetailMarkers", "reference_id"): "detailIdStr",
+    ("ModifyDetailMarkers", "name"): "detailName",
 }
 _NO_READ = frozenset({
     ("ModifyWindows", "reveal"), ("ModifyWindows", "revealDepthOffset"),
     ("ModifyDoors", "reveal"), ("ModifyDoors", "revealDepthOffset"),
     ("ModifyMorphs", "rotationDegreesZ"),
+    # A stair's parts are its sub-elements, so GetDetailsOfElements on the stair has none
+    # of these, nor its locks.
+    ("ModifyStairs", "treads"), ("ModifyStairs", "risers"), ("ModifyStairs", "structures"),
+    ("ModifyStairs", "treadDepthLocked"), ("ModifyStairs", "totalHeightLocked"),
 })
 
 # Partial values completed from the current read, and the key they come from.
@@ -166,7 +188,7 @@ _COMPLETE_FROM: dict[tuple[str, str], str] = {
 # an equal polygon read back different).
 _LIST_FIELDS = frozenset({"polygonOutline", "polygonArcs", "polygonCoordinates",
                           "holes", "sublines", "body", "levels", "runs",
-                          "textureProjectionCoords"})
+                          "textureProjectionCoords", "clipPolygon"})
 
 # Style fields that make ModifyTexts / ModifyLabels rebuild the content.
 _RUN_STYLE = frozenset({"penIndex", "fontIndex", "bold", "italic", "underline",
@@ -178,6 +200,9 @@ _CROSS_SECTION = {
     "ModifyColumns": frozenset({"width", "depth", "isWidthAndHeightLinked",
                                 "buildingMaterialId", "profileId", "circleBased"}),
 }
+
+# What Archicad solves a stair again for ("it may adjust the step values").
+_STAIR_SOLVED = frozenset({"flightWidth", "totalHeight", "stepNum", "riserHeight", "treadDepth"})
 
 _GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -193,6 +218,8 @@ def _item_schema(command: str) -> dict:
     item.get("properties", {}).pop("elementId", None)
     if "required" in item:
         item["required"] = [r for r in item["required"] if r != "elementId"]
+    for alias, wire in _ALIASES.get(command, {}).items():
+        item["properties"][alias] = item["properties"].pop(wire)
     return item
 
 
@@ -204,6 +231,12 @@ def item_schema(command: str) -> dict:
 
 def allowed_fields(command: str) -> frozenset[str]:
     return frozenset(_item_schema(command).get("properties", {})) - _NOT_SETTABLE
+
+
+def wire_item(command: str, item: dict) -> dict:
+    """One element's fields under the names the command takes."""
+    aliases = _ALIASES.get(command, {})
+    return {aliases.get(name, name): value for name, value in item.items()}
 
 
 def _number(value) -> bool:
@@ -404,6 +437,11 @@ def side_effects(command: str, fields: dict, entry: dict,
                 isinstance(style, dict) and _RUN_STYLE & set(style)):
             out.append("rebuilds the content as one paragraph: word wrap turns off "
                        "and the style applies to every run")
+    if command == "ModifyStairs" and _STAIR_SOLVED & set(fields):
+        out.append("Archicad solves the stair again within its baseline, so it may adjust "
+                   "the step values: what it did not take comes back under not_applied")
+    if command == "ModifyRailings" and "height" in fields:
+        out.append("height applies to every segment of the railing")
     return out
 
 
