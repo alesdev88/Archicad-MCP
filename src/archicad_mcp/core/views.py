@@ -308,7 +308,7 @@ def _ask_3d(conn: ArchicadConnection, guids: list[str]) -> dict | None:
 
 def _show_in_3d(conn: ArchicadConnection, guids: list[str], select: bool, highlight: bool,
                 zoom: bool) -> dict:
-    """Show Selection in 3D through Tapir's main after 1.8.0, not tried live yet. It fails
+    """Show Selection in 3D through ShowElementsIn3D (Tapir 2.0.0, live 09.11.2026). It fails
     the whole call over a GUID the current database does not hold, so only floor plan
     elements are sent, and from the floor plan or the 3D window."""
     refusal = require_tapir_command(conn, "ShowElementsIn3D", "show_elements")
@@ -341,9 +341,10 @@ def _show_in_3d(conn: ArchicadConnection, guids: list[str], select: bool, highli
         warnings.append(f"Archicad shows {now or 'an unknown window'}, not the 3D window.")
     out["view"] = {"type": "3DModel"}
     out["shown"] = len(marked)
-    selected = {g.upper() for g in get_selected_element_ids(conn)}
-    out["not_selectable"] = [g for g in marked if g.upper() not in selected]
-    out["selected"] = len(marked) - len(out["not_selectable"])
+    # ShowElementsIn3D selects them all or fails, and the selection cannot be read back
+    # here: live on Tapir 2.0.0 it reads empty in the 3D window, and is there on the plan.
+    out["not_selectable"] = []
+    out["selected"] = len(marked)
     if highlight:
         out["highlighted"] = highlight_elements(conn, marked)["highlighted"]
     else:

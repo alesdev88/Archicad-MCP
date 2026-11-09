@@ -520,6 +520,11 @@ def serve_3d(monkeypatch, project: LiveProject, refuse=None) -> FakeCore:
 
     core = serve(monkeypatch, project)
     core.tapir_responses["ShowElementsIn3D"] = show_3d
+    # Live on Tapir 2.0.0: the selection reads empty while the 3D window is active, and is
+    # there again on the floor plan.
+    read_selection = core.tapir_responses["GetSelectedElements"]
+    core.tapir_responses["GetSelectedElements"] = lambda p: (
+        {"elements": []} if project.window == "3DModel" else read_selection(p))
     return core
 
 
@@ -527,16 +532,15 @@ def shown_in_3d(core) -> list[dict]:
     return [p for c, p in core.calls if c == "ShowElementsIn3D"]
 
 
-async def test_in_3d_shows_the_elements_and_reads_the_selection_back(monkeypatch):
-    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0), "B": wall(1)}}, selected=["Z"],
-                          unselectable=["B"])
+async def test_in_3d_shows_the_elements_and_counts_them_selected(monkeypatch):
+    project = LiveProject({FLOOR_PLAN_DB: {"A": wall(0), "B": wall(1)}}, selected=["Z"])
     core = serve_3d(monkeypatch, project)
     out = await show({"guids": ["A", "B"], "in_3d": True})
     assert [[e["elementId"]["guid"] for e in p["elements"]] for p in shown_in_3d(core)] == [
         ["A", "B"]]
     assert out["view"] == {"type": "3DModel"}
     assert out["shown"] == 2
-    assert out["selected"] == 1 and out["not_selectable"] == ["B"]
+    assert out["selected"] == 2 and out["not_selectable"] == []
     assert project.highlighted == ["A", "B"]
     assert project.zoomed == [["A", "B"]]
     assert out["warnings"] == []
