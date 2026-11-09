@@ -499,7 +499,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "skylight (in a roof or shell), opening; MEP mep_route, mep_element, "
         "mep_flexible_segment, mep_take_off (Archicad 28+), electrical_panel, "
         "electrical_device, electrical_circuit (Archicad 30); markers section, "
-        "interior_elevation, detail_marker, worksheet_marker; hotlink_instance; 2D "
+        "elevation, interior_elevation, detail_marker, worksheet_marker; hotlink_instance; 2D "
         "line, arc, circle, polyline, spline, hatch, hotspot, text, label, "
         "keynote_label; dimension, level_dimension, wall_thickness_dimension, "
         "section_dimension; "
@@ -1218,7 +1218,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         return _publish.publish(_tapir_conn(port, "publish"), publisher_set_name)
 
     @mcp.tool(description=(
-        "Install the pinned Tapir add-on (1.8.0) into Archicad's Add-Ons folder. "
+        "Install the pinned Tapir add-on (2.0.0) into Archicad's Add-Ons folder. "
         "Dry run by default: it finds every Archicad on this computer, downloads and "
         "checks the file (sha256) and says what it would do. confirm=true writes. "
         "Never replaces an existing Tapir unless replace_existing=true, and then "

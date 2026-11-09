@@ -152,7 +152,7 @@ a 3D polyline), zones, curtain walls, grid elements, objects, lamps, doors and
 windows in walls, skylights in roofs and shells, openings (also from the Opening
 tool's settings, Archicad 29), analytical loads, supports and links (Archicad 26),
 MEP routes, elements, flexible segments and take-offs (Archicad 28), electrical
-panels, devices and circuits (Archicad 30), sections, interior elevations, detail
+panels, devices and circuits (Archicad 30), sections, elevations (Tapir 2.0), interior elevations, detail
 and worksheet markers, hotlink instances, 2D lines to texts and labels, keynote
 labels, dimensions and drawings on a layout. Shells, skylights, polyline railings,
 flexible segments, take-offs and the two markers need a Tapir newer than 1.8.0. Items use Tapir's own
@@ -275,8 +275,8 @@ there. `replace_embedded=true` replaces a part already in the embedded library. 
 
 `list_api_commands`, `describe_api_command`, `execute_read_api_command` and
 `execute_write_api_command` reach the whole official and Tapir command surface:
-715 commands with the Tapir 1.8.0 definitions (73 official, 642 Tapir), 315
-reads and 400 writes. The write half needs `confirm=true`, because it can reach
+863 commands with the Tapir 2.0.0 definitions (73 official, 790 Tapir), 387
+reads and 476 writes. The write half needs `confirm=true`, because it can reach
 `DeleteElements` and `QuitArchicad`. The
 [API dashboard](https://alesdev88.github.io/Archicad-MCP/api-dashboard.html)
 shows which commands have a tool of their own.

@@ -461,52 +461,41 @@ Read in Tapir 1.7.1's `AttributeCommands.cpp` (2026-10-19), and the reason
   (no attribute) and new layers with intersection group 0, so a create without
   them warns.
 
-## Tapir after 1.8.0: built from its source, not tried live
+## Tapir 2.0.0: the live check of 09.11.2026
 
-The definitions come from Tapir's `main` (a7d4b075), which says 1.8.1, and
-`scripts/check_release_version.py` holds any release until they are re-pinned to the
-real Tapir release. Everything that needs the new add-on is unit-tested against the
-shapes in Tapir's source and has not run in Archicad. The check to make, on a test
-project, once a newer Tapir is installed:
+The work built ahead of the release, against Tapir's `main` at a7d4b075, compared with the
+2.0.0 definitions and then run on MCP-Test (Archicad 29, stock Tapir 2.0.0). What was found:
 
-- A door and a window by `libraryPartName`: parameters read and written, tool defaults
-  unchanged. Tapir's change says it is untested in Archicad. If it fails, the warnings'
-  gate in `create.py` comes out again.
-- A stair with a landing (`baseLineEdges`, `baseLineVertices`), one with each
-  `baselinePosition`, and which way a positive `baselineOffset` runs. Until that is
-  known, a non-zero offset stops the stair checks.
-- Each new `create_elements` type once, and `database`.
-- `modify_elements` read-backs on a stair, a railing, a section, an elevation and both
+- **Doors and windows by `libraryPartName`:** the part is set on the created opening and the
+  Door tool keeps its own. Without `width` the opening takes the tool's width, not the part's
+  own (Empty Door, 1.2 m of its own, came in at 0.9 m), and `create_elements` now says so.
+- **Stairs:** `baseLineEdges` builds a landing. `baselinePosition` Left puts the stair to the
+  right of the baseline's direction, Right to the left, Center across it. A positive
+  `baselineOffset` moves the stair across the baseline by that much, so the baseline lies inside
+  it, on Left and on Right alike. A non-zero offset still stops the stair checks.
+- **New `create_elements` types:** shell, skylight, polyline railing, section, elevation and both
+  markers each placed once.
+- **`modify_elements`:** read-backs match on a stair, a railing, a section, an elevation and both
   markers.
-- `show_elements(in_3d=true)`, from the floor plan and from a section.
-- An `apply_favorites` dry run on a wall: the layer and Element ID it names are the ones
-  the commit then applies.
-- An `edit_attributes` replace on throwaway attributes: the dry run's list against what
-  the commit changes, a favourite that keeps a copy, and one undo step.
-- The `library-parts-loaded` rule with a library removed: whether `GetMissingLibPartNames`
-  answers for loaded parts too (if it answers for none, the rule reports `skipped`), and
-  whether the name it gives matches the listing, as a mismatch would fail every element.
-  The `ifc-spatial-structure` rule on a real project, to learn whether an element's IFC
-  story ever differs from its home story.
-- Whether `GetGDLParametersOfLibraryParts` lists A and B. The DevKit calls that list
-  "others than A and B" and Tapir drops the separate values, though its own element read
-  matches the two lists up by index, which suggests they are there. If they are not, no
-  part gets an `own_size`: learning says so, every sample stays at the fixed sizes, and
-  `GetLibraryPartParameterValues` is the next read to try.
-- `learn_library_part` on Bed Double 01, Chair 01, Door and Window: how the symbol's extents
-  compare with the plan boxes, which decides whether measuring from symbols is ever worth doing
-  and settles which way a partial arc runs. Whether `GetGDLParametersOfLibraryParts` and
-  `GetLibraryPart2DPrimitives` find the same part under the same name.
-- `preview_library_parts` on those four: drawn the right way up, the cross where the insertion
-  point is.
-- A bed and a chair placed by `placement` without `size`: the part's own size, and which way
-  the head points. A door without `width`, with the Door tool set to another width: the part's
-  width, not the tool's.
-- `deploy_gdl_object`: `gdl_check` on a sound part and on a broken one, and
-  `link_workspace` twice, as the second run depends on `GetLibraries` giving the path
-  in a form that compares equal.
-- A reservation dry run on a Teamwork project, with a teammate holding an element.
-- `set_element_data` round trips and a stair's 3D bounding box, which Tapir also changed.
+- **`show_elements(in_3d=true)` from the floor plan:** shows exactly the elements. The selection
+  reads empty while the 3D window is active and is there again on the plan, so the tool no longer
+  reads it back.
+- **`apply_favorites`:** the dry run's layer is the one the commit applies.
+- **`edit_attributes` replace:** on throwaway building materials the dry run named the element the
+  commit changed, and the replaced material is gone.
+- **`library-parts-loaded`:** `GetMissingLibPartNames` answers for loaded parts (0 of 138 failing).
+- **`GetGDLParametersOfLibraryParts` lists A and B**, so parts get an `own_size`.
+- **`preview_library_parts`:** the right way up, the cross at the insertion point.
+- **`learn_library_part`:** runs on Bed Double 01, Chair 01, Door and Window. Chair 01's plan does not
+  follow its A and B, so `placement` refuses it. A bed placed by `placement` without `size` takes its
+  own 1.8 x 2.0 m and the head points where asked.
+- **`set_element_data`:** round trip of a GDL parameter on an object. **`gdl_check`:** answers on a
+  sound part and refuses an unknown name.
+
+Not run: `database` on `create_elements`, `show_elements(in_3d=true)` from a section, a
+favourite that keeps a copy in `edit_attributes`, the one undo step, a library actually removed for
+`library-parts-loaded`, `gdl_check` on a broken part, `link_workspace`, the `ifc-spatial-structure`
+rule (it needs a real project), and a reservation dry run (it needs a Teamwork project).
 
 ## Teamwork reservation: what Tapir reports and what is derived
 

@@ -240,7 +240,8 @@ def test_bounding_box_queries_are_reads(name):
 
 @pytest.mark.parametrize("name", ["CheckPropertyValues", "CompareLibraryPartUnIds",
                                   "FindLibraryParts", "SearchLibraryParts",
-                                  "ReadFavoritesFile", "InterpretAutoTexts"])
+                                  "ReadFavoritesFile", "InterpretAutoTexts",
+                                  "SearchFavorites", "SearchProperties", "ResolveNames"])
 def test_reads_without_a_read_verb_need_no_confirmation(name):
     from archicad_mcp.gateway.registry import build_registry, classify_access
     assert classify_access(name) == "read"

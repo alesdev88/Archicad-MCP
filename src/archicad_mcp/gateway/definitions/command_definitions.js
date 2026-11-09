@@ -21,7 +21,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetCommands",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Retrieves every command of the Tapir Add-On with its command group, the Tapir version it was introduced in and its description, so a script can check that a command exists before calling it.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -120,6 +120,72 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "GetArchicadLicenseInfo",
+                "version": "2.0.0",
+                "description": "Retrieves the license the running Archicad runs on: its type (Full, Education, Trial, Demo, Start or BIMcloud Team Client), the raw protection mode with its bits by name, and the highest Software Service Agreement (SSA) level of the license, so a script can warn before it uses a feature the license lacks. The SSA level is not available in Archicad 25.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "licenseType": {
+                "type": "string",
+                "enum": [
+                    "Full",
+                    "Education",
+                    "Trial",
+                    "Demo",
+                    "Start",
+                    "BIMcloudTeamClient"
+                ],
+                "description": "The kind of license Archicad runs on, read from protectionMode: Trial, Demo, Education (an education license with or without a key), BIMcloudTeamClient, Start (the Start edition), otherwise Full."
+            },
+            "protectionMode": {
+                "type": "integer",
+                "description": "The raw protection mode bit mask reported by Archicad (the APIPROT_*_MASK bits of the Archicad API)."
+            },
+            "licenseFlags": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "Site",
+                        "NotForResale",
+                        "School",
+                        "PayPerUse",
+                        "Network",
+                        "Teamwork",
+                        "Education",
+                        "Start",
+                        "Solo",
+                        "LiveSubscription",
+                        "OEM",
+                        "SSA",
+                        "EducationWithoutKey",
+                        "Demo",
+                        "Trial",
+                        "BIMcloudTeamClient"
+                    ]
+                },
+                "description": "The bits set in protectionMode, by name: Site (more licenses), NotForResale, School, PayPerUse, Network (network licensing), Teamwork (Teamwork functionality is on), Education (education key), Start (Start edition), Solo (SOLO edition), LiveSubscription, OEM (Archicad 27 or later), SSA (SSA license, Archicad 25 only), and without a hardware or software key EducationWithoutKey, Demo, Trial and BIMcloudTeamClient."
+            },
+            "ssaLevel": {
+                "type": "string",
+                "enum": [
+                    "NoSSA",
+                    "SSA",
+                    "Forward"
+                ],
+                "description": "The highest Software Service Agreement (SSA) level the license has: NoSSA, SSA or Forward. A script needing a level checks that this is at least that level, in this order. Missing in Archicad 25, which cannot report it."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "licenseType",
+            "protectionMode",
+            "licenseFlags"
+        ]
+    }
+            },{
                 "name": "GetPrinterInfo",
                 "version": "1.7.3",
                 "description": "Retrieves Archicad's current print settings: the print area, grid, fixed text size and scale (the settings PrintView takes).",
@@ -164,22 +230,7 @@ var gCommands = [{
                 "description": "The printer selected in Archicad, or an error when it cannot be read.",
                 "oneOf": [
                     {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The name of the selected printer."
-                            },
-                            "portrait": {
-                                "type": "boolean",
-                                "description": "The selected orientation: true for portrait, false for landscape."
-                            }
-                        },
-                        "additionalProperties": false,
-                        "required": [
-                            "name",
-                            "portrait"
-                        ]
+                        "$ref": "#/PrinterInfo"
                     },
                     {
                         "$ref": "#/ErrorItem"
@@ -191,22 +242,7 @@ var gCommands = [{
                 "description": "The plotter selected in Archicad, or an error when it cannot be read.",
                 "oneOf": [
                     {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The name of the selected plotter."
-                            },
-                            "model": {
-                                "type": "string",
-                                "description": "The model of the selected plotter."
-                            }
-                        },
-                        "additionalProperties": false,
-                        "required": [
-                            "name",
-                            "model"
-                        ]
+                        "$ref": "#/PlotterInfo"
                     },
                     {
                         "$ref": "#/ErrorItem"
@@ -238,6 +274,14 @@ var gCommands = [{
             "prompt": {
                 "type": "string",
                 "description": "Shown in the control box while Archicad waits for the click. Single-byte text: the box takes a char field. Archicad's main thread waits for the click or for Escape, and every other JSON command queues behind this one until then."
+            },
+            "snapFilter": {
+                "$ref": "#/SnapFilter",
+                "description": "Which points and lines of the elements the cursor snaps to. Default: Archicad's usual snapping."
+            },
+            "constraint": {
+                "$ref": "#/InputConstraint",
+                "description": "Constrains the click, for example to a fixed X coordinate or to a direction. Default: no constraint."
             }
         },
         "additionalProperties": false,
@@ -285,22 +329,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "h": {
-                                    "type": "integer",
-                                    "description": "Horizontal pixel position from the left edge of the view window."
-                                },
-                                "v": {
-                                    "type": "integer",
-                                    "description": "Vertical pixel position from the top edge of the view window."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "h",
-                                "v"
-                            ]
+                            "$ref": "#/ScreenPoint"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -325,26 +354,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Pixel positions local to the current Archicad view window (not global desktop coordinates).",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "h": {
-                            "type": "integer",
-                            "description": "Horizontal pixel position from the left edge of the view window.",
-                            "minimum": -32768,
-                            "maximum": 32767
-                        },
-                        "v": {
-                            "type": "integer",
-                            "description": "Vertical pixel position from the top edge of the view window.",
-                            "minimum": -32768,
-                            "maximum": 32767
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "h",
-                        "v"
-                    ]
+                    "$ref": "#/ScreenPointInput"
                 }
             }
         },
@@ -393,6 +403,14 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/ElementType"
                 }
+            },
+            "snapFilter": {
+                "$ref": "#/SnapFilter",
+                "description": "Which points and lines of the elements the cursor snaps to, for example only the points and edges of the element types asked for. Default: Archicad's usual snapping."
+            },
+            "constraint": {
+                "$ref": "#/InputConstraint",
+                "description": "Constrains every click, for example to a fixed X coordinate or to a direction. Default: no constraint."
             }
         },
         "additionalProperties": false,
@@ -426,6 +444,144 @@ var gCommands = [{
         "required": []
     }
             },{
+                "name": "GetCurrentTool",
+                "version": "2.0.0",
+                "description": "Returns the tool active in the Toolbox: its element type, its variation (the subtype, e.g. Door, Skylight or a library part subtype of an add-on) and, for the tools of add-ons, its class id, in the form SetCurrentTool accepts. Nothing is returned when the active tool makes no element, e.g. the Arrow or the Marquee.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "description": "The tool active in the Toolbox, in the form SetCurrentTool accepts. Empty when the active tool makes no element, e.g. the Arrow or the Marquee.",
+        "properties": {
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "The element type of the tool. Unknown for the tools of add-ons, which classId identifies."
+            },
+            "variation": {
+                "type": "string",
+                "description": "The four-character subtype of the tool, e.g. DOOR, SKYL, CRWD, or the signature of a library part subtype registered by an add-on. Missing for the generic tool of the element type.",
+                "minLength": 1,
+                "maxLength": 4
+            },
+            "classId": {
+                "type": "string",
+                "description": "The class id (a guid) of the tool of an add-on, whose elementType is Unknown. Archicad 26 and later.",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    }
+            },{
+                "name": "SetCurrentTool",
+                "version": "2.0.0",
+                "description": "Activates a tool in the Toolbox, given as GetCurrentTool or GetToolboxItems returns it; an empty input activates the Arrow. Archicad switches the tool once it processes its events, so GetCurrentTool may still return the previous tool right after this command.",
+                "inputScheme": {
+        "type": "object",
+        "description": "The tool to activate, in the form GetCurrentTool and GetToolboxItems return. An empty object activates the Arrow.",
+        "properties": {
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "The element type of the tool. Unknown for the tools of add-ons, which classId identifies."
+            },
+            "variation": {
+                "type": "string",
+                "description": "The four-character subtype of the tool, e.g. DOOR, SKYL, CRWD, or the signature of a library part subtype registered by an add-on. Missing for the generic tool of the element type.",
+                "minLength": 1,
+                "maxLength": 4
+            },
+            "classId": {
+                "type": "string",
+                "description": "The class id (a guid) of the tool of an add-on, whose elementType is Unknown. Archicad 26 and later.",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+                "outputScheme": {
+        "$ref": "#/ExecutionResult"
+    }
+            },{
+                "name": "GetToolboxItems",
+                "version": "2.0.0",
+                "description": "Lists the tools of the Toolbox, the tools of add-ons included, in the form SetCurrentTool accepts, and the active tool. includeHidden also lists the tools without an icon, e.g. the Slab Accessory.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "includeHidden": {
+                "type": "boolean",
+                "description": "Also list the tools that have no icon in the Toolbox but can be active, e.g. the Slab Accessory. Default: false."
+            }
+        },
+        "additionalProperties": false,
+        "required": []
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "toolboxItems": {
+                "type": "array",
+                "description": "The tools installed in the Toolbox, the tools of add-ons included, each in the form SetCurrentTool accepts.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "The element type of the tool. Unknown for the tools of add-ons, which classId identifies."
+            },
+            "variation": {
+                "type": "string",
+                "description": "The four-character subtype of the tool, e.g. DOOR, SKYL, CRWD, or the signature of a library part subtype registered by an add-on. Missing for the generic tool of the element type.",
+                "minLength": 1,
+                "maxLength": 4
+            },
+            "classId": {
+                "type": "string",
+                "description": "The class id (a guid) of the tool of an add-on, whose elementType is Unknown. Archicad 26 and later.",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "elementType"
+                    ]
+                }
+            },
+            "currentTool": {
+                "type": "object",
+                "description": "The tool active in the Toolbox, as GetCurrentTool returns it. Empty for the Arrow and the Marquee.",
+                "properties": {
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "The element type of the tool. Unknown for the tools of add-ons, which classId identifies."
+            },
+            "variation": {
+                "type": "string",
+                "description": "The four-character subtype of the tool, e.g. DOOR, SKYL, CRWD, or the signature of a library part subtype registered by an add-on. Missing for the generic tool of the element type.",
+                "minLength": 1,
+                "maxLength": 4
+            },
+            "classId": {
+                "type": "string",
+                "description": "The class id (a guid) of the tool of an add-on, whose elementType is Unknown. Archicad 26 and later.",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            }
+                },
+                "additionalProperties": false,
+                "required": []
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "toolboxItems",
+            "currentTool"
+        ]
+    }
+            },{
                 "name": "GetLineFromUser",
                 "version": "1.8.0",
                 "description": "Waits for the user to input a line in the active Archicad window and returns start and end coordinates.",
@@ -446,6 +602,14 @@ var gCommands = [{
                 "type": "boolean",
                 "description": "If true, draws a unit-square rubber feedback around the cursor while input is active.",
                 "default": true
+            },
+            "snapFilter": {
+                "$ref": "#/SnapFilter",
+                "description": "Which points and lines of the elements the cursor snaps to, for both points. Default: Archicad's usual snapping."
+            },
+            "constraint": {
+                "$ref": "#/InputConstraint",
+                "description": "Constrains the end point, for example to a direction from the start point (type Angle with fromLastPoint). The start point is not constrained. Default: no constraint."
             }
         },
         "additionalProperties": false
@@ -468,6 +632,86 @@ var gCommands = [{
         }
     }
             },{
+                "name": "GetArcFromUser",
+                "version": "2.0.0",
+                "description": "Asks the designer to draw an arc in the current window - its center, its start point (which sets the radius) and its end point - with a rubber-band circle shown while drawing, and returns its center, radius, start and end angles, the angle it turns through, its direction and its start and end points. Archicad waits for the clicks or for Escape, and every other JSON command queues behind this one until then; cancelling returns cancelled.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "centerPrompt": {
+                "type": "string",
+                "description": "Prompt for clicking the center of the arc. Single-byte text: the control box takes a char field.",
+                "default": "Click the center of the arc"
+            },
+            "startPrompt": {
+                "type": "string",
+                "description": "Prompt for clicking the start point of the arc, which also sets its radius.",
+                "default": "Click the start point of the arc"
+            },
+            "endPrompt": {
+                "type": "string",
+                "description": "Prompt for clicking the end point of the arc. Archicad draws the arc while the cursor moves; the direction the cursor goes around the center decides whether the arc is clockwise.",
+                "default": "Click the end point of the arc"
+            },
+            "showRubberArcFeedback": {
+                "type": "boolean",
+                "description": "If true, also draws the whole circle of the arc while the start and end points are chosen: its radius follows the cursor until the start point is clicked. Drawn in 2D windows only; the 3D window shows Archicad's default feedback.",
+                "default": true
+            },
+            "snapFilter": {
+                "$ref": "#/SnapFilter",
+                "description": "Which points and lines of the elements the cursor snaps to for the center and the start point. Archicad's arc input has no snap filter, so the end point snaps as usual. Default: Archicad's usual snapping."
+            },
+            "constraint": {
+                "$ref": "#/InputConstraint",
+                "description": "Constrains every click: the center, the start point and the end point. With fromLastPoint the start point is measured from the center (type Distance fixes the radius, type Angle the direction of the start point) and the end point from the start point. Default: no constraint."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True if the user cancelled the input (Escape); no other field is returned then."
+            },
+            "center": {
+                "$ref": "#/Coordinate3D",
+                "description": "The center of the arc."
+            },
+            "radius": {
+                "type": "number",
+                "description": "The radius of the arc: the distance of the start point from the center in the x-y plane."
+            },
+            "startAngle": {
+                "type": "number",
+                "description": "The direction of the start point from the center, in radians from the x axis, counterclockwise, between -pi and pi."
+            },
+            "endAngle": {
+                "type": "number",
+                "description": "The direction of the end point from the center, in radians from the x axis, counterclockwise, between -pi and pi."
+            },
+            "arcAngle": {
+                "type": "number",
+                "description": "The angle the arc turns through from its start to its end, in radians: positive (up to 2*pi) for a counterclockwise arc, negative (down to -2*pi) for a clockwise one."
+            },
+            "clockwise": {
+                "type": "boolean",
+                "description": "True if the arc was drawn clockwise from its start to its end."
+            },
+            "startPoint": {
+                "$ref": "#/Coordinate3D",
+                "description": "The start point of the arc, as clicked."
+            },
+            "endPoint": {
+                "$ref": "#/Coordinate3D",
+                "description": "The end point of the arc: the point of its circle in the direction of the third click (its z is the clicked z)."
+            }
+        },
+        "required": ["cancelled"]
+    }
+            },{
                 "name": "GetPolygonFromUser",
                 "version": "1.8.0",
                 "description": "Waits for the user to input a polygon in the active Archicad window and returns its points and arcs.",
@@ -485,10 +729,15 @@ var gCommands = [{
                 "default": "Click polygon nodes and finish the input"
             },
             "method": {
-                "type": "string",
-                "description": "Polygon input method. 'General' = free polygon, 'Rect' = axis-aligned rectangle, 'RotRect' = rotated rectangle, 'Polyline' = open polyline.",
-                "enum": ["General", "Rect", "RotRect", "Polyline"],
-                "default": "General"
+                "$ref": "#/PolygonInputMethod"
+            },
+            "snapFilter": {
+                "$ref": "#/SnapFilter",
+                "description": "Which points and lines of the elements the cursor snaps to for the start point. Archicad's polygon input has no snap filter, so the other nodes snap as usual. Default: Archicad's usual snapping."
+            },
+            "constraint": {
+                "$ref": "#/InputConstraint",
+                "description": "Constrains the nodes after the start point, for example to a direction from the previous node (type Angle with fromLastPoint). The start point is not constrained. Default: no constraint."
             }
         },
         "additionalProperties": false
@@ -516,8 +765,58 @@ var gCommands = [{
     "required": ["cancelled"]
 }
             },{
+                "name": "GetMagicWandSettings",
+                "version": "2.0.0",
+                "description": "Returns the settings of Archicad's Magic Wand Settings dialog: how curves are approximated with straight segments (a number of segments along arcs or circles, a largest deviation from the curve, or a segment length) and the trace method. Useful to know how the Magic Wand will trace a curve. Changes nothing in the project.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "curveApproximation": {
+                "type": "string",
+                "enum": [
+                    "SegmentsAlongArcs",
+                    "SegmentsAlongCircles",
+                    "DeviationFromCurves",
+                    "SegmentLength",
+                    "Unknown"
+                ],
+                "description": "How the Magic Wand approximates curves with straight segments: a fixed number of segments along arcs or along full circles (segmentCount), segments that deviate from the curve by at most maxDeviation, or segments of segmentLength. Unknown for a mode this version of Tapir does not know."
+            },
+            "segmentCount": {
+                "type": "integer",
+                "description": "The number of segments along an arc or circle, used by SegmentsAlongArcs and SegmentsAlongCircles."
+            },
+            "maxDeviation": {
+                "type": "number",
+                "description": "The largest distance of the segments from the curve, in meters, used by DeviationFromCurves."
+            },
+            "segmentLength": {
+                "type": "number",
+                "description": "The length of the segments, in meters, used by SegmentLength."
+            },
+            "traceMethod": {
+                "type": "string",
+                "enum": [
+                    "Linear",
+                    "BestMatch",
+                    "Unknown"
+                ],
+                "description": "How curves are traced: Linear traces them with straight segments as set above, BestMatch with the curves that match them best. Unknown for a method this version of Tapir does not know."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "curveApproximation",
+            "segmentCount",
+            "maxDeviation",
+            "segmentLength",
+            "traceMethod"
+        ]
+    }
+            },{
                 "name": "ConvertImages",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Converts base64 encoded images from one image format to another with Archicad's own image converters, for example a PNG preview image to JPEG. The formats are Bitmap, GIF, TIFF, JPEG and PNG, or the MIME type of another format Archicad can read or write. The output is aligned with the input array of images. Changes nothing in the project.",
                 "inputScheme": {
         "type": "object",
@@ -713,21 +1012,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The windows to close.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "databaseId": {
-                            "$ref": "#/DatabaseId",
-                            "description": "The database shown in the window, as GetDatabases, GetContainingDatabases or GetDatabaseIdFromNavigatorItemId return it."
-                        },
-                        "windowType": {
-                            "$ref": "#/WindowType",
-                            "description": "Optional. When given, the window is only closed when its database is of this type."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "databaseId"
-                    ]
+                    "$ref": "#/WindowToClose"
                 }
             }
         },
@@ -862,6 +1147,152 @@ var gCommands = [{
         "required": ["clickedButton"]
     }
             },{
+                "name": "ShowNotificationBubble",
+                "version": "2.0.0",
+                "description": "Shows a non-blocking notification bubble with a message in the current Archicad window, e.g. to report progress or a result without stopping the user as ShowAlert does. The bubble disappears by itself after the timeout. It is shown at a model coordinate or a pixel position of the current view, by default at the center of the current 2D view. Optionally it gets a large icon, is shown at most a given number of times, or is turned off, until the user runs 'Enable all informational messages'. Returns the bubble's settings read back from Archicad. Requires Archicad 29 or later.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "description": "The text of the notification bubble.",
+                "minLength": 1
+            },
+            "icon": {
+                "type": "string",
+                "enum": ["none", "information", "warning", "error"],
+                "description": "The icon shown in the bubble. Default: information."
+            },
+            "timeoutMilliseconds": {
+                "type": "integer",
+                "description": "How long the bubble stays, in milliseconds. Default: Archicad's default, 1000 (1 second).",
+                "minimum": 1,
+                "maximum": 4294967295
+            },
+            "coordinate": {
+                "$ref": "#/Coordinate3D",
+                "description": "The model coordinate in the current database (meters) where the bubble is shown, converted like ModelToScreen does: in a 3D window it is projected with the current camera, in other windows z is disregarded. Do not give it together with screenPoint. When neither is given, the bubble is shown at the center of the current view in 2D windows and at the project's local origin otherwise."
+            },
+            "screenPoint": {
+                "type": "object",
+                "description": "The pixel position local to the current Archicad view window (not global desktop coordinates) where the bubble is shown, e.g. a point returned by ModelToScreen. Do not give it together with coordinate.",
+                "properties": {
+                    "h": {
+                        "type": "integer",
+                        "description": "Horizontal pixel position from the left edge of the view window.",
+                        "minimum": -32768,
+                        "maximum": 32767
+                    },
+                    "v": {
+                        "type": "integer",
+                        "description": "Vertical pixel position from the top edge of the view window.",
+                        "minimum": -32768,
+                        "maximum": 32767
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "h",
+                    "v"
+                ]
+            },
+            "offset": {
+                "type": "object",
+                "description": "Moves the bubble from its position by this many pixels.",
+                "properties": {
+                    "h": {
+                        "type": "integer",
+                        "description": "Horizontal offset in pixels, positive to the right.",
+                        "minimum": -32768,
+                        "maximum": 32767
+                    },
+                    "v": {
+                        "type": "integer",
+                        "description": "Vertical offset in pixels, positive downwards.",
+                        "minimum": -32768,
+                        "maximum": 32767
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "h",
+                    "v"
+                ]
+            },
+            "largeIcon": {
+                "type": "string",
+                "enum": ["information", "warning", "error"],
+                "description": "The icon shown instead of icon when the \"Use large alert cues\" option is on in Work Environment. Not set by default."
+            },
+            "redrawCountLimit": {
+                "type": "integer",
+                "description": "Shows the bubble at most this many times. After that it does not appear again, for any later ShowNotificationBubble call, until the user runs the 'Enable all informational messages' command in Archicad. Not set by default.",
+                "minimum": 1,
+                "maximum": 4294967295
+            },
+            "disabled": {
+                "type": "boolean",
+                "description": "True turns the bubble off instead of showing it: it does not appear again, for any later ShowNotificationBubble call, until the user runs the 'Enable all informational messages' command in Archicad. False (the default) changes nothing."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "message"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "description": "The settings of the bubble after the call, read back from Archicad.",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text of the bubble. Missing when it has none."
+            },
+            "icon": {
+                "type": "string",
+                "enum": ["none", "information", "warning", "error", "other"],
+                "description": "The icon of the bubble."
+            },
+            "largeIcon": {
+                "type": "string",
+                "enum": ["none", "information", "warning", "error", "other"],
+                "description": "The icon shown when the \"Use large alert cues\" option is on in Work Environment."
+            },
+            "offset": {
+                "type": "object",
+                "description": "The offset of the bubble from its position, in pixels.",
+                "properties": {
+                    "h": {
+                        "type": "integer"
+                    },
+                    "v": {
+                        "type": "integer"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "h",
+                    "v"
+                ]
+            },
+            "timeoutMilliseconds": {
+                "type": "integer",
+                "description": "How long the bubble stays, in milliseconds."
+            },
+            "redrawCountLimit": {
+                "type": "integer",
+                "description": "How many times the bubble is shown at most. Missing when it has no limit."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "icon",
+            "largeIcon",
+            "offset",
+            "timeoutMilliseconds"
+        ]
+    }
+            },{
                 "name": "GetSpecialFolders",
                 "version": "1.5.6",
                 "description": "Retrieves the filesystem paths of the special folders of the running Archicad (preferences, cache, data, temporary, application, defaults, templates, help, embedded project library, etc.).",
@@ -979,8 +1410,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The Action Center checks to run, in this order. Omitted means [\"Hotlinks\"]. \"Hotlinks\" is available on every Archicad version; \"All\", \"Libraries\", \"Drawings\" and \"Licenses\" only on Archicad 25, later versions return an error for them in their execution result.",
                 "items": {
-                    "type": "string",
-                    "enum": ["Hotlinks", "All", "Libraries", "Drawings", "Licenses"]
+                    "$ref": "#/ActionCenterCheck"
                 },
                 "minItems": 1
             }
@@ -1062,8 +1492,7 @@ var gCommands = [{
             "availableDomains": {
                 "type": "array",
                 "items": {
-                    "type": "string",
-                    "enum": ["Architecture", "MEP"]
+                    "$ref": "#/ProductDomain"
                 },
                 "description": "The domains available in the running Archicad. Archicad 29 or later."
             },
@@ -1184,7 +1613,7 @@ var gCommands = [{
             },
             "projectLocation": {
                 "type": "string",
-                "description": "The location of the project in the filesystem or a BIMcloud project reference.",
+                "description": "The location of the project in the filesystem or a BIMcloud project reference. A BIMcloud project reference is returned without the user name and login token.",
                 "minLength": 1
             },
             "projectPath": {
@@ -1315,7 +1744,7 @@ var gCommands = [{
     }
             },{
                 "name": "RenameProjectInfoFields",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Renames custom fields of the Project Info groups. Fixed (built-in) fields cannot be renamed. Available from Archicad 30.",
                 "inputScheme": {
         "type": "object",
@@ -1363,7 +1792,7 @@ var gCommands = [{
     }
             },{
                 "name": "MoveProjectInfoFields",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Moves fields of the Project Info groups to a group, before another field of it or to its end. A subfield of a calculated field moves with its parent field. Available from Archicad 30.",
                 "inputScheme": {
         "type": "object",
@@ -1484,22 +1913,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The Project Info groups to rename, each with its new name.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "projectInfoGroupId": {
-                            "$ref": "#/ProjectInfoGroupId"
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The new name of the group. It must not be used by another group.",
-                            "minLength": 1
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "projectInfoGroupId",
-                        "name"
-                    ]
+                    "$ref": "#/ProjectInfoGroupRename"
                 },
                 "minItems": 1
             }
@@ -1565,20 +1979,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The Project Info groups to move, in the order the moves are made.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "projectInfoGroupId": {
-                            "$ref": "#/ProjectInfoGroupId"
-                        },
-                        "beforeProjectInfoGroupId": {
-                            "$ref": "#/ProjectInfoGroupId",
-                            "description": "The group to move the group before. When omitted, the group is moved to the end of the group list."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "projectInfoGroupId"
-                    ]
+                    "$ref": "#/ProjectInfoGroupMove"
                 },
                 "minItems": 1
             }
@@ -1735,7 +2136,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetAllAutoTextKeys",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Retrieves every autotext key Archicad knows (not only the property-based ones returned by GetAutoTextKeys) with its current value, resolved without an element context.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -1770,7 +2171,7 @@ var gCommands = [{
     }
             },{
                 "name": "InterpretAutoTexts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Resolves one or more autotexts (e.g. '<LAYOUTID>') to their values, optionally in the context of an element, so a key can be tested before it is written into a Text or Label.",
                 "inputScheme": {
         "type": "object",
@@ -1856,25 +2257,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The autotexts available in the notes of the given owner type, in ascending order of autotextId.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "autotextId": {
-                            "type": "integer",
-                            "description": "The numeric value of the autotext's API_NoteAutotextID in the Archicad API."
-                        },
-                        "elementTypes": {
-                            "type": "array",
-                            "description": "The element types the autotext is available for.",
-                            "items": {
-                                "$ref": "#/ElementType"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "autotextId",
-                        "elementTypes"
-                    ]
+                    "$ref": "#/NoteAutotextDetails"
                 }
             }
         },
@@ -2325,17 +2708,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The source files of hotlinks of the project, for example the location of each node GetHotlinks returns.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "Absolute path of the hotlink's source file."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "location"
-                    ]
+                    "$ref": "#/HotlinkSourceReference"
                 }
             }
         },
@@ -2354,25 +2727,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string",
-                                    "enum": [
-                                        "AuthCanceld",
-                                        "SourceMissing",
-                                        "SourceAvailable",
-                                        "SourceNotAccessible",
-                                        "SourceIncompatible",
-                                        "SourceOffline"
-                                    ],
-                                    "description": "The API_HotlinkSourceStatus value without its prefix (AuthCanceld is spelled as in the API)."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "status"
-                            ]
+                            "$ref": "#/HotlinkSourceStatusResult"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -4379,39 +4734,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The values to convert.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "value": {
-                            "type": "number",
-                            "description": "The value to convert, in meters, square meters, cubic meters or radians, matching the kind of the preference."
-                        },
-                        "preference": {
-                            "type": "string",
-                            "description": "The Project Preference whose unit and rounding are applied: WorkModel, WorkLayout and WorkAngle are the Working Units; the Dim ones are the Dimensions (DimDoorWindow the door, window and skylight dimensions, DimParapet the sill height, DimArea the area calculations); the Calc ones are the Calculation Units & Rules.",
-                            "enum": [
-                                "WorkModel",
-                                "WorkLayout",
-                                "WorkAngle",
-                                "DimLinear",
-                                "DimAngle",
-                                "DimRadial",
-                                "DimLevel",
-                                "DimElevation",
-                                "DimDoorWindow",
-                                "DimParapet",
-                                "DimArea",
-                                "CalcLength",
-                                "CalcArea",
-                                "CalcVolume",
-                                "CalcAngle"
-                            ]
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "value",
-                        "preference"
-                    ]
+                    "$ref": "#/UnitValueConversionData"
                 }
             }
         },
@@ -4430,27 +4753,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "convertedValue": {
-                                    "type": "string",
-                                    "description": "The value as Archicad shows it in the unit of the preference, without the extra accuracy decimals. It may contain the unit."
-                                },
-                                "extraAccuracy": {
-                                    "type": "string",
-                                    "description": "The extra accuracy decimals, if any (at most two). Empty when there are none."
-                                },
-                                "unit": {
-                                    "type": "string",
-                                    "description": "The unit of the preference. It may be empty."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "convertedValue",
-                                "extraAccuracy",
-                                "unit"
-                            ]
+                            "$ref": "#/ConvertedUnitValue"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -4479,27 +4782,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string",
-                                    "description": "The renovation status.",
-                                    "enum": [
-                                        "Existing",
-                                        "New",
-                                        "Demolished"
-                                    ]
-                                },
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the status as the running Archicad shows it (localized)."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "status",
-                                "name"
-                            ]
+                            "$ref": "#/RenovationStatusName"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -4595,24 +4878,7 @@ var gCommands = [{
     "type": "object",
     "properties": {
         "placeInfo": {
-            "type": "object",
-            "description": "The place settings to change (API_PlaceInfo), with its field names. Only the given keys are changed; an empty object changes nothing and returns the current settings.",
-            "properties": {
-                "longitude": { "type": "number", "description": "Longitude in degrees." },
-                "latitude": { "type": "number", "description": "Latitude in degrees." },
-                "altitude": { "type": "number", "description": "Altitude in meters." },
-                "north": { "type": "number", "description": "The north direction in radians." },
-                "year": { "type": "integer", "minimum": 0, "maximum": 65535 },
-                "month": { "type": "integer", "minimum": 1, "maximum": 12 },
-                "day": { "type": "integer", "minimum": 1, "maximum": 31 },
-                "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
-                "minute": { "type": "integer", "minimum": 0, "maximum": 59 },
-                "second": { "type": "integer", "minimum": 0, "maximum": 59 },
-                "sumTime": { "type": "boolean", "description": "Whether summer time (+1 hour) is on." },
-                "timeZoneInMinutes": { "type": "integer", "description": "The time zone, in minutes from Greenwich." },
-                "timeZoneOffset": { "type": "integer", "description": "Tells apart time zones with the same timeZoneInMinutes." }
-            },
-            "additionalProperties": false
+            "$ref": "#/PlaceSettingsUpdate"
         }
     },
     "additionalProperties": false,
@@ -4937,7 +5203,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetCoordinateOrigins",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the offset of the virtual coordinate system origin from the world origin, and the user origin of the current database. Use it to tell which origin the coordinates of different sources (elements, views, survey point) are relative to.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -5043,6 +5309,100 @@ var gCommands = [{
     },
                 "outputScheme": {
         "$ref": "#/ExecutionResult"
+    }
+            },{
+                "name": "ResolveNames",
+                "version": "2.0.0",
+                "description": "Looks up words or phrases (for example from a user's question) among the names of the open project before they are passed to other commands: stories, layers, layer combinations, building materials, composites, profiles, surfaces, fills, lines, zone categories, element types (by API name and, from Archicad 27, by the name the Archicad interface shows), properties (by name, and by group and name together) and classifications (systems by name and version, items of every system by name and ID). For each name it returns 'found' with the items named exactly so, 'closeMatches' with the nearest names, best first (ranked by differences in case, accents, spacing and separators, shared words, one name containing the other and a few differing characters), or 'notFound' when nothing in the project is close, meaning the project has no such item and it must not be guessed. Each match carries what the other commands take: the story index, the attribute id and index, the elementType, the propertyId (with the property's group, value type and the classification items a custom property is available for), or the classificationSystemId and classificationItemId. Matching is lexical and deterministic. Read only.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "names": {
+                "type": "array",
+                "description": "The words or phrases to look up in the open project, for example taken from a user's question.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The word or phrase.",
+                            "minLength": 1
+                        },
+                        "kind": {
+                            "$ref": "#/NameKind",
+                            "description": "The kind of item the word names. When it is left out, every kind is searched."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "name"
+                    ]
+                },
+                "minItems": 1
+            },
+            "maxCloseMatches": {
+                "type": "integer",
+                "description": "The most close matches returned for one word, best first. The default is 5.",
+                "minimum": 1,
+                "maximum": 100
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "names"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "description": "One result for each of the given names, in the same order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The given word or phrase."
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "found: an item of the project has exactly this name (see found). closeMatches: no item has exactly this name, but some are close (see closeMatches). notFound: nothing in the project is close to it; the project has no such item, so it must not be guessed.",
+                            "enum": [
+                                "found",
+                                "closeMatches",
+                                "notFound"
+                            ]
+                        },
+                        "found": {
+                            "type": "array",
+                            "description": "The items named exactly so (the same characters), with match 'exact'. More than one when items of different kinds, or several stories, have the name.",
+                            "items": {
+                                "$ref": "#/NameMatch"
+                            }
+                        },
+                        "closeMatches": {
+                            "type": "array",
+                            "description": "When nothing is named exactly so: the nearest items, best first. Empty when the status is found or notFound.",
+                            "items": {
+                                "$ref": "#/NameMatch"
+                            }
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "name",
+                        "status",
+                        "found",
+                        "closeMatches"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "results"
+        ]
     }
             }]
         },{
@@ -5508,7 +5868,7 @@ var gCommands = [{
     }
             },{
                 "name": "DeselectAll",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Clears the selection in the current window.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -5516,7 +5876,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetMarquee",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the marquee of the current window: its shape (rectangle, rotated rectangle or polygon), whether it is multi-story, and its outline as a polygon. Returns the type 'none' when there is no marquee.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -5554,7 +5914,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetMarquee",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Draws a marquee in the current window from a polygon or a box (optionally rotated), single- or multi-story. Called without polygon and box it removes the marquee.",
                 "inputScheme": {
         "type": "object",
@@ -5660,14 +6020,124 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "GetElementsByCriteria",
+                "version": "2.0.0",
+                "description": "Returns the elements, or with countOnly only their number, that match all the given criteria: element types, home stories, layers, Archicad's element filter flags and property criteria (a value compared in internal units, or a value status such as hasValue, isUserUndefined, isNotAvailable, isDefault or hasCustomValue). An unknown type, property or operator is an error, not ignored. Objects that belong to another element (zone stamps, the parts of stairs and railings) are left out unless the IncludeSubElemObjects filter is given.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "types": {
+                "type": "array",
+                "description": "Optional filter for element types (e.g. ['Wall', 'Column']).",
+                "items": {
+                    "$ref": "#/ElementType"
+                }
+            },
+            "floorIndices": {
+                "type": "array",
+                "description": "Optional filter for story/floor indices (e.g. [0, 1]).",
+                "items": {
+                    "type": "integer"
+                }
+            },
+            "layerIndices": {
+                "type": "array",
+                "description": "Optional filter for layer attribute indices.",
+                "items": {
+                    "type": "integer"
+                }
+            },
+            "filters": {
+                "type": "array",
+                "description": "Optional Archicad API element filter flags. Objects that belong to another element (zone stamps, the parts of stairs, railings and curtain walls) are left out unless IncludeSubElemObjects is given, as in GetElementsByType and GetAllElements.",
+                "items": {
+                    "$ref": "#/ElementFilter"
+                }
+            },
+            "propertyCriteria": {
+                "type": "array",
+                "description": "Optional list of property evaluation criteria. All criteria must match (AND condition).",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "propertyId": {
+                            "$ref": "#/PropertyId"
+                        },
+                        "propertyName": {
+                            "type": "string",
+                            "description": "Case-insensitive property definition name, as shown in the project's language. An error is returned when it matches no property, or properties in more than one group and propertyGroupName is not given. Prefer propertyId in scripts that must work in any language."
+                        },
+                        "propertyGroupName": {
+                            "type": "string",
+                            "description": "Case-insensitive property group name, to choose between properties of the same name in different groups."
+                        },
+                        "operator": {
+                            "type": "string",
+                            "description": "Evaluation operator. Default is 'equals'. hasValue (alias hasAnyValue) matches a property with a value, isUserUndefined (alias isUndefined) one set to undefined by the user, isNotAvailable one that does not apply to the element. isDefault matches a property whose value comes from its default, hasCustomValue one whose value was set on the element (also to undefined). Archicad gives the default status only together with the evaluated value, so isDefault and hasCustomValue take as long as reading the value, also for expression properties.",
+                            "enum": [
+                                "equals",
+                                "notEquals",
+                                "contains",
+                                "greaterThan",
+                                "lessThan",
+                                "greaterOrEqual",
+                                "lessOrEqual",
+                                "hasValue",
+                                "hasAnyValue",
+                                "isUndefined",
+                                "isUserUndefined",
+                                "isNotAvailable",
+                                "isDefault",
+                                "hasCustomValue"
+                            ]
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": "Expected value as a string. Required for the comparison operators. For number, integer, length, area, volume and angle properties, equals, notEquals and the range operators compare numbers in internal units (m, m², m³, rad) written with a decimal point, independent of the project's display settings; other properties compare the displayed text, case-insensitively."
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "countOnly": {
+                "type": "boolean",
+                "description": "If true, only returns the count of matching elements without listing their GUIDs. Minimizes token usage."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of matching elements to list. The count is still the total number of matches.",
+                "minimum": 1
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "count": {
+                "type": "integer",
+                "description": "Total number of matching elements."
+            },
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "List of matching elements."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "count"
+        ]
+    }
+            },{
                 "name": "GetDetailsOfElements",
                 "version": "1.5.7",
-                "description": "Gets the details of the given elements (geometry parameters etc). Use the optional fields parameter to return only the fields you need and skip the computation of the others (for example floorPlanPolygons). Use the optional additionalFields parameter to also get the info string, the compound info string, the library part unique ID and the creator tool unique ID. An element of another database (a layout, a section, a worksheet ...) returns only its header fields (type, floor index, layer, draw index) with fromOtherDatabase set to true.",
+                "description": "Gets the details of elements (geometry parameters etc). When elements is omitted, all elements matching the optional server-side filter (types, floorIndices, layerIndices) are queried; an empty elements list returns no details. Use the optional fields parameter to return only the fields you need (e.g. elementId, type, id, floorIndex) and skip the computation of the others (for example floorPlanPolygons). Use the optional additionalFields parameter to also get the info string, the compound info string, the library part unique ID and the creator tool unique ID. An element of another database (a layout, a section, a worksheet ...) returns only its header fields (type, floor index, layer, draw index) with fromOtherDatabase set to true.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elements": {
-                "$ref": "#/Elements"
+                "$ref": "#/Elements",
+                "description": "Optional list of elements to get details for. When omitted, all elements in the current database (optionally filtered by the filter parameter) are used; an empty list returns no details."
             },
             "fields": {
                 "type": "array",
@@ -5676,6 +6146,10 @@ var gCommands = [{
                     "$ref": "#/ElementDetailsField"
                 },
                 "minItems": 1
+            },
+            "filter": {
+                "$ref": "#/ElementTypeFloorLayerFilter",
+                "description": "Optional server-side filter. Without elements, only the elements matching it are returned. A listed element that does not match it gets an error entry in its place."
             },
             "additionalFields": {
                 "type": "array",
@@ -5687,50 +6161,21 @@ var gCommands = [{
             }
         },
         "additionalProperties": false,
-        "required": [
-            "elements"
-        ]
+        "required": []
     },
                 "outputScheme": {
         "type": "object",
         "properties": {
             "detailsOfElements": {
                 "type": "array",
-                "description": "One entry per input element, in the same order as the input elements array. An element that cannot be read gets an error entry in its place, so the position of an entry tells which input element it belongs to.",
+                "description": "One entry per input element, in the same order as the input elements array. An element that cannot be read, or that does not match the filter, gets an error entry in its place, so the position of an entry tells which input element it belongs to. Without elements, one entry per element that matches the filter.",
                 "items": {
                     "oneOf": [
                         {
                             "$ref": "#/DetailsOfElement"
                         },
                         {
-                            "type": "object",
-                            "description": "An element that is not in the current database but in another one (a layout, a section, a worksheet ...). Only the fields of its element header are returned: no id, details or floorPlanPolygons. Use GetContainingDatabases and ChangeWindow to open its database and read its full details.",
-                            "properties": {
-                                "type": {
-                                    "$ref": "#/ElementType"
-                                },
-                                "floorIndex": {
-                                    "type": "number"
-                                },
-                                "layerIndex": {
-                                    "type": "number"
-                                },
-                                "drawIndex": {
-                                    "type": "number"
-                                },
-                                "hotlinkId": {
-                                    "$ref": "#/ElementId",
-                                    "description": "The hotlink instance this element belongs to. Present only for elements that came in through a placed hotlink."
-                                },
-                                "fromOtherDatabase": {
-                                    "type": "boolean",
-                                    "description": "Always true: the element is not in the current database."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "fromOtherDatabase"
-                            ]
+                            "$ref": "#/ElementHeaderFromOtherDatabase"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -5747,7 +6192,7 @@ var gCommands = [{
             },{
                 "name": "SetDetailsOfElements",
                 "version": "1.0.7",
-                "description": "Sets the details of the given elements (floor, layer, order, Element ID etc). An element Archicad does not let you edit (its layer is hidden or locked, it is locked, or it is not reserved by you in teamwork) gets a failed execution result naming the reason.",
+                "description": "Sets the details of the given elements. Every element type: Element ID (id), story (floorIndex), layer (layerIndex) and display order (drawIndex). In typeSpecificDetails: Wall - start and end point, height, base offset, and the start and end thickness of a trapezoid wall; Zone - the ZoneSettings fields (the same as ModifyZones); Line - start and end point, pen, line type, room separator; Arc and Circle - origin, radius, angle, ratio, start and end angle (arcs only), reflected, pen, line type, room separator; Polyline - points and arcs, pen, line type, room separator; Spline - pen, line type, room separator; Hatch - outline, holes, contour pen, fill pen and background pen or colors, fill or building material, area display, room special and fill orientation; Hotspot - position, height, pen; Text - text, position, angle, height, justification; Label - the text of a text label; Drawing - position, angle, ratio, model offset, clip polygon (isCutWithFrame), name, ID and numbering, scale in Autotext, border, title library part, pen table (penTableUsageMode, penTableIndex), colorMode, isTransparentBackground, rasterizeDPI and the anchor (anchorPoint, useOwnOriginAsAnchor). Not written, because the Archicad API does not take them: the geometry of a Spline, the source of a Drawing (use ChangeDrawingLink), the Drawing Manager's update type and stored in project, and often a placed Drawing's drawingScale, which comes from its source view (the element's result then names the kept value). Other wall, slab, column, beam, stair and object settings are written by their Modify commands. An element Archicad does not let you edit (its layer is hidden or locked, it is locked, or it is not reserved by you in teamwork) gets a failed execution result naming the reason; a Drawing setting Archicad kept unchanged is named in a failed execution result too.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -5820,21 +6265,7 @@ var gCommands = [{
             "elements": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "infoString": {
-                            "type": "string",
-                            "description": "The new Element ID, as the Info Box shows it (GetDetailsOfElements returns it as id)."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "infoString"
-                    ]
+                    "$ref": "#/ElementInfoString"
                 }
             }
         },
@@ -6010,7 +6441,7 @@ var gCommands = [{
             },{
                 "name": "SetCategoryValuesOfElements",
                 "version": "1.7.3",
-                "description": "Sets the category values (Structural Function, Position, Renovation Status ...) of the given elements, one element and one category per item, in a single undoable step. The value must belong to the given category, as GetElementCategories lists them; an element without that category gets a failed execution result. The names are localized: use the type and the categoryValueId in scripts.",
+                "description": "Sets the category values (Structural Function, Position, Renovation Status ...) of the given elements, one element and one category per item, in a single undoable step. The value must belong to the given category, as GetElementCategories lists them; an element without that category gets a failed execution result. The names are localized: use the type and the categoryValueId in scripts. With dryRun true nothing is changed and no undo step is created: the response has dryRun set to true, and each item that passes the checks made before writing gets wouldChange, with the element's value in the category now (oldValue) and the value a real run would set (newValue).",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -6020,6 +6451,9 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/ElementCategoryValueData"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -6030,9 +6464,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults",
-                "description": "One result per item of the input, in the same order."
+                "$ref": "#/ChangeExecutionResults",
+                "description": "One result per item of the input, in the same order. On a dry run an item that passes every check made before writing (the category and the value exist, the element exists and has the category) gets wouldChange: oldValue is the element's value in the category now and newValue the value a real run would set, both as GetCategoryValuesOfElements gives them (type, categoryId, categoryValueId and name; oldValue has only type and categoryId when the element has no value in the category). Archicad can still refuse an item that passes them."
             }
         },
         "additionalProperties": false,
@@ -6070,7 +6507,7 @@ var gCommands = [{
     }
             },{
                 "name": "Get2DBoundingBoxes",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Get the 2D bounding box of elements as Archicad draws them, in the coordinates of the database the element is in: the floor plan, a section, a worksheet, a layout or a master layout. Works for 2D elements (Line, PolyLine, Arc, Hatch, Text, Label, Dimension, Drawing ...) as well as for model elements; a Text's box covers its drawn lines, a Drawing's box its frame with the title. The current window does not need to show the element. The output is the array of the bounding boxes respective to the input array of elements.",
                 "inputScheme": {
         "type": "object",
@@ -6121,42 +6558,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "transformation": {
-                                    "type": "object",
-                                    "description": "The transformation chain of the library part instance: placement at location, rotation by angle, then scaling by xRatio and yRatio in the rotated coordinate system.",
-                                    "properties": {
-                                        "location": {
-                                            "$ref": "#/Coordinate2D",
-                                            "description": "The location of the referenced library part on the floor plan."
-                                        },
-                                        "angle": {
-                                            "type": "number",
-                                            "description": "The rotation angle in radians."
-                                        },
-                                        "xRatio": {
-                                            "type": "number",
-                                            "description": "The scaling along the rotated x axis."
-                                        },
-                                        "yRatio": {
-                                            "type": "number",
-                                            "description": "The scaling along the rotated y axis."
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "location",
-                                        "angle",
-                                        "xRatio",
-                                        "yRatio"
-                                    ]
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "transformation"
-                            ]
+                            "$ref": "#/ElementLibraryPartTransformation"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -6172,7 +6574,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetSnapPointsOfElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the snap points (hotspots) of the given elements, of any element type: the points of an element that the cursor snaps to and dimensions attach to (for example the endpoints of a Wall's reference line or the vertices of a Slab), in world coordinates, each with the neig kind and subindex identifying which point of the element it is. For the 2D hotspots of library part instances see GetHotspotsOfElements. The output is aligned with the input array of elements.",
                 "inputScheme": {
         "type": "object",
@@ -6309,20 +6711,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "bodies": {
-                                    "type": "array",
-                                    "description": "The solid bodies of the element's 3D model, including those of its subelements for a Stair, Railing or Curtain Wall, and of its segments for a Column or Beam. Empty when the element has no solid 3D model (for example a 2D element, or one filtered out of the 3D view).",
-                                    "items": {
-                                        "$ref": "#/Body3D"
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "bodies"
-                            ]
+                            "$ref": "#/ElementGeometry3D"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -6682,24 +7071,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "polygonOutline": {
-                                    "type": "array",
-                                    "description": "The 2D coordinates of the outline of the hole, as Archicad returns them. The outline is closed implicitly (the first vertex is not repeated at the end); a curved edge is given by its end points only.",
-                                    "items": {
-                                        "$ref": "#/Coordinate2D"
-                                    }
-                                },
-                                "holes": {
-                                    "$ref": "#/Holes2D"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "polygonOutline",
-                                "holes"
-                            ]
+                            "$ref": "#/SkylightHolePolygon"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -6744,17 +7116,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "hasVisibleSkin": {
-                                    "type": "boolean",
-                                    "description": "True when the element has at least one skin shown in the given Partial Structure Display mode."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "hasVisibleSkin"
-                            ]
+                            "$ref": "#/VisibleSkinStatus"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -6770,7 +7132,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetRoofPlanes",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the single planes of roofs, without changing the roofs. A multi-plane roof is decomposed by Archicad into its planes, each returned with its part identifier and its details as a single-plane roof (slope, pivot line, level, outline with arcs and holes); a single-plane roof is returned as its only plane. The output is aligned with the input array of elements.",
                 "inputScheme": {
         "type": "object",
@@ -6874,17 +7236,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "absoluteBottom": {
-                                    "type": "number",
-                                    "description": "The absolute bottom level of the curtain wall or its subelement, as returned by ACAPI_CurtainWall_GetCWAbsoluteBottom."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "absoluteBottom"
-                            ]
+                            "$ref": "#/CurtainWallAbsoluteBottom"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -6933,61 +7285,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "$ref": "#/ElementType"
-                                },
-                                "quantities": {
-                                    "$ref": "#/ElementQuantities"
-                                },
-                                "composites": {
-                                    "type": "array",
-                                    "description": "The quantities per building material, in the order Archicad reports them: one item for each skin of a composite or complex profile element, and a single item for a basic element. Empty for Zones and Morphs, for which Archicad reports no skins.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "buildingMaterialId": {
-                                                "$ref": "#/AttributeIdArrayItem"
-                                            },
-                                            "volume": {
-                                                "type": "number",
-                                                "description": "Net volume of the skin."
-                                            },
-                                            "projectedArea": {
-                                                "type": "number",
-                                                "description": "Projected area of the skin. Archicad reports 0 when the legacy intersection and surface calculation is turned on in the Project Preferences."
-                                            },
-                                            "isCore": {
-                                                "type": "boolean",
-                                                "description": "The skin is marked as core."
-                                            },
-                                            "isFinish": {
-                                                "type": "boolean",
-                                                "description": "The skin is marked as finish."
-                                            },
-                                            "subElementId": {
-                                                "$ref": "#/ElementId",
-                                                "description": "The sub-element (for example a column or beam segment) the skin belongs to. Present only when Archicad attaches the skin to a sub-element."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "buildingMaterialId",
-                                            "volume",
-                                            "projectedArea",
-                                            "isCore",
-                                            "isFinish"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "type",
-                                "quantities",
-                                "composites"
-                            ]
+                            "$ref": "#/ElementQuantityDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -7033,34 +7331,7 @@ var gCommands = [{
                             "$ref": "#/ElementTriangulation"
                         },
                         {
-                            "type": "object",
-                            "properties": {
-                                "convexPolygons": {
-                                    "type": "array",
-                                    "description": "With convex: true, the convex polygons the faces of the element's 3D model are decomposed into, body by body and face by face. Empty (or an error item instead) when the element has no solid 3D model of its own (the bodies of a Stair, Railing or Curtain Wall, and of the segments of a Column or Beam, belong to their subelements, which can be given instead).",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "vertices": {
-                                                "type": "array",
-                                                "description": "The 3D world coordinates of the vertices of the convex polygon, in order.",
-                                                "items": {
-                                                    "$ref": "#/Coordinate3D"
-                                                },
-                                                "minItems": 3
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "vertices"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "convexPolygons"
-                            ]
+                            "$ref": "#/ElementConvexPolygons"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -7099,67 +7370,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "bodies": {
-                                    "type": "array",
-                                    "description": "The solid bodies of the element's own 3D model, in Archicad's order, or an error for a body without texture information. Empty (or an error item instead) when the element has no solid 3D model of its own (the bodies of a Stair, Railing or Curtain Wall, and of the segments of a Column or Beam, belong to their subelements, which can be given instead).",
-                                    "items": {
-                                        "oneOf": [
-                                            {
-                                                "type": "object",
-                                                "properties": {
-                                                    "polygons": {
-                                                        "type": "array",
-                                                        "description": "One item per face of the body, in Archicad's order: the texture coordinates at the first vertex of the face, or an error.",
-                                                        "items": {
-                                                            "oneOf": [
-                                                                {
-                                                                    "type": "object",
-                                                                    "properties": {
-                                                                        "point": {
-                                                                            "$ref": "#/Coordinate3D",
-                                                                            "description": "The first vertex of the face, in world coordinates."
-                                                                        },
-                                                                        "u": {
-                                                                            "type": "number",
-                                                                            "description": "The u texture coordinate at the point."
-                                                                        },
-                                                                        "v": {
-                                                                            "type": "number",
-                                                                            "description": "The v texture coordinate at the point."
-                                                                        }
-                                                                    },
-                                                                    "additionalProperties": false,
-                                                                    "required": [
-                                                                        "point",
-                                                                        "u",
-                                                                        "v"
-                                                                    ]
-                                                                },
-                                                                {
-                                                                    "$ref": "#/ErrorItem"
-                                                                }
-                                                            ]
-                                                        }
-                                                    }
-                                                },
-                                                "additionalProperties": false,
-                                                "required": [
-                                                    "polygons"
-                                                ]
-                                            },
-                                            {
-                                                "$ref": "#/ErrorItem"
-                                            }
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "bodies"
-                            ]
+                            "$ref": "#/ElementTextureCoordinates"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -7264,23 +7475,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "componentType": {
-                                    "type": "string",
-                                    "description": "The component type: the API_3DTypeID enumerator name without its API_ prefix and ID suffix.",
-                                    "enum": ["Body", "Pgon", "Pedg", "Edge", "Vert", "Vect", "Umat", "Lght"]
-                                },
-                                "count": {
-                                    "type": "integer",
-                                    "description": "The number of components of this type."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "componentType",
-                                "count"
-                            ]
+                            "$ref": "#/Model3DCount"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -7296,13 +7491,16 @@ var gCommands = [{
     }
             },{
                 "name": "DeleteUserDataOfElements",
-                "version": "1.8.1",
-                "description": "Deletes the user data this add-on stored on the given elements. Archicad keeps the user data of an element per add-on, so the data of other add-ons is left as it is. All deletions are one undo step. The output has one execution result per element, aligned with the input array of elements.",
+                "version": "2.0.0",
+                "description": "Deletes the user data this add-on stored on the given elements. Archicad keeps the user data of an element per add-on, so the data of other add-ons is left as it is. All deletions are one undo step. The output has one execution result per element, aligned with the input array of elements. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each element that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elements": {
                 "$ref": "#/Elements"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -7313,9 +7511,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults",
-                "description": "One result per element, aligned with the input."
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result per element, aligned with the input. On a dry run an element that exists gets wouldDelete; Archicad can still refuse to delete its user data."
             }
         },
         "additionalProperties": false,
@@ -7654,223 +7855,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "primitives": {
-                                    "type": "array",
-                                    "description": "The primitives in the order Archicad draws them. The Ctrl_* items mark the beginning and the end of sub-parts (hatch borders, hatch lines, texts, curtain wall panels, ...).",
-                                    "items": {
-    "type": "object",
-    "properties": {
-        "type": {
-            "type": "string",
-            "description": "The API_PrimTypeID name without its API_Prim prefix and ID suffix.",
-            "enum": [
-                "Point", "Line", "Arc", "Text", "PLine", "Tri", "Poly", "Pict",
-                "Ctrl_Beg", "Ctrl_HatchBorderBeg", "Ctrl_HatchBorderEnd", "Ctrl_HatchLinesBeg", "Ctrl_HatchLinesEnd",
-                "Ctrl_HoledimLinesBeg", "Ctrl_HoledimLinesEnd", "Ctrl_ArrowBeg", "Ctrl_ArrowEnd", "Ctrl_ElementRef", "Ctrl_End",
-                "Ctrl_PlacedBorderBeg", "Ctrl_PlacedBorderEnd", "Ctrl_TextBeg", "Ctrl_TextEnd", "Ctrl_CWallPanelBeg", "Ctrl_CWallPanelEnd",
-                "Ctrl_BackgroundFillBeg", "Ctrl_BackgroundFillEnd", "Ctrl_FrameBeg", "Ctrl_FrameEnd", "Unknown"
-            ]
-        },
-        "layer": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "The layer of the element."
-        },
-        "pen": {
-            "type": "integer",
-            "description": "The pen index of the primitive."
-        },
-        "drwIndex": {
-            "type": "integer"
-        },
-        "renovationStatus": {
-            "type": "string",
-            "enum": ["Undefined", "Existing", "New", "Demolished"]
-        },
-        "lineType": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "Line, Arc, PLine, Tri and Poly: the line type."
-        },
-        "determination": {
-            "type": "integer",
-            "description": "How the type of the line or fill is determined (origin, inner line, contour line)."
-        },
-        "penWeight": {
-            "type": "number"
-        },
-        "solid": {
-            "type": "boolean"
-        },
-        "loc": {
-            "$ref": "#/Coordinate2D",
-            "description": "Point: the location. Text: the left baseline position."
-        },
-        "c1": {
-            "$ref": "#/Coordinate2D"
-        },
-        "c2": {
-            "$ref": "#/Coordinate2D"
-        },
-        "whole": {
-            "type": "boolean"
-        },
-        "reflected": {
-            "type": "boolean",
-            "description": "The arc goes clockwise."
-        },
-        "orig": {
-            "$ref": "#/Coordinate2D"
-        },
-        "r": {
-            "type": "number"
-        },
-        "begAng": {
-            "type": "number"
-        },
-        "endAng": {
-            "type": "number"
-        },
-        "angle": {
-            "type": "number"
-        },
-        "ratio": {
-            "type": "number"
-        },
-        "font": {
-            "type": "integer"
-        },
-        "faceBits": {
-            "type": "integer"
-        },
-        "effectBits": {
-            "type": "integer"
-        },
-        "anchor": {
-            "type": "string"
-        },
-        "just": {
-            "type": "string"
-        },
-        "heightMM": {
-            "type": "number"
-        },
-        "widthMM": {
-            "type": "number"
-        },
-        "widthFactor": {
-            "type": "number"
-        },
-        "charSpaceFactor": {
-            "type": "number"
-        },
-        "drawSegmentMode": {
-            "type": "integer"
-        },
-        "nCoords": {
-            "type": "integer"
-        },
-        "nSubPolys": {
-            "type": "integer"
-        },
-        "nArcs": {
-            "type": "integer",
-            "description": "The number of curved segments. Their geometry is not returned."
-        },
-        "useRgb": {
-            "type": "boolean"
-        },
-        "fillPen": {
-            "type": "integer"
-        },
-        "rgbColor": {
-            "type": "object",
-            "properties": {
-                "red": { "type": "number" },
-                "green": { "type": "number" },
-                "blue": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["red", "green", "blue"]
-        },
-        "coordinates": {
-            "type": "array",
-            "description": "Tri: the three corners.",
-            "items": {
-                "$ref": "#/Coordinate2D"
-            }
-        },
-        "polygons": {
-            "type": "array",
-            "description": "Poly: the sub polygons, the first one is the outline, the others are holes.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "coordinates": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/Coordinate2D"
-                        }
-                    }
-                },
-                "additionalProperties": false,
-                "required": ["coordinates"]
-            }
-        },
-        "rotAngle": {
-            "type": "number"
-        },
-        "destBox": {
-            "type": "object",
-            "description": "Pict: the bounding box of the picture.",
-            "properties": {
-                "xMin": { "type": "number" },
-                "yMin": { "type": "number" },
-                "xMax": { "type": "number" },
-                "yMax": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["xMin", "yMin", "xMax", "yMax"]
-        },
-        "hatchBorder": {
-            "type": "object",
-            "description": "Ctrl_HatchBorderBeg: the fill that follows.",
-            "properties": {
-                "doFrame": { "type": "boolean" },
-                "fill": { "$ref": "#/AttributeIdArrayItem" },
-                "fillPen": { "type": "integer" },
-                "fillbkgPen": { "type": "integer" },
-                "determination": { "type": "integer" }
-            },
-            "additionalProperties": false,
-            "required": ["doFrame", "fillPen", "fillbkgPen", "determination"]
-        },
-        "referencedElement": {
-            "type": "object",
-            "description": "Ctrl_ElementRef: the element the item refers to. The drawing of a Wall ends with one such item for each Window and Door in it.",
-            "properties": {
-                "elementId": { "$ref": "#/ElementId" },
-                "type": { "$ref": "#/ElementType" },
-                "drwIndex": { "type": "integer", "description": "The drawing order index of the referenced element." }
-            },
-            "additionalProperties": false,
-            "required": ["elementId", "type", "drwIndex"]
-        }
-    },
-    "additionalProperties": false,
-    "required": [
-        "type",
-        "pen",
-        "drwIndex",
-        "renovationStatus"
-    ]
-}
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "primitives"
-                            ]
+                            "$ref": "#/ElementDrawingPrimitives"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -7908,211 +7893,8 @@ var gCommands = [{
                 "type": "array",
                 "description": "The primitives of the story levels drawn in the database, in the order Archicad draws them. The Ctrl_* items mark the beginning and the end of sub-parts (texts, ...).",
                 "items": {
-    "type": "object",
-    "properties": {
-        "type": {
-            "type": "string",
-            "description": "The API_PrimTypeID name without its API_Prim prefix and ID suffix.",
-            "enum": [
-                "Point", "Line", "Arc", "Text", "PLine", "Tri", "Poly", "Pict",
-                "Ctrl_Beg", "Ctrl_HatchBorderBeg", "Ctrl_HatchBorderEnd", "Ctrl_HatchLinesBeg", "Ctrl_HatchLinesEnd",
-                "Ctrl_HoledimLinesBeg", "Ctrl_HoledimLinesEnd", "Ctrl_ArrowBeg", "Ctrl_ArrowEnd", "Ctrl_ElementRef", "Ctrl_End",
-                "Ctrl_PlacedBorderBeg", "Ctrl_PlacedBorderEnd", "Ctrl_TextBeg", "Ctrl_TextEnd", "Ctrl_CWallPanelBeg", "Ctrl_CWallPanelEnd",
-                "Ctrl_BackgroundFillBeg", "Ctrl_BackgroundFillEnd", "Ctrl_FrameBeg", "Ctrl_FrameEnd", "Unknown"
-            ]
-        },
-        "layer": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "The layer of the element."
-        },
-        "pen": {
-            "type": "integer",
-            "description": "The pen index of the primitive."
-        },
-        "drwIndex": {
-            "type": "integer"
-        },
-        "renovationStatus": {
-            "type": "string",
-            "enum": ["Undefined", "Existing", "New", "Demolished"]
-        },
-        "lineType": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "Line, Arc, PLine, Tri and Poly: the line type."
-        },
-        "determination": {
-            "type": "integer",
-            "description": "How the type of the line or fill is determined (origin, inner line, contour line)."
-        },
-        "penWeight": {
-            "type": "number"
-        },
-        "solid": {
-            "type": "boolean"
-        },
-        "loc": {
-            "$ref": "#/Coordinate2D",
-            "description": "Point: the location. Text: the left baseline position."
-        },
-        "c1": {
-            "$ref": "#/Coordinate2D"
-        },
-        "c2": {
-            "$ref": "#/Coordinate2D"
-        },
-        "whole": {
-            "type": "boolean"
-        },
-        "reflected": {
-            "type": "boolean",
-            "description": "The arc goes clockwise."
-        },
-        "orig": {
-            "$ref": "#/Coordinate2D"
-        },
-        "r": {
-            "type": "number"
-        },
-        "begAng": {
-            "type": "number"
-        },
-        "endAng": {
-            "type": "number"
-        },
-        "angle": {
-            "type": "number"
-        },
-        "ratio": {
-            "type": "number"
-        },
-        "font": {
-            "type": "integer"
-        },
-        "faceBits": {
-            "type": "integer"
-        },
-        "effectBits": {
-            "type": "integer"
-        },
-        "anchor": {
-            "type": "string"
-        },
-        "just": {
-            "type": "string"
-        },
-        "heightMM": {
-            "type": "number"
-        },
-        "widthMM": {
-            "type": "number"
-        },
-        "widthFactor": {
-            "type": "number"
-        },
-        "charSpaceFactor": {
-            "type": "number"
-        },
-        "drawSegmentMode": {
-            "type": "integer"
-        },
-        "nCoords": {
-            "type": "integer"
-        },
-        "nSubPolys": {
-            "type": "integer"
-        },
-        "nArcs": {
-            "type": "integer",
-            "description": "The number of curved segments. Their geometry is not returned."
-        },
-        "useRgb": {
-            "type": "boolean"
-        },
-        "fillPen": {
-            "type": "integer"
-        },
-        "rgbColor": {
-            "type": "object",
-            "properties": {
-                "red": { "type": "number" },
-                "green": { "type": "number" },
-                "blue": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["red", "green", "blue"]
-        },
-        "coordinates": {
-            "type": "array",
-            "description": "Tri: the three corners.",
-            "items": {
-                "$ref": "#/Coordinate2D"
-            }
-        },
-        "polygons": {
-            "type": "array",
-            "description": "Poly: the sub polygons, the first one is the outline, the others are holes.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "coordinates": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/Coordinate2D"
-                        }
-                    }
-                },
-                "additionalProperties": false,
-                "required": ["coordinates"]
-            }
-        },
-        "rotAngle": {
-            "type": "number"
-        },
-        "destBox": {
-            "type": "object",
-            "description": "Pict: the bounding box of the picture.",
-            "properties": {
-                "xMin": { "type": "number" },
-                "yMin": { "type": "number" },
-                "xMax": { "type": "number" },
-                "yMax": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["xMin", "yMin", "xMax", "yMax"]
-        },
-        "hatchBorder": {
-            "type": "object",
-            "description": "Ctrl_HatchBorderBeg: the fill that follows.",
-            "properties": {
-                "doFrame": { "type": "boolean" },
-                "fill": { "$ref": "#/AttributeIdArrayItem" },
-                "fillPen": { "type": "integer" },
-                "fillbkgPen": { "type": "integer" },
-                "determination": { "type": "integer" }
-            },
-            "additionalProperties": false,
-            "required": ["doFrame", "fillPen", "fillbkgPen", "determination"]
-        },
-        "referencedElement": {
-            "type": "object",
-            "description": "Ctrl_ElementRef: the element the item refers to. The drawing of a Wall ends with one such item for each Window and Door in it.",
-            "properties": {
-                "elementId": { "$ref": "#/ElementId" },
-                "type": { "$ref": "#/ElementType" },
-                "drwIndex": { "type": "integer", "description": "The drawing order index of the referenced element." }
-            },
-            "additionalProperties": false,
-            "required": ["elementId", "type", "drwIndex"]
-        }
-    },
-    "additionalProperties": false,
-    "required": [
-        "type",
-        "pen",
-        "drwIndex",
-        "renovationStatus"
-    ]
-}
+                    "$ref": "#/DrawingPrimitive"
+                }
             }
         },
         "additionalProperties": false,
@@ -8122,7 +7904,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetShapePrimitivesOfElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the 2D drawing primitives of each given floor plan element in the same format as GetDrawingPrimitivesOfElements, but drawn as ACAPI_DrawingPrimitive_ShapePrims draws it by default (on the current story, clipped as Archicad clips it) instead of on every story and unclipped. With includeMarkers the objects attached to the elements (window and door markers, drawing titles, ...) are drawn with them or left out; Archicad's setting is changed back afterwards. An element on another story gets an error item. The floor plan must be the current database. The output is aligned with the input array of elements.",
                 "inputScheme": {
         "type": "object",
@@ -8149,223 +7931,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "primitives": {
-                                    "type": "array",
-                                    "description": "The primitives in the order Archicad draws them. The Ctrl_* items mark the beginning and the end of sub-parts (hatch borders, hatch lines, texts, curtain wall panels, ...).",
-                                    "items": {
-    "type": "object",
-    "properties": {
-        "type": {
-            "type": "string",
-            "description": "The API_PrimTypeID name without its API_Prim prefix and ID suffix.",
-            "enum": [
-                "Point", "Line", "Arc", "Text", "PLine", "Tri", "Poly", "Pict",
-                "Ctrl_Beg", "Ctrl_HatchBorderBeg", "Ctrl_HatchBorderEnd", "Ctrl_HatchLinesBeg", "Ctrl_HatchLinesEnd",
-                "Ctrl_HoledimLinesBeg", "Ctrl_HoledimLinesEnd", "Ctrl_ArrowBeg", "Ctrl_ArrowEnd", "Ctrl_ElementRef", "Ctrl_End",
-                "Ctrl_PlacedBorderBeg", "Ctrl_PlacedBorderEnd", "Ctrl_TextBeg", "Ctrl_TextEnd", "Ctrl_CWallPanelBeg", "Ctrl_CWallPanelEnd",
-                "Ctrl_BackgroundFillBeg", "Ctrl_BackgroundFillEnd", "Ctrl_FrameBeg", "Ctrl_FrameEnd", "Unknown"
-            ]
-        },
-        "layer": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "The layer of the element."
-        },
-        "pen": {
-            "type": "integer",
-            "description": "The pen index of the primitive."
-        },
-        "drwIndex": {
-            "type": "integer"
-        },
-        "renovationStatus": {
-            "type": "string",
-            "enum": ["Undefined", "Existing", "New", "Demolished"]
-        },
-        "lineType": {
-            "$ref": "#/AttributeIdArrayItem",
-            "description": "Line, Arc, PLine, Tri and Poly: the line type."
-        },
-        "determination": {
-            "type": "integer",
-            "description": "How the type of the line or fill is determined (origin, inner line, contour line)."
-        },
-        "penWeight": {
-            "type": "number"
-        },
-        "solid": {
-            "type": "boolean"
-        },
-        "loc": {
-            "$ref": "#/Coordinate2D",
-            "description": "Point: the location. Text: the left baseline position."
-        },
-        "c1": {
-            "$ref": "#/Coordinate2D"
-        },
-        "c2": {
-            "$ref": "#/Coordinate2D"
-        },
-        "whole": {
-            "type": "boolean"
-        },
-        "reflected": {
-            "type": "boolean",
-            "description": "The arc goes clockwise."
-        },
-        "orig": {
-            "$ref": "#/Coordinate2D"
-        },
-        "r": {
-            "type": "number"
-        },
-        "begAng": {
-            "type": "number"
-        },
-        "endAng": {
-            "type": "number"
-        },
-        "angle": {
-            "type": "number"
-        },
-        "ratio": {
-            "type": "number"
-        },
-        "font": {
-            "type": "integer"
-        },
-        "faceBits": {
-            "type": "integer"
-        },
-        "effectBits": {
-            "type": "integer"
-        },
-        "anchor": {
-            "type": "string"
-        },
-        "just": {
-            "type": "string"
-        },
-        "heightMM": {
-            "type": "number"
-        },
-        "widthMM": {
-            "type": "number"
-        },
-        "widthFactor": {
-            "type": "number"
-        },
-        "charSpaceFactor": {
-            "type": "number"
-        },
-        "drawSegmentMode": {
-            "type": "integer"
-        },
-        "nCoords": {
-            "type": "integer"
-        },
-        "nSubPolys": {
-            "type": "integer"
-        },
-        "nArcs": {
-            "type": "integer",
-            "description": "The number of curved segments. Their geometry is not returned."
-        },
-        "useRgb": {
-            "type": "boolean"
-        },
-        "fillPen": {
-            "type": "integer"
-        },
-        "rgbColor": {
-            "type": "object",
-            "properties": {
-                "red": { "type": "number" },
-                "green": { "type": "number" },
-                "blue": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["red", "green", "blue"]
-        },
-        "coordinates": {
-            "type": "array",
-            "description": "Tri: the three corners.",
-            "items": {
-                "$ref": "#/Coordinate2D"
-            }
-        },
-        "polygons": {
-            "type": "array",
-            "description": "Poly: the sub polygons, the first one is the outline, the others are holes.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "coordinates": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/Coordinate2D"
-                        }
-                    }
-                },
-                "additionalProperties": false,
-                "required": ["coordinates"]
-            }
-        },
-        "rotAngle": {
-            "type": "number"
-        },
-        "destBox": {
-            "type": "object",
-            "description": "Pict: the bounding box of the picture.",
-            "properties": {
-                "xMin": { "type": "number" },
-                "yMin": { "type": "number" },
-                "xMax": { "type": "number" },
-                "yMax": { "type": "number" }
-            },
-            "additionalProperties": false,
-            "required": ["xMin", "yMin", "xMax", "yMax"]
-        },
-        "hatchBorder": {
-            "type": "object",
-            "description": "Ctrl_HatchBorderBeg: the fill that follows.",
-            "properties": {
-                "doFrame": { "type": "boolean" },
-                "fill": { "$ref": "#/AttributeIdArrayItem" },
-                "fillPen": { "type": "integer" },
-                "fillbkgPen": { "type": "integer" },
-                "determination": { "type": "integer" }
-            },
-            "additionalProperties": false,
-            "required": ["doFrame", "fillPen", "fillbkgPen", "determination"]
-        },
-        "referencedElement": {
-            "type": "object",
-            "description": "Ctrl_ElementRef: the element the item refers to. The drawing of a Wall ends with one such item for each Window and Door in it.",
-            "properties": {
-                "elementId": { "$ref": "#/ElementId" },
-                "type": { "$ref": "#/ElementType" },
-                "drwIndex": { "type": "integer", "description": "The drawing order index of the referenced element." }
-            },
-            "additionalProperties": false,
-            "required": ["elementId", "type", "drwIndex"]
-        }
-    },
-    "additionalProperties": false,
-    "required": [
-        "type",
-        "pen",
-        "drwIndex",
-        "renovationStatus"
-    ]
-}
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "primitives"
-                            ]
+                            "$ref": "#/ElementDrawingPrimitives"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -8663,43 +8229,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "propertyObjects": {
-                                    "type": "array",
-                                    "description": "The property objects (library parts of the old listing system) of the element, linked to it by criteria or individually. Empty when the element has none.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "libraryPartIndex": {
-                                                "type": "integer",
-                                                "description": "The index of the property object's library part, the same as the index returned by GetAvailableLibraryParts."
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "description": "The name of the library part. Absent when the library part cannot be read."
-                                            },
-                                            "guid": {
-                                                "type": "string",
-                                                "description": "The guid of the library part, the same as the guid returned by GetAvailableLibraryParts. Absent when the library part cannot be read."
-                                            },
-                                            "isIndividuallyAssigned": {
-                                                "type": "boolean",
-                                                "description": "True when the property object is assigned to the element individually, false when it is linked by criteria."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "libraryPartIndex",
-                                            "isIndividuallyAssigned"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "propertyObjects"
-                            ]
+                            "$ref": "#/ElementPropertyObjects"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -8738,59 +8268,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "descriptors": {
-                                    "type": "array",
-                                    "description": "The descriptors in the property objects of the element. Empty when the element has none.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "libraryPartIndex": {
-                                                "type": "integer",
-                                                "description": "The index of the library part that declares the descriptor, the same as the index returned by GetAvailableLibraryParts."
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "description": "The name of the library part. Absent when the library part cannot be read."
-                                            },
-                                            "guid": {
-                                                "type": "string",
-                                                "description": "The guid of the library part, the same as the guid returned by GetAvailableLibraryParts. Absent when the library part cannot be read."
-                                            },
-                                            "setIndex": {
-                                                "type": "integer",
-                                                "description": "The index of the listing database set of the descriptor. Meaningful only when status is Normal."
-                                            },
-                                            "index": {
-                                                "type": "integer",
-                                                "description": "The index of the descriptor in the listing database set when status is Normal, in the library part when status is Local."
-                                            },
-                                            "status": {
-                                                "type": "string",
-                                                "description": "Normal: the descriptor exists in the listing database. Deleted: it is referenced, but deleted from the database. Local: it is defined in the library part. Unknown for a value this version of Tapir does not name.",
-                                                "enum": [
-                                                    "Normal",
-                                                    "Deleted",
-                                                    "Local",
-                                                    "Unknown"
-                                                ]
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "libraryPartIndex",
-                                            "setIndex",
-                                            "index",
-                                            "status"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "descriptors"
-                            ]
+                            "$ref": "#/ElementDescriptors"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -8817,7 +8295,16 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "$ref": "#/ElementIdArrayItem"
+                            "type": "object",
+                            "properties": {
+                                "elementId": {
+                                    "$ref": "#/ElementId"
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                                "elementId"
+                            ]
                         },
                         {
                             "type": "object",
@@ -8850,56 +8337,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "linkByCriteria": {
-                                    "type": "boolean",
-                                    "description": "True when the property objects matching their criteria are linked to the element."
-                                },
-                                "individualLibraryPartIndex": {
-                                    "type": "integer",
-                                    "description": "The index of the library part of the individually assigned property object, the same as the index returned by GetAvailableLibraryParts. 0 when no property object is assigned individually."
-                                },
-                                "individualLibraryPartName": {
-                                    "type": "string",
-                                    "description": "The name of the individually assigned library part. Absent when there is none or it cannot be read."
-                                },
-                                "individualLibraryPartGuid": {
-                                    "type": "string",
-                                    "description": "The guid of the individually assigned library part, the same as the guid returned by GetAvailableLibraryParts. Absent when there is none or it cannot be read."
-                                },
-                                "criteriaPropertyObjects": {
-                                    "type": "array",
-                                    "description": "The linked property objects whose criteria match the element.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "libraryPartIndex": {
-                                                "type": "integer",
-                                                "description": "The index of the property object's library part, the same as the index returned by GetAvailableLibraryParts."
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "description": "The name of the library part. Absent when the library part cannot be read."
-                                            },
-                                            "guid": {
-                                                "type": "string",
-                                                "description": "The guid of the library part, the same as the guid returned by GetAvailableLibraryParts. Absent when the library part cannot be read."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "libraryPartIndex"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "linkByCriteria",
-                                "individualLibraryPartIndex",
-                                "criteriaPropertyObjects"
-                            ]
+                            "$ref": "#/ElementLinkedPropertyObjects"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -9260,8 +8698,158 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "AlignElements",
+                "version": "2.0.0",
+                "description": "Aligns elements on the floor plan or in the current 2D view to one edge of their plan bounding boxes (left, right, top or bottom) or to their middle (centerX, centerY), either of the whole set or of a reference element, by moving them in one undo step. The bounding boxes are those Get2DBoundingBoxes returns. Supported types: Wall, Column, Beam, Slab, Roof, Shell, Morph, Mesh, Zone, Object, Lamp, Stair, Railing, CurtainWall, Line, PolyLine, Arc, Circle, Spline, Hatch, Text and Hotspot. An element of another type (doors, windows and openings, which only slide along their host, subelements, dimensions, labels, ...) or one that cannot be edited gets a failed execution result naming the reason, and the other elements are still aligned.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to align: Wall, Column, Beam, Slab, Roof, Shell, Morph, Mesh, Zone, Object, Lamp, Stair, Railing, CurtainWall, Line, PolyLine, Arc, Circle, Spline, Hatch, Text or Hotspot, in the current database."
+            },
+            "alignTo": {
+                "type": "string",
+                "enum": ["left", "right", "top", "bottom", "centerX", "centerY"],
+                "description": "The edge of the plan bounding boxes to align: left (smallest X), right (largest X), bottom (smallest Y), top (largest Y), centerX (the middle in X, so the elements line up on one vertical line) or centerY (the middle in Y, on one horizontal line)."
+            },
+            "reference": {
+                "$ref": "#/ElementId",
+                "description": "Optional element to align to; it is not moved itself. Without it the elements are aligned to the outermost edge of the whole set (its leftmost left edge, its topmost top edge, ...), or for centerX and centerY to the middle of the bounding box of the whole set."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements",
+            "alignTo"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "DistributeElements",
+                "version": "2.0.0",
+                "description": "Distributes 3 or more elements on the floor plan or in the current 2D view evenly along X (horizontal) or Y (vertical), with equal distances between the middles of their plan bounding boxes (centers) or equal space between the boxes (gaps), by moving them in one undo step. The elements are taken in the order of their middles along the direction, and the two outermost stay where they are. The bounding boxes are those Get2DBoundingBoxes returns. Supported types: Wall, Column, Beam, Slab, Roof, Shell, Morph, Mesh, Zone, Object, Lamp, Stair, Railing, CurtainWall, Line, PolyLine, Arc, Circle, Spline, Hatch, Text and Hotspot. An element of another type (doors, windows and openings, which only slide along their host, subelements, dimensions, labels, ...) or one that cannot be edited gets a failed execution result naming the reason, and the other elements are still distributed.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "At least 3 elements to distribute: Wall, Column, Beam, Slab, Roof, Shell, Morph, Mesh, Zone, Object, Lamp, Stair, Railing, CurtainWall, Line, PolyLine, Arc, Circle, Spline, Hatch, Text or Hotspot, in the current database. Their order does not matter: they are distributed in the order of the middles of their plan bounding boxes along the direction."
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["horizontal", "vertical"],
+                "description": "horizontal distributes the elements along X, vertical along Y. They are not moved in the other direction."
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["centers", "gaps"],
+                "description": "centers makes the distances between the middles of the plan bounding boxes equal, gaps makes the empty space between neighbouring bounding boxes equal (the gap is negative, so the boxes overlap, when the elements are wider together than the space between the two outermost elements)."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements",
+            "direction",
+            "mode"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "SplitElements",
+                "version": "2.0.0",
+                "description": "Splits each given element along a line (the infinite line through its begin and end point, like Archicad's Split command). The original element keeps one part, copies of it (Drag a Copy, so they keep the layer, classifications, properties and every other setting) get the others; all are returned, the original first. Supports straight walls without doors, windows or openings, straight unslanted single segment beams without holes or openings, and lines (their arrows stay at the original ends), which are split in two, the original keeping the part from its begin point; and slabs, meshes without level lines or points, fills and single contour polylines, whose polygon (holes and arcs included) or points are cut along the line into one part per piece, the original keeping the largest piece (a polyline: the piece with its begin point). Slab edges keep their trim and side surface, the edges along the line are vertical; the corners a mesh gets on the line take their height from the edge they lie on. An element the line does not cross is reported as notCut, an unsupported one as an error naming its type. One undo step.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to split. Supported: straight walls (not polygonal, without doors, windows or openings), straight beams (not slanted or curved, one segment, without holes or openings), lines, slabs, meshes (without level lines or points), fills and polylines (one contour). Other types are reported with their type name."
+            },
+            "line": {
+                "type": "object",
+                "description": "The split line in project coordinates: the infinite line through begin and end, as the split line of Archicad's Split command.",
+                "properties": {
+                    "begin": {
+                        "$ref": "#/Coordinate2D"
+                    },
+                    "end": {
+                        "$ref": "#/Coordinate2D"
+                    }
+                },
+                "additionalProperties": false,
+                "required": ["begin", "end"]
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements", "line"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "description": "One item per given element, in the same order.",
+                "items": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "description": "The element was split.",
+                            "properties": {
+                                "elements": {
+                                    "$ref": "#/Elements",
+                                    "description": "The parts, first the original element, then the new ones (copies of it). A wall, beam or line gives two parts: the original keeps the part from its begin point to the split line. A slab, mesh or fill gives one part per piece of its polygon on each side of the line (more than two when the line crosses a concave polygon more than twice); the original keeps the largest. A polyline is cut at every crossing; the original keeps the part with its begin point."
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": ["elements"]
+                        },
+                        {
+                            "type": "object",
+                            "description": "The split line does not cross the element (or only touches one of its ends), so the element was left as it was.",
+                            "properties": {
+                                "notCut": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": ["notCut"]
+                        },
+                        {
+                            "$ref": "#/ErrorItem"
+                        }
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["results"]
+    }
+            },{
                 "name": "CopyElementsToDatabase",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Copies 2D elements (lines, polylines, arcs, circles, splines, hotspots, texts, hatches, independent labels) from one database into another, e.g. from a worksheet into another worksheet, a detail or a layout, optionally moved by an offset. Returns the new elements in the order of the given ones.",
                 "inputScheme": {
         "type": "object",
@@ -9299,7 +8887,7 @@ var gCommands = [{
     }
             },{
                 "name": "ElevateElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Moves elements vertically by a given offset in meters, like Edit > Move > Elevate. An element that cannot be edited (its layer is hidden or locked, it is locked, or it is not available in teamwork) gets a failed execution result naming the reason instead of being skipped silently.",
                 "inputScheme": {
         "type": "object",
@@ -9439,24 +9027,142 @@ var gCommands = [{
         ]
     }
             },{
-                "name": "DeleteElements",
-                "version": "1.2.1",
-                "description": "Deletes elements. The zones of the call are deleted before all the other elements, so an automatic zone deleted together with its bounding walls is gone before its boundary is; deleting the boundary of an automatic zone without the zone itself can open Archicad's modal 'No closed polygon found' dialog, which blocks the command until someone clicks it in Archicad. Returns an execution result for each input element: an element that could not be deleted (for example because its layer is locked) or a guid that is not in the project gets a failed execution result instead of being skipped silently, and does not stop the other elements from being deleted. dryRun reports the result of these checks without deleting anything or creating an undo step.",
+                "name": "CopyElements",
+                "version": "2.0.0",
+                "description": "Copies elements by an offset, like dragging a copy in Archicad, keeping all their settings. With count, copy n is moved by n times the offset, which makes a linear array. Returns the new elements of each given element, in the order of the given ones; an element Archicad cannot copy (a part of a curtain wall, stair or railing, a locked element or one on a hidden or locked layer, ...) gets an error naming the reason, and the other elements are still copied. All copies are one undo step.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elements": {
                 "$ref": "#/Elements",
-                "description": "The elements to delete. The zones among them are deleted before all the others, so an automatic zone deleted together with its bounding elements is gone before its boundary is. Deleting the boundary of an automatic zone without the zone itself can open Archicad's modal 'No closed polygon found around the clicked point' dialog, which blocks the command until someone clicks it in Archicad."
+                "description": "The elements to copy."
             },
-            "dryRun": {
-                "type": "boolean",
-                "description": "If true, nothing is deleted and no undo step is created: each execution result says what the deletion would do for that element, from the checks made before deleting (the element does not exist, its layer is locked, it is not editable). Archicad can still refuse an element that passes them. Default is false."
+            "offset": {
+                "$ref": "#/Coordinate3D",
+                "description": "The vector in meters the first copy is moved by from its element."
+            },
+            "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "description": "Optional number of copies of each element. Copy n is moved by n times the offset, so more than one makes a linear array. By default it's 1."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements", "offset"]
+    },
+                "outputScheme": {
+    "type": "object",
+    "properties": {
+        "copies": {
+            "type": "array",
+            "description": "One item for each given element, in the same order.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "elements": {
+                        "$ref": "#/Elements",
+                        "description": "The new elements made from this element, the first copy first. When the element is in a group and Suspend Groups is off, Archicad copies the whole group, and the copies of the other members are listed too."
+                    },
+                    "error": {
+                        "$ref": "#/Error",
+                        "description": "Why the element, or some of its copies, could not be made. The copies made before the error are still listed in elements."
+                    }
+                },
+                "additionalProperties": false,
+                "required": ["elements"]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": ["copies"]
+}
+            },{
+                "name": "RotateCopyElements",
+                "version": "2.0.0",
+                "description": "Copies elements rotated around a center on the floor plan by an angle in radians, like rotating a copy in Archicad, keeping all their settings. With count, copy n is rotated by n times the angle, which makes a circular array. Returns the new elements of each given element, in the order of the given ones; an element Archicad cannot copy gets an error naming the reason, and the other elements are still copied. All copies are one undo step.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to copy."
+            },
+            "center": {
+                "$ref": "#/Coordinate2D",
+                "description": "The center of the rotation on the floor plan."
+            },
+            "angle": {
+                "type": "number",
+                "description": "The angle in radians the first copy is rotated by from its element, counterclockwise."
+            },
+            "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "description": "Optional number of copies of each element. Copy n is rotated by n times the angle, so more than one makes a circular array. By default it's 1."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements", "center", "angle"]
+    },
+                "outputScheme": {
+    "type": "object",
+    "properties": {
+        "copies": {
+            "type": "array",
+            "description": "One item for each given element, in the same order.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "elements": {
+                        "$ref": "#/Elements",
+                        "description": "The new elements made from this element, the first copy first. When the element is in a group and Suspend Groups is off, Archicad copies the whole group, and the copies of the other members are listed too."
+                    },
+                    "error": {
+                        "$ref": "#/Error",
+                        "description": "Why the element, or some of its copies, could not be made. The copies made before the error are still listed in elements."
+                    }
+                },
+                "additionalProperties": false,
+                "required": ["elements"]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": ["copies"]
+}
+            },{
+                "name": "ScaleElements",
+                "version": "2.0.0",
+                "description": "Scales elements on the floor plan or in the current 2D view by a factor around a center point with Archicad's Resize edit, in one undo step. Resize scales X and Y by the same ratio, so factorY, if given, must equal factor. Supported types: Wall, Column, Beam, Slab, Roof, Mesh, Zone, Line, PolyLine, Arc, Circle, Spline, Hatch and Hotspot. An element of another type (library parts such as objects, lamps, doors and windows, stairs, railings, curtain walls, shells, morphs, texts, subelements, dimensions, labels, ...) or one that cannot be edited gets a failed execution result naming the reason, and the other elements are still scaled.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to scale: Wall, Column, Beam, Slab, Roof, Mesh, Zone, Line, PolyLine, Arc, Circle, Spline, Hatch or Hotspot, in the current database."
+            },
+            "center": {
+                "$ref": "#/Coordinate2D",
+                "description": "The fixed point of the scaling on the floor plan; every point of the elements moves away from it (factor > 1) or towards it (factor < 1)."
+            },
+            "factor": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "The scale factor, greater than 0: 2 doubles the distances from the center, 0.5 halves them."
+            },
+            "factorY": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Optional scale factor in Y. Archicad's Resize scales X and Y by one ratio, so it must be the same as factor (or left out); a different value is refused."
             }
         },
         "additionalProperties": false,
         "required": [
-            "elements"
+            "elements",
+            "center",
+            "factor"
         ]
     },
                 "outputScheme": {
@@ -9472,12 +9178,80 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "DeleteElements",
+                "version": "1.2.1",
+                "description": "Deletes elements. The zones of the call are deleted before all the other elements, so an automatic zone deleted together with its bounding walls is gone before its boundary is; deleting the boundary of an automatic zone without the zone itself can open Archicad's modal 'No closed polygon found' dialog, which blocks the command until someone clicks it in Archicad. Returns an execution result for each input element: an element that could not be deleted (for example because its layer is locked) or a guid that is not in the project gets a failed execution result instead of being skipped silently, and does not stop the other elements from being deleted. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each element that passes the checks made before deleting gets wouldDelete, so a script can preview a deletion before making it.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to delete. The zones among them are deleted before all the others, so an automatic zone deleted together with its bounding elements is gone before its boundary is. Deleting the boundary of an automatic zone without the zone itself can open Archicad's modal 'No closed polygon found around the clicked point' dialog, which blocks the command until someone clicks it in Archicad."
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elements"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
+            "executionResults": {
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input element, in the order of the input. On a dry run an element that passes every check made before deleting (it exists, its layer is not locked, it is editable) gets wouldDelete; Archicad can still refuse an element that passes them."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
                 "name": "DeleteSelectedElements",
                 "version": "1.7.3",
-                "description": "Deletes the currently selected elements in one undo step, the same as pressing the Delete key.",
-                "inputScheme": null,
+                "description": "Deletes the currently selected elements in one undo step, the same as pressing the Delete key. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true and lists the selected elements, with wouldDelete when there is at least one, or fails when one of them cannot be edited (Archicad then deletes none of them).",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "dryRun": {
+                "$ref": "#/DryRun"
+            }
+        },
+        "additionalProperties": false
+    },
                 "outputScheme": {
-        "$ref": "#/ExecutionResult"
+        "type": "object",
+        "description": "The result of the execution. A real run answers success, with error when it failed; a dry run also answers dryRun, and the elements it would delete.",
+        "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
+            "success": {
+                "type": "boolean"
+            },
+            "error": {
+                "$ref": "#/Error"
+            },
+            "wouldDelete": {
+                "type": "boolean",
+                "description": "Only on a dry run that passed the checks: true when at least one element is selected."
+            },
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "Only on a dry run: the selected elements (for a marquee, the ones it touches). A real run deletes them, together with the other members of their groups when Suspend Groups is off and the elements linked to them (labels, dimensions, ...)."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "success"
+        ]
     }
             },{
                 "name": "LockElements",
@@ -9584,7 +9358,7 @@ var gCommands = [{
             },{
                 "name": "SetGDLParametersOfElements",
                 "version": "1.5.7",
-                "description": "Sets the given GDL parameters of the given elements. An element Archicad does not let the user edit (its layer locked, the element locked, or not reserved by the user in Teamwork) gets a failed execution result naming that reason, whatever the parameter. On a Curtain Wall Frame, A, B, ac_frameWidth and ac_frameDepth mirror the frame's contour, which Archicad derives from the frame's settings, so they are rejected instead of reporting a change that does not take effect; a frame without a library part (an invisible Boundary frame, for example) has no GDL parameters. The parameters are read back after the change, and a written parameter Archicad did not keep (e.g. one it sets from the element's own settings, like AC_TextSize_1 of a label) gives a failed execution result naming it.",
+                "description": "Sets the given GDL parameters of the given elements. An element Archicad does not let the user edit (its layer locked, the element locked, or not reserved by the user in Teamwork) gets a failed execution result naming that reason, whatever the parameter. On a Curtain Wall Frame, A, B, ac_frameWidth and ac_frameDepth mirror the frame's contour, which Archicad derives from the frame's settings, so they are rejected instead of reporting a change that does not take effect; a frame without a library part (an invisible Boundary frame, for example) has no GDL parameters. The parameters are read back after the change, and a written parameter Archicad did not keep (e.g. one it sets from the element's own settings, like AC_TextSize_1 of a label) gives a failed execution result naming it. With dryRun true no element is changed and no undo step is created: the parameters are written to the element's parameter list and its Parameter Script runs as in a real run, the response has dryRun set to true, and each element that passes the checks made before changing it gets wouldChange, listing the parameters a real run would change (the given ones and the ones the Parameter Script changes with them) with their old and new values.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -9607,6 +9381,9 @@ var gCommands = [{
                     "gdlParameters"
                 ]
             }
+        },
+        "dryRun": {
+            "$ref": "#/DryRun"
         }
     },
     "additionalProperties": false,
@@ -9617,8 +9394,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/ChangeExecutionResults",
+                "description": "One result for each item of elementsWithGDLParameters, in the order of the input. On a dry run the parameters are written to the element's parameter list and its Parameter Script runs as in a real run, but the element is not changed. An element that passes every check made before changing it (the element and its parameters exist, every value is valid for its parameter, the element is editable) gets wouldChange: oldValue and newValue list the parameters a real run would change - the ones given and the ones the Parameter Script changes with them - before and after, each with name, index, type and value as GetGDLParametersOfElements gives them. Archicad can still refuse an element that passes them."
             }
         },
         "additionalProperties": false,
@@ -9971,7 +9752,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetCalculatedParametersOfCurtainWallSubElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the GDL parameters (name, type, value) of the given Curtain Wall Frame, Panel, Junction and Accessory elements as Archicad calculated them for their place in the curtain wall. GetGDLParametersOfElements returns the parameters the sub-element was set up with instead.",
                 "inputScheme": {
     "type": "object",
@@ -10143,7 +9924,7 @@ var gCommands = [{
 }
             },{
                 "name": "SetMarkerLibraryPartOfElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Changes which library part the marker of the given Window and Door elements uses, given by its name (find the available ones with GetAvailableLibraryParts); only a marker library part for the opening's type is accepted. The marker gets the new library part's default parameters, which SetMarkerParametersOfElements can change afterwards; the opening's own settings are left as they are.",
                 "inputScheme": {
     "type": "object",
@@ -10218,7 +9999,7 @@ var gCommands = [{
             },{
                 "name": "CreateColumns",
                 "version": "1.0.3",
-                "description": "Creates Column elements based on the given parameters.",
+                "description": "Creates Column elements based on the given parameters. Takes the same cut fill pens and cover fill as ModifyColumns, besides the position, size, slant, cross section and veneer; settings not given come from the Column tool defaults or the favorite. Not written by either command: the surfaces of the column segments, and the cut fill pens before Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -10323,7 +10104,10 @@ var gCommands = [{
                         "floorIndex": {
                             "type": "integer",
                             "description": "Optional floor index. If omitted, derived from the coordinate's z value."
-                        }
+                        },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "coverFill": { "$ref": "#/CoverFill", "description": "The cover fill of the column in the floor plan, as GetDetailsOfElements returns it." }
                     },
                     "additionalProperties": false,
                     "required" : [
@@ -10352,7 +10136,7 @@ var gCommands = [{
             },{
                 "name": "CreateWalls",
                 "version": "1.4.0",
-                "description": "Creates Wall elements based on the given parameters.",
+                "description": "Creates Wall elements based on the given parameters. Takes the same wall settings as ModifyWalls, applied by the same code, except geometryType and profileType, which the new wall takes from the favorite or the Wall tool defaults (its plan outline is always Straight), and bottomOffset, which comes from zCoordinate. Neither command can write a Polygonal outline (it needs an outline polygon, which these commands do not take), connectionPriority or junctionSequence (Archicad ignores writes to them; GetDetailsOfElements reads them), and on Archicad 29 any story visibility other than 'Home story only' and 'All relevant stories'.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -10394,6 +10178,20 @@ var gCommands = [{
                             "type": "boolean",
                             "description": "Optional. True mirrors the wall to its reference line (the side GetDetailsOfElements reports as flipped). When omitted, the favorite's or the Wall tool default's side is kept, which for a Profile wall mirrors its whole cross section."
                         },
+                        "slantAlpha": { "type": "number", "description": "Only has an effect when the wall's profileType is Slanted or Trapez." },
+                        "slantBeta": { "type": "number", "description": "Only has an effect when the wall's profileType is Slanted or Trapez." },
+                        "topOffset": { "type": "number", "description": "Only has an effect when relativeTopStory is non-zero." },
+                        "relativeTopStory": { "type": "number", "description": "Non-zero links the wall's top to another story instead of an explicit height - do not set together with 'height' for the same wall: whichever is applied last wins, and Archicad recomputes the actual height from the story elevations once relativeTopStory is non-zero." },
+                        "zoneRel": {
+                            "$ref": "#/WallZoneRelation"
+                        },
+                        "visibility": { "$ref": "#/StoryVisibility", "description": "Confirmed live on Archicad 29 (#852): a wall there knows only 'Home story only' and 'All relevant stories' (Wall Settings offers no Custom option), and Archicad silently drops every other combination written here although the command reports success - showAllAbove, showAllBelow, showRelAbove and showRelBelow (any value, 0 included) and showOnHome true -> false all read back unchanged. 'All relevant stories' is isAutoOnStoryVisibility true. 'Home story only' takes two calls: first isAutoOnStoryVisibility true (Archicad resets the custom fields to 0), then isAutoOnStoryVisibility false with visibility { showOnHome: true }. Archicad 30 adds a Custom option for walls; whether the other fields become writable there is untested." },
+                        "isAutoOnStoryVisibility": { "type": "boolean", "description": "When true (the default on a new wall), Archicad recomputes 'visibility' automatically from the wall's vertical extent and ignores any value set for it. Setting 'visibility' without also setting this field turns it off automatically. See the note on 'visibility' for which combinations a wall accepts." },
+                        "referenceMaterial": { "$ref": "#/OverriddenMaterial" },
+                        "oppositeMaterial": { "$ref": "#/OverriddenMaterial" },
+                        "sideMaterial": { "$ref": "#/OverriddenMaterial" },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Pen of the cut fill. Archicad 27 and later; ignored on older versions." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Background pen of the cut fill. Archicad 27 and later; ignored on older versions." },
                         "structureType": {
                             "$ref": "#/WallStructureType",
                             "description": "Optional. When neither this nor one of the attribute ids below is given, the favorite's or the Wall tool default's structure is kept."
@@ -10487,7 +10285,7 @@ var gCommands = [{
             },{
                 "name": "CreateBeams",
                 "version": "1.4.0",
-                "description": "Creates Beam elements based on the given parameters.",
+                "description": "Creates Beam elements based on the given parameters. Takes the same cut fill pens and cover fill as ModifyBeams, besides the position, shape, slant and cross section; settings not given come from the Beam tool defaults or the favorite. Not written by either command: the surfaces of the beam segments, and the cut fill pens before Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -10557,7 +10355,10 @@ var gCommands = [{
                         "profileId": {
                             "$ref": "#/AttributeId",
                             "description": "Switches the cross section to this custom extruded profile (circleBased becomes false). Applied to all segments."
-                        }
+                        },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "coverFill": { "$ref": "#/CoverFill", "description": "The cover fill of the beam in the floor plan, as GetDetailsOfElements returns it." }
                     },
                     "additionalProperties": false,
                     "required": ["begCoordinate", "endCoordinate", "zCoordinate"]
@@ -10582,7 +10383,7 @@ var gCommands = [{
             },{
                 "name": "CreateStairs",
                 "version": "1.5.0",
-                "description": "Creates Stair elements based on the given baseline and parameters, optionally with the segment type of each baseline edge and the turn at each baseline point (landings and winders).",
+                "description": "Creates Stair elements based on the given baseline and parameters, optionally with the segment type of each baseline edge and the turn at each baseline point (landings and winders). Accepts the same settings as ModifyStairs: the step values with their locks, the finish and structure visibility, the extra treads, the walking line, the numbering, the walking direction, and the tread, riser and structure settings of the flights and the landings; settings not given come from the Stair tool defaults or the favorite.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -10649,10 +10450,6 @@ var gCommands = [{
                             "description": "Depth (going) of each tread. Pinned as a fixed going in the stair rules, so the run length follows from the number of treads; the standard's combined riser/going rules (2R+G, R+G, R/G) are not applied to this stair.",
                             "exclusiveMinimum": 0.0
                         },
-                        "finishVisible": {
-                            "type": "boolean",
-                            "description": "Optional. If false, the tread/riser finishes are hidden and only the stair structure (e.g. a monolith) is modeled."
-                        },
                         "baseLineEdges": {
                             "type": "array",
                             "description": "Optional. The segment type of each baseline edge, one item per edge (baseLinePoints.length - 1 items; edge i runs from point i to point i + 1). A U-shaped stair with a half landing is Flight, Landing, Flight with landing turns at both inner points. When neither baseLineEdges nor baseLineVertices is given, Archicad decides the segments and turns itself; when only baseLineVertices is given, every edge is a flight. Combinations Archicad cannot build fail like any other invalid stair.",
@@ -10691,6 +10488,73 @@ var gCommands = [{
                                 },
                                 "additionalProperties": false,
                                 "required": ["turnType"]
+                            }
+                        },
+                        "treadDepthLocked": { "type": "boolean", "description": "Whether the going lengths are locked." },
+                        "totalHeightLocked": { "type": "boolean", "description": "Whether the total height is locked." },
+                        "finishVisible": { "type": "boolean", "description": "Whether the tread and riser finishes of the stair are shown; false models only the structure (e.g. a monolith). The treads and risers of each part can also be switched on and off with treads and risers." },
+                        "extraTopTread": { "type": "boolean", "description": "Whether the stair has an extra tread at its top." },
+                        "extraBottomTread": { "type": "boolean", "description": "Whether the stair has an extra tread at its bottom." },
+                        "walkingLinePosition": { "type": "string", "enum": ["Left", "Right", "Center", "Auto"], "description": "Where the walking line runs on the flight: offset from the left or the right side (walkingLineOffset), centered, or placed by Archicad (Auto)." },
+                        "walkingLineOffset": { "type": "number", "description": "The offset of the walking line from the side walkingLinePosition names (Left or Right); not used with Center and Auto." },
+                        "numberingType": { "type": "string", "enum": ["Treads", "Risers"], "description": "Whether the steps are numbered on their treads or on their risers." },
+                        "inputDirection": { "type": "string", "enum": ["Upward", "Inverse"], "description": "The walking direction along the baseline: upward from its first point, or inverse (downward)." },
+                        "uniformFinish": { "type": "boolean", "description": "Whether the flights and the landings share one finish setting." },
+                        "uniformMonolithAttributes": { "type": "boolean", "description": "Whether the monolithic structures of the flights and the landings share one set of attributes." },
+                        "uniformDrainings": { "type": "boolean", "description": "Whether the flights and the landings share one draining setting." },
+                        "structureVisibility": { "type": "boolean", "description": "Whether the structure of the stair is shown." },
+                        "treads": {
+                            "type": "array",
+                            "description": "The tread settings of the flights (Run) and of the landings (Landing). Only the given fields of the given parts are changed.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "role": { "type": "string", "enum": ["Run", "Landing"], "description": "The part of the stair: the flights (Run) or the landings (Landing)." },
+                                    "visible": { "type": "boolean", "description": "Whether the treads are present." },
+                                    "thickness": { "type": "number", "minimum": 0.0, "description": "The thickness of the treads." },
+                                    "offset": { "type": "number", "description": "The offset of the treads." },
+                                    "nosingType": { "type": "string", "enum": ["ByValue", "BySlanting"], "description": "Whether the nosing is given by its length (nosingValue) or by the slant of the riser (nosingSlant)." },
+                                    "nosingValue": { "type": "number", "description": "The length of the nosing." },
+                                    "nosingSlant": { "type": "number", "description": "The slant of the nosing in radians." }
+                                },
+                                "additionalProperties": false,
+                                "required": ["role"]
+                            }
+                        },
+                        "risers": {
+                            "type": "array",
+                            "description": "The riser settings of the flights (Run) and of the landings (Landing). Only the given fields of the given parts are changed.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "role": { "type": "string", "enum": ["Run", "Landing"], "description": "The part of the stair: the flights (Run) or the landings (Landing)." },
+                                    "visible": { "type": "boolean", "description": "Whether the risers are present." },
+                                    "thickness": { "type": "number", "minimum": 0.0, "description": "The thickness of the risers." },
+                                    "offset": { "type": "number", "description": "The offset of the risers." },
+                                    "crossSection": { "type": "string", "enum": ["Simple", "Slanted"], "description": "The cross section of the risers." },
+                                    "angle": { "type": "number", "description": "The angle of a slanted riser in radians." },
+                                    "position": { "type": "string", "enum": ["OnTread", "BehindTread"], "description": "Whether the risers stand on the treads or behind them." }
+                                },
+                                "additionalProperties": false,
+                                "required": ["role"]
+                            }
+                        },
+                        "structures": {
+                            "type": "array",
+                            "description": "The structure settings of the flights (Run) and of the landings (Landing), for each side: the left and right side structures and the structure under the stair. Only the given fields of the given parts and sides are changed.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "role": { "type": "string", "enum": ["Run", "Landing"], "description": "The part of the stair: the flights (Run) or the landings (Landing)." },
+                                    "side": { "type": "string", "enum": ["LeftSide", "RightSide", "UnderSide"], "description": "The side of the structure." },
+                                    "visible": { "type": "boolean", "description": "Whether the structure is present." },
+                                    "structureType": { "type": "string", "enum": ["Side", "Monolith", "BeamSupport", "CantileveredSupport"], "description": "The type of the structure: side stringers, monolithic, beam supported or cantilevered." },
+                                    "bottomType": { "type": "string", "enum": ["Stepped", "Flat", "Smooth"], "description": "The shape of the underside of the structure." },
+                                    "thickness": { "type": "number", "minimum": 0.0, "description": "The thickness of the structure." },
+                                    "horizontalThickness": { "type": "number", "minimum": 0.0, "description": "The horizontal thickness of the structure." }
+                                },
+                                "additionalProperties": false,
+                                "required": ["role", "side"]
                             }
                         }
                     },
@@ -10757,7 +10621,7 @@ var gCommands = [{
             },{
                 "name": "CreateSlabs",
                 "version": "1.0.3",
-                "description": "Creates Slab elements based on the given parameters.",
+                "description": "Creates Slab elements based on the given parameters. Takes the same surfaces (top, side, bottom), cut fill pens and floor fill as ModifySlabs, besides the outline, holes, level and structure; settings not given come from the Slab tool defaults or the favorite. Not written by either command: the surface of a single edge, and the cut fill pens before Archicad 27; of the floor fill orientation Archicad applies only the type through the API.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -10827,7 +10691,13 @@ var gCommands = [{
                     "floorIndex": {
                         "type": "integer",
                         "description": "Optional floor index. If omitted, derived from level."
-                    }
+                    },
+                        "topMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the top of the slab." },
+                        "sideMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the sides of the slab." },
+                        "bottomMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the bottom of the slab." },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "floorFill": { "$ref": "#/FloorFill", "description": "The cover fill of the slab in the floor plan. Only the given fields change; of the orientation Archicad applies only its type through the API, read it back with GetDetailsOfElements." }
                 },
                 "additionalProperties": false,
                 "required" : [
@@ -12178,7 +12048,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateShells",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates extruded, revolved and ruled Shell elements from profile polylines, with thickness, structure, an optional clipping contour and holes.",
                 "inputScheme": {
     "type": "object",
@@ -12339,8 +12209,8 @@ var gCommands = [{
     }
             },{
                 "name": "CreateSkylights",
-                "version": "1.8.1",
-                "description": "Creates Skylight elements with a roof or shell owner and a floor plan anchor position. Width, height, anchor point and library part are optional; other settings come from the Skylight tool defaults or a favorite. Surface placement is handled by Archicad and has not yet been verified for this command.",
+                "version": "2.0.0",
+                "description": "Creates Skylight elements with a roof or shell owner and a floor plan anchor position. It takes the same settings as ModifySkylights (anchor point, fix mode, width, height, azimuth and elevation angles, mirroring, floor plan display, pens, line types, section fill, surface and the library part flags) and optionally a library part; the settings not given come from the Skylight tool defaults or a favorite. Surface placement is handled by Archicad and has not yet been verified for this command.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -12349,7 +12219,7 @@ var gCommands = [{
             "description": "Array of data to create Skylights.",
             "items": {
                 "type": "object",
-                "description": "The parameters of the new Skylight.",
+                "description": "The parameters of the new Skylight. The settings not given are the Skylight tool defaults' or the favorite's.",
                 "properties": {
                     "favoriteName": {
                         "type": "string",
@@ -12363,29 +12233,35 @@ var gCommands = [{
                         "$ref": "#/ElementId",
                         "description": "The roof (single- or multi-plane) or shell the skylight is placed in."
                     },
-                    "anchorPosition": {
-                        "$ref": "#/Coordinate2D",
-                        "description": "Global XY coordinates of the skylight's anchor point. Passed to Archicad with the owner and Skylight tool defaults or favorite settings; automatic height and roof-plane selection have not yet been verified for this command."
-                    },
-                    "anchorPoint": {
-                        "type": "string",
-                        "enum": ["BottomCenter", "BottomLeft", "BottomRight", "TopCenter", "TopLeft", "TopRight"],
-                        "description": "Which point of the skylight anchorPosition places. The tool default's by default."
-                    },
-                    "width": {
-                        "type": "number",
-                        "exclusiveMinimum": 0.0,
-                        "description": "Optional width of the skylight. The tool default's by default."
-                    },
-                    "height": {
-                        "type": "number",
-                        "exclusiveMinimum": 0.0,
-                        "description": "Optional height of the skylight. The tool default's by default."
-                    },
                     "libraryPartName": {
                         "type": "string",
                         "description": "Optional localized name of a skylight library part to place instead of the tool default's."
-                    }
+                    },
+        "anchorPosition": { "$ref": "#/Coordinate2D", "description": "Global XY coordinates of the skylight's anchor point (API_SkylightType::anchorPosition). Archicad places the skylight on its owner roof or shell at this point; moving it onto another plane of a multi-plane roof has not been verified." },
+        "anchorPoint": { "type": "string", "enum": ["BottomCenter", "BottomLeft", "BottomRight", "TopCenter", "TopLeft", "TopRight"], "description": "Which point of the skylight anchorPosition places (API_SkylightType::anchorPoint)." },
+        "fixMode": { "type": "string", "enum": ["Horizontal", "Vertical"], "description": "What the skylight keeps when the angle or the height of its owner changes (API_SkylightType::fixMode)." },
+        "width": { "type": "number", "exclusiveMinimum": 0.0 },
+        "height": { "type": "number", "exclusiveMinimum": 0.0 },
+        "azimuthAngle": { "type": "number", "description": "Rotation angle of the skylight in the horizontal plane, measured clockwise, in radians (API_SkylightType::azimuthAngle)." },
+        "elevationAngle": { "type": "number", "description": "Elevation angle of the owner's surface at the skylight, in radians (API_SkylightType::elevationAngle). Archicad may set it again from the owner roof or shell." },
+        "reflected": { "type": "boolean", "description": "Mirror the skylight (API_OpeningBaseType::reflected)." },
+        "displayOption": { "$ref": "#/DisplayOption" },
+        "pen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the skylight's floor plan symbol; used unless useObjectPens is true." },
+        "lineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the skylight's floor plan symbol; used unless useObjectLineTypes is true." },
+        "cutLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the cut lines of the skylight." },
+        "sectionFillId": { "$ref": "#/AttributeId", "description": "Fill of the section of the skylight; used unless useObjectSectionAttributes is true." },
+        "sectionFillPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sectionFillBackgroundPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sectionContourPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "aboveViewLinePen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the overhead lines." },
+        "aboveViewLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the overhead lines." },
+        "belowViewLinePen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the uncut lines of the skylight." },
+        "belowViewLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the uncut lines." },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Surface of the skylight (API_OpeningBaseType::mat); used unless useObjectMaterials is true." },
+        "useObjectPens": { "type": "boolean", "description": "Use the pens defined in the library part instead of 'pen'." },
+        "useObjectLineTypes": { "type": "boolean", "description": "Use the line types defined in the library part instead of 'lineTypeId'." },
+        "useObjectMaterials": { "type": "boolean", "description": "Use the surfaces defined in the library part instead of 'surfaceId'." },
+        "useObjectSectionAttributes": { "type": "boolean", "description": "Use the section attributes defined in the library part instead of 'sectionFillId' and the section pens." }
                 },
                 "additionalProperties": false,
                 "required": ["ownerId", "anchorPosition"]
@@ -12408,9 +12284,58 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "ModifySkylights",
+                "version": "2.0.0",
+                "description": "Modifies Skylight elements: anchor position and anchor point, fix mode, width, height, azimuth and elevation angles, mirroring, floor plan display option, pens, line types, section fill and pens, surface and the use-the-library-part's-settings flags - the same settings CreateSkylights takes and GetDetailsOfElements returns. Only the given settings change. Not written by this command: the owner roof or shell, the anchor level and the vertical link (Archicad places the skylight on its owner), the plane of a multi-plane roof it sits on, the dimension marker (a separate element) and the library part's own parameters (use SetGDLParametersOfElements). Archicad may set the elevation angle again from the owner.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "skylightsWithDetails": {
+                "type": "array",
+                "description": "The skylights to modify, each with the settings to change. The settings not given stay as they are.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": { "$ref": "#/ElementId" },
+        "anchorPosition": { "$ref": "#/Coordinate2D", "description": "Global XY coordinates of the skylight's anchor point (API_SkylightType::anchorPosition). Archicad places the skylight on its owner roof or shell at this point; moving it onto another plane of a multi-plane roof has not been verified." },
+        "anchorPoint": { "type": "string", "enum": ["BottomCenter", "BottomLeft", "BottomRight", "TopCenter", "TopLeft", "TopRight"], "description": "Which point of the skylight anchorPosition places (API_SkylightType::anchorPoint)." },
+        "fixMode": { "type": "string", "enum": ["Horizontal", "Vertical"], "description": "What the skylight keeps when the angle or the height of its owner changes (API_SkylightType::fixMode)." },
+        "width": { "type": "number", "exclusiveMinimum": 0.0 },
+        "height": { "type": "number", "exclusiveMinimum": 0.0 },
+        "azimuthAngle": { "type": "number", "description": "Rotation angle of the skylight in the horizontal plane, measured clockwise, in radians (API_SkylightType::azimuthAngle)." },
+        "elevationAngle": { "type": "number", "description": "Elevation angle of the owner's surface at the skylight, in radians (API_SkylightType::elevationAngle). Archicad may set it again from the owner roof or shell." },
+        "reflected": { "type": "boolean", "description": "Mirror the skylight (API_OpeningBaseType::reflected)." },
+        "displayOption": { "$ref": "#/DisplayOption" },
+        "pen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the skylight's floor plan symbol; used unless useObjectPens is true." },
+        "lineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the skylight's floor plan symbol; used unless useObjectLineTypes is true." },
+        "cutLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the cut lines of the skylight." },
+        "sectionFillId": { "$ref": "#/AttributeId", "description": "Fill of the section of the skylight; used unless useObjectSectionAttributes is true." },
+        "sectionFillPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sectionFillBackgroundPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sectionContourPen": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "aboveViewLinePen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the overhead lines." },
+        "aboveViewLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the overhead lines." },
+        "belowViewLinePen": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Pen of the uncut lines of the skylight." },
+        "belowViewLineTypeId": { "$ref": "#/AttributeId", "description": "Line type of the uncut lines." },
+        "surfaceId": { "$ref": "#/AttributeId", "description": "Surface of the skylight (API_OpeningBaseType::mat); used unless useObjectMaterials is true." },
+        "useObjectPens": { "type": "boolean", "description": "Use the pens defined in the library part instead of 'pen'." },
+        "useObjectLineTypes": { "type": "boolean", "description": "Use the line types defined in the library part instead of 'lineTypeId'." },
+        "useObjectMaterials": { "type": "boolean", "description": "Use the surfaces defined in the library part instead of 'surfaceId'." },
+        "useObjectSectionAttributes": { "type": "boolean", "description": "Use the section attributes defined in the library part instead of 'sectionFillId' and the section pens." }
+                    },
+                    "additionalProperties": false,
+                    "required": ["elementId"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["skylightsWithDetails"]
+    },
+                "outputScheme": {"type":"object","properties":{"executionResults":{"$ref":"#/ExecutionResults"}},"additionalProperties":false,"required":["executionResults"]}
+            },{
                 "name": "CreateRailings",
                 "version": "1.8.0",
-                "description": "Creates Railing elements along a reference polyline. Posts, rails, handrails, toprails, panels and balusters come from the favorite or from the Railing tool defaults; Archicad generates one node per vertex and one segment per pair of consecutive vertices.",
+                "description": "Creates Railing elements along a reference polyline. Posts, rails, handrails, toprails, panels and balusters come from the favorite, from an existing railing (templateElementId) or from the Railing tool defaults; Archicad generates one node per vertex and one segment per pair of consecutive vertices.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -12428,6 +12353,10 @@ var gCommands = [{
                     "id": {
                         "type": "string",
                         "description": "Optional Element ID of the new element (the ID field of the Settings dialog, shown in schedules and labels; the same string GetDetailsOfElements returns as id). When omitted the element gets the next automatic ID of its tool."
+                    },
+                    "templateElementId": {
+                        "$ref": "#/ElementId",
+                        "description": "Optional existing Railing whose settings the new railing takes instead of the tool defaults (or the favorite): its node and segment settings, from which the posts, rails, handrails, toprails, panels and balusters are generated, its story visibility, pens, bottom offset, layer and home story. floorIndex, bottomOffset and height given here override them. The reference line of a railing cannot be changed through the Archicad API, so a railing is given a new reference line by creating it again with itself as templateElementId and deleting the old one."
                     },
                     "coordinates": {
                         "type": "array",
@@ -12477,7 +12406,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateRailingsFromPolyline",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates Railing elements along a 3D reference polyline: each node has its own elevation and segments can be arcs. Posts, rails, handrails, toprails, panels and balusters come from the favorite or from the Railing tool defaults.",
                 "inputScheme": {
     "type": "object",
@@ -12647,24 +12576,61 @@ var gCommands = [{
                         },
                         "textHeight": {
                             "type": "number",
-                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point after favoriteName."
+                            "exclusiveMinimum": 0,
+                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point (on creation after favoriteName)."
                         },
                         "textPen": {
                             "type": "integer",
-                            "description": "Optional pen index of the dimension texts, applied to every witness point after favoriteName."
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen index of the dimension texts, applied to every witness point (on creation after favoriteName)."
                         },
                         "textFrame": {
                             "type": "boolean",
-                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point after favoriteName. Without it the Dimension tool's setting is used."
+                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point. Without it a new dimension gets the Dimension tool's setting."
                         },
                         "appearance": {
                             "type": "string",
                             "enum": ["Linear", "Cumulative", "Baseline", "Elevation"],
-                            "description": "Optional dimension type, as in the Dimension Settings. Defaults to Linear, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
+                            "description": "Optional dimension type, as in the Dimension Settings. A new dimension is Linear without it, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
                         },
                         "elevationOrigin": {
                             "$ref": "#/DimensionOrigin",
-                            "description": "Optional level an Elevation dimension measures from. Defaults to the one of favoriteName or the Dimension tool defaults."
+                            "description": "Optional level an Elevation dimension measures from. A new dimension gets the one of favoriteName or the Dimension tool defaults without it."
+                        },
+                        "linePen": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen of the dimension and witness lines."
+                        },
+                        "marker": {
+                            "type": "object",
+                            "description": "Optional marker at the witness points; give the type, the pen or both. Its size is not written: the size the API reports did not match the marker size of the Dimension Settings for linear dimensions.",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The marker type, named after API_MarkerID.",
+                                    "enum": ["CrossLine", "EmptyCircle", "SlashLine60", "OpenArrow30", "ClosedArrow30", "FullArrow30", "SlashLine45", "CrossCircle", "OpenArrow90", "ClosedArrow90", "FullArrow90", "FullCircle", "PepitaCircle", "BandArrow", "OpenArrow60", "ClosedArrow60", "FullArrow60", "SlashLine75"]
+                                },
+                                "pen": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 255,
+                                    "description": "The pen of the marker."
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "defaultWitnessForm": {
+                            "type": "string",
+                            "enum": ["None", "Small", "Large", "Fix"],
+                            "description": "Optional witness line form, as in the Dimension Settings, applied to every witness point."
+                        },
+                        "defaultWitnessVal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Optional value that goes with the witness line form, in meters (for Fix the length of the witness lines), applied to every witness point."
                         },
                         "referencePoint": { "$ref": "#/Coordinate2D" },
                         "direction": { "$ref": "#/Coordinate2D" },
@@ -12713,24 +12679,61 @@ var gCommands = [{
                         },
                         "textHeight": {
                             "type": "number",
-                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point after favoriteName."
+                            "exclusiveMinimum": 0,
+                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point (on creation after favoriteName)."
                         },
                         "textPen": {
                             "type": "integer",
-                            "description": "Optional pen index of the dimension texts, applied to every witness point after favoriteName."
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen index of the dimension texts, applied to every witness point (on creation after favoriteName)."
                         },
                         "textFrame": {
                             "type": "boolean",
-                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point after favoriteName. Without it the Dimension tool's setting is used."
+                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point. Without it a new dimension gets the Dimension tool's setting."
                         },
                         "appearance": {
                             "type": "string",
                             "enum": ["Linear", "Cumulative", "Baseline", "Elevation"],
-                            "description": "Optional dimension type, as in the Dimension Settings. Defaults to Linear, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
+                            "description": "Optional dimension type, as in the Dimension Settings. A new dimension is Linear without it, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
                         },
                         "elevationOrigin": {
                             "$ref": "#/DimensionOrigin",
-                            "description": "Optional level an Elevation dimension measures from. Defaults to the one of favoriteName or the Dimension tool defaults."
+                            "description": "Optional level an Elevation dimension measures from. A new dimension gets the one of favoriteName or the Dimension tool defaults without it."
+                        },
+                        "linePen": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen of the dimension and witness lines."
+                        },
+                        "marker": {
+                            "type": "object",
+                            "description": "Optional marker at the witness points; give the type, the pen or both. Its size is not written: the size the API reports did not match the marker size of the Dimension Settings for linear dimensions.",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The marker type, named after API_MarkerID.",
+                                    "enum": ["CrossLine", "EmptyCircle", "SlashLine60", "OpenArrow30", "ClosedArrow30", "FullArrow30", "SlashLine45", "CrossCircle", "OpenArrow90", "ClosedArrow90", "FullArrow90", "FullCircle", "PepitaCircle", "BandArrow", "OpenArrow60", "ClosedArrow60", "FullArrow60", "SlashLine75"]
+                                },
+                                "pen": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 255,
+                                    "description": "The pen of the marker."
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "defaultWitnessForm": {
+                            "type": "string",
+                            "enum": ["None", "Small", "Large", "Fix"],
+                            "description": "Optional witness line form, as in the Dimension Settings, applied to every witness point."
+                        },
+                        "defaultWitnessVal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Optional value that goes with the witness line form, in meters (for Fix the length of the witness lines), applied to every witness point."
                         },
                         "sectionElementId": {
                             "$ref": "#/ElementId",
@@ -12804,24 +12807,61 @@ var gCommands = [{
                         },
                         "textHeight": {
                             "type": "number",
-                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point after favoriteName."
+                            "exclusiveMinimum": 0,
+                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point (on creation after favoriteName)."
                         },
                         "textPen": {
                             "type": "integer",
-                            "description": "Optional pen index of the dimension texts, applied to every witness point after favoriteName."
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen index of the dimension texts, applied to every witness point (on creation after favoriteName)."
                         },
                         "textFrame": {
                             "type": "boolean",
-                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point after favoriteName. Without it the Dimension tool's setting is used."
+                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point. Without it a new dimension gets the Dimension tool's setting."
                         },
                         "appearance": {
                             "type": "string",
                             "enum": ["Linear", "Cumulative", "Baseline", "Elevation"],
-                            "description": "Optional dimension type, as in the Dimension Settings. Defaults to Linear, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
+                            "description": "Optional dimension type, as in the Dimension Settings. A new dimension is Linear without it, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
                         },
                         "elevationOrigin": {
                             "$ref": "#/DimensionOrigin",
-                            "description": "Optional level an Elevation dimension measures from. Defaults to the one of favoriteName or the Dimension tool defaults."
+                            "description": "Optional level an Elevation dimension measures from. A new dimension gets the one of favoriteName or the Dimension tool defaults without it."
+                        },
+                        "linePen": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen of the dimension and witness lines."
+                        },
+                        "marker": {
+                            "type": "object",
+                            "description": "Optional marker at the witness points; give the type, the pen or both. Its size is not written: the size the API reports did not match the marker size of the Dimension Settings for linear dimensions.",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The marker type, named after API_MarkerID.",
+                                    "enum": ["CrossLine", "EmptyCircle", "SlashLine60", "OpenArrow30", "ClosedArrow30", "FullArrow30", "SlashLine45", "CrossCircle", "OpenArrow90", "ClosedArrow90", "FullArrow90", "FullCircle", "PepitaCircle", "BandArrow", "OpenArrow60", "ClosedArrow60", "FullArrow60", "SlashLine75"]
+                                },
+                                "pen": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 255,
+                                    "description": "The pen of the marker."
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "defaultWitnessForm": {
+                            "type": "string",
+                            "enum": ["None", "Small", "Large", "Fix"],
+                            "description": "Optional witness line form, as in the Dimension Settings, applied to every witness point."
+                        },
+                        "defaultWitnessVal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Optional value that goes with the witness line form, in meters (for Fix the length of the witness lines), applied to every witness point."
                         },
                         "wallId": { "$ref": "#/ElementId" },
                         "referencePoint": { "$ref": "#/Coordinate2D" },
@@ -12844,6 +12884,99 @@ var gCommands = [{
         },
         "additionalProperties": false,
         "required": ["elements"]
+    }
+            },{
+                "name": "ModifyAssociativeDimensions",
+                "version": "2.0.0",
+                "description": "Changes the settings of existing linear dimensions (the Dimension tool's elements, also in sections): the dimension type, the elevation origin, the line pen, the marker type and pen, the text height, pen and frame and the witness line form and value, with the same keys as the dimension creation commands. The text and witness line settings are applied to every witness point. Not written: the witness points, the dimension line position and direction (use MoveElements), the marker size, the text content and position, the witness extension line, the layout and the hole and composite wall dimensioning settings.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "dimensionsWithDetails": {
+                "type": "array",
+                "description": "The linear dimensions to change (the Dimension tool's elements, also those placed in sections), each with the settings to change. Only the given settings are changed.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": {
+                            "$ref": "#/ElementId"
+                        },
+                        "textHeight": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "description": "Optional height of the dimension texts in millimeters (paper size), applied to every witness point (on creation after favoriteName)."
+                        },
+                        "textPen": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen index of the dimension texts, applied to every witness point (on creation after favoriteName)."
+                        },
+                        "textFrame": {
+                            "type": "boolean",
+                            "description": "Optional frame around the dimension texts (true: framed, false: not framed), applied to every witness point. Without it a new dimension gets the Dimension tool's setting."
+                        },
+                        "appearance": {
+                            "type": "string",
+                            "enum": ["Linear", "Cumulative", "Baseline", "Elevation"],
+                            "description": "Optional dimension type, as in the Dimension Settings. A new dimension is Linear without it, whatever favoriteName or the Dimension tool defaults say. Elevation gives level marks, e.g. on a vertical chain in a section."
+                        },
+                        "elevationOrigin": {
+                            "$ref": "#/DimensionOrigin",
+                            "description": "Optional level an Elevation dimension measures from. A new dimension gets the one of favoriteName or the Dimension tool defaults without it."
+                        },
+                        "linePen": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 255,
+                            "description": "Optional pen of the dimension and witness lines."
+                        },
+                        "marker": {
+                            "type": "object",
+                            "description": "Optional marker at the witness points; give the type, the pen or both. Its size is not written: the size the API reports did not match the marker size of the Dimension Settings for linear dimensions.",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The marker type, named after API_MarkerID.",
+                                    "enum": ["CrossLine", "EmptyCircle", "SlashLine60", "OpenArrow30", "ClosedArrow30", "FullArrow30", "SlashLine45", "CrossCircle", "OpenArrow90", "ClosedArrow90", "FullArrow90", "FullCircle", "PepitaCircle", "BandArrow", "OpenArrow60", "ClosedArrow60", "FullArrow60", "SlashLine75"]
+                                },
+                                "pen": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 255,
+                                    "description": "The pen of the marker."
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "defaultWitnessForm": {
+                            "type": "string",
+                            "enum": ["None", "Small", "Large", "Fix"],
+                            "description": "Optional witness line form, as in the Dimension Settings, applied to every witness point."
+                        },
+                        "defaultWitnessVal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "Optional value that goes with the witness line form, in meters (for Fix the length of the witness lines), applied to every witness point."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["elementId"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["dimensionsWithDetails"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": ["executionResults"]
     }
             },{
                 "name": "GetDimensionData",
@@ -12965,7 +13098,7 @@ var gCommands = [{
             },{
                 "name": "CreateZones",
                 "version": "1.1.8",
-                "description": "Creates Zone elements based on the given parameters. An item whose area would overlap an existing Zone on the same story fails with an error naming that Zone instead of opening Archicad's modal overlap warning, unless its allowOverlap is true.",
+                "description": "Creates Zone elements based on the given parameters. Takes the same zone settings as ModifyZones (name, number, category, zone stamp, levels, contour line and cover fill), applied by the same helpers; the polygon or reference point is only set here. An item whose area would overlap an existing Zone on the same story fails with an error naming that Zone instead of opening Archicad's modal overlap warning, unless its allowOverlap is true.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -13677,7 +13810,7 @@ var gCommands = [{
             },{
                 "name": "CreateObjects",
                 "version": "1.5.7",
-                "description": "Creates Object elements based on the given parameters.",
+                "description": "Creates Object elements based on the given parameters. A library part named in libraryPartName starts from its own default size and GDL parameters, not from those of the part the Object tool holds; the dimensions and the GDL parameters given (by name, in parameters) override them. layerIndex places the element on a layer. With databaseId the objects are placed in that database, e.g. a worksheet, instead of the current one.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -13734,6 +13867,24 @@ var gCommands = [{
                         "id": {
                             "type": "string",
                             "description": "Optional Element ID of the new element (the ID field of the Settings dialog, shown in schedules and labels; the same string GetDetailsOfElements returns as id). When omitted the element gets the next automatic ID of its tool."
+                        },
+                        "parameters": {
+                            "type": "array",
+                            "description": "Optional GDL parameters to set by name, after dimensions. The value is a number, a boolean or a string; array parameters are not supported. A or B also set the size. An unknown name or a value of the wrong type fails the item, and nothing is created for it.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "value": { "description": "A number or a boolean for a numeric parameter, a string for a String or Title parameter." }
+                                },
+                                "additionalProperties": false,
+                                "required": ["name", "value"]
+                            }
+                        },
+                        "layerIndex": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Optional layer attribute index to place the new element on. It must be an existing, unlocked layer. When omitted the element gets the layer of the favorite or of the tool defaults."
                         }
                     },
                     "additionalProperties": false,
@@ -13742,6 +13893,10 @@ var gCommands = [{
                         "coordinates"
                     ]
                 }
+            },
+            "databaseId": {
+                "$ref": "#/DatabaseId",
+                "description": "Optional database to place the elements in, e.g. a worksheet or a detail (see GetDatabases, or the databaseId CreateWorksheets and CreateDetails return), for a legend of symbols. The front window stays as it is: a worksheet or detail whose window was never opened is opened once on Archicad 27 and later, and the front window is brought back. Without it the elements are placed in the current database. If Archicad cannot switch to it, nothing is created and the call fails."
             }
         },
         "additionalProperties": false,
@@ -13764,7 +13919,7 @@ var gCommands = [{
             },{
                 "name": "CreateLamps",
                 "version": "1.5.7",
-                "description": "Creates Lamp elements based on the given parameters.",
+                "description": "Creates Lamp elements based on the given parameters. A library part named in libraryPartName starts from its own default size and GDL parameters, not from those of the part the Lamp tool holds; the dimensions and the GDL parameters given (by name, in parameters) override them. layerIndex places the element on a layer. With databaseId the lamps are placed in that database, e.g. a worksheet, instead of the current one.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -13823,6 +13978,24 @@ var gCommands = [{
                         "id": {
                             "type": "string",
                             "description": "Optional Element ID of the new element (the ID field of the Settings dialog, shown in schedules and labels; the same string GetDetailsOfElements returns as id). When omitted the element gets the next automatic ID of its tool."
+                        },
+                        "parameters": {
+                            "type": "array",
+                            "description": "Optional GDL parameters to set by name, after dimensions. The value is a number, a boolean or a string; array parameters are not supported. A or B also set the size. An unknown name or a value of the wrong type fails the item, and nothing is created for it.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "value": { "description": "A number or a boolean for a numeric parameter, a string for a String or Title parameter." }
+                                },
+                                "additionalProperties": false,
+                                "required": ["name", "value"]
+                            }
+                        },
+                        "layerIndex": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Optional layer attribute index to place the new element on. It must be an existing, unlocked layer. When omitted the element gets the layer of the favorite or of the tool defaults."
                         }
                     },
                     "additionalProperties": false,
@@ -13831,6 +14004,10 @@ var gCommands = [{
                         "coordinates"
                     ]
                 }
+            },
+            "databaseId": {
+                "$ref": "#/DatabaseId",
+                "description": "Optional database to place the elements in, e.g. a worksheet or a detail (see GetDatabases, or the databaseId CreateWorksheets and CreateDetails return), for a legend of symbols. The front window stays as it is: a worksheet or detail whose window was never opened is opened once on Archicad 27 and later, and the front window is brought back. Without it the elements are placed in the current database. If Archicad cannot switch to it, nothing is created and the call fails."
             }
         },
         "additionalProperties": false,
@@ -14263,6 +14440,11 @@ var gCommands = [{
                         "$ref": "#/TextStyleSettableDetails",
                         "description": "height/pen/angle/justification above take precedence over the same fields here if both are given."
                     },
+                    "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0.0,
+                        "description": "Optional box width in mm (paper size, like height). Turns word wrap on: the text wraps within this width ('Wrap Text' in the Text settings, nonBreaking false). When omitted the text is auto-width (word wrap off) and grows with its content. Read back by GetDetailsOfElements as style.boxWidth, with style.nonBreaking false."
+                    },
                     "floorIndex": {
                         "type": "integer",
                         "description": "Optional floor index. If omitted, derived from the coordinate's z value."
@@ -14348,15 +14530,20 @@ var gCommands = [{
                     },
                     "pen": {
                         "type": "integer",
+                        "minimum": 1,
+                        "maximum": 255,
                         "description": "Pen index of the marker. Optional parameter."
                     },
                     "textHeight": {
                         "type": "number",
-                        "description": "Height of the dimension text in millimeters (paper size). Optional parameter."
+                        "exclusiveMinimum": 0,
+                        "description": "Height of the dimension text in millimeters (paper size), applied to both texts of the marker. Optional parameter."
                     },
                     "textPen": {
                         "type": "integer",
-                        "description": "Pen index of the dimension text. Optional parameter."
+                        "minimum": 1,
+                        "maximum": 255,
+                        "description": "Pen index of the dimension text, applied to both texts of the marker. Optional parameter."
                     },
                     "dimForm": {
                         "type": "integer",
@@ -14370,6 +14557,7 @@ var gCommands = [{
                     },
                     "markerSize": {
                         "type": "number",
+                        "exclusiveMinimum": 0,
                         "description": "Size of the marker in millimeters (paper size). Optional parameter."
                     },
                     "angle": {
@@ -14406,9 +14594,90 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "ModifyLevelDimensions",
+                "version": "2.0.0",
+                "description": "Changes existing Level Dimension elements: the position of the marker and the settings CreateLevelDimensions takes (pen, text height and pen, marker type and size, plus sign, angle, origin), with the same keys. Not written: the parent element and the static level (delete and recreate the dimension to change them), the text content and the hide-with-base-element setting.",
+                "inputScheme": {
+    "type": "object",
+    "properties": {
+        "levelDimensionsWithDetails": {
+            "type": "array",
+            "description": "The Level Dimensions to change, each with the settings to change. Only the given settings are changed.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "elementId": {
+                        "$ref": "#/ElementId"
+                    },
+                    "position": {
+                        "$ref": "#/Coordinate2D",
+                        "description": "The new location of the marker on the floor plan. An associative level dimension then shows the height of its element at the new position. Optional parameter."
+                    },
+                    "pen": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 255,
+                        "description": "Pen index of the marker. Optional parameter."
+                    },
+                    "textHeight": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": "Height of the dimension text in millimeters (paper size), applied to both texts of the marker. Optional parameter."
+                    },
+                    "textPen": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 255,
+                        "description": "Pen index of the dimension text, applied to both texts of the marker. Optional parameter."
+                    },
+                    "dimForm": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 19,
+                        "description": "Marker type of the Level Dimension tool, 0-19 as Archicad stores it (read it back with GetDetailsOfElements from an existing level dimension or one placed with a favorite). Optional parameter."
+                    },
+                    "needPlus": {
+                        "type": "boolean",
+                        "description": "Show a plus sign for positive values. Optional parameter."
+                    },
+                    "markerSize": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": "Size of the marker in millimeters (paper size). Optional parameter."
+                    },
+                    "angle": {
+                        "type": "number",
+                        "description": "Rotation angle of the marker in radians. Optional parameter."
+                    },
+                    "origin": {
+                        "$ref": "#/DimensionOrigin",
+                        "description": "The origin the level is measured from. Optional parameter."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "elementId"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "levelDimensionsWithDetails"
+    ]
+},
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": { "$ref": "#/ExecutionResults" }
+        },
+        "additionalProperties": false,
+        "required": ["executionResults"]
+    }
+            },{
                 "name": "ModifyWalls",
                 "version": "1.4.0",
-                "description": "Modifies Wall elements based on the given parameters.",
+                "description": "Modifies Wall elements based on the given parameters. Takes the same wall settings as CreateWalls, applied by the same code, plus geometryType (Straight or Trapezoid), profileType and bottomOffset. Neither command can write a Polygonal outline (it needs an outline polygon, which these commands do not take), connectionPriority or junctionSequence (Archicad ignores writes to them; GetDetailsOfElements reads them), and on Archicad 29 any story visibility other than 'Home story only' and 'All relevant stories'.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -14441,10 +14710,10 @@ var gCommands = [{
                         },
                         "flipped": { "type": "boolean", "description": "True mirrors the wall to its reference line (the side GetDetailsOfElements reports as flipped)." },
                         "profileType": { "$ref": "#/WallModificationProfileType", "description": "slantAlpha/slantBeta only have an effect once this is set to Slanted." },
-                        "slantAlpha": { "type": "number", "description": "Only has an effect once profileType is set to Slanted or Trapez." },
-                        "slantBeta": { "type": "number", "description": "Only has an effect once profileType is set to Slanted or Trapez." },
+                        "slantAlpha": { "type": "number", "description": "Only has an effect when the wall's profileType is Slanted or Trapez." },
+                        "slantBeta": { "type": "number", "description": "Only has an effect when the wall's profileType is Slanted or Trapez." },
                         "topOffset": { "type": "number", "description": "Only has an effect when relativeTopStory is non-zero." },
-                        "relativeTopStory": { "type": "number", "description": "Non-zero links the wall's top to another story instead of an explicit height - do not set together with 'height' in the same call, see the note on 'height' above." },
+                        "relativeTopStory": { "type": "number", "description": "Non-zero links the wall's top to another story instead of an explicit height - do not set together with 'height' for the same wall: whichever is applied last wins, and Archicad recomputes the actual height from the story elevations once relativeTopStory is non-zero." },
                         "zoneRel": {
                             "$ref": "#/WallZoneRelation"
                         },
@@ -14453,8 +14722,8 @@ var gCommands = [{
                         "referenceMaterial": { "$ref": "#/OverriddenMaterial" },
                         "oppositeMaterial": { "$ref": "#/OverriddenMaterial" },
                         "sideMaterial": { "$ref": "#/OverriddenMaterial" },
-                        "cutFillPen": { "$ref": "#/OverriddenPen" },
-                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen" },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Pen of the cut fill. Archicad 27 and later; ignored on older versions." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Background pen of the cut fill. Archicad 27 and later; ignored on older versions." },
                         "contourPen": {
                             "type": "integer",
                             "minimum": 1,
@@ -14529,7 +14798,7 @@ var gCommands = [{
             },{
                 "name": "ModifyBeams",
                 "version": "1.4.0",
-                "description": "Modifies Beam elements based on the given parameters.",
+                "description": "Modifies Beam elements based on the given parameters. CreateBeams takes the same cut fill pens and cover fill, and the same absolute zCoordinate of the reference line (with an optional floorIndex). Not written: the surfaces of the beam segments, and the cut fill pens before Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -14541,7 +14810,9 @@ var gCommands = [{
                         "elementId": { "$ref": "#/ElementId" },
                         "begCoordinate": { "$ref": "#/Coordinate2D" },
                         "endCoordinate": { "$ref": "#/Coordinate2D" },
-                        "level": { "type": "number" },
+                        "zCoordinate": { "type": "number", "description": "Absolute Z of the beam's reference line, as in CreateBeams. The home story is derived from it unless floorIndex is given; level, when given too, is applied after it." },
+                        "floorIndex": { "type": "integer", "description": "Optional home story index (as returned by GetStories). With zCoordinate it pins the story the Z is resolved against; alone it only changes the home story (combine with level to set the offset relative to it)." },
+                        "level": { "type": "number", "description": "Elevation of the reference line relative to the home story." },
                         "offset": { "type": "number" },
                         "slantAngle": { "type": "number" },
                         "arcAngle": { "type": "number" },
@@ -14564,9 +14835,9 @@ var gCommands = [{
                                 "$ref": "#/BeamHoleModification"
                             }
                         },
-                        "cutFillPen": { "$ref": "#/OverriddenPen" },
-                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen" },
-                        "coverFill": { "$ref": "#/CoverFill" }
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "coverFill": { "$ref": "#/CoverFill", "description": "The cover fill of the beam in the floor plan, as GetDetailsOfElements returns it." }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -14580,7 +14851,7 @@ var gCommands = [{
             },{
                 "name": "ModifySlabs",
                 "version": "1.4.0",
-                "description": "Modifies Slab elements based on the given parameters. Of the cover fill orientation, Archicad applies only the type to a Slab through the API; a given origin or distortion matrix that did not stick gets a failed execution result, while the other details are applied.",
+                "description": "Modifies Slab elements based on the given parameters. CreateSlabs takes the same surfaces, cut fill pens and floor fill. Not written: the surface of a single edge, and the cut fill pens before Archicad 27. Of the cover fill orientation, Archicad applies only the type to a Slab through the API; a given origin or distortion matrix that did not stick gets a failed execution result, while the other details are applied.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -14619,12 +14890,12 @@ var gCommands = [{
                             "$ref": "#/Holes2D",
                             "description": "Can be given on its own, without polygonOutline, to add/remove/clear holes in place (an empty array clears all holes) - the slab's current outline is reused unchanged."
                         },
-                        "topMaterial": { "$ref": "#/OverriddenMaterial" },
-                        "sideMaterial": { "$ref": "#/OverriddenMaterial" },
-                        "bottomMaterial": { "$ref": "#/OverriddenMaterial" },
-                        "cutFillPen": { "$ref": "#/OverriddenPen" },
-                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen" },
-                        "floorFill": { "$ref": "#/FloorFill" }
+                        "topMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the top of the slab." },
+                        "sideMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the sides of the slab." },
+                        "bottomMaterial": { "$ref": "#/OverriddenMaterial", "description": "Overrides the surface of the bottom of the slab." },
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "floorFill": { "$ref": "#/FloorFill", "description": "The cover fill of the slab in the floor plan. Only the given fields change; of the orientation Archicad applies only its type through the API, read it back with GetDetailsOfElements." }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -14638,7 +14909,7 @@ var gCommands = [{
             },{
                 "name": "ModifyColumns",
                 "version": "1.4.0",
-                "description": "Modifies Column elements based on the given parameters.",
+                "description": "Modifies Column elements based on the given parameters. CreateColumns takes the same cut fill pens and cover fill. Not written: the surfaces of the column segments, and the cut fill pens before Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -14669,9 +14940,9 @@ var gCommands = [{
                         "buildingMaterialId": { "$ref": "#/AttributeId", "description": "Cross section building material (round or rectangular, per circleBased). Applied to all segments." },
                         "profileId": { "$ref": "#/AttributeId", "description": "Switches the cross section to this custom extruded profile (circleBased becomes false). Applied to all segments." },
                         "veneer": { "$ref": "#/ColumnVeneer", "description": "Veneer of the column (type, thickness, building material); only the given fields change, thickness 0 removes it. Applied to all segments." },
-                        "cutFillPen": { "$ref": "#/OverriddenPen" },
-                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen" },
-                        "coverFill": { "$ref": "#/CoverFill" }
+                        "cutFillPen": { "$ref": "#/OverriddenPen", "description": "Overrides the pen of the cut fill. Written from Archicad 27." },
+                        "cutFillBackgroundPen": { "$ref": "#/OverriddenPen", "description": "Overrides the background pen of the cut fill. Written from Archicad 27." },
+                        "coverFill": { "$ref": "#/CoverFill", "description": "The cover fill of the column in the floor plan, as GetDetailsOfElements returns it." }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -14778,7 +15049,7 @@ var gCommands = [{
                 "outputScheme": {"type":"object","properties":{"executionResults":{"$ref":"#/ExecutionResults"}},"additionalProperties":false,"required":["executionResults"]}
             },{
                 "name": "ModifyOpenings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Modifies Opening elements: the width, the height and the base point CreateOpenings takes. Needs Archicad 28 or earlier; in Archicad 29 and later every item fails with a message pointing to SetOpeningDetails, which changes the size and the position of an opening there.",
                 "inputScheme": {
         "type": "object",
@@ -14881,7 +15152,7 @@ var gCommands = [{
             },{
                 "name": "ModifyRoofs",
                 "version": "1.4.0",
-                "description": "Modifies single-plane and multi-plane Roof elements based on the given parameters. The plan outline, level, thickness and structure apply to both; angle and pivotLine only to single-plane roofs; levels, eavesOverhang and pivotEdges only to multi-plane roofs.",
+                "description": "Modifies single-plane and multi-plane Roof elements based on the given parameters. The plan outline, level, thickness and structure apply to both; angle, pivotLine and edgeTrims (the cut of each polygon edge) only to single-plane roofs; levels, eavesOverhang and pivotEdges only to multi-plane roofs.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -14891,7 +15162,14 @@ var gCommands = [{
                     "type": "object",
                     "properties": {
                         "elementId": { "$ref": "#/ElementId" },
-                        "level": { "type": "number" },
+                        "level": {
+                            "type": "number",
+                            "description": "Absolute elevation of the roof's pivot line (the zCoordinate GetDetailsOfElements returns). The roof is put on the story floorIndex when given, else on the story at this elevation."
+                        },
+                        "floorIndex": {
+                            "type": "integer",
+                            "description": "Home story of the roof. With level, the roof gets this home story at the absolute elevation level; without level, it moves to this story and keeps its offset from the story."
+                        },
                         "thickness": {
                             "type": "number",
                             "exclusiveMinimum": 0.0,
@@ -14935,6 +15213,25 @@ var gCommands = [{
                                 "end": { "$ref": "#/Coordinate2D" }
                             },
                             "additionalProperties": false
+                        },
+                        "edgeTrims": {
+                            "type": "array",
+                            "description": "Single-plane roofs only: the cut of each edge of the roof's polygon, one item per edge in the order GetDetailsOfElements reports them in edgeTrims (the outline, then each hole). Only the given fields change; an empty item keeps its edge. Cannot be combined with polygonOutline.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "trimType": {
+                                        "type": "string",
+                                        "enum": [ "Vertical", "Perpendicular", "Horizontal", "CustomAngle" ],
+                                        "description": "Vertical, Perpendicular to the roof plane, Horizontal, or at 'angle' (CustomAngle)."
+                                    },
+                                    "angle": {
+                                        "type": "number",
+                                        "description": "The angle of the edge cut in radians, as GetDetailsOfElements reports it. Only CustomAngle uses it."
+                                    }
+                                },
+                                "additionalProperties": false
+                            }
                         },
                         "pivotEdges": {
                             "type": "array",
@@ -15044,7 +15341,7 @@ var gCommands = [{
     }
             },{
                 "name": "ModifyRailings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Modifies Railing elements in place: the height of their segments, the bottom offset and the home story. The reference line, the nodes and segments, and the posts, rails and panels stay as they are. Each railing is read back after the change, and a value Archicad did not apply gets a failed execution result.",
                 "inputScheme": {
         "type": "object",
@@ -15239,7 +15536,7 @@ var gCommands = [{
         "properties": {
             "textsWithDetails": {
                 "type": "array",
-                "description": "Array of Text elements to modify, with the fields to change. Only provided fields are changed; omitted fields are left as-is. A change of the text, the runs, or a run-level style field (pen, font, faces, height, effects) rebuilds the content as one paragraph, which makes the element auto-width (word wrap off), as SetDetailsOfElements does, and on a multi-run text applies that style to every run; the other style fields leave the content as it is.",
+                "description": "Array of Text elements to modify, with the fields to change. Only provided fields are changed; omitted fields are left as-is. A change of the text, the runs, or a run-level style field (pen, font, faces, height, effects) rebuilds the content as one paragraph, as SetDetailsOfElements does, and on a multi-run text applies that style to every run; a text that wraps keeps its wrap width through the rebuild unless the same item gives a width. The other style fields and a width leave the content as it is.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -15258,7 +15555,12 @@ var gCommands = [{
                             "items": { "$ref": "#/TextRunDetails" },
                             "minItems": 1
                         },
-                        "style": { "$ref": "#/TextStyleSettableDetails" }
+                        "style": { "$ref": "#/TextStyleSettableDetails" },
+                        "width": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "description": "Optional box width in mm (paper size, like height). Greater than 0 turns word wrap on: the text wraps within this width ('Wrap Text' in the Text settings, nonBreaking false). 0 turns word wrap off: the text is auto-width and grows with its content; on a wrapped text this rebuilds the content, so like a pen change it is refused for content with an autotext run. Given alone it leaves the content and its runs (and any autotext in them) as they are. When the content is rebuilt in the same item, the width is applied after the rebuild. When omitted, the current wrap setting is kept, also through a rebuild of the content. Read back by GetDetailsOfElements as style.boxWidth, with style.nonBreaking false."
+                        }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -15378,7 +15680,7 @@ var gCommands = [{
                 "outputScheme": {"type":"object","properties":{"executionResults":{"$ref":"#/ExecutionResults"}},"additionalProperties":false,"required":["executionResults"]}
             },{
                 "name": "ModifyCurtainWallFrames",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "EXPERIMENTAL. Modifies single Curtain Wall Frames by their GUID: the frame contour (a1, a2, b1, b2), the frame class and the frame type. ACAPI_Element_Change does not take a frame on its own, so the change is written through the memo of the owner curtain wall, and read back to check that Archicad applied it.",
                 "inputScheme": {
         "type": "object",
@@ -15422,8 +15724,8 @@ var gCommands = [{
                 "outputScheme": {"type":"object","properties":{"executionResults":{"$ref":"#/ExecutionResults"}},"additionalProperties":false,"required":["executionResults"]}
             },{
                 "name": "ModifyStairs",
-                "version": "1.8.1",
-                "description": "Modifies Stair elements in place, keeping their baseline and position: the flight width, total height, number of steps, riser height and going with their locks, the finish visibility, and for the flights and the landings the tread and riser settings (presence, thickness, offset, nosing, riser cross section and position) and the structure of each side (presence, type, underside shape and thickness). Only the given settings are changed. Archicad solves the stair again within its baseline, so it may adjust the step values; read them back with GetDetailsOfElements.",
+                "version": "2.0.0",
+                "description": "Modifies Stair elements in place, keeping their baseline and position: the flight width, total height, number of steps, riser height and going with their locks, the finish and structure visibility, the extra top and bottom treads, the walking line position and offset, the step numbering, the walking direction, the uniform finish, monolith and draining settings, and for the flights and the landings the tread and riser settings (presence, thickness, offset, nosing, riser cross section and position) and the structure of each side (presence, type, underside shape and thickness). CreateStairs accepts the same settings. Only the given settings are changed. Archicad solves the stair again within its baseline, so it may adjust the step values; read them back with GetDetailsOfElements. Not written by this command: the baseline with its landings and winders, the top link, the floor plan display (symbol and marker layout), the headroom and the stair rules; the subelements (treads, risers, structures) take the per-part settings above and cannot be written one by one through the API.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -15441,7 +15743,17 @@ var gCommands = [{
                         "treadDepth": { "type": "number", "exclusiveMinimum": 0.0, "description": "The length of each going." },
                         "treadDepthLocked": { "type": "boolean", "description": "Whether the going lengths are locked." },
                         "totalHeightLocked": { "type": "boolean", "description": "Whether the total height is locked." },
-                        "finishVisible": { "type": "boolean", "description": "Whether the tread and riser finishes of the stair are shown. The treads and risers of each part can also be switched on and off with treads and risers." },
+                        "finishVisible": { "type": "boolean", "description": "Whether the tread and riser finishes of the stair are shown; false models only the structure (e.g. a monolith). The treads and risers of each part can also be switched on and off with treads and risers." },
+                        "extraTopTread": { "type": "boolean", "description": "Whether the stair has an extra tread at its top." },
+                        "extraBottomTread": { "type": "boolean", "description": "Whether the stair has an extra tread at its bottom." },
+                        "walkingLinePosition": { "type": "string", "enum": ["Left", "Right", "Center", "Auto"], "description": "Where the walking line runs on the flight: offset from the left or the right side (walkingLineOffset), centered, or placed by Archicad (Auto)." },
+                        "walkingLineOffset": { "type": "number", "description": "The offset of the walking line from the side walkingLinePosition names (Left or Right); not used with Center and Auto." },
+                        "numberingType": { "type": "string", "enum": ["Treads", "Risers"], "description": "Whether the steps are numbered on their treads or on their risers." },
+                        "inputDirection": { "type": "string", "enum": ["Upward", "Inverse"], "description": "The walking direction along the baseline: upward from its first point, or inverse (downward)." },
+                        "uniformFinish": { "type": "boolean", "description": "Whether the flights and the landings share one finish setting." },
+                        "uniformMonolithAttributes": { "type": "boolean", "description": "Whether the monolithic structures of the flights and the landings share one set of attributes." },
+                        "uniformDrainings": { "type": "boolean", "description": "Whether the flights and the landings share one draining setting." },
+                        "structureVisibility": { "type": "boolean", "description": "Whether the structure of the stair is shown." },
                         "treads": {
                             "type": "array",
                             "description": "The tread settings of the flights (Run) and of the landings (Landing). Only the given fields of the given parts are changed.",
@@ -15524,29 +15836,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The content changes, applied in order (several changes of one element see the content as the previous one left it). Unlike ModifyTexts/ModifyLabels, the rest of the content is not rebuilt: the other runs, their styles and any autotext in them stay as they are, and the inserted piece takes the style of the character at 'from'.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId",
-                            "description": "A Text element or a Label of the Text class."
-                        },
-                        "from": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "The position in the content where the replaced range starts."
-                        },
-                        "range": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "The number of characters to replace; 0 inserts the content at 'from'. The range may not reach over a line end into another paragraph."
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "The new content of the range; an empty string deletes the range. It must not contain line ends."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": ["elementId", "from", "range", "content"]
+                    "$ref": "#/TextContentChange"
                 }
             }
         },
@@ -15564,7 +15854,7 @@ var gCommands = [{
             },{
                 "name": "ModifyZones",
                 "version": "1.8.0",
-                "description": "Modifies Zone elements: name, number, category, zone stamp, height, base offset, top link and floor thickness. Only the given fields are changed; the polygon is kept.",
+                "description": "Modifies Zone elements: name, number, category, zone stamp, height, base offset, top link, floor thickness, contour line and cover fill - the same settings as CreateZones, applied by the same helpers. Only the given fields are changed. The polygon of a manual zone cannot be changed here (the change takes no polygon memo), nor the reference point of an automatic one (SetDetailsOfElements moves it).",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -15585,7 +15875,9 @@ var gCommands = [{
                         "bottomOffset": { "type": "number", "description": "Base level of the zone relative to its home story level." },
                         "topOffset": { "type": "number", "description": "Offset of the top of the zone from the linked top story level. Only has an effect when relativeTopStory is non-zero." },
                         "relativeTopStory": { "type": "number", "description": "Non-zero links the top of the zone to another story, relative to its home story (1 is the story above), instead of an explicit height. Do not set together with height in the same call, see the note on height." },
-                        "floorThickness": { "type": "number", "minimum": 0.0, "description": "Thickness of the floor finish (subfloor thickness) of the zone." }
+                        "floorThickness": { "type": "number", "minimum": 0.0, "description": "Thickness of the floor finish (subfloor thickness) of the zone." },
+                        "contourLine": { "$ref": "#/ZoneContourLine", "description": "Contour line of the zone. Only the given fields are changed." },
+                        "coverFill": { "$ref": "#/ZoneCoverFill", "description": "Cover fill of the zone. Only the given fields are changed." }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -15763,7 +16055,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetModelExtent",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the 3D extent (xMin, yMin, zMin, xMax, yMax, zMax) of the current database, the region Archicad's Fit in Window would show.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -15790,7 +16082,7 @@ var gCommands = [{
             },
             "notifyOnModificationOfAnElement": {
                 "type": "boolean",
-                "description": "Notify on modification/deletion of an element. The observed elements are the ones ACAPI_Element_GetElemList returns, for API_ZombieElemID or, with elementTypesToObserve, for each of those types, when the first client asking for these notifications of them is registered, and every element of the observed types created after that. Archicad does not report the changes made by Tapir's own commands, so Tapir reports them itself for SetDetailsOfElements, SetPropertyValuesOfElements, MoveElements, RotateElements, MirrorElements (not for the copies they make, which are new elements), DeleteElements, DeleteSelectedElements, the Modify<Tool> commands (ModifyWalls, ModifyBeams, ModifySlabs, ModifyColumns, ModifyWindows, ModifyDoors, ModifyOpenings, ModifyMorphs, ModifyRoofs, ModifyShells, ModifyMeshes, ModifyObjects, ModifyLamps, ModifyTexts, ModifyLabels, ModifyCurtainWalls, ModifyCurtainWallFrames, ModifyZones, ModifySections, ModifyDetailMarkers, ModifyRailings, ModifyStairs), ChangeTextContent, SetGDLParametersOfElements, RunParameterScriptOfElements (only when the script changed the element), SetMarkerParametersOfElements, SetMarkerLibraryPartOfElements, ChangeLibraryPartOfElements, SetClassificationsOfElements, SetCategoryValuesOfElements, ModifyPropertyValueOfElements, SetElementInfoStrings, SetURLReferencesOfElements, SetIFCAttributesOfElements, SetIFCPropertiesOfElements, RemoveIFCPropertiesOfElements, SetIFCClassificationReferencesOfElements, RemoveIFCClassificationReferencesOfElements, LockElements, UnlockElements, SetOpeningDetails, SetOpeningFloorPlanParameters and SetOpeningSymbolParameters. Of the elements these commands change, only the given ones are reported: an element deleted together with its owner (a door or window of a deleted wall) is not. Optional parameter, by default true. Archicad attaches an observer to each element to observe (see elementTypesToObserve) when the first client asks for this, and detaches them when the last one stops, and it is blocked meanwhile: the time grows faster than the number of elements, from seconds for a few hundred elements to many minutes for a few thousand. Count the elements first (GetAllElements with IncludeSubElemObjects, or GetElementsByType) and limit the types on large projects."
+                "description": "Notify on modification/deletion of an element. The observed elements are the ones ACAPI_Element_GetElemList returns, for API_ZombieElemID or, with elementTypesToObserve, for each of those types, when the first client asking for these notifications of them is registered, and every element of the observed types created after that. Archicad does not report the changes made by Tapir's own commands, so Tapir reports them itself for SetDetailsOfElements, SetPropertyValuesOfElements, MoveElements, RotateElements, MirrorElements (not for the copies they make, which are new elements), DeleteElements, DeleteSelectedElements, the Modify<Tool> commands (ModifyWalls, ModifyBeams, ModifySlabs, ModifyColumns, ModifyWindows, ModifyDoors, ModifyOpenings, ModifyMorphs, ModifyRoofs, ModifyShells, ModifyMeshes, ModifyObjects, ModifyLamps, ModifyTexts, ModifyLabels, ModifyCurtainWalls, ModifyCurtainWallFrames, ModifyZones, ModifySections, ModifyDetailMarkers, ModifyRailings, ModifyStairs), ChangeTextContent, SetGDLParametersOfElements, RunParameterScriptOfElements (only when the script changed the element), SetMarkerParametersOfElements, SetMarkerLibraryPartOfElements, ChangeLibraryPartOfElements, SetClassificationsOfElements, SetCategoryValuesOfElements, ModifyPropertyValueOfElements, SetElementInfoStrings, SetURLReferencesOfElements, SetIFCAttributesOfElements, SetIFCPropertiesOfElements, RemoveIFCPropertiesOfElements, SetIFCClassificationReferencesOfElements, RemoveIFCClassificationReferencesOfElements, LockElements, UnlockElements, SetOpeningDetails, SetOpeningFloorPlanParameters, SetOpeningSymbolParameters, CreateGroups and UngroupElements (the grouped elements), MoveElementsToDesignOptions, CreateSolidElementLinks, RemoveSolidElementLinks, CreateSolidOperations (the target and operator when the operation changed or deleted them; the results are new elements), TrimElements, RemoveElementTrims, MergeElements, UnmergeElements, ModifyMEPRoutingElements, ModifyMEPPorts (the element owning the port), ConnectMEPElements, ModifyMEPElements, SetMEPRoutingParameters, ModifyElectricalPanels, ModifyElectricalDevices and ConnectToElectricalCircuits. Of the elements these commands change, only the given ones are reported: an element deleted together with its owner (a door or window of a deleted wall) is not. UpdateZones is not reported by Tapir, because Archicad updates the Zones after the command has returned. When the user moves, rotates, mirrors, elevates, resizes or stretches elements in Archicad, each of their changedElements items also has a transformation: {\"type\": ..., ...}, where type is \"Drag\" (with displacement: {\"x\", \"y\", \"z\"}), \"Elevate\" (with displacement, only z is not 0), \"Rotate\" (with origin: {\"x\", \"y\"} and angle, in radians, counterclockwise), \"Mirror\" (with origin, a point of the mirror axis, and axisDirection: {\"x\", \"y\"}, its unit vector), \"Resize\" (with origin and ratio), \"Stretch\", \"VerticalStretch\", \"PreservedHeightStretch\", \"PreservedDirectionStretch\" or \"General\"; the changes made by Tapir's own commands and by undo or redo have no transformation. Optional parameter, by default true. Archicad attaches an observer to each element to observe (see elementTypesToObserve) when the first client asks for this, and detaches them when the last one stops, and it is blocked meanwhile: the time grows faster than the number of elements, from seconds for a few hundred elements to many minutes for a few thousand. Count the elements first (GetAllElements with IncludeSubElemObjects, or GetElementsByType) and limit the types on large projects."
             },
             "elementTypesToObserve": {
                 "type": "array",
@@ -15818,6 +16110,42 @@ var gCommands = [{
             "notifyOnAttributeReplacement": {
                 "type": "boolean",
                 "description": "Notify when attributes are deleted and replaced by other attributes of the same type (for example Delete and Replace in the Attribute Manager). The message is {\"replacedAttributes\": [{\"attributeType\": ..., \"oldIndex\": ..., \"newIndex\": ..., \"newAttributeId\": ...}, ...]}: attributeType is one of the type names of GetAttributesByType (\"Layer\", \"Line\", \"Fill\", \"Composite\", \"Surface\", \"LayerCombination\", \"ZoneCategory\", \"Profile\", \"PenTable\", \"MEPSystem\", \"OperationProfile\", \"BuildingMaterial\", or \"Unknown\"), oldIndex is the index of the replaced attribute and newIndex the index of the attribute that replaces it, newAttributeId is the attributeId of that attribute, missing when it cannot be found. Not available in Archicad 25: setting it to true there fails. Optional parameter, by default false."
+            },
+            "notifyOnToolChange": {
+                "type": "boolean",
+                "description": "Notify when the user switches to another tool in the Toolbox. The message is {\"toolChanged\": {\"elementType\": ...}}: elementType is the element type of the new tool, as in elementTypesToObserve (for example \"Wall\" or \"Column\"), \"None\" for the Arrow and the Marquee, and \"Unknown\" for a tool Tapir has no type name for. Optional parameter, by default false."
+            },
+            "notifyOnViewEvents": {
+                "type": "boolean",
+                "description": "Notify when an item of the Project Navigator or the Organizer is inserted (for example a view is saved or a layout is created), modified (for example renamed), deleted or opened. The message is {\"viewEvent\": {\"event\": ..., \"navigatorMapId\": ..., \"navigatorItemId\": {\"guid\": ...}}}: event is one of \"Inserted\", \"Modified\", \"Deleted\" and \"Opened\", navigatorMapId is the navigator map of the item, one of \"ProjectMap\", \"PublicViewMap\", \"MyViewMap\", \"LayoutBook\" and \"PublisherSets\" (as navigatorMapId of GetNavigatorItemTree), and navigatorItemId is the guid of the navigator item, as in the response of GetNavigatorItemTree (a deleted item no longer exists). Optional parameter, by default false."
+            },
+            "notifyOnLockableReservationChanges": {
+                "type": "boolean",
+                "description": "Notify when a Teamwork lockable object set (the non-element things Teamwork reserves: the attributes of a type, favorites, model view options, project info, project preferences, ...) is reserved or released, by anyone, including the current user. The message is {\"lockableReservationChanged\": {\"event\": ..., \"objectSetId\": {\"guid\": ...}, \"objectSetName\": ..., \"reservedBy\": ..., \"reservedByUserId\": ...}}: event is \"Reserved\" or \"Released\", objectSetId is the guid of the object set, objectSetName its name as objectSetName of ReserveLockableObjectSet (for example \"Composites\", \"LayerSettingsDialog\" or \"Favorites\"), missing when it is not one of the documented sets, and reservedBy and reservedByUserId are the name and the Teamwork user id of the member who reserved it, only for \"Reserved\". Element reservations are notified by notifyOnReservationChanges. Optional parameter, by default false."
+            },
+            "notifyOnToolDefaultChanges": {
+                "type": "boolean",
+                "description": "Notify when the default settings of a tool change (for example the user changes the settings of the Wall tool with no wall selected), so a client can read the new defaults. The message is {\"toolDefaultsChanged\": {\"elementType\": ...}}: elementType is the element type whose defaults changed, as in elementTypesToObserve (for example \"Wall\" or \"Column\"), and \"Unknown\" for a type Tapir has no type name for. Optional parameter, by default false."
+            },
+            "notifyOnAttributeChanges": {
+                "type": "boolean",
+                "description": "Notify when attributes (layers, fills, composites, surfaces, building materials, ...) are created, modified or deleted. The message is {\"attributesChanged\": {\"event\": ..., \"attributeIds\": [{\"attributeId\": {\"guid\": ...}}, ...]}}: event is \"Created\", \"Modified\" or \"Deleted\", and attributeIds are the attributes, as in the response of GetAttributesByType (a deleted attribute no longer exists). Not available in Archicad 25: setting it to true there fails. Optional parameter, by default false."
+            },
+            "notifyOnClassificationChanges": {
+                "type": "boolean",
+                "description": "Notify when classification systems or classification items are created, modified or deleted. The messages are {\"classificationSystemsChanged\": {\"event\": ..., \"classificationSystemIds\": [{\"classificationSystemId\": {\"guid\": ...}}, ...]}} and {\"classificationItemsChanged\": {\"event\": ..., \"classificationItemIds\": [{\"classificationItemId\": {\"guid\": ...}}, ...]}}: event is \"Created\", \"Modified\" or \"Deleted\", and the ids are as in the response of GetAllClassificationSystems and GetAllClassificationsInSystem. Not available in Archicad 25: setting it to true there fails. Optional parameter, by default false."
+            },
+            "notifyOnPropertyDefinitionChanges": {
+                "type": "boolean",
+                "description": "Notify when property groups or property definitions are created, modified or deleted (property values of elements are notified as changedElements by notifyOnModificationOfAnElement). The messages are {\"propertyGroupsChanged\": {\"event\": ..., \"propertyGroupIds\": [{\"propertyGroupId\": {\"guid\": ...}}, ...]}} and {\"propertyDefinitionsChanged\": {\"event\": ..., \"propertyIds\": [{\"propertyId\": {\"guid\": ...}}, ...]}}: event is \"Created\", \"Modified\" or \"Deleted\", and the ids are as in the response of GetAllProperties. Not available in Archicad 25: setting it to true there fails. Optional parameter, by default false."
+            },
+            "notifyOnMarqueeChange": {
+                "type": "boolean",
+                "description": "Notify when the marquee is drawn, changed or removed. The message is {\"marqueeChanged\": {\"type\": ..., \"multiStory\": ...}}: type is \"rectangle\", \"rotatedRectangle\", \"polygon\" or, when the marquee was removed, \"none\", as type of GetMarquee, which returns the shape of the marquee; multiStory is missing for \"none\". Available from Archicad 27: setting it to true in an earlier version fails. Optional parameter, by default false."
+            },
+            "notifyOn3DSettingsChanges": {
+                "type": "boolean",
+                "description": "Notify when the settings of the 3D window change (projection, Filter and Cut Elements in 3D, 3D window settings). The message is {\"view3DSettingsChanged\": {}}; read the new settings with the commands of the 3D window. The changes made while navigating in 3D are not notified. Available from Archicad 30: setting it to true in an earlier version fails. Optional parameter, by default false."
             }
         },
         "additionalProperties": false,
@@ -15946,7 +16274,7 @@ var gCommands = [{
 }
             },{
                 "name": "GetSplineMaxDistances",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Measures how far the given 2D coordinates are from a segment of a Spline element, between two of its fit points, with its own Bezier handles: returns the largest distance, for example to check how well a polyline follows the spline. The output is aligned with the input array. Changes nothing in the project.",
                 "inputScheme": {
         "type": "object",
@@ -16596,7 +16924,7 @@ var gCommands = [{
             },{
                 "name": "DeleteElementSets",
                 "version": "1.8.0",
-                "description": "Deletes the given element sets. The elements of a set are not deleted. Only element sets created by the Tapir Add-On can be deleted; sets created by other add-ons are reported as failed.",
+                "description": "Deletes the given element sets. The elements of a set are not deleted. Only element sets created by the Tapir Add-On can be deleted; sets created by other add-ons are reported as failed. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each element set that a real run would delete gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -16625,6 +16953,9 @@ var gCommands = [{
                         "elementSetId"
                     ]
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -16635,8 +16966,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input element set, in the order of the input. On a dry run an element set that exists and was created by the Tapir Add-On gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -16809,101 +17144,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "favorite": {
-                                    "type": "string",
-                                    "description": "The name of the favorite."
-                                },
-                                "elementType": {
-                                    "type": "string",
-                                    "description": "The element type of the favorite, as in GetFavoritesByType."
-                                },
-                                "classifications": {
-                                    "type": "array",
-                                    "description": "The classifications the favorite applies, one per classification system.",
-                                    "items": {
-                                        "$ref": "#/ClassificationIdArrayItem"
-                                    }
-                                },
-                                "properties": {
-                                    "type": "array",
-                                    "description": "The property values stored in the favorite.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "propertyId": {
-                                                "$ref": "#/PropertyId"
-                                            },
-                                            "propertyName": {
-                                                "type": "string"
-                                            },
-                                            "status": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "HasValue",
-                                                    "NotEvaluated",
-                                                    "NotAvailable"
-                                                ],
-                                                "description": "The evaluation status of the value. propertyValue is only present for HasValue."
-                                            },
-                                            "isDefault": {
-                                                "type": "boolean",
-                                                "description": "True if the value is the default value of the property."
-                                            },
-                                            "propertyValue": {
-                                                "$ref": "#/PropertyValue"
-                                            },
-                                            "error": {
-                                                "$ref": "#/Error"
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "propertyId",
-                                            "propertyName",
-                                            "status",
-                                            "isDefault"
-                                        ]
-                                    }
-                                },
-                                "categoryValues": {
-                                    "type": "array",
-                                    "description": "The element category values (e.g. Structural Function, Position, Renovation Status) stored in the favorite.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "categoryId": {
-                                                "$ref": "#/GuidId"
-                                            },
-                                            "categoryName": {
-                                                "type": "string"
-                                            },
-                                            "categoryValueId": {
-                                                "$ref": "#/GuidId"
-                                            },
-                                            "categoryValueName": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "categoryId",
-                                            "categoryName",
-                                            "categoryValueId",
-                                            "categoryValueName"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "favorite",
-                                "elementType",
-                                "classifications",
-                                "properties",
-                                "categoryValues"
-                            ]
+                            "$ref": "#/FavoriteDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -16955,26 +17196,7 @@ var gCommands = [{
             "favoritesFromElements": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "description": "The identifier of the element and the name of the new favorite.",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "favorite": {
-                            "type": "string"
-                        },
-                        "folder": {
-                            "type": "array",
-                            "description": "Optional folder hierarchy in the Favorites palette to place the new favorite under. Empty/omitted = root.",
-                            "items": { "type": "string" }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "favorite"
-                    ]
+                    "$ref": "#/FavoriteFromElement"
                 }
             }
         },
@@ -17007,9 +17229,7 @@ var gCommands = [{
                 "description": "Absolute path on the AC host. With the prefs format: a Favorites file (.prefs) or folder. With the xml format: the folder of Favorite files, as ExportFavorites writes it. With the legacyPRF format: the .prf file."
             },
             "format": {
-                "type": "string",
-                "enum": ["prefs", "xml", "legacyPRF"],
-                "description": "The format to import from, the counterpart of the format of ExportFavorites. prefs (the default) works in every Archicad version. xml imports Favorite files from a folder, and legacyPRF a Favorites file of earlier Archicad versions; these two require Archicad 29 or newer."
+                "$ref": "#/FavoriteImportFormat"
             },
             "fileNames": {
                 "type": "array",
@@ -17026,9 +17246,7 @@ var gCommands = [{
                 "description": "Only with the prefs format: if true and `path` is a folder, the folder structure is preserved."
             },
             "conflictPolicy": {
-                "type": "string",
-                "enum": ["Error", "Skip", "Overwrite", "Append", "OverwriteExisting", "RenameNew"],
-                "description": "How to resolve name conflicts. The prefs format takes Error, Skip, Overwrite or Append, default Overwrite. The xml and legacyPRF formats take Error, Skip, OverwriteExisting or RenameNew, default Error."
+                "$ref": "#/FavoriteImportConflictPolicy"
             }
         },
         "required": ["path"],
@@ -17078,29 +17296,28 @@ var gCommands = [{
             },{
                 "name": "ApplyFavoritesToElements",
                 "version": "1.5.4",
-                "description": "Apply the given favorites to existing elements. Only settings-type parameters are changed - geometry (position, floor, and dimensions such as a Wall's height) is left untouched, so applying a Favorite never moves the target element. A Window or Door keeps its wall, marker and placement, and takes the Favorite's library part and parameters, size included. For the hierarchical types (Stair, Railing, Curtain Wall) the settings of the sub-elements are not applied, because they are inseparable from the Favorite's own geometry. By default settings, classifications, categories and properties are all applied; each can be opted out of individually. keepFields lists fields of the target (its ID, layer, an opening's width, height and sill height, a Wall's reference line location, height and top link) that are copied back after the Favorite has been applied, so that e.g. only the library part or the wall type changes.",
+                "description": "Apply the given favorites to existing elements. Only settings-type parameters are changed - geometry (position, floor, and dimensions such as a Wall's height) is left untouched, so applying a Favorite never moves the target element. A Window or Door keeps its wall, marker and placement, and takes the Favorite's library part and parameters, size included. For the hierarchical types (Stair, Railing, Curtain Wall) the settings of the sub-elements are not applied, because they are inseparable from the Favorite's own geometry. By default settings, classifications, categories and properties are all applied; each can be opted out of individually. keepFields lists fields of the target (its ID, layer, an opening's width, height and sill height, a Wall's reference line location, height and top link) that are copied back after the Favorite has been applied, so that e.g. only the library part or the wall type changes. With favorite instead of favoritesToApply, one Favorite is read once and applied to the given elements, or to every element of its type that matches the filter.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "favoritesToApply": {
                 "type": "array",
+                "description": "The elements and the Favorite to apply to each. Give this or favorite.",
                 "items": {
-                    "type": "object",
-                    "description": "The identifier of the element and the name of the Favorite to apply to it.",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "favorite": {
-                            "type": "string"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "favorite"
-                    ]
+                    "$ref": "#/FavoriteToApply"
                 }
+            },
+            "favorite": {
+                "type": "string",
+                "description": "The name of one Favorite to apply to many elements, instead of favoritesToApply: to the given elements, or without elements to every element of the Favorite's type that matches the filter. The Favorite is read only once. Needs elements or filter."
+            },
+            "elements": {
+                "$ref": "#/Elements",
+                "description": "The elements to apply the single favorite to, one execution result each, in the same order. Only with favorite."
+            },
+            "filter": {
+                "$ref": "#/ElementTypeFloorLayerFilter",
+                "description": "Server-side element filter for the single favorite. Without elements the favorite is applied to every element of its type that matches it; an element of elements that does not match it gets a failed execution result. Only with favorite."
             },
             "applySettings": {
                 "type": "boolean",
@@ -17126,10 +17343,7 @@ var gCommands = [{
                 }
             }
         },
-        "additionalProperties": false,
-        "required": [
-            "favoritesToApply"
-        ]
+        "additionalProperties": false
     },
                 "outputScheme": {
         "type": "object",
@@ -17248,7 +17462,7 @@ var gCommands = [{
     }
             },{
                 "name": "ReadFavoritesFile",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Read the Favorites of a .prefs file or folder without importing them, returning the name, element type and folder of each. Nothing in the project changes, so the result can be compared with the project's Favorites before ImportFavorites.",
                 "inputScheme": {
         "type": "object",
@@ -17267,27 +17481,7 @@ var gCommands = [{
             "favorites": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the Favorite."
-                        },
-                        "elementType": {
-                            "$ref": "#/ElementType"
-                        },
-                        "folder": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "The folder hierarchy of the Favorite in the file or folder. Empty = root."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "elementType",
-                        "folder"
-                    ]
+                    "$ref": "#/FavoriteFileEntry"
                 }
             }
         },
@@ -17467,25 +17661,10 @@ var gCommands = [{
                 "description": "The folder of the Favorites palette to create the Favorite in, as the folder names from the root down. The folder must exist. Empty or omitted = root."
             },
             "source": {
-                "type": "object",
-                "description": "Where the settings of the new Favorite come from: exactly one of favoriteName and toolDefault.",
-                "properties": {
-                    "favoriteName": {
-                        "type": "string",
-                        "description": "Take the settings of this Favorite."
-                    },
-                    "toolDefault": {
-                        "type": "string",
-                        "enum": ["Opening"],
-                        "description": "Take the current settings of this tool."
-                    }
-                },
-                "additionalProperties": false
+                "$ref": "#/FavoriteSettingsSource"
             },
             "conflictPolicy": {
-                "type": "string",
-                "enum": ["Error", "Skip", "OverwriteExisting", "RenameNew"],
-                "description": "What to do when a Favorite with this name already exists: Error fails, Skip leaves the existing Favorite unchanged, OverwriteExisting gives the existing Favorite the new settings (its folder does not change), RenameNew creates the Favorite with ' (2)', ' (3)', ... appended to the name. Default Error."
+                "$ref": "#/FavoriteCreationConflictPolicy"
             }
         },
         "additionalProperties": false,
@@ -17507,9 +17686,7 @@ var gCommands = [{
                 "description": "The folder of the Favorite, as the folder names from the root down. Empty for the root. Missing when Archicad cannot read it."
             },
             "outcome": {
-                "type": "string",
-                "enum": ["Created", "Skipped", "Overwritten"],
-                "description": "Created for a new Favorite (also with RenameNew), Skipped or Overwritten when a Favorite with the name already existed."
+                "$ref": "#/FavoriteCreationOutcome"
             }
         },
         "additionalProperties": false,
@@ -17625,7 +17802,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetFavoriteContents",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the Favorites of a folder of the Favorites palette and of its subfolders (every Favorite when no folder is given), each with its folder path, classifications, element category values and property values, read through the Favorite manager. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -17650,83 +17827,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the Favorite."
-                                },
-                                "folderPath": {
-                                    "type": "array",
-                                    "description": "The path of the folder the Favorite is in, as Archicad gives it. Empty for the root folder.",
-                                    "items": {
-                                        "type": "string"
-                                    }
-                                },
-                                "classifications": {
-                                    "$ref": "#/ClassificationIdsOrErrors",
-                                    "description": "The classifications stored with the Favorite, in the format of GetClassificationsOfElements."
-                                },
-                                "categoryValues": {
-                                    "type": "array",
-                                    "description": "The element category values stored with the Favorite, in the format of GetCategoryValuesOfElements.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "type": {
-                                                "$ref": "#/ElementCategoryType"
-                                            },
-                                            "categoryId": {
-                                                "$ref": "#/ElementCategoryId"
-                                            },
-                                            "categoryValueId": {
-                                                "$ref": "#/ElementCategoryValueId"
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "description": "The localized name of the value, for display only."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "type",
-                                            "categoryId",
-                                            "categoryValueId",
-                                            "name"
-                                        ]
-                                    }
-                                },
-                                "properties": {
-                                    "type": "array",
-                                    "description": "The property values stored with the Favorite. Each has propertyValue, in the format of GetPropertyValuesOfElements, or an error when its value cannot be read.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "propertyId": {
-                                                "$ref": "#/PropertyId"
-                                            },
-                                            "propertyValue": {
-                                                "$ref": "#/PropertyValue"
-                                            },
-                                            "error": {
-                                                "$ref": "#/Error"
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "propertyId"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "name",
-                                "folderPath",
-                                "classifications",
-                                "categoryValues",
-                                "properties"
-                            ]
+                            "$ref": "#/FavoriteContents"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -17742,7 +17843,7 @@ var gCommands = [{
     }
             },{
                 "name": "DeleteFavoritesWithManager",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Deletes the given Favorites through the Favorite manager, each found by name, optionally only in the given folder. One execution result for each. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -17751,24 +17852,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The Favorites to delete.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the Favorite."
-                        },
-                        "folderPath": {
-                            "type": "array",
-                            "description": "The folder the Favorite is in, the folder names from the root of the Favorites palette down, in the format GetFavoriteContents returns. When given, the Favorite is only looked for directly in that folder. Omit it to find the Favorite by name anywhere.",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name"
-                    ]
+                    "$ref": "#/FavoriteNameAndFolder"
                 }
             }
         },
@@ -17827,7 +17911,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetFavoriteDefaults",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Reads the element default stored in each given Favorite through the Favorite manager, without applying it or placing an element: the element type, the layer, the element ID, the folder, the library part and GDL parameters, the marker of every element type that has one, and the sub-elements with each of their kinds (Curtain Wall frames and panels, Stair treads and risers, Railing posts and rails, markers ...). Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -17851,146 +17935,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "favorite": {
-                                    "type": "string",
-                                    "description": "The name of the Favorite."
-                                },
-                                "elementType": {
-                                    "$ref": "#/ElementType"
-                                },
-                                "layerIndex": {
-                                    "type": "integer",
-                                    "description": "The index of the layer the Favorite places its elements on."
-                                },
-                                "elementId": {
-                                    "type": "string",
-                                    "description": "The element ID stored with the Favorite. Absent when it is empty."
-                                },
-                                "folder": {
-                                    "type": "array",
-                                    "description": "The folder hierarchy of the Favorite in the Favorites palette, outermost folder first. Empty for the root.",
-                                    "items": {
-                                        "type": "string"
-                                    }
-                                },
-                                "libPart": {
-                                    "$ref": "#/LibPartDetails",
-                                    "description": "The library part of the Favorite, for the library part based types (Object, Lamp, Window, Door, Skylight, Zone). Absent otherwise or when it could not be read."
-                                },
-                                "parameters": {
-                                    "type": "array",
-                                    "description": "The GDL parameters stored with the Favorite. Empty for the types without GDL parameters.",
-                                    "items": {
-                                        "$ref": "#/StoredGDLParameter"
-                                    }
-                                },
-                                "marker": {
-                                    "type": "object",
-                                    "description": "The marker stored with the Favorite, for the element types that have one. Absent when the Favorite has no marker - that is not an error.",
-                                    "properties": {
-                                        "elementType": {
-                                            "$ref": "#/ElementType"
-                                        },
-                                        "libPart": {
-                                            "$ref": "#/LibPartDetails",
-                                            "description": "The library part of the marker. Absent when it could not be read."
-                                        },
-                                        "parameters": {
-                                            "type": "array",
-                                            "description": "The GDL parameters of the marker.",
-                                            "items": {
-                                                "$ref": "#/StoredGDLParameter"
-                                            }
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "elementType",
-                                        "parameters"
-                                    ]
-                                },
-                                "subElements": {
-                                    "type": "array",
-                                    "description": "The sub-elements stored with the Favorite, for example the frames and panels of a Curtain Wall.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "elementType": {
-                                                "$ref": "#/ElementType"
-                                            },
-                                            "libPart": {
-                                                "$ref": "#/LibPartDetails",
-                                                "description": "The library part of the sub-element. Absent when it has none or it could not be read."
-                                            },
-                                            "parameters": {
-                                                "type": "array",
-                                                "description": "The GDL parameters of the sub-element.",
-                                                "items": {
-                                                    "$ref": "#/StoredGDLParameter"
-                                                }
-                                            },
-                                            "subTypes": {
-                                                "type": "array",
-                                                "description": "The kinds of the sub-element: the API_SubElementType flags set on it, without their APISubElement_ prefix.",
-                                                "items": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "MainMarker",
-                                                        "SHMarker",
-                                                        "CommonMarker",
-                                                        "CWFrameClass",
-                                                        "CWPanelClass",
-                                                        "CWJunction",
-                                                        "CWAccessory",
-                                                        "StairRiser",
-                                                        "StairTread",
-                                                        "StairStructure",
-                                                        "StairFPDMarker",
-                                                        "StairRCPDMarker",
-                                                        "RailingNode",
-                                                        "RailingSegment",
-                                                        "RailingPost",
-                                                        "RailingInnerPost",
-                                                        "RailingRail",
-                                                        "RailingHandrail",
-                                                        "RailingToprail",
-                                                        "RailingPanel",
-                                                        "RailingBaluster",
-                                                        "RailingPattern",
-                                                        "RailingBalusterSet",
-                                                        "RailingRailEnd",
-                                                        "RailingHandrailEnd",
-                                                        "RailingToprailEnd",
-                                                        "RailingRailConnection",
-                                                        "RailingHandrailConnection",
-                                                        "RailingToprailConnection",
-                                                        "RailingFinish",
-                                                        "CWTag",
-                                                        "NoElem",
-                                                        "NoParams"
-                                                    ]
-                                                }
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "elementType",
-                                            "parameters",
-                                            "subTypes"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "favorite",
-                                "elementType",
-                                "layerIndex",
-                                "parameters",
-                                "subElements"
-                            ]
+                            "$ref": "#/FavoriteDefaults"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -18002,6 +17947,45 @@ var gCommands = [{
         "additionalProperties": false,
         "required": [
             "favoriteDefaults"
+        ]
+    }
+            },{
+                "name": "SearchFavorites",
+                "version": "2.0.0",
+                "description": "Searches project favorites by keyword (matching favorite name or folder) and/or element type.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Optional case-insensitive substring to search in favorite name or folder hierarchy."
+            },
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "Optional filter by element type. If omitted, searches across all element types."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of matching favorites to return.",
+                "minimum": 1
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "favorites": {
+                "type": "array",
+                "description": "The matching Favorites, each with its element type and folder.",
+                "items": {
+                    "$ref": "#/FavoriteSummary"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "favorites"
         ]
     }
             }]
@@ -18022,12 +18006,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Returns only the properties of these types. All types are returned when omitted.",
                 "items": {
-                    "type": "string",
-                    "enum": [
-                        "StaticBuiltIn",
-                        "DynamicBuiltIn",
-                        "Custom"
-                    ]
+                    "$ref": "#/PropertyDefinitionType"
                 }
             },
             "includeAvailability": {
@@ -18053,6 +18032,68 @@ var gCommands = [{
                 "description": "Every property group, including empty ones.",
                 "items": {
                     "$ref": "#/PropertyGroupDetails"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "properties"
+        ]
+    }
+            },{
+                "name": "SearchProperties",
+                "version": "2.0.0",
+                "description": "Searches properties by name or group substring with optional filtering by property type, value type, and collection type.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Case-insensitive substring to search in property name or property group name."
+            },
+            "propertyGroup": {
+                "type": "string",
+                "description": "Optional case-insensitive substring to filter by property group name."
+            },
+            "propertyType": {
+                "type": "string",
+                "description": "Optional filter by property definition type.",
+                "enum": ["StaticBuiltIn", "DynamicBuiltIn", "Custom"]
+            },
+            "valueType": {
+                "type": "string",
+                "description": "Optional filter by property value type.",
+                "enum": ["Integer", "Real", "String", "Boolean", "Guid"]
+            },
+            "collectionType": {
+                "type": "string",
+                "description": "Optional filter by property collection type.",
+                "enum": ["Single", "List", "SingleChoiceEnumeration", "MultipleChoiceEnumeration"]
+            },
+            "includeEnumValues": {
+                "type": "boolean",
+                "description": "If true, includes possibleEnumValues for enumeration properties. Default is false to minimize token footprint."
+            },
+            "includeAvailability": {
+                "type": "boolean",
+                "description": "If true, includes classification availability. Default is false to minimize token footprint."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of matching properties to return.",
+                "minimum": 1
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "properties": {
+                "type": "array",
+                "description": "A list of property details matching the search criteria.",
+                "items": {
+                    "$ref": "#/PropertyDetails"
                 }
             }
         },
@@ -18106,13 +18147,16 @@ var gCommands = [{
             },{
                 "name": "SetPropertyValuesOfElements",
                 "version": "1.0.6",
-                "description": "Sets the property values of elements. It works for subelements of hierarchal elements also. With valueStatus an element's value can also be reset to the default value of the property (Default) or made undefined (UserUndefined, from 1.8.1).",
+                "description": "Sets the property values of elements. It works for subelements of hierarchal elements also. With valueStatus an element's value can also be reset to the default value of the property (Default) or made undefined (UserUndefined, from 1.8.1). With dryRun true nothing is changed and no undo step is created: the response has dryRun set to true, and each item that passes the checks made before writing gets wouldChange, with the element's value now (oldValue) and the value a real run would write (newValue), both as GetPropertyValuesOfElements gives them.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elementPropertyValues": {
                 "$ref": "#/ElementPropertyValues",
-                "description": "Unitless real and integer lists accept semicolon-separated numbers; an empty string sets an empty list. Invalid items reject the entire property write."
+                "description": "A single real value accepts '.' or ',' as the decimal separator, so the value strings GetPropertyValuesOfElements returns can be written back: when both appear the last one is the decimal separator, a separator that appears more than once groups thousands, and a single separator is the decimal one. Unitless real and integer lists accept semicolon-separated numbers; an empty string sets an empty list. Invalid items reject the entire property write."
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -18123,8 +18167,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/ChangeExecutionResults",
+                "description": "One result for each item of elementPropertyValues, in the order of the input. On a dry run an item that passes every check made before writing (the property values of the element can be read, the value is editable for the element and converts to the property's type) gets wouldChange: oldValue is the element's value now as GetPropertyValuesOfElements gives it (left out when the property is not available or not evaluated for the element), newValue the value that would be written in the same format (left out for valueStatus Default). Archicad can still refuse a value that passes them."
             }
         },
         "additionalProperties": false,
@@ -18134,7 +18182,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetComponentsOfElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the components of the elements: the building material skins of composite walls, slabs, roofs and shells, and the parts of complex profile walls, beams and columns. The components have their own property values (building material, thickness, area, volume and the properties of the building material); read them with GetPropertyValuesOfElementComponents.",
                 "inputScheme": {
         "type": "object",
@@ -18163,7 +18211,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetPropertyDefinitionsOfElementComponents",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the property definitions available on the given element components, optionally filtered to user defined or built-in ones.",
                 "inputScheme": {
         "type": "object",
@@ -18210,12 +18258,7 @@ var gCommands = [{
                                                 "type": "string"
                                             },
                                             "propertyType": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "StaticBuiltIn",
-                                                    "DynamicBuiltIn",
-                                                    "Custom"
-                                                ]
+                                                "$ref": "#/PropertyDefinitionType"
                                             }
                                         },
                                         "additionalProperties": false,
@@ -18246,7 +18289,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetPropertyValuesOfElementComponents",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the property values of the given element components for the given properties, in the shape of GetPropertyValuesOfElements. Use GetComponentsOfElements to list the components of an element.",
                 "inputScheme": {
         "type": "object",
@@ -18279,7 +18322,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetPropertyValuesOfElementDefaults",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets the property values of the tool defaults (the settings new elements get) of element types, so every element placed afterwards gets them, without saving and applying a favorite.",
                 "inputScheme": {
         "type": "object",
@@ -18360,54 +18403,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "propertyValues": {
-                                    "type": "array",
-                                    "items": {
-                                        "oneOf": [
-                                            {
-                                                "$ref": "#/PropertyValueArrayItem"
-                                            },
-                                            {
-                                                "type": "object",
-                                                "description": "A property value with its status, returned when includeStatus is true.",
-                                                "properties": {
-                                                    "propertyValue": {
-                                                        "$ref": "#/PropertyValue",
-                                                        "description": "Missing when the value is not available or not evaluated."
-                                                    },
-                                                    "isAvailable": {
-                                                        "type": "boolean",
-                                                        "description": "Whether the property definition is available for the attribute."
-                                                    },
-                                                    "isEditable": {
-                                                        "type": "boolean",
-                                                        "description": "Whether the value of the property is editable for the attribute."
-                                                    },
-                                                    "isVisible": {
-                                                        "type": "boolean",
-                                                        "description": "Whether the property definition is visible for the attribute."
-                                                    }
-                                                },
-                                                "additionalProperties": false,
-                                                "required": [
-                                                    "isAvailable",
-                                                    "isEditable",
-                                                    "isVisible"
-                                                ]
-                                            },
-                                            {
-                                                "$ref": "#/ErrorItem"
-                                            }
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "propertyValues"
-                            ]
+                            "$ref": "#/AttributePropertyValuesResult"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -18460,36 +18456,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The attributes and the built-in property values to set on each.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "attributeId": {
-                            "$ref": "#/AttributeId"
-                        },
-                        "properties": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "propertyId": {
-                                        "$ref": "#/PropertyId"
-                                    },
-                                    "propertyValue": {
-                                        "$ref": "#/PropertyValue"
-                                    }
-                                },
-                                "additionalProperties": false,
-                                "required": [
-                                    "propertyId",
-                                    "propertyValue"
-                                ]
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "attributeId",
-                        "properties"
-                    ]
+                    "$ref": "#/AttributeBuiltInPropertyValues"
                 }
             }
         },
@@ -18513,7 +18480,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetPropertyValueOfAttributes",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets one property value on several attributes (for example Building Materials) in one undo step. If the property is not available for any of the given attributes, no attribute is changed.",
                 "inputScheme": {
         "type": "object",
@@ -18597,14 +18564,7 @@ var gCommands = [{
                 }
             },
             "filter": {
-                "type": "string",
-                "description": "Which property definitions to return: the user defined (custom) ones, the fundamental built-in ones, the user level built-in ones, or all of them. The default is All. From Archicad 28 the API no longer separates the two kinds of built-in properties, so there FundamentalBuiltIn and UserLevelBuiltIn both return every built-in property.",
-                "enum": [
-                    "UserDefined",
-                    "FundamentalBuiltIn",
-                    "UserLevelBuiltIn",
-                    "All"
-                ]
+                "$ref": "#/ToolDefaultPropertyFilter"
             },
             "includeValues": {
                 "type": "boolean",
@@ -18625,44 +18585,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "properties": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "propertyId": {
-                                                "$ref": "#/PropertyId"
-                                            },
-                                            "propertyName": {
-                                                "type": "string"
-                                            },
-                                            "propertyGroupId": {
-                                                "$ref": "#/PropertyGroupId"
-                                            },
-                                            "propertyValue": {
-                                                "$ref": "#/PropertyValue",
-                                                "description": "The value in the tool default, in the format of GetPropertyValuesOfElements. Only returned when includeValues is true."
-                                            },
-                                            "error": {
-                                                "$ref": "#/Error",
-                                                "description": "Why the value could not be read. Only returned when includeValues is true."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "propertyId",
-                                            "propertyName",
-                                            "propertyGroupId"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "properties"
-                            ]
+                            "$ref": "#/ToolDefaultProperties"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -18704,7 +18627,7 @@ var gCommands = [{
             },{
                 "name": "RemovePropertyFromAttributes",
                 "version": "1.7.3",
-                "description": "Makes a custom property unavailable for the given attributes (for example Building Materials), in one undo step. Available in Archicad 25, 26 and 27 only.",
+                "description": "Makes a custom property unavailable for the given attributes (for example Building Materials), in one undo step. Available in Archicad 25, 26 and 27 only. With dryRun true nothing is changed and no undo step is created: the response has dryRun set to true, and wouldDelete when the property and every attribute exist.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -18714,6 +18637,9 @@ var gCommands = [{
             "attributeIds": {
                 "$ref": "#/AttributeIds",
                 "description": "The attributes (for example Building Materials) to make the property unavailable for."
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -18723,7 +18649,27 @@ var gCommands = [{
         ]
     },
                 "outputScheme": {
-        "$ref": "#/ExecutionResult"
+        "type": "object",
+        "description": "The result of the execution: success, with error when it failed. A dry run also answers dryRun, and wouldDelete when the property and every attribute exist.",
+        "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
+            "success": {
+                "type": "boolean"
+            },
+            "error": {
+                "$ref": "#/Error"
+            },
+            "wouldDelete": {
+                "type": "boolean",
+                "enum": [ true ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "success"
+        ]
     }
             },{
                 "name": "CreatePropertyGroups",
@@ -18764,7 +18710,7 @@ var gCommands = [{
             },{
                 "name": "DeletePropertyGroups",
                 "version": "1.0.9",
-                "description": "Deletes the given Custom Property Groups.",
+                "description": "Deletes the given Custom Property Groups. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each property group that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -18774,6 +18720,9 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/PropertyGroupIdArrayItem"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -18784,8 +18733,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input property group, in the order of the input. On a dry run a property group that exists gets wouldDelete; Archicad can still refuse to delete one that exists (for example a built-in group)."
             }
         },
         "additionalProperties": false,
@@ -18828,7 +18781,7 @@ var gCommands = [{
             },{
                 "name": "DeletePropertyDefinitions",
                 "version": "1.0.9",
-                "description": "Deletes the given Custom Property Definitions.",
+                "description": "Deletes the given Custom Property Definitions. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each property that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -18838,6 +18791,9 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/PropertyIdArrayItem"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -18848,8 +18804,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input property, in the order of the input. On a dry run a property that exists gets wouldDelete; Archicad can still refuse to delete one that exists (for example a built-in property)."
             }
         },
         "additionalProperties": false,
@@ -18936,7 +18896,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetPropertyValuesOfElementDefaults",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the values of the given properties in the current tool default of an element type, which new elements of that type get. It reads the native tool default of the generic variation of the type, not a Favorite that is not applied. A property that is not available for the tool default is reported as an error.",
                 "inputScheme": {
         "type": "object",
@@ -18998,7 +18958,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetPropertyExpressionReferences",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the strings that refer to the given properties in property expressions.",
                 "inputScheme": {
         "type": "object",
@@ -19047,7 +19007,7 @@ var gCommands = [{
     }
             },{
                 "name": "CheckPropertyValues",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Checks whether the given values are acceptable for the given property definitions, without changing anything.",
                 "inputScheme": {
         "type": "object",
@@ -19116,7 +19076,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetPropertyEditability",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Tells whether the values of the given properties can be modified, and whether the properties are visible, for the given elements. Also tells whether they can be modified in the tool defaults of element types (from Archicad 26) and in the default values of the property definitions themselves. Unknown elements, element types and properties are reported as errors, not as locked properties.",
                 "inputScheme": {
         "type": "object",
@@ -19303,22 +19263,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "available": {
-                                    "type": "boolean",
-                                    "description": "Whether the property is available for the tool default of the element type."
-                                },
-                                "visible": {
-                                    "type": "boolean",
-                                    "description": "Whether the property is visible for the tool default of the element type."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "available",
-                                "visible"
-                            ]
+                            "$ref": "#/DefaultPropertyAvailability"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -19441,16 +19386,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elements": {
-                                    "$ref": "#/Elements"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elements"
-                            ]
+                            "$ref": "#/ClassificationItemElements"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -19467,12 +19403,15 @@ var gCommands = [{
             },{
                 "name": "SetClassificationsOfElements",
                 "version": "1.0.7",
-                "description": "Sets the classifications of elements. In order to set the classification of an element to unclassified, omit the classificationItemId field. It works for subelements of hierarchal elements also.",
+                "description": "Sets the classifications of elements. In order to set the classification of an element to unclassified, omit the classificationItemId field. It works for subelements of hierarchal elements also. With dryRun true nothing is changed and no undo step is created: the response has dryRun set to true, and each item that passes the checks made before writing gets wouldChange, with the element's classification in the system now (oldValue) and the one a real run would set (newValue).",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elementClassifications": {
                 "$ref": "#/ElementClassifications"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -19483,8 +19422,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/ChangeExecutionResults",
+                "description": "One result for each item of elementClassifications, in the order of the input. On a dry run an item that passes every check made before writing (the classification item and its system exist, the element's classification in that system can be read) gets wouldChange: oldValue is the element's classificationId in the system now and newValue the one a real run would set, both as GetClassificationsOfElements gives them (without classificationItemId when the element is or would be unclassified in the system). Archicad can still refuse an item that passes them."
             }
         },
         "additionalProperties": false,
@@ -19518,18 +19461,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "classificationIds": {
-                                    "type": "array",
-                                    "description": "The classification of the attribute in every classification system it is classified in.",
-                                    "items": {
-                                        "$ref": "#/ClassificationId"
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [ "classificationIds" ]
+                            "$ref": "#/AttributeClassifications"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -19554,21 +19486,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The classifications to set, one per attribute and classification system.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "attributeId": {
-                            "$ref": "#/AttributeId"
-                        },
-                        "classificationId": {
-                            "$ref": "#/ClassificationId",
-                            "description": "The classification to set. The item replaces the attribute's current item in the same classification system. If the classificationItemId field is omitted, the attribute becomes unclassified in the given system."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "attributeId",
-                        "classificationId"
-                    ]
+                    "$ref": "#/AttributeClassification"
                 }
             }
         },
@@ -19720,20 +19638,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "classificationIds": {
-                                    "type": "array",
-                                    "description": "One item for each classification system in which the tool default is classified. Systems in which it is unclassified are left out.",
-                                    "items": {
-                                        "$ref": "#/ClassificationId"
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "classificationIds"
-                            ]
+                            "$ref": "#/ToolDefaultClassifications"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -19759,41 +19664,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The classification systems of the project.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "classificationSystemId": {
-                            "$ref": "#/ClassificationSystemId"
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The display name of the classification system."
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "The description of the classification system."
-                        },
-                        "source": {
-                            "type": "string",
-                            "description": "The source of the classification system (e.g. URL to a classification system standard)."
-                        },
-                        "version": {
-                            "type": "string",
-                            "description": "The version of the classification system."
-                        },
-                        "date": {
-                            "$ref": "#/Date",
-                            "description": "The release date of the classification system's current version."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "classificationSystemId",
-                        "name",
-                        "description",
-                        "source",
-                        "version",
-                        "date"
-                    ]
+                    "$ref": "#/ClassificationSystemSummary"
                 }
             }
         },
@@ -19871,12 +19742,15 @@ var gCommands = [{
             },{
                 "name": "DeleteClassificationSystems",
                 "version": "1.5.2",
-                "description": "Deletes the given Classification Systems.",
+                "description": "Deletes the given Classification Systems. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each classification system that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "classificationSystemIds": {
                 "$ref": "#/ClassificationSystemIds"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -19887,8 +19761,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input classification system, in the order of the input. On a dry run a classification system that exists gets wouldDelete; Archicad can still refuse to delete one that exists."
             }
         },
         "additionalProperties": false,
@@ -19899,12 +19777,15 @@ var gCommands = [{
             },{
                 "name": "DeleteClassificationItems",
                 "version": "1.5.2",
-                "description": "Deletes the given Classification Items.",
+                "description": "Deletes the given Classification Items. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and each classification item that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "classificationItemIds": {
                 "$ref": "#/ClassificationItemIds"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -19915,8 +19796,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input classification item, in the order of the input. On a dry run a classification item that exists gets wouldDelete; Archicad can still refuse to delete one that exists."
             }
         },
         "additionalProperties": false,
@@ -19998,21 +19883,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "classificationSystemId": {
-                                    "$ref": "#/ClassificationSystemId",
-                                    "description": "The classification system the item belongs to."
-                                },
-                                "parentClassificationItemId": {
-                                    "$ref": "#/ClassificationItemId",
-                                    "description": "The parent item. Missing for a top level item of its system."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "classificationSystemId"
-                            ]
+                            "$ref": "#/ClassificationItemParent"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -20124,42 +19995,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "visibilities": {
-                                    "type": "array",
-                                    "description": "One entry per classification item, in the order of the input. A non-existing classification item is represented by an error object.",
-                                    "items": {
-                                        "type": "object",
-                                        "oneOf": [
-                                            {
-                                                "type": "object",
-                                                "properties": {
-                                                    "classificationItemId": {
-                                                        "$ref": "#/ClassificationItemId"
-                                                    },
-                                                    "isVisible": {
-                                                        "type": "boolean",
-                                                        "description": "Whether the classification item is visible (offered) for the target, as Archicad reports it. It can be true even if a parent item is not visible. It does not tell whether the target is classified with the item."
-                                                    }
-                                                },
-                                                "additionalProperties": false,
-                                                "required": [
-                                                    "classificationItemId",
-                                                    "isVisible"
-                                                ]
-                                            },
-                                            {
-                                                "$ref": "#/ErrorItem"
-                                            }
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "visibilities"
-                            ]
+                            "$ref": "#/ClassificationItemVisibilities"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -20197,7 +20033,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetAttributeIndexes",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Reports for each given attribute type how many attributes there are, the first valid and the highest index in use, and the free indexes between them (for example those of deleted attributes). Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -20319,7 +20155,7 @@ var gCommands = [{
             },{
                 "name": "DeleteAttributes",
                 "version": "1.5.4",
-                "description": "Deletes the given attributes. Returns an execution result for each input item. dryRun only checks the items (attribute type, attribute exists) and deletes nothing.",
+                "description": "Deletes the given attributes. Returns an execution result for each input item. With dryRun true nothing is deleted: the response has dryRun set to true, and each attribute that passes the checks made before deleting (valid attribute type, attribute exists) gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -20341,8 +20177,7 @@ var gCommands = [{
                 }
             },
             "dryRun": {
-                "type": "boolean",
-                "description": "If true, nothing is deleted: each execution result says what the deletion would do for that attribute, from the checks made before deleting (invalid attributeType, attribute not found). Archicad can still refuse to delete an attribute that passes them. Default is false."
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -20353,8 +20188,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input attribute, in the order of the input. On a dry run an attribute that passes the checks made before deleting (valid attributeType, attribute found) gets wouldDelete; Archicad can still refuse to delete an attribute that passes them."
             }
         },
         "additionalProperties": false,
@@ -20364,7 +20203,7 @@ var gCommands = [{
     }
             },{
                 "name": "ImportAttributesFromProject",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Imports Line, Fill, ZoneCategory, PenTable, OperationProfile, Composite, Profile and LayerCombination attributes from another project or template file into the open project, with their complete definition (symbol and percent fills included), like Append or Overwrite by name in Archicad's Attribute Manager. The lines and fills a composite or profile uses are matched by name; its building materials and surfaces, and the layers of a layer combination, keep their index only with referencesByIndex, since Archicad does not read these types from a closed file. An attribute with a reference that cannot be mapped is not imported. A new attribute gets a new guid: Archicad does not hand out the guids stored in the source file. An attribute whose name already exists is skipped, or overwritten in place with overwriteExisting. dryRun reports what would happen without changing anything. The names are the legacy 8-bit names of the source file. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -20632,12 +20471,15 @@ var gCommands = [{
             },{
                 "name": "DeleteAttributeFolders",
                 "version": "1.7.3",
-                "description": "Deletes attribute folders, each given by attribute type and path, together with all the subfolders and deletable attributes they contain (a folder holding an attribute that cannot be deleted is kept). The root folder cannot be deleted. Available from Archicad 26.",
+                "description": "Deletes attribute folders, each given by attribute type and path, together with all the subfolders and deletable attributes they contain (a folder holding an attribute that cannot be deleted is kept). The root folder cannot be deleted. With dryRun true nothing is deleted: the response has dryRun set to true, and each folder that exists and is not the root folder gets wouldDelete. Available from Archicad 26.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "attributeFolders": {
                 "$ref": "#/AttributeFolders"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -20648,8 +20490,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input folder, in the order of the input. On a dry run a folder that is not the root folder and exists gets wouldDelete; Archicad can still refuse to delete a folder that passes these checks."
             }
         },
         "additionalProperties": false,
@@ -20734,7 +20580,7 @@ var gCommands = [{
     }
             },{
                 "name": "ReindexLayers",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Moves layers to new indices. Archicad cannot renumber an attribute, so each layer is recreated at its new index (free indices below it are filled with temporary layers, which are deleted again), gets the old layer's state in every layer combination, and then every element of the old layer is moved to it, in the floor plan and in every view and layout database, with the tool defaults on that layer. Only when the old layer is empty everywhere is it deleted, and the new layer gets its name, flags and folder. If an element cannot be moved (it is locked, not reserved in Teamwork, or comes from a hotlinked module), that layer is left as it was. The new layer has a new attribute id; Favorites that use the layer are not updated. Archicad keeps the shown, locked and wireframe state of a layer per open window: the new layer gets the old one's state in the current window and in every layer combination, and starts shown and unlocked in the other open windows. The model elements that sections, elevations, interior elevations and 3D documents show of the layer come back on the new layer when those views are rebuilt (listed as viewsToRebuild). dryRun lists the elements and tool defaults on each layer without changing anything. The whole call is one undo step. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -20854,14 +20700,14 @@ var gCommands = [{
     }
             },{
                 "name": "ReindexAttributes",
-                "version": "1.8.1",
-                "description": "Moves fills, line types, surfaces and building materials to new indices, the way ReindexLayers moves layers. Archicad cannot renumber an attribute, so the attribute is recreated at its new index (free indices below it are filled with temporary attributes, which are deleted again) and every reference to the old index is rewritten to the new one: the fields of the elements in the floor plan and in every view and layout, the parameters of library part based elements, the memo data of roofs, slabs, meshes, morphs, curtain walls, beams, columns, stairs and interior elevations, the tool defaults, the Favorites (with their sub-elements: a curtain wall's frame and panel classes, a stair's structures), the other attributes that refer to it (composites, building materials, surfaces, profiles, MEP systems) and the graphic override rules. Only then is the old attribute deleted. The new attribute has a new attribute id (Archicad does not keep a given id); its name, definition and attribute folder are the old ones. Elements on a hidden or locked layer cannot be changed, so their layers are shown and unlocked for the move and put back afterwards (in the current window, as Archicad keeps these flags per window). If an element still cannot be changed (it is locked itself, or not reserved in Teamwork), everything is put back and that attribute is not moved. Elements from hotlinked modules cannot be changed and are listed; their module file has to be reindexed on its own. Indices typed into GDL scripts are not found, and the frame and panel classes of curtain wall Favorites and of the Curtain Wall tool default keep the old index (Archicad does not take them from ACAPI_Favorite_Change, so such Favorites are left as they are and named in the warnings). dryRun lists every reference without changing anything. The whole call is one undo step. Pens, layers (see ReindexLayers) and the other attribute types are not supported. Available from Archicad 27.",
+                "version": "2.0.0",
+                "description": "Moves fills, line types, surfaces, building materials and zone categories to new indices, the way ReindexLayers moves layers. Archicad cannot renumber an attribute, so the attribute is recreated at its new index (free indices below it are filled with temporary attributes, which are deleted again) and every reference to the old index is rewritten to the new one: the fields of the elements in the floor plan and in every view and layout, the parameters of library part based elements, the memo data of roofs, slabs, meshes, morphs, curtain walls, beams, columns, stairs and interior elevations, the tool defaults, the Favorites (with their sub-elements: a curtain wall's frame and panel classes, a stair's structures), the other attributes that refer to it (composites, building materials, surfaces, profiles, MEP systems) and the graphic override rules. Only then is the old attribute deleted. The new attribute has a new attribute id (Archicad does not keep a given id); its name, definition and attribute folder are the old ones. Elements on a hidden or locked layer cannot be changed, so their layers are shown and unlocked for the move and put back afterwards (in the current window, as Archicad keeps these flags per window). If an element still cannot be changed (it is locked itself, or not reserved in Teamwork), everything is put back and that attribute is not moved. Elements from hotlinked modules cannot be changed and are listed; their module file has to be reindexed on its own. Indices typed into GDL scripts are not found, and the frame and panel classes of curtain wall Favorites and of the Curtain Wall tool default keep the old index (Archicad does not take them from ACAPI_Favorite_Change, so such Favorites are left as they are and named in the warnings). dryRun lists every reference without changing anything. The whole call is one undo step. Pens, layers (see ReindexLayers) and the other attribute types are not supported. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "attributeType": {
                 "type": "string",
-                "enum": ["Fill", "Line", "Surface", "BuildingMaterial"],
+                "enum": ["Fill", "Line", "Surface", "BuildingMaterial", "ZoneCategory"],
                 "description": "The type of the attributes to move. Layers are moved by ReindexLayers; pens and the other attribute types cannot be moved."
             },
             "attributes": {
@@ -21024,8 +20870,8 @@ var gCommands = [{
     }
             },{
                 "name": "DeleteAndReplaceAttributes",
-                "version": "1.8.1",
-                "description": "Deletes fills, line types, surfaces or building materials and replaces each by another attribute of the same type wherever it was used, like Delete and Replace in the Attribute Manager. Every reference is rewritten to the replacement, the way ReindexAttributes rewrites them: the fields of the elements in the floor plan and in every view and layout, the parameters of library part based elements, their memo data, the tool defaults, the Favorites, the other attributes that refer to it (composites, building materials, surfaces, profiles, MEP systems) and the graphic override rules. Elements on a hidden or locked layer are changed too: their layers are shown and unlocked for the change and put back afterwards (in the current window). If an element cannot be changed (it is locked itself, or not reserved in Teamwork), everything is put back and that attribute is not deleted. Elements from hotlinked modules cannot be changed and are listed. Indices typed into GDL scripts are not found, and the frame and panel classes of curtain wall Favorites and of the Curtain Wall tool default keep the deleted attribute (named in the warnings). If a tool default, Favorite, attribute or rule cannot be rewritten to the replacement, it keeps a copy of the deleted attribute with its name and a new attribute id, named in the warnings. dryRun lists every reference without changing anything. The whole call is one undo step. Available from Archicad 27.",
+                "version": "2.0.0",
+                "description": "Deletes fills, line types, surfaces or building materials and replaces each by another attribute of the same type wherever it was used, like Delete and Replace in the Attribute Manager. Every reference is rewritten to the replacement, the way ReindexAttributes rewrites them: the fields of the elements in the floor plan and in every view and layout, the parameters of library part based elements, their memo data, the tool defaults, the Favorites, the other attributes that refer to it (composites, building materials, surfaces, profiles, MEP systems) and the graphic override rules. Elements on a hidden or locked layer are changed too: their layers are shown and unlocked for the change and put back afterwards (in the current window). If an element cannot be changed (it is locked itself, or not reserved in Teamwork), everything is put back and that attribute is not deleted. Elements from hotlinked modules cannot be changed and are listed. Indices typed into GDL scripts are not found, and the frame and panel classes of curtain wall Favorites and of the Curtain Wall tool default keep the deleted attribute (named in the warnings). If a tool default, Favorite, attribute or rule cannot be rewritten to the replacement, it keeps a copy of the deleted attribute with its name and a new attribute id, named in the warnings. The whole call is one undo step. With dryRun true nothing is changed and no undo step is created: the response has dryRun set to true, and each attribute that passes the checks gets wouldDelete and lists every reference a real run would rewrite (elements, tool defaults, Favorites, other attributes, graphic override rules, elements from hotlinked modules). Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -21057,8 +20903,7 @@ var gCommands = [{
                 }
             },
             "dryRun": {
-                "type": "boolean",
-                "description": "Only list every reference to each attribute to delete (elements, tool defaults, Favorites, other attributes, graphic override rules, elements from hotlinked modules) without changing anything. The default is false."
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -21070,6 +20915,9 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "attributes": {
                 "type": "array",
                 "description": "One item per requested attribute, in the same order.",
@@ -21085,6 +20933,11 @@ var gCommands = [{
                                 "replacementAttributeId": {
                                     "$ref": "#/AttributeId",
                                     "description": "The attribute that took its place."
+                                },
+                                "wouldDelete": {
+                                    "type": "boolean",
+                                    "enum": [ true ],
+                                    "description": "Only on a dry run: the attribute and its replacement passed the checks, and a real run would delete the attribute and rewrite the references listed here to the replacement."
                                 },
                                 "elements": {
                                     "$ref": "#/Elements",
@@ -21177,6 +21030,286 @@ var gCommands = [{
         "required": [
             "attributes"
         ]
+    }
+            },{
+                "name": "GetUnusedAttributes",
+                "version": "2.0.0",
+                "description": "Lists the unused layers, fills, surfaces, building materials, composites, profiles, line types, pen tables and zone categories (index, id and name), for the given types or all of them. The Archicad API has no function that tells which attributes are unused (only how many per type), so every reference is collected: the elements of the floor plan and of every view and layout (hotlinked ones too), with their library part parameters and memo data, the tool defaults, the Favorites, the other attributes (composites, building materials, surfaces, profiles, MEP systems) and the graphic override rules, the way ReindexAttributes finds them; for layers the layer of each element, tool default and Favorite; for composites and profiles the walls, slabs, roofs, shells, column and beam segments whose structure type uses them; for pen tables the current pen table and the drawings set to a pen table of their own. An attribute that only an unused attribute refers to counts as used. Indices typed into GDL scripts and the pen tables saved with views are not found. Each type also reports Archicad's own count of the attributes in use (archicadUsedCount, see GetUsedAttributes), so a difference shows. Read only. Available from Archicad 27.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "types": {
+                "type": "array",
+                "description": "The attribute types to check. All of them when omitted.",
+                "items": {
+                    "type": "string",
+                    "enum": ["layer", "fill", "surface", "buildingMaterial", "composite", "profile", "lineType", "penTable", "zoneCategory"]
+                },
+                "minItems": 1
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "attributeTypes": {
+                "type": "array",
+                "description": "One item per checked attribute type, in the order layer, fill, surface, buildingMaterial, composite, profile, lineType, penTable, zoneCategory.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["layer", "fill", "surface", "buildingMaterial", "composite", "profile", "lineType", "penTable", "zoneCategory"]
+                        },
+                        "unusedAttributes": {
+                            "type": "array",
+                            "description": "The attributes of this type that no reference found by the command points at.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "attributeId": {
+                                        "$ref": "#/AttributeId"
+                                    },
+                                    "index": {
+                                        "type": "integer"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "required": ["attributeId", "index", "name"]
+                            }
+                        },
+                        "attributeCount": {
+                            "type": "integer",
+                            "description": "The number of attributes of this type in the project."
+                        },
+                        "usedCount": {
+                            "type": "integer",
+                            "description": "attributeCount minus the unused ones."
+                        },
+                        "archicadUsedCount": {
+                            "type": "integer",
+                            "description": "The number of attributes of this type in use as Archicad itself counts them, from the usedAttributes JSON query (see GetUsedAttributes). When it differs from usedCount, Archicad counts references this command does not see, or the other way round, so check the list before deleting. Missing when Archicad's report does not name the type."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["type", "unusedAttributes", "attributeCount", "usedCount"]
+                }
+            },
+            "archicadReport": {
+                "type": "string",
+                "description": "Archicad's usedAttributes report as it came, e.g. 'Layer: 16, LineType: 9, Fill: 17'. Missing when the query failed."
+            },
+            "warnings": {
+                "type": "array",
+                "description": "What could not be checked. Missing when everything was checked.",
+                "items": {
+                    "type": "string"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["attributeTypes"]
+    }
+            },{
+                "name": "GetMissingAttributes",
+                "version": "2.0.0",
+                "description": "Lists the references of placed elements to layers, fills, surfaces, building materials, composites, profiles, line types, pen tables and zone categories that do not exist in the project, for the given types or all of them, and of the tool defaults, Favorites, graphic override rules, Model View Options combinations and attributes: the structured counterpart of the missing attributes report of Archicad's GDL palette. Every element of the floor plan and of every view and layout (hotlinked ones too) is checked, and so is every tool default and Favorite (with its sub-elements): its layer, its attribute fields and memo data as ReindexAttributes finds them, its composite or profile when its structure type uses one, a drawing's own pen table, and its library part parameters of attribute types; of every graphic override rule the line type, fill and surface it overrides with; of every Model View Options combination the surfaces and line types of the stair and railing schemes and the library part settings' GDL parameters of attribute types; of every composite the building materials of its skins and the line types of its separators, of every building material its cut fill and cut surface, of every surface the fill of its vectorial hatching, of every MEP system its fill, center line type and surfaces, and of every profile the building material, surface or fill of each skin and its contour, cut end and edge line types. The sources input limits the check to elements, tool defaults, Favorites, graphic override rules, Model View Options or attributes. Each item names the source; for an element the element (and the element it is part of, for a curtain wall frame, a column segment, ...) and the story or view it sits on, for a tool default the tool, for a Favorite its name and tool, for a graphic override rule its guid and name, for a Model View Options combination its guid and name (and the library part option set), for an attribute its type, guid and name; then the attribute type, the missing index and the field or GDL parameter that holds it. Index 0 counts as no attribute. Read only. Available from Archicad 27.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "attributeTypes": {
+                "type": "array",
+                "description": "The attribute types to check. All of them when omitted.",
+                "items": {
+                    "type": "string",
+                    "enum": ["layer", "fill", "surface", "buildingMaterial", "composite", "profile", "lineType", "penTable", "zoneCategory"]
+                },
+                "minItems": 1
+            },
+            "sources": {
+                "type": "array",
+                "description": "What to check: the placed elements (element), the tool default settings (toolDefault), the Favorites (favorite), the graphic override rules (overrideRule), the Model View Options combinations (modelViewOption) and the attributes that refer to other attributes (attribute: composites, building materials, surfaces, MEP systems and profiles). All of them when omitted.",
+                "items": {
+                    "type": "string",
+                    "enum": ["element", "toolDefault", "favorite", "overrideRule", "modelViewOption", "attribute"]
+                },
+                "minItems": 1
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "missingAttributes": {
+                "type": "array",
+                "description": "One item per reference to an attribute index that has no attribute in the project: first the placed elements in the order they were found (the floor plan first, then the views and layouts), then the tool defaults, then the Favorites, then the graphic override rules, then the Model View Options combinations, then the attributes that refer to other attributes.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "enum": ["element", "toolDefault", "favorite", "overrideRule", "modelViewOption", "attribute"],
+                            "description": "What refers to the missing attribute: a placed element, the default settings of a tool, a Favorite, a graphic override rule, a Model View Options combination, or another attribute."
+                        },
+                        "elementId": {
+                            "$ref": "#/ElementId",
+                            "description": "The placed element. Only for source element."
+                        },
+                        "elementType": {
+                            "type": "string",
+                            "description": "The element's type, as GetElementsByType names it: for a tool default or a Favorite the type of its tool. Missing for a graphic override rule, a Model View Options combination and an attribute."
+                        },
+                        "overrideRuleId": {
+                            "type": "object",
+                            "description": "The graphic override rule. Only for source overrideRule.",
+                            "properties": {
+                                "guid": {
+                                    "$ref": "#/Guid"
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": ["guid"]
+                        },
+                        "overrideRuleName": {
+                            "type": "string",
+                            "description": "The name of the graphic override rule. Only for source overrideRule."
+                        },
+                        "modelViewOptionId": {
+                            "type": "object",
+                            "description": "The Model View Options combination, the id GetModelViewOptionDetails returns. Only for source modelViewOption.",
+                            "properties": {
+                                "guid": {
+                                    "$ref": "#/Guid"
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": ["guid"]
+                        },
+                        "modelViewOptionName": {
+                            "type": "string",
+                            "description": "The name of the Model View Options combination. Only for source modelViewOption."
+                        },
+                        "gdlOptionsName": {
+                            "type": "string",
+                            "description": "When the reference is a GDL parameter of the library part settings of a Model View Options combination, the name of that option set (the gdlOptions name GetModelViewOptionDetails returns). Missing otherwise."
+                        },
+                        "ownerAttributeType": {
+                            "type": "string",
+                            "enum": ["composite", "buildingMaterial", "surface", "mepSystem", "profile"],
+                            "description": "The type of the attribute that refers to the missing one. Only for source attribute."
+                        },
+                        "ownerAttributeId": {
+                            "$ref": "#/AttributeId",
+                            "description": "The attribute that refers to the missing one. Only for source attribute."
+                        },
+                        "ownerAttributeName": {
+                            "type": "string",
+                            "description": "The name of that attribute. Only for source attribute."
+                        },
+                        "favoriteName": {
+                            "type": "string",
+                            "description": "The name of the Favorite. Only for source favorite."
+                        },
+                        "subElementType": {
+                            "type": "string",
+                            "description": "When the reference is in a sub-element the Favorite keeps apart (e.g. a stair's structure), the type of that sub-element. Missing otherwise."
+                        },
+                        "parentElementId": {
+                            "$ref": "#/ElementId",
+                            "description": "The element this one is part of (the curtain wall of a frame, the column of a segment, ...). Missing for an element that is not part of another one."
+                        },
+                        "parentElementType": {
+                            "type": "string"
+                        },
+                        "databaseId": {
+                            "$ref": "#/DatabaseId",
+                            "description": "The database the element is in, the same id GetDatabases returns. Only for source element."
+                        },
+                        "databaseType": {
+                            "type": "string",
+                            "description": "The type of that database, e.g. FloorPlan, Worksheet, Details, Section, Layout. Only for source element."
+                        },
+                        "storyIndex": {
+                            "type": "integer",
+                            "description": "The element's home story. Only for elements of the floor plan."
+                        },
+                        "storyName": {
+                            "type": "string",
+                            "description": "The name of that story. Only for elements of the floor plan."
+                        },
+                        "databaseName": {
+                            "type": "string",
+                            "description": "The name of the view or layout (e.g. the worksheet) the element is in. Missing for the floor plan."
+                        },
+                        "databaseReference": {
+                            "type": "string",
+                            "description": "The reference id of that view or layout. Missing when it has none."
+                        },
+                        "inHotlinkedModule": {
+                            "type": "boolean",
+                            "description": "True when the element comes from a hotlinked module: it has to be fixed in the module's file. Missing otherwise."
+                        },
+                        "attributeType": {
+                            "type": "string",
+                            "enum": ["layer", "fill", "surface", "buildingMaterial", "composite", "profile", "lineType", "penTable", "zoneCategory"]
+                        },
+                        "index": {
+                            "type": "integer",
+                            "description": "The attribute index the element, tool default, Favorite, graphic override rule, Model View Options combination or attribute refers to, which no attribute of attributeType has."
+                        },
+                        "field": {
+                            "type": "string",
+                            "description": "The element's setting that holds the index, named as in the Archicad API (e.g. layer, contLtype, cWallFrameDefaults.material); for a graphic override rule lineType, fillOverride or surfaceOverride; for a Model View Options combination the field as GetModelViewOptionDetails names it (e.g. stair.stairSchemeSurfaceIndex); for an attribute the field as GetComposites, GetBuildingMaterials, GetSurfaces, GetMEPSystems or GetProfiles names it (e.g. skins[0].buildingMaterialId, cutFillIndex). Missing when gdlParameter is given."
+                        },
+                        "gdlParameter": {
+                            "type": "string",
+                            "description": "The library part parameter that holds the index, with the cell for an array parameter (e.g. gs_frame_mat, matArray[2][1]). Missing when field is given."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["source", "attributeType", "index"]
+                }
+            },
+            "checkedElementCount": {
+                "type": "integer",
+                "description": "The number of placed elements checked; 0 when the elements were not checked."
+            },
+            "checkedToolDefaultCount": {
+                "type": "integer",
+                "description": "The number of tool defaults checked. Missing when the tool defaults were not checked."
+            },
+            "checkedFavoriteCount": {
+                "type": "integer",
+                "description": "The number of Favorites checked. Missing when the Favorites were not checked."
+            },
+            "checkedOverrideRuleCount": {
+                "type": "integer",
+                "description": "The number of graphic override rules checked. Missing when the rules were not checked or could not be listed."
+            },
+            "checkedModelViewOptionCount": {
+                "type": "integer",
+                "description": "The number of Model View Options combinations checked. Missing when they were not checked."
+            },
+            "checkedAttributeCount": {
+                "type": "integer",
+                "description": "The number of composites, building materials, surfaces, MEP systems and profiles checked for references to other attributes. Missing when they were not checked."
+            },
+            "warnings": {
+                "type": "array",
+                "description": "What could not be checked. Missing when everything was checked.",
+                "items": {
+                    "type": "string"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["missingAttributes", "checkedElementCount"]
     }
             },{
                 "name": "CreateLayers",
@@ -22428,7 +22561,7 @@ var gCommands = [{
     }
             },{
                 "name": "ActivateLayerCombination",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Activates the given layer combination in the current window, like choosing it in the Quick Layers palette. Saved views are not changed.",
                 "inputScheme": {
         "type": "object",
@@ -22444,6 +22577,163 @@ var gCommands = [{
     },
                 "outputScheme": {
         "$ref": "#/ExecutionResult"
+    }
+            },{
+                "name": "GetLayerOfElementDefaults",
+                "version": "2.0.0",
+                "description": "Returns the layer of the tool defaults of the given element types: the layer new elements of that type are placed on.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementTypes": {
+                "type": "array",
+                "description": "The element types whose tool defaults are read.",
+                "items": {
+                    "$ref": "#/ElementType"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "elementTypes"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "layersOfElementDefaults": {
+                "type": "array",
+                "description": "One item per element type, in the input order: the layer of its tool defaults, or an error when the type is unknown or has no tool defaults.",
+                "items": {
+                    "type": "object",
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "elementType": {
+                                    "$ref": "#/ElementType"
+                                },
+                                "layerId": {
+                                    "$ref": "#/AttributeId",
+                                    "description": "The layer new elements of this type are placed on."
+                                },
+                                "layerName": {
+                                    "type": "string",
+                                    "description": "The name of the layer."
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                                "elementType",
+                                "layerId",
+                                "layerName"
+                            ]
+                        },
+                        {
+                            "$ref": "#/ErrorItem"
+                        }
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "layersOfElementDefaults"
+        ]
+    }
+            },{
+                "name": "SetLayerOfElementDefaults",
+                "version": "2.0.0",
+                "description": "Sets the layer of the tool defaults of the given element types, so new elements of that type are placed on it. Only the layer of the defaults is changed.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "layersOfElementDefaults": {
+                "type": "array",
+                "description": "The element types whose tool defaults get a new layer.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementType": {
+                            "$ref": "#/ElementType"
+                        },
+                        "layerId": {
+                            "$ref": "#/AttributeId",
+                            "description": "The layer new elements of this type will be placed on."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "elementType",
+                        "layerId"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "layersOfElementDefaults"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults",
+                "description": "One result per item, in the input order."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
+    }
+            },{
+                "name": "RenameAttributes",
+                "version": "2.0.0",
+                "description": "Renames attributes of any type (layers, layer combinations, composites, surfaces, ...). Each attribute keeps its index, its id and its settings. A new name that another attribute of the same type already has is refused, and so is renaming the attributes Archicad does not allow to change (the built-in Archicad Layer, the Solid and Empty fills).",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "attributes": {
+                "type": "array",
+                "description": "The attributes to rename, of any type.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "attributeId": {
+                            "$ref": "#/AttributeId"
+                        },
+                        "newName": {
+                            "type": "string",
+                            "description": "The new name of the attribute. It must not be empty or the name of another attribute of the same type."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                        "attributeId",
+                        "newName"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "attributes"
+        ]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults",
+                "description": "One result per attribute, in the input order."
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "executionResults"
+        ]
     }
             },{
                 "name": "GetLines",
@@ -22717,7 +23007,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetPens",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Changes the color, width and description of the given pens in effect in the current window, the pens GetPens returns, in one undo step. Only the given fields of a listed pen are changed; each pen gets its own execution result. In a Teamwork project the PenTables lockable object set must be reserved first (see ReserveLockableObjectSet). Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -22990,8 +23280,17 @@ var gCommands = [{
             },{
                 "name": "GetGraphicOverrideRules",
                 "version": "1.7.2",
-                "description": "Gets all graphic override rules of the project, with their rule group, criterion and style. Available from Archicad 27.",
-                "inputScheme": null,
+                "description": "Gets all graphic override rules of the project, with their rule group, criterion and style. With includeCriterion the criterion also comes as structured conditions, which CreateGraphicOverrideRules and ModifyGraphicOverrideRules take back. Available from Archicad 27.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "includeCriterion": {
+                "type": "boolean",
+                "description": "Also return each rule's criterion as structured conditions ('criterion'), in the shape CreateGraphicOverrideRules and ModifyGraphicOverrideRules take. Default: false."
+            }
+        },
+        "additionalProperties": false
+    },
                 "outputScheme": {
         "type": "object",
         "properties": {
@@ -23011,7 +23310,7 @@ var gCommands = [{
             },{
                 "name": "GetGraphicOverrideRulesByName",
                 "version": "1.7.3",
-                "description": "Gets graphic override rules by name, with their rule group, criterion and style. The rule group narrows the search; without it the rule is searched in every rule group. Available from Archicad 27.",
+                "description": "Gets graphic override rules by name, with their rule group, criterion and style. The rule group narrows the search; without it the rule is searched in every rule group. With includeCriterion the criterion also comes as structured conditions. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -23021,6 +23320,10 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/GraphicOverrideRuleReference"
                 }
+            },
+            "includeCriterion": {
+                "type": "boolean",
+                "description": "Also return each rule's criterion as structured conditions ('criterion'), in the shape CreateGraphicOverrideRules and ModifyGraphicOverrideRules take. Default: false."
             }
         },
         "additionalProperties": false,
@@ -23648,16 +23951,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "pairs": {
-                                    "$ref": "#/UserDataPairs"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "pairs"
-                            ]
+                            "$ref": "#/AttributeUserData"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -23710,12 +24004,15 @@ var gCommands = [{
             },{
                 "name": "DeleteUserDataOfAttributes",
                 "version": "1.8.0",
-                "description": "Removes the user data of attributes, every key at once. Archicad does not record this change as an undo step, so Undo does not revert it.",
+                "description": "Removes the user data of attributes, every key at once. Archicad does not record this change as an undo step, so Undo does not revert it. With dryRun true nothing is removed: the response has dryRun set to true, and each attribute that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "attributeIds": {
                 "$ref": "#/AttributeIds"
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -23726,9 +24023,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults",
-                "description": "One result per attribute, in the input order."
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result per attribute, in the input order. On a dry run an attribute that exists gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -23998,35 +24298,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The IFC property values to set. Only single value (IfcPropertySingleValue) properties are supported.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "propertySetName": {
-                            "type": "string",
-                            "description": "The name of the property set, for example Pset_DoorCommon. Custom property set names are also accepted."
-                        },
-                        "propertyName": {
-                            "type": "string",
-                            "description": "The name of the property, for example FireRating."
-                        },
-                        "type": {
-                            "type": "string",
-                            "description": "The IFC type of the value, for example IfcLabel, IfcText, IfcIdentifier, IfcBoolean, IfcLogical, IfcInteger, IfcReal or a measure type like IfcThermalTransmittanceMeasure. A type Archicad does not know is rejected."
-                        },
-                        "value": {
-                            "description": "The new value of the property. Provide a boolean for IfcBoolean and IfcLogical (IfcLogical also accepts the string Unknown), a number for the numeric types and a string for every other type."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "propertySetName",
-                        "propertyName",
-                        "type",
-                        "value"
-                    ]
+                    "$ref": "#/ElementIFCPropertyValue"
                 }
             }
         },
@@ -24090,59 +24362,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The IFC classification references to store on the elements.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "identification": {
-                            "type": "string",
-                            "description": "The identification of the classification reference, for example a classification code. Default: empty."
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the classification reference. Default: empty."
-                        },
-                        "location": {
-                            "type": "string",
-                            "description": "The location of the classification reference, for example a URL. Default: empty."
-                        },
-                        "referencedSource": {
-                            "type": "object",
-                            "description": "The classification (IfcClassification) the reference belongs to.",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the classification."
-                                },
-                                "edition": {
-                                    "type": "string",
-                                    "description": "The edition of the classification. Default: empty."
-                                },
-                                "editionDate": {
-                                    "type": "string",
-                                    "description": "The edition date of the classification. Default: empty."
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "The description of the classification. Default: empty."
-                                },
-                                "location": {
-                                    "type": "string",
-                                    "description": "The location of the classification, for example a URL. Default: empty."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "name"
-                            ]
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "referencedSource"
-                    ]
+                    "$ref": "#/ElementIFCClassificationReferenceUpdate"
                 }
             }
         },
@@ -24166,7 +24386,7 @@ var gCommands = [{
             },{
                 "name": "RemoveIFCClassificationReferencesOfElements",
                 "version": "1.8.0",
-                "description": "Removes IFC classification references stored on elements, given by the name of their classification and optionally their identification; without identification every stored reference of that classification is removed. Available only in Archicad 25, 26 and 27 for now.",
+                "description": "Removes IFC classification references stored on elements, given by the name of their classification and optionally their identification; without identification every stored reference of that classification is removed. Available only in Archicad 25, 26 and 27 for now. With dryRun true nothing is removed and no undo step is created: the response has dryRun set to true, and each element that has a matching stored reference gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -24174,36 +24394,11 @@ var gCommands = [{
                 "type": "array",
                 "description": "The IFC classification references to remove from the elements. Only references stored on the elements (the ones GetIFCClassificationReferencesOfElements returns with storedOnly) can be removed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "referencedSource": {
-                            "type": "object",
-                            "description": "The classification (IfcClassification) the reference belongs to.",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the classification."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "name"
-                            ]
-                        },
-                        "identification": {
-                            "type": "string",
-                            "description": "The identification of the classification reference to remove. When it is not given, every stored reference of the classification is removed from the element."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "referencedSource"
-                    ]
+                    "$ref": "#/ElementIFCClassificationReferenceRemoval"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -24214,8 +24409,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input item, in the order of the input. On a dry run an element that has a stored IFC classification reference of the given classification (and identification, when given) gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -24226,7 +24425,7 @@ var gCommands = [{
             },{
                 "name": "RemoveIFCPropertiesOfElements",
                 "version": "1.7.3",
-                "description": "Removes local IFC properties, given by property set and property name, from elements. Available only in Archicad 25, 26 and 27 for now.",
+                "description": "Removes local IFC properties, given by property set and property name, from elements. Available only in Archicad 25, 26 and 27 for now. With dryRun true nothing is removed and no undo step is created: the response has dryRun set to true, and each element that has the local IFC property gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -24236,6 +24435,9 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/ElementIFCPropertyRemoval"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -24246,8 +24448,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input item, in the order of the input. On a dry run an element that has the local IFC property gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -24257,7 +24463,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetIFCSpatialStructure",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the IfcProject, IfcSite and IfcBuilding objects of the project's IFC model (hash value, IFC type and GlobalId), and for the given elements the index of the story they are assigned to in the IFC model. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -24291,21 +24497,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elementId": {
-                                    "$ref": "#/ElementId"
-                                },
-                                "storyIndex": {
-                                    "type": "integer",
-                                    "description": "The index of the story the element is assigned to in the IFC model."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elementId",
-                                "storyIndex"
-                            ]
+                            "$ref": "#/IFCSpatialStructureOfElement"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -24318,7 +24510,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetIFCAssignments",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the IFC assignments of the project: the root IFC groups, and for each object the objects assigned to it (children) and the objects it is assigned to (parents). Each object is given by its hash value, its element where it belongs to one, its IFC type and its GlobalId. Available from Archicad 28.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -24335,46 +24527,14 @@ var gCommands = [{
                 "type": "array",
                 "description": "Each IFC object that has objects assigned to it, with those objects.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "object": {
-                            "$ref": "#/IFCObject"
-                        },
-                        "children": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/IFCObject"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "object",
-                        "children"
-                    ]
+                    "$ref": "#/IFCObjectWithChildren"
                 }
             },
             "parentObjects": {
                 "type": "array",
                 "description": "Each IFC object that is assigned to other objects, with those objects.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "object": {
-                            "$ref": "#/IFCObject"
-                        },
-                        "parents": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/IFCObject"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "object",
-                        "parents"
-                    ]
+                    "$ref": "#/IFCObjectWithParents"
                 }
             }
         },
@@ -24460,17 +24620,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "A list of embedded library items to delete.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "The relative path of the library item inside the embedded library, the same path AddFilesToEmbeddedLibrary takes as outputPath."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "path"
-                    ]
+                    "$ref": "#/EmbeddedLibraryItem"
                 }
             }
         },
@@ -24502,122 +24652,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to create in the embedded library.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the new library part, as shown in the library and used by CreateObjects as libraryPartName."
-                        },
-                        "parentId": {
-                            "type": "string",
-                            "description": "The parent subtype of the new library part: its unique ID ('{main}-{revision}') or its main GUID, as GetAvailableLibraryParts reports it. Either parentId or parentName is required."
-                        },
-                        "parentName": {
-                            "type": "string",
-                            "description": "The document name of the parent subtype, e.g. 'General Object' or 'General Label' from the Archicad Library; used when parentId is not given."
-                        },
-                        "type": {
-                            "$ref": "#/LibraryPartType",
-                            "description": "Optional. The type of the new library part. By default the type of the parent found by parentName or by a parentId GUID, and Object otherwise."
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "Optional. The relative path of the .gsm file inside the embedded library, the same kind of path AddFilesToEmbeddedLibrary takes as outputPath. By default '<name>.gsm'."
-                        },
-                        "a": {
-                            "type": "number",
-                            "description": "Optional. The default value of the A (X size) parameter. 1.0 by default."
-                        },
-                        "b": {
-                            "type": "number",
-                            "description": "Optional. The default value of the B (Y size) parameter. 1.0 by default."
-                        },
-                        "masterScript": {
-                            "type": "string",
-                            "description": "Optional. The GDL master script."
-                        },
-                        "script2D": {
-                            "type": "string",
-                            "description": "Optional. The GDL 2D script."
-                        },
-                        "script3D": {
-                            "type": "string",
-                            "description": "Optional. The GDL 3D script."
-                        },
-                        "parameterScript": {
-                            "type": "string",
-                            "description": "Optional. The GDL parameter script (value lists, locks, hiding)."
-                        },
-                        "uiScript": {
-                            "type": "string",
-                            "description": "Optional. The GDL user interface script."
-                        },
-                        "propertiesScript": {
-                            "type": "string",
-                            "description": "Optional. The GDL properties (component listing) script."
-                        },
-                        "parameters": {
-                            "type": "array",
-                            "description": "Optional. The parameters of the library part besides A and B, in the order they appear in the settings dialog. Only simple (non-array) parameters can be defined.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "description": "The GDL variable name of the parameter (at most 31 characters)."
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "The type of the parameter, named as GetGDLParametersOfElements reports it.",
-                                        "enum": [
-                                            "Integer",
-                                            "Length",
-                                            "Angle",
-                                            "RealNumber",
-                                            "LightSwitch",
-                                            "RGBColor",
-                                            "Intensity",
-                                            "LineType",
-                                            "Material",
-                                            "FillPattern",
-                                            "PenColor",
-                                            "String",
-                                            "Boolean",
-                                            "Separator",
-                                            "Title",
-                                            "BuildingMaterial",
-                                            "Profile"
-                                        ]
-                                    },
-                                    "value": {
-                                        "description": "Optional. The default value: a number for the numeric and attribute index types, a string for String and Title, true or false for Boolean, 'On' or 'Off' for LightSwitch.",
-                                        "oneOf": [
-                                            { "type": "number" },
-                                            { "type": "string" },
-                                            { "type": "boolean" }
-                                        ]
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "Optional. The display name of the parameter in the settings dialog."
-                                    },
-                                    "isHidden": {
-                                        "type": "boolean",
-                                        "description": "Optional. When true, the parameter is hidden from the settings dialog. False by default."
-                                    }
-                                },
-                                "additionalProperties": false,
-                                "required": [
-                                    "name",
-                                    "type"
-                                ]
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name"
-                    ]
+                    "$ref": "#/LibraryPartData"
                 }
             },
             "overwriteExisting": {
@@ -24639,37 +24674,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the created library part."
-                                },
-                                "unId": {
-                                    "type": "string",
-                                    "description": "The unique ID of the created library part ('{main}-{revision}'), usable as parentId of further library parts."
-                                },
-                                "guid": {
-                                    "type": "string",
-                                    "description": "The main GUID of the created library part, as GetAvailableLibraryParts reports it."
-                                },
-                                "index": {
-                                    "type": "integer",
-                                    "description": "The index of the created library part in the loaded libraries."
-                                },
-                                "path": {
-                                    "type": "string",
-                                    "description": "The relative path of the .gsm file inside the embedded library; DeleteEmbeddedLibraryItems takes it as path."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "name",
-                                "unId",
-                                "guid",
-                                "index",
-                                "path"
-                            ]
+                            "$ref": "#/LibraryPartCreationDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -24802,19 +24807,7 @@ var gCommands = [{
             "libraryParts": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "guid": { "type": "string" },
-                        "index": { "type": "integer" },
-                        "documentName": { "type": "string" },
-                        "fileName": { "type": "string" },
-                        "typeId": { "$ref": "#/LibraryPartType" },
-                        "type": {
-                            "type": "string",
-                            "enum": ["Object", "Image", "Text", "BinaryListCrit", "Other"],
-                            "description": "The kind of the library part file: a GDL object, an image, a text file, a binary list criteria file or other. Available from Archicad 28; missing when it cannot be read."
-                        }
-                    }
+                    "$ref": "#/AvailableLibraryPart"
                 }
             },
             "skippedCount": {
@@ -24825,11 +24818,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "First five failed indices with their ACAPI error code, for diagnostic.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": { "type": "integer" },
-                        "code": { "type": "integer" }
-                    }
+                    "$ref": "#/SkippedLibraryPart"
                 }
             }
         },
@@ -24838,7 +24827,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartSections",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Lists the sections of library parts given by index: their four-character type code, sub-identifier, size and whether they are text (scripts, comments) or binary (previews).",
                 "inputScheme": {
         "type": "object",
@@ -24847,21 +24836,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to list the sections of.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of a loaded library part, as GetAvailableLibraryParts returns it."
-                        },
-                        "password": {
-                            "type": "string",
-                            "description": "The password of a protected library part. Needed to read the size of its protected sections."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "index"
-                    ]
+                    "$ref": "#/LibraryPartIndexAndPassword"
                 }
             }
         },
@@ -24879,48 +24854,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "index": {
-                                    "type": "integer",
-                                    "description": "The index of the library part."
-                                },
-                                "sections": {
-                                    "type": "array",
-                                    "description": "The sections of the library part, in the order Archicad lists them.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "sectionType": {
-                                                "type": "string",
-                                                "description": "The four-character code of the section type, as GetLibraryPartSection takes it."
-                                            },
-                                            "subIdent": {
-                                                "type": "integer",
-                                                "description": "The sub-identifier that tells apart sections of the same type."
-                                            },
-                                            "size": {
-                                                "type": "integer",
-                                                "description": "The size of the section content in bytes. Missing when Archicad could not read the section, for example a protected one without its password."
-                                            },
-                                            "isText": {
-                                                "type": "boolean",
-                                                "description": "True when Archicad returns the section as text (scripts, comments), which GetLibraryPartSection reads. Binary sections, such as previews, are only listed. Missing when Archicad could not read the section."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "sectionType",
-                                            "subIdent"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "index",
-                                "sections"
-                            ]
+                            "$ref": "#/LibraryPartSections"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -24936,7 +24870,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartSection",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Reads the text of a text section (a script or the comment) of a library part given by index, without opening it in the GDL editor. Takes the password of a protected library part.",
                 "inputScheme": {
         "type": "object",
@@ -24983,7 +24917,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibrariesOfLibParts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the library of each given library part (by file name or guid): display name, location, embedded/built-in/package/local/missing flags and the Library Manager tree path. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -24992,18 +24926,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Library parts to look up, each given by exactly one of name and guid.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "File name of the library part with extension (the fileName GetAvailableLibraryParts returns). Fails when it is ambiguous."
-                        },
-                        "guid": {
-                            "type": "string",
-                            "description": "The guid GetAvailableLibraryParts returns."
-                        }
-                    },
-                    "additionalProperties": false
+                    "$ref": "#/LibraryPartNameOrGuid"
                 }
             }
         },
@@ -25017,33 +24940,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "One entry per input library part, in the same order.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "library": {
-                            "type": "object",
-                            "properties": {
-                                "displayName": { "type": "string" },
-                                "path": { "type": "string" },
-                                "isEmbedded": { "type": "boolean" },
-                                "isBuiltIn": { "type": "boolean" },
-                                "isPackage": { "type": "boolean" },
-                                "isLocal": { "type": "boolean" },
-                                "isMissing": { "type": "boolean" }
-                            }
-                        },
-                        "libraryTreePath": {
-                            "type": "array",
-                            "description": "The path in the Library Manager tree, not a physical location.",
-                            "items": { "type": "string" }
-                        },
-                        "error": {
-                            "type": "object",
-                            "properties": {
-                                "code": { "type": "integer" },
-                                "message": { "type": "string" }
-                            }
-                        }
-                    }
+                    "$ref": "#/LibraryOfLibraryPart"
                 }
             }
         },
@@ -25052,7 +24949,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartTypeDetails",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the type details of the given library parts (ACAPI_LibraryPart_GetDetails): full unique ID and its direct parent's, type, the detail flags of objects, lamps, labels and zones, the frame and orientation settings of doors and windows, and the element type and variation of the tool that places the library part. For their path, library, GUID, license and scripts see GetLibraryPartDetails.",
                 "inputScheme": {
         "type": "object",
@@ -25090,30 +24987,10 @@ var gCommands = [{
                                 "isPlaceable": { "type": "boolean" },
                                 "isTemplate": { "type": "boolean" },
                                 "objectDetails": {
-                                    "type": "object",
-                                    "description": "The detail flags of an Object, Lamp, Label or Room library part.",
-                                    "properties": {
-                                        "fixSize": { "type": "boolean" },
-                                        "autoHotspot": { "type": "boolean" }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [ "fixSize", "autoHotspot" ]
+                                    "$ref": "#/LibraryPartObjectDetails"
                                 },
                                 "doorWindowDetails": {
-                                    "type": "object",
-                                    "description": "The details of a Door or Window library part.",
-                                    "properties": {
-                                        "mirThick": { "type": "number" },
-                                        "wallInset": { "type": "number" },
-                                        "leftFram": { "type": "number" },
-                                        "righFram": { "type": "number" },
-                                        "topFram": { "type": "number" },
-                                        "botFram": { "type": "number" },
-                                        "orientation": { "type": "integer", "description": "The orientation setting (API_Orient value) of the door or window." },
-                                        "contours3D": { "type": "boolean" }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [ "mirThick", "wallInset", "leftFram", "righFram", "topFram", "botFram", "orientation", "contours3D" ]
+                                    "$ref": "#/LibraryPartDoorWindowDetails"
                                 },
                                 "creatorElementType": { "$ref": "#/ElementType", "description": "The type of the element the library part is placed as (its creator tool). Missing when Archicad does not report one." },
                                 "creatorVariation": { "type": "string", "description": "The four character variation ID of the creator tool, when it is not the generic variation." }
@@ -25135,7 +25012,7 @@ var gCommands = [{
     }
             },{
                 "name": "IsLibraryPartSubtypeOf",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Checks for each of the given library parts whether the given ancestor is anywhere up its subtype hierarchy (e.g. whether a part is a kind of furniture), independent of its name. A library part is not a subtype of itself. With matchAncestorByMainId any revision of the ancestor matches.",
                 "inputScheme": {
         "type": "object",
@@ -25198,7 +25075,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetGDLParametersOfLibraryParts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the default GDL parameters (name, display name, type, array dimensions, value, flags) of the given library parts by name, read from the library part without placing it or changing any defaults. The output is in the format of GetGDLParametersOfElements, without isLocked and possibleValues, which need a placed element. To read a part by its file name, as SetLibraryPartParameters writes it, use GetLibraryPartParameterValues.",
                 "inputScheme": {
     "type": "object",
@@ -25334,7 +25211,7 @@ var gCommands = [{
 }
             },{
                 "name": "GetMissingLibPartNames",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the library part name of the given placed Object, Lamp, Window or Door elements, even if the library containing the part is not loaded. Use it to find the parts of elements that are shown as dots because their library part is missing.",
                 "inputScheme": {
         "type": "object",
@@ -25358,21 +25235,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elementId": {
-                                    "$ref": "#/ElementId"
-                                },
-                                "libPartName": {
-                                    "type": "string",
-                                    "description": "The name of the element's library part, also when the library containing it is not loaded."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elementId",
-                                "libPartName"
-                            ]
+                            "$ref": "#/MissingLibraryPartName"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -25387,21 +25250,68 @@ var gCommands = [{
         ]
     }
             },{
+                "name": "GetUnusedLibraryParts",
+                "version": "2.0.0",
+                "description": "Lists the loaded library parts that no element of the project is placed from. Read only. The Archicad API does not tell which library parts are used, so every element of the floor plan and of every view and layout is checked: objects, lamps, doors, windows, skylights, zone stamps, symbol labels, drawing titles, curtain wall parts, and the markers of doors, windows, skylights, sections, elevations, details and worksheets. A library part used only in another way (called as a macro, linked as a property object, as an interior elevation marker, in stairs and railings, in the tool defaults or in Favorites) is listed as unused. Library parts that cannot be placed (e.g. macros) are only listed with includeNotPlaceable.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "filterByTypeId": {
+                "$ref": "#/LibraryPartType",
+                "description": "Optional. Only list the unused library parts of this type (the typeId of GetAvailableLibraryParts)."
+            },
+            "includeNotPlaceable": {
+                "type": "boolean",
+                "description": "Also list the library parts that cannot be placed (macros, pictures, property objects, list schemes and the like), which are never placed on their own. Default: false."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "unusedLibraryParts": {
+                "type": "array",
+                "description": "The loaded library parts that no element of the project is placed from, in index order.",
+                "items": {
+                    "$ref": "#/UnusedLibraryPart"
+                }
+            },
+            "usedLibraryPartCount": {
+                "type": "integer",
+                "description": "The number of different loaded library parts that are placed in the project."
+            },
+            "scannedElementCount": {
+                "type": "integer",
+                "description": "The number of elements checked, in the floor plan and every view and layout database."
+            },
+            "complete": {
+                "type": "boolean",
+                "description": "False when a view or layout database or a library part could not be read (see warnings): then a listed library part may still be used."
+            },
+            "warnings": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "unusedLibraryParts",
+            "usedLibraryPartCount",
+            "scannedElementCount",
+            "complete",
+            "warnings"
+        ]
+    }
+            },{
                 "name": "FindLibraryParts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Finds loaded library parts with the Library Manager: all of them, GDL objects, images or text files, optionally only those whose name contains a text. Returns the name, path and index of each. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "kind": {
-                "type": "string",
-                "enum": [
-                    "All",
-                    "Object",
-                    "Image",
-                    "Text"
-                ],
-                "description": "Optional. Which library parts to find: all of them (default), GDL objects, images or text files, as selected by the Library Manager's own selectors."
+                "$ref": "#/LibraryPartKind"
             },
             "nameContains": {
                 "type": "string",
@@ -25421,22 +25331,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The matching library parts.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the library part."
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "The location of the library part file."
-                        },
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of the library part in the loaded libraries."
-                        }
-                    },
-                    "additionalProperties": false
+                    "$ref": "#/FoundLibraryPart"
                 }
             }
         },
@@ -25447,7 +25342,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartDetails",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the details of loaded library parts, by name or index: path, library tree path, containing library, and for GDL objects the GUID, subtype, license, UI default flag, which scripts and pictures they have, and optionally the interface and migration scripts. Can also tell whether each one is in the subtype of another library part. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -25456,34 +25351,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to read, each by its name or by its index.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the loaded library part file with its extension, as returned in the fileName field of GetAvailableLibraryParts or the name field of FindLibraryParts (e.g. 'Door 26.gsm')."
-                        },
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of the library part, as returned by FindLibraryParts."
-                        },
-                        "password": {
-                            "type": "string",
-                            "description": "Optional. The password of a password protected library part, used to read its scripts."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "oneOf": [
-                        {
-                            "required": [
-                                "name"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "index"
-                            ]
-                        }
-                    ]
+                    "$ref": "#/LibraryPartNameOrIndex"
                 }
             },
             "subTypeOf": {
@@ -25510,186 +25378,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the library part."
-                                },
-                                "path": {
-                                    "type": "string",
-                                    "description": "The location of the library part file."
-                                },
-                                "index": {
-                                    "type": "integer",
-                                    "description": "The index of the library part in the loaded libraries."
-                                },
-                                "libraryTreePath": {
-                                    "type": "object",
-                                    "description": "The place of the library part in the library tree.",
-                                    "properties": {
-                                        "parts": {
-                                            "type": "array",
-                                            "description": "The names along the path, from the root.",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "lastPart": {
-                                            "type": "string",
-                                            "description": "The last name of the path."
-                                        },
-                                        "isRoot": {
-                                            "type": "boolean",
-                                            "description": "True if the path is the root of the library tree."
-                                        },
-                                        "parentParts": {
-                                            "type": "array",
-                                            "description": "The names along the path of the parent, from the root. Omitted for the root.",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "teamworkId": {
-                                            "type": "string",
-                                            "description": "The Teamwork identifier of the path. Omitted when Archicad has none for it, e.g. outside Teamwork."
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "parts",
-                                        "lastPart",
-                                        "isRoot"
-                                    ]
-                                },
-                                "library": {
-                                    "type": "object",
-                                    "description": "The library containing the library part.",
-                                    "properties": {
-                                        "name": {
-                                            "type": "string",
-                                            "description": "The name of the library."
-                                        },
-                                        "localizedName": {
-                                            "type": "string",
-                                            "description": "The localized name of the library, when it has one. Archicad 29 or newer."
-                                        },
-                                        "path": {
-                                            "type": "string",
-                                            "description": "The location of the library."
-                                        },
-                                        "isServer": {
-                                            "type": "boolean",
-                                            "description": "True if it is a Teamwork server library."
-                                        },
-                                        "twServerPath": {
-                                            "type": "string",
-                                            "description": "The path of the library on the Teamwork server. Only for server libraries."
-                                        },
-                                        "twServerUrl": {
-                                            "type": "string",
-                                            "description": "The URL of the Teamwork server. Only for server libraries."
-                                        }
-                                    },
-                                    "additionalProperties": false
-                                },
-                                "gsmObject": {
-                                    "type": "object",
-                                    "description": "The GDL object data. Omitted for a library part that is not a GDL object, e.g. an image.",
-                                    "properties": {
-                                        "guid": {
-                                            "type": "string",
-                                            "description": "The main GUID of the library part, the guid field of GetAvailableLibraryParts."
-                                        },
-                                        "isSubType": {
-                                            "type": "boolean",
-                                            "description": "True if the library part is a subtype other library parts can be derived from."
-                                        },
-                                        "subTypeGuid": {
-                                            "type": "string",
-                                            "description": "The main GUID of the subtype (parent) of the library part."
-                                        },
-                                        "isInSubTypeOf": {
-                                            "type": "boolean",
-                                            "description": "True if the library part is in the subtype given by subTypeOf. Only when subTypeOf is given."
-                                        },
-                                        "isUIDefault": {
-                                            "type": "boolean",
-                                            "description": "True if the library part is marked as the default user interface (UI default)."
-                                        },
-                                        "license": {
-                                            "type": "string",
-                                            "description": "The license of the library part."
-                                        },
-                                        "licenseVersion": {
-                                            "type": "string",
-                                            "description": "The version of the license of the library part."
-                                        },
-                                        "contents": {
-                                            "type": "object",
-                                            "description": "Which sections the library part has.",
-                                            "properties": {
-                                                "interfaceScript": {
-                                                    "type": "boolean"
-                                                },
-                                                "forwardMigrationScript": {
-                                                    "type": "boolean"
-                                                },
-                                                "backwardMigrationScript": {
-                                                    "type": "boolean"
-                                                },
-                                                "2dVectorImage": {
-                                                    "type": "boolean"
-                                                },
-                                                "previewPicture": {
-                                                    "type": "boolean"
-                                                },
-                                                "gdlPictures": {
-                                                    "type": "boolean"
-                                                },
-                                                "darkPreviewPicture": {
-                                                    "type": "boolean",
-                                                    "description": "Archicad 29 or newer."
-                                                },
-                                                "darkGdlPictures": {
-                                                    "type": "boolean",
-                                                    "description": "Archicad 29 or newer."
-                                                }
-                                            },
-                                            "additionalProperties": false,
-                                            "required": [
-                                                "interfaceScript",
-                                                "forwardMigrationScript",
-                                                "backwardMigrationScript",
-                                                "2dVectorImage",
-                                                "previewPicture",
-                                                "gdlPictures"
-                                            ]
-                                        },
-                                        "scripts": {
-                                            "type": "object",
-                                            "description": "The scripts of the library part. Only when includeScripts is true. A script is omitted when the library part has none or it cannot be read, e.g. without the right password.",
-                                            "properties": {
-                                                "interface": {
-                                                    "type": "string"
-                                                },
-                                                "forwardMigration": {
-                                                    "type": "string"
-                                                },
-                                                "backwardMigration": {
-                                                    "type": "string"
-                                                }
-                                            },
-                                            "additionalProperties": false
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "contents"
-                                    ]
-                                }
-                            },
-                            "additionalProperties": false
+                            "$ref": "#/LibraryPartDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -25705,7 +25394,7 @@ var gCommands = [{
     }
             },{
                 "name": "ModifyLibraryList",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Adds libraries by path and removes loaded libraries by name or path, in one change of the library list. Returns the result of each addition and removal. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -25721,30 +25410,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Loaded libraries to remove, each by its name or by its path.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the library, as returned by GetLibraries."
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "The absolute path of the library, as returned by GetLibraries."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "oneOf": [
-                        {
-                            "required": [
-                                "name"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "path"
-                            ]
-                        }
-                    ]
+                    "$ref": "#/LibraryToRemove"
                 }
             }
         },
@@ -25769,7 +25435,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartMetadata",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the description, keywords, author and placeable, password protected and hierarchical pages flags of loaded library parts, given by file name. Use it to search library parts by description or keywords and to tell placeable parts from macros. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -25778,17 +25444,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to read the metadata of.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the loaded library part file with its extension, as returned in the fileName field of GetAvailableLibraryParts (e.g. 'Door 26.gsm')."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name"
-                    ]
+                    "$ref": "#/LibraryPartName"
                 }
             }
         },
@@ -25807,42 +25463,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "description": {
-                                    "type": "string",
-                                    "description": "The description of the library part."
-                                },
-                                "keywords": {
-                                    "type": "string",
-                                    "description": "The keywords of the library part as stored, usually a comma separated list used for searching."
-                                },
-                                "author": {
-                                    "type": "string",
-                                    "description": "The author of the library part."
-                                },
-                                "isPlaceable": {
-                                    "type": "boolean",
-                                    "description": "True if the library part can be placed in the plan; false e.g. for macros."
-                                },
-                                "isPasswordProtected": {
-                                    "type": "boolean",
-                                    "description": "True if the library part is password protected and encrypted."
-                                },
-                                "isHierarchicalPagesUsed": {
-                                    "type": "boolean",
-                                    "description": "True if the user interface of the library part uses hierarchical pages."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "description",
-                                "keywords",
-                                "author",
-                                "isPlaceable",
-                                "isPasswordProtected",
-                                "isHierarchicalPagesUsed"
-                            ]
+                            "$ref": "#/LibraryPartMetadataDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -25867,17 +25488,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to look up.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of the library part, as returned by GetAvailableLibraryParts."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "index"
-                    ]
+                    "$ref": "#/LibraryPartByIndex"
                 }
             }
         },
@@ -25896,17 +25507,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The path of the file the library part originally came from, e.g. before it was embedded into the project."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "path"
-                            ]
+                            "$ref": "#/LibraryPartOriginalLocation"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -25958,16 +25559,55 @@ var gCommands = [{
     }
             },{
                 "name": "GetGDLDate",
-                "version": "1.8.1",
-                "description": "Gets the date GDL scripts see, as the integer value the Archicad API returns.",
+                "version": "2.0.0",
+                "description": "Gets the date GDL scripts see: year, month, day, hour, minute and second.",
                 "inputScheme": null,
                 "outputScheme": {
         "type": "object",
         "properties": {
             "date": {
+        "type": "object",
+        "description": "The date GDL scripts see.",
+        "properties": {
+            "year": {
+                "type": "integer"
+            },
+            "month": {
                 "type": "integer",
-                "description": "The date GDL scripts see, as the Int32 value of ACAPI_LibraryManagement_GetGDLDate."
+                "minimum": 1,
+                "maximum": 12
+            },
+            "day": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31
+            },
+            "hour": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+            },
+            "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
+            },
+            "second": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
             }
+        },
+        "additionalProperties": false,
+        "required": [
+            "year",
+            "month",
+            "day",
+            "hour",
+            "minute",
+            "second"
+        ]
+    }
         },
         "additionalProperties": false,
         "required": [
@@ -25976,15 +25616,54 @@ var gCommands = [{
     }
             },{
                 "name": "SetGDLDate",
-                "version": "1.8.1",
-                "description": "Sets the date GDL scripts see, in the integer format GetGDLDate returns. Useful to test date-dependent library parts; set the value read with GetGDLDate back to restore it.",
+                "version": "2.0.0",
+                "description": "Sets the date GDL scripts see: year, month, day, hour, minute and second, as GetGDLDate returns them. Useful to test date-dependent library parts; set the value read with GetGDLDate back to restore it.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "date": {
+        "type": "object",
+        "description": "The date GDL scripts should see, in the format GetGDLDate returns.",
+        "properties": {
+            "year": {
+                "type": "integer"
+            },
+            "month": {
                 "type": "integer",
-                "description": "The date GDL scripts should see, in the same Int32 format GetGDLDate returns."
+                "minimum": 1,
+                "maximum": 12
+            },
+            "day": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31
+            },
+            "hour": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+            },
+            "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
+            },
+            "second": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
             }
+        },
+        "additionalProperties": false,
+        "required": [
+            "year",
+            "month",
+            "day",
+            "hour",
+            "minute",
+            "second"
+        ]
+    }
         },
         "additionalProperties": false,
         "required": [
@@ -26021,80 +25700,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to modify, with the scripts to set and to delete in each.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the loaded library part file with its extension, as returned in the fileName field of GetAvailableLibraryParts (e.g. 'My Door.gsm')."
-                        },
-                        "scripts": {
-                            "type": "object",
-                            "description": "Optional. The scripts to set. Only the scripts given here are changed, the others are kept. An empty string makes that script section empty, it does not delete it; use deleteScripts for that.",
-                            "properties": {
-                                "master": {
-                                    "type": "string",
-                                    "description": "The master script."
-                                },
-                                "parameter": {
-                                    "type": "string",
-                                    "description": "The parameter script."
-                                },
-                                "2d": {
-                                    "type": "string",
-                                    "description": "The 2D script."
-                                },
-                                "3d": {
-                                    "type": "string",
-                                    "description": "The 3D script."
-                                },
-                                "properties": {
-                                    "type": "string",
-                                    "description": "The properties script."
-                                },
-                                "interface": {
-                                    "type": "string",
-                                    "description": "The interface (user interface) script."
-                                },
-                                "forwardMigration": {
-                                    "type": "string",
-                                    "description": "The forward migration script."
-                                },
-                                "backwardMigration": {
-                                    "type": "string",
-                                    "description": "The backward migration script."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "minProperties": 1
-                        },
-                        "deleteScripts": {
-                            "type": "array",
-                            "description": "Optional. The script sections to delete from the library part. A script cannot be both set in scripts and deleted here.",
-                            "items": {
-                                "type": "string",
-                                "enum": [
-                                    "master",
-                                    "parameter",
-                                    "2d",
-                                    "3d",
-                                    "properties",
-                                    "interface",
-                                    "forwardMigration",
-                                    "backwardMigration"
-                                ]
-                            },
-                            "minItems": 1,
-                            "uniqueItems": true
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name"
-                    ],
-                    "anyOf": [
-                        { "required": ["scripts"] },
-                        { "required": ["deleteScripts"] }
-                    ]
+                    "$ref": "#/LibraryPartScriptsUpdate"
                 }
             }
         },
@@ -26126,62 +25732,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to modify and the metadata to set in each.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the loaded library part file with its extension, as returned in the fileName field of GetAvailableLibraryParts (e.g. 'My Door.gsm')."
-                        },
-                        "metadata": {
-                            "type": "object",
-                            "description": "The metadata to set. Only the fields given here are changed, the others are kept.",
-                            "properties": {
-                                "author": {
-                                    "type": "string",
-                                    "description": "The author of the library part."
-                                },
-                                "keywords": {
-                                    "type": "string",
-                                    "description": "The keywords of the library part."
-                                },
-                                "license": {
-                                    "type": "string",
-                                    "description": "The license of the library part."
-                                },
-                                "licenseVersion": {
-                                    "type": "string",
-                                    "description": "The version of the license."
-                                },
-                                "password": {
-                                    "type": "string",
-                                    "description": "The new password of the library part."
-                                },
-                                "placeable": {
-                                    "type": "boolean",
-                                    "description": "Whether the library part can be placed in the project."
-                                },
-                                "uiDefault": {
-                                    "type": "boolean",
-                                    "description": "The UI Default flag of the library part."
-                                },
-                                "isSubtype": {
-                                    "type": "boolean",
-                                    "description": "Whether the library part is a subtype template."
-                                },
-                                "hierarchicalPagesUsed": {
-                                    "type": "boolean",
-                                    "description": "Whether the library part uses hierarchical pages in its user interface."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "minProperties": 1
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "metadata"
-                    ]
+                    "$ref": "#/LibraryPartMetadataUpdate"
                 }
             }
         },
@@ -26454,7 +26005,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartParameterValues",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the parameters of loaded library parts, given by their file name as GetAvailableLibraryParts returns it, with their default values and descriptions, in the format of GetGDLParametersOfElements: the read counterpart of SetLibraryPartParameters. Unlike GetGDLParametersOfLibraryParts, which finds a part by its name and also returns the index, flags and value descriptions of each parameter, it reads through the Library Manager. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -26492,57 +26043,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "The name of the library part, as given."
-                                },
-                                "parameters": {
-                                    "type": "array",
-                                    "description": "The parameters of the library part with their default values, in the format of GetGDLParametersOfElements. Separators, titles and dictionary parameters have no value here and are left out.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "name": {
-                                                "type": "string",
-                                                "description": "The name of the parameter."
-                                            },
-                                            "type": {
-                                                "type": "string",
-                                                "enum": ["Integer", "Length", "Angle", "RealNumber", "LightSwitch", "RGBColor", "Intensity", "LineType", "Material", "FillPattern", "PenColor", "String", "Boolean", "BuildingMaterial", "Profile"],
-                                                "description": "The type of the parameter."
-                                            },
-                                            "dimension1": {
-                                                "type": "integer",
-                                                "description": "The 1st dimension of an array parameter."
-                                            },
-                                            "dimension2": {
-                                                "type": "integer",
-                                                "description": "The 2nd dimension of an array parameter, 1 for a one-dimensional array."
-                                            },
-                                            "value": {
-                                                "description": "The default value of the parameter: a number, a boolean, a string, or 'On' or 'Off' for a LightSwitch. Angles are in radians. For an array parameter, a list of its dimension1 x dimension2 items, the first index outer."
-                                            },
-                                            "description": {
-                                                "type": "string",
-                                                "description": "The description of the parameter, the text shown for it in the settings dialog. Missing when Archicad gives no description for it."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "name",
-                                            "type",
-                                            "value"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "name",
-                                "parameters"
-                            ]
+                            "$ref": "#/LibraryPartParameterValues"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -26558,7 +26059,7 @@ var gCommands = [{
     }
             },{
                 "name": "UpdateLibraryPartSections",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Replaces the text of existing sections (scripts, comment, keywords, copyright) of a loaded library part, found by its name. Each section is read back after the update, and the output has one execution result per section.",
                 "inputScheme": {
         "type": "object",
@@ -26627,7 +26128,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPart2DPrimitives",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the lines, arcs and polygons (with their holes, and whether they are fills) of the 2D symbol of a loaded library part, drawn with its default parameters or with the parameters of a placed instance.",
                 "inputScheme": {
         "type": "object",
@@ -26742,7 +26243,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetLibraryPartPictureImages",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets the preview picture and the GDL pictures of a loaded library part from base64 encoded PNGs, and from Archicad 29 also their dark user interface variants. All pictures are set in one step; an invalid picture changes nothing. A library part that is not editable is refused and left unchanged. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -26786,7 +26287,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetLibraryPartParameters",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets the parameter values, and optionally the parameter descriptions, of loaded library parts, in the format of SetGDLParametersOfElements. Only the given parameters are changed; with merge, the changed list is merged into the parameters of the part instead of replacing them. A library part that is not editable, or with an invalid value given, is left unchanged. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -26866,7 +26367,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartScripts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the master, parameter, 2D, 3D and properties scripts of loaded library parts, given by name or by an element placed from them, with the unique ID of each part. A script section the part does not have is reported as not present. Password protected parts need their password. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -26910,14 +26411,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The scripts to read. All five by default.",
                 "items": {
-                    "type": "string",
-                    "enum": [
-                        "master",
-                        "parameter",
-                        "2d",
-                        "3d",
-                        "properties"
-                    ]
+                    "$ref": "#/LibraryPartReadableScriptType"
                 },
                 "minItems": 1
             },
@@ -26941,43 +26435,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "libraryPartName": {
-                                    "type": "string",
-                                    "description": "The name of the library part file with its extension."
-                                },
-                                "unID": {
-                                    "type": "string",
-                                    "description": "The unique ID of the library part, its main and revision GUID."
-                                },
-                                "scripts": {
-                                    "type": "object",
-                                    "description": "The requested scripts, by the keys used in the input.",
-                                    "additionalProperties": {
-                                        "type": "object",
-                                        "properties": {
-                                            "present": {
-                                                "type": "boolean",
-                                                "description": "Whether the library part has this script section."
-                                            },
-                                            "script": {
-                                                "type": "string",
-                                                "description": "The script text. Left out when the section is not present."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "present"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "libraryPartName",
-                                "scripts"
-                            ]
+                            "$ref": "#/LibraryPartScriptsDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -26993,7 +26451,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartFileInfo",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Reads library part files (.gsm) without loading them into the libraries of the project: the unique ID of the part, the unique ID of its subtype and its master, parameter, 2D, 3D and properties scripts. Password protected parts need their password. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -27009,14 +26467,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The scripts to read. All five by default.",
                 "items": {
-                    "type": "string",
-                    "enum": [
-                        "master",
-                        "parameter",
-                        "2d",
-                        "3d",
-                        "properties"
-                    ]
+                    "$ref": "#/LibraryPartReadableScriptType"
                 },
                 "minItems": 1
             },
@@ -27040,47 +26491,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The path of the file, as given in the input."
-                                },
-                                "unID": {
-                                    "type": "string",
-                                    "description": "The unique ID of the library part, its main and revision GUID."
-                                },
-                                "subTypeUnID": {
-                                    "type": "string",
-                                    "description": "The unique ID of the subtype the library part belongs to."
-                                },
-                                "scripts": {
-                                    "type": "object",
-                                    "description": "The requested scripts, by the keys used in the input.",
-                                    "additionalProperties": {
-                                        "type": "object",
-                                        "properties": {
-                                            "present": {
-                                                "type": "boolean",
-                                                "description": "Whether the library part has this script section."
-                                            },
-                                            "script": {
-                                                "type": "string",
-                                                "description": "The script text. Left out when the section is not present."
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "present"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "path",
-                                "scripts"
-                            ]
+                            "$ref": "#/LibraryPartFileInfo"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -27096,7 +26507,7 @@ var gCommands = [{
     }
             },{
                 "name": "CopyLibraryParts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Copies loaded library parts, given by name or by an element placed from them, under a new file name into a folder, by default the embedded library. The copy gets a new unique ID unless the main GUID is kept. An existing file is never overwritten. The libraries are reloaded once afterwards, so the copies can be found by name. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -27105,34 +26516,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts to copy, each given by its name or by an element placed from it, with the name of the copy.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "libraryPartName": {
-                            "type": "string",
-                            "description": "The name of the loaded library part file with its extension, as returned in the fileName field of GetAvailableLibraryParts (e.g. 'My Door.gsm'). Give this or elementId."
-                        },
-                        "elementId": {
-                            "$ref": "#/ElementId",
-                            "description": "An object, lamp, window, door, skylight, zone or curtain wall frame, panel, junction or accessory; the library part it is placed from is copied. Give this or libraryPartName."
-                        },
-                        "newName": {
-                            "type": "string",
-                            "description": "The file name of the copy with its extension (e.g. 'My Door copy.gsm'). It must not contain a folder.",
-                            "minLength": 1
-                        },
-                        "targetFolder": {
-                            "type": "string",
-                            "description": "Optional. The absolute path of an existing folder to put the copy into. By default the folder of the embedded library. The copy can only be found by name after the reload when the folder belongs to a loaded library."
-                        },
-                        "keepMainGuid": {
-                            "type": "boolean",
-                            "description": "Optional. When true, the copy keeps the main GUID of the original. By default false: the copy gets a new unique ID."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "newName"
-                    ]
+                    "$ref": "#/LibraryPartCopyData"
                 }
             }
         },
@@ -27151,26 +26535,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "libraryPartName": {
-                                    "type": "string",
-                                    "description": "The file name of the copy with its extension."
-                                },
-                                "unID": {
-                                    "type": "string",
-                                    "description": "The unique ID of the copy, its main and revision GUID."
-                                },
-                                "path": {
-                                    "type": "string",
-                                    "description": "The absolute path of the copy."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "libraryPartName",
-                                "path"
-                            ]
+                            "$ref": "#/CopiedLibraryPart"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -27191,7 +26556,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLibraryPartIdentities",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the unique ID (main and revision GUID), the reference GUID and the Teamwork lock status of library parts given by index or file path, and whether they are in a server library.",
                 "inputScheme": {
         "type": "object",
@@ -27200,22 +26565,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts, each given by its index or by the path of its file.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of a loaded library part, as GetAvailableLibraryParts returns it."
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "The path of a library part file, for example a .gsm file."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "oneOf": [
-                        { "required": ["index"] },
-                        { "required": ["path"] }
-                    ]
+                    "$ref": "#/LibraryPartIndexOrPath"
                 }
             }
         },
@@ -27233,44 +26583,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The path of the library part file."
-                                },
-                                "unId": {
-                                    "type": "string",
-                                    "description": "The unique ID of the library part, '{main GUID}-{revision GUID}'."
-                                },
-                                "mainGuid": {
-                                    "$ref": "#/Guid",
-                                    "description": "The main GUID of the unique ID. It stays the same across the revisions of a library part."
-                                },
-                                "revisionGuid": {
-                                    "$ref": "#/Guid",
-                                    "description": "The revision GUID of the unique ID. It changes whenever the library part is saved."
-                                },
-                                "refGuid": {
-                                    "$ref": "#/Guid",
-                                    "description": "The reference GUID of the library part file. Missing when Archicad could not tell it."
-                                },
-                                "lockStatus": {
-                                    "type": "string",
-                                    "enum": ["Free", "Editable", "Locked", "NotAvailable", "NotExist"],
-                                    "description": "The Teamwork lock status of the library part file. Missing when Archicad could not tell it."
-                                },
-                                "isServerLibraryPart": {
-                                    "type": "boolean",
-                                    "description": "True when the library part is in a BIMcloud or Teamwork server library."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "path",
-                                "unId",
-                                "isServerLibraryPart"
-                            ]
+                            "$ref": "#/LibraryPartIdentity"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -27286,7 +26599,7 @@ var gCommands = [{
     }
             },{
                 "name": "CompareLibraryPartUnIds",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Compares two library part unique IDs with Archicad's own comparison and tells whether their main and revision GUIDs are the same.",
                 "inputScheme": {
         "type": "object",
@@ -27331,7 +26644,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetLastValidEmbeddedLibraryPartName",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the name and file path of the last valid library part of the embedded library.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -27354,7 +26667,7 @@ var gCommands = [{
     }
             },{
                 "name": "SearchLibraryParts",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Finds the loaded library parts derived from an ancestor library part (by its unique ID) whose name matches a pattern with * wildcards. Archicad returns at most 50 of them.",
                 "inputScheme": {
         "type": "object",
@@ -27381,38 +26694,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The library parts found. Archicad returns at most 50.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {
-                            "type": "integer",
-                            "description": "The index of the library part, as GetAvailableLibraryParts returns it."
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the library part."
-                        },
-                        "fileName": {
-                            "type": "string",
-                            "description": "The file name of the library part."
-                        },
-                        "unId": {
-                            "type": "string",
-                            "description": "The unique ID of the library part, '{main GUID}-{revision GUID}'."
-                        },
-                        "parentUnId": {
-                            "type": "string",
-                            "description": "The unique ID of the parent of the library part."
-                        },
-                        "typeId": {
-                            "$ref": "#/LibraryPartType"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "index",
-                        "name",
-                        "unId"
-                    ]
+                    "$ref": "#/LibraryPartSearchResult"
                 }
             }
         },
@@ -27444,7 +26726,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateLibraryPartFromElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates a library part in the embedded library (or in a given local library folder, which is added to the loaded libraries when needed) whose 2D symbol is a copy of the given 2D drawing elements (lines, polylines, arcs, circles, splines, fills, texts and hotspots), under the given parent subtype, with optional master, 2D, 3D and parameter scripts, comment and keywords. A and B are taken from the extent of the symbol. The elements themselves are not changed.",
                 "inputScheme": {
         "type": "object",
@@ -27566,7 +26848,7 @@ var gCommands = [{
     }
             },{
                 "name": "InterpretGDLScript3D",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Runs a GDL 3D script, given as text or as the master and 3D scripts of a loaded library part with its default parameters, with the settings of the GDL editor, and returns whether it ran without a GDL error, how many 3D model elements it generated and their bounding box. The API returns no GDL error message or line number.",
                 "inputScheme": {
         "type": "object",
@@ -27609,7 +26891,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetGDLUserGlobals",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the current GDL global variables the GDL interpreter gets, with their names, types and values. Available from Archicad 28.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -28140,7 +27422,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetTeamworkRightsOfObjects",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns for each given object, for example an element, whether the current Teamwork user has the right to create objects of its kind and to delete or modify it.",
                 "inputScheme": {
         "type": "object",
@@ -28198,7 +27480,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetTeamworkAccessRights",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns whether the role of the current user has the given Teamwork access rights (API_TWAccessRights names without the API prefix, e.g. LayersCreate), all of them when no names are given.",
                 "inputScheme": {
         "type": "object",
@@ -28277,7 +27559,7 @@ var gCommands = [{
                 "outputScheme": null
             },{
                 "name": "GetPublisherSets",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the publisher sets of the project with their saved output: the local or LAN path, the Teamwork file server path, or the Internet host and directory name.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -28478,16 +27760,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "databaseId": { "$ref": "#/DatabaseId" },
-                                "navigatorItemId": {
-                                    "$ref": "#/NavigatorItemId",
-                                    "description": "The Project Map item of the new database, for ChangeWindow or CreateDrawings. Missing when the item could not be found."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": ["databaseId"]
+                            "$ref": "#/CreatedDatabase"
                         },
                         { "$ref": "#/ErrorItem" }
                     ]
@@ -28529,16 +27802,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "databaseId": { "$ref": "#/DatabaseId" },
-                                "navigatorItemId": {
-                                    "$ref": "#/NavigatorItemId",
-                                    "description": "The Project Map item of the new database, for ChangeWindow or CreateDrawings. Missing when the item could not be found."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": ["databaseId"]
+                            "$ref": "#/CreatedDatabase"
                         },
                         { "$ref": "#/ErrorItem" }
                     ]
@@ -28550,7 +27814,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateDetailMarkers",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Places Detail markers with their clip polygon in the current floor plan, section or elevation, each with a new Detail viewpoint, like the Detail tool. GetDetailsOfElements reads them back.",
                 "inputScheme": {
         "type": "object",
@@ -28597,7 +27861,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateWorksheetMarkers",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Places Worksheet markers with their clip polygon in the current floor plan, section or elevation, each with a new Worksheet viewpoint, like the Worksheet tool. GetDetailsOfElements reads them back.",
                 "inputScheme": {
         "type": "object",
@@ -28644,8 +27908,8 @@ var gCommands = [{
     }
             },{
                 "name": "ModifyDetailMarkers",
-                "version": "1.8.1",
-                "description": "Changes the name, the reference ID and the clip polygon of Detail and Worksheet markers.",
+                "version": "2.0.0",
+                "description": "Changes the name, the reference ID, the clip polygon, the boundary's pen and line type, the marker symbol's angle, always-horizontal setting and pen of Detail and Worksheet markers. Not written: the base point (Archicad places it at the center of the clip polygon's bounding box when the marker is created), the viewpoint the marker refers to, and the marker symbol's other settings, which are parameters of the library part placed as the marker (markerId in GetDetailsOfElements). A value Archicad did not apply gets a failed execution result.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -28667,7 +27931,12 @@ var gCommands = [{
                             "type": "array",
                             "description": "Optional arcs of the new boundary, with indices into clipPolygon.",
                             "items": { "$ref": "#/PolyArc" }
-                        }
+                        },
+                        "penIndex": { "type": "integer", "minimum": 1, "maximum": 255, "description": "The new pen of the boundary (API_DetailType::pen)." },
+                        "lineTypeIndex": { "type": "integer", "minimum": 1, "description": "Attribute index of the new line type of the boundary (API_DetailType::ltypeInd)." },
+                        "angle": { "type": "number", "description": "The new rotation of the marker symbol, in radians (API_DetailType::angle)." },
+                        "isHorizontalMarker": { "type": "boolean", "description": "Whether the marker symbol is always horizontal (API_DetailType::horizontalMarker)." },
+                        "markerPenIndex": { "type": "integer", "minimum": 1, "maximum": 255, "description": "The new pen of the marker symbol, the library part placed as the marker (its markerId in GetDetailsOfElements)." }
                     },
                     "additionalProperties": false,
                     "required": ["elementId"]
@@ -29089,32 +28358,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The lines of the grid of the grid-based drawing numbering of the current layout. Only a layout that uses grid-based drawing numbering has such a grid.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "begC": {
-                            "$ref": "#/Coordinate2D",
-                            "description": "The start point of the line, in layout coordinates."
-                        },
-                        "endC": {
-                            "$ref": "#/Coordinate2D",
-                            "description": "The end point of the line, in layout coordinates."
-                        },
-                        "penIndex": {
-                            "type": "integer",
-                            "description": "The index of the pen of the line."
-                        },
-                        "lineTypeIndex": {
-                            "type": "integer",
-                            "description": "The index of the line type of the line."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "begC",
-                        "endC",
-                        "penIndex",
-                        "lineTypeIndex"
-                    ]
+                    "$ref": "#/DrawingNumberingGridLine"
                 }
             }
         },
@@ -29162,17 +28406,7 @@ var gCommands = [{
         "description": "The model view option combination to find, given by id or by name.",
         "properties": {
             "modelViewOptionId": {
-                "type": "object",
-                "description": "The identifier of the model view option combination.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/ModelViewOptionId"
             },
             "name": {
                 "type": "string",
@@ -29202,17 +28436,7 @@ var gCommands = [{
                 "description": "The index of the model view option combination."
             },
             "modelViewOptionId": {
-                "type": "object",
-                "description": "The identifier of the model view option combination.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/ModelViewOptionId"
             },
             "name": {
                 "type": "string",
@@ -29233,7 +28457,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetModelViewOptionDetails",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the settings stored in model view option combinations (Document > Model View > Model View Options), all of them or the ones given by id or by name: the model view options in the fields of GetViewOptions, and the options library parts add to the combination (gdlOptions) with their GDL parameter values. Read-only: the Archicad API has no function to change, rename or create a stored combination; SetViewOptions changes the options of the current window. Available from Archicad 27.",
                 "inputScheme": {
     "type": "object",
@@ -29296,17 +28520,7 @@ var gCommands = [{
                                 "description": "The index of the model view option combination, the one SetViewOptions takes as modelViewOptionIndex."
                             },
                             "modelViewOptionId": {
-                                "type": "object",
-                                "description": "The identifier of the model view option combination.",
-                                "properties": {
-                                    "guid": {
-                                        "$ref": "#/Guid"
-                                    }
-                                },
-                                "additionalProperties": false,
-                                "required": [
-                                    "guid"
-                                ]
+                                "$ref": "#/ModelViewOptionId"
                             },
                             "name": {
                                 "type": "string",
@@ -29408,25 +28622,7 @@ var gCommands = [{
             "description": "The name of that combination, empty when there is none. Archicad may renumber the combinations when the view options of a window change, so look the index up by this name (FindModelViewOption) before switching back to it with SetViewOptions."
         },
         "viewOptions": {
-            "type": "object",
-            "description": "The model view options and the on-screen view options, every field by its API_ViewOptions name. Values are the numeric API constants; attribute indices are plain integers.",
-            "properties": {
-                "modelViewOptions": {
-                    "type": "object",
-                    "description": "Fields of API_ModelViewOptions, with the curtainWall, stair and railing parts as nested objects.",
-                    "additionalProperties": true
-                },
-                "onScreenViewOptions": {
-                    "type": "object",
-                    "description": "Fields of API_OnScreenViewOptions.",
-                    "additionalProperties": true
-                }
-            },
-            "additionalProperties": false,
-            "required": [
-                "modelViewOptions",
-                "onScreenViewOptions"
-            ]
+            "$ref": "#/ViewOptions"
         }
     },
     "additionalProperties": false,
@@ -29449,19 +28645,7 @@ var gCommands = [{
             "minimum": 1
         },
         "viewOptions": {
-            "type": "object",
-            "description": "The fields to change, named as in the response of GetViewOptions. Fields not given keep their current value. Without an index, the window then uses Custom model view options (index 0), also when only on-screen view options are given. To keep the combination, give its index as well.",
-            "properties": {
-                "modelViewOptions": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "onScreenViewOptions": {
-                    "type": "object",
-                    "additionalProperties": true
-                }
-            },
-            "additionalProperties": false
+            "$ref": "#/ViewOptionsUpdate"
         }
     },
     "additionalProperties": false
@@ -29626,22 +28810,7 @@ var gCommands = [{
             "type": "array",
             "description": "Every renovation filter of the project.",
             "items": {
-                "type": "object",
-                "properties": {
-                    "renovationFilterId": {
-                        "$ref": "#/GuidId",
-                        "description": "Identifier of the renovation filter. The same identifier is the renovationFilterGuid of GetViewSettings and SetViewSettings."
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Name of the renovation filter."
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "renovationFilterId",
-                    "name"
-                ]
+                "$ref": "#/RenovationFilterDetails"
             }
         },
         "activeRenovationFilterId": {
@@ -30280,8 +29449,79 @@ var gCommands = [{
         "$ref": "#/ExecutionResult"
     }
             },{
+                "name": "GetCameras",
+                "version": "2.0.0",
+                "description": "Gets the Camera Sets (camera paths) of the project with their name, whether the set is the active one, its current camera, and its cameras in path order. Each camera has its element id, whether it is active in the path, and its perspective: camera and target position, distance, azimuth, view cone, roll angle, two-point perspective and sun, in the shape Set3DProjectionSettings accepts, so passing a camera's perspective there shows its view in the 3D window. Archicad cameras are always perspective; they have no name of their own.",
+                "inputScheme": null,
+                "outputScheme": {
+    "type": "object",
+    "properties": {
+        "cameraSets": {
+            "type": "array",
+            "description": "The Camera Sets (camera paths) of the project, each with its cameras.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "cameraSetElementId": {
+                        "$ref": "#/ElementId"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the Camera Set, as the navigator shows it."
+                    },
+                    "isActive": {
+                        "type": "boolean",
+                        "description": "True for the active Camera Set."
+                    },
+                    "activeCameraElementId": {
+                        "$ref": "#/ElementId",
+                        "description": "The current camera of the set. Missing when the set has none."
+                    },
+                    "cameras": {
+                        "type": "array",
+                        "description": "The cameras of the set, in the order of the path.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "cameraElementId": {
+                                    "$ref": "#/ElementId"
+                                },
+                                "isActiveInPath": {
+                                    "type": "boolean",
+                                    "description": "True when the camera is active in the path of its Camera Set."
+                                },
+                                "perspective": {
+                                    "$ref": "#/PerspectiveProjectionParameters",
+                                    "description": "The perspective of the camera, in the shape Set3DProjectionSettings accepts as its perspective, so passing it there shows the camera's view in the 3D window."
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                                "cameraElementId",
+                                "isActiveInPath",
+                                "perspective"
+                            ]
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "cameraSetElementId",
+                    "name",
+                    "isActive",
+                    "cameras"
+                ]
+            }
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "cameraSets"
+    ]
+}
+            },{
                 "name": "Get3DStyles",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the names of the 3D styles of the project and the name of the current one, which the 3D window uses.",
                 "inputScheme": null,
                 "outputScheme": {
@@ -30307,8 +29547,8 @@ var gCommands = [{
 }
             },{
                 "name": "SetCurrent3DStyle",
-                "version": "1.8.1",
-                "description": "Makes the given 3D style, one of the names Get3DStyles returns, the current one, which the 3D window uses.",
+                "version": "2.0.0",
+                "description": "Meant to make the given 3D style, one of the names Get3DStyles returns, the current one. Not available yet: it checks the name, then refuses, because Archicad's API function for it crashes Archicad.",
                 "inputScheme": {
     "type": "object",
     "properties": {
@@ -30328,7 +29568,7 @@ var gCommands = [{
 }
             },{
                 "name": "StoreViewSettings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Stores the current view settings (action Store) and puts them back later (action Restore), for example before and after a script that changes the view. The two must be called in pairs and cannot be stacked. Restoring may rebuild the view.",
                 "inputScheme": {
     "type": "object",
@@ -30352,7 +29592,7 @@ var gCommands = [{
 }
             },{
                 "name": "ShowElementsIn3D",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Opens the 3D window on the given elements, as Show Selection in 3D does: they become the selection and only they are shown. Without elements it shows every element, as Show All in 3D does.",
                 "inputScheme": {
     "type": "object",
@@ -30397,13 +29637,7 @@ var gCommands = [{
             "description": "Transparency of the model."
         },
         "intPlanConn": {
-            "type": "string",
-            "description": "The connection of the 3D Document to the model.",
-            "enum": [
-                "Online",
-                "Offline",
-                "Drawing"
-            ]
+            "$ref": "#/Document3DPlanConnection"
         },
         "materialFrom3D": {
             "type": "boolean",
@@ -30418,13 +29652,7 @@ var gCommands = [{
             "description": "The index of the uniform surface (material), used when materialFrom3D is false."
         },
         "boundaryDisplay": {
-            "type": "string",
-            "description": "How the boundary contours are displayed.",
-            "enum": [
-                "UncutContours",
-                "NoContours",
-                "OverrideContours"
-            ]
+            "$ref": "#/Document3DBoundaryDisplay"
         },
         "boundaryPen": {
             "type": "integer",
@@ -30435,25 +29663,7 @@ var gCommands = [{
             "description": "The index of the line type of the boundary contours, used with OverrideContours."
         },
         "attributeOptions": {
-            "type": "object",
-            "description": "The uniform attribute options (cut and uncut surfaces, shading, hidden edges).",
-            "properties": {
-                "shouldUseUniformCutAttributes": { "type": "boolean", "description": "Use uniform attributes on the cut surfaces." },
-                "uniformLineType": { "type": "integer", "description": "The index of the uniform line type of the cut surfaces." },
-                "uniformFillPen": { "type": "integer", "description": "The uniform fill pen of the cut surfaces." },
-                "uniformFillBkgPen": { "type": "integer", "description": "The uniform fill background pen of the cut surfaces." },
-                "shouldUseUncutSurfaceFill": { "type": "boolean", "description": "Fill the uncut surfaces." },
-                "uncutSurfaceBkgPen": { "type": "integer", "description": "The background pen of the uncut surfaces." },
-                "shouldUseElemPen": { "type": "boolean", "description": "Use a uniform pen for the element contours." },
-                "elemPen": { "type": "integer", "description": "The uniform pen of the element contours." },
-                "shadFillPen": { "type": "integer", "description": "The pen of the shadow fill." },
-                "shadFill": { "type": "integer", "description": "The index of the shadow fill." },
-                "shadFillBkgPen": { "type": "integer", "description": "The background pen of the shadow fill." },
-                "shadContPen": { "type": "integer", "description": "The pen of the shadow contours." },
-                "hiddenEdgeLineType": { "type": "integer", "description": "The index of the line type of the hidden edges." },
-                "hiddenEdgeLinePen": { "type": "integer", "description": "The pen of the hidden edges." }
-            },
-            "additionalProperties": false
+            "$ref": "#/Document3DAttributeOptions"
         }
 
     },
@@ -30501,13 +29711,7 @@ var gCommands = [{
             "description": "Transparency of the model."
         },
         "intPlanConn": {
-            "type": "string",
-            "description": "The connection of the 3D Document to the model.",
-            "enum": [
-                "Online",
-                "Offline",
-                "Drawing"
-            ]
+            "$ref": "#/Document3DPlanConnection"
         },
         "materialFrom3D": {
             "type": "boolean",
@@ -30522,13 +29726,7 @@ var gCommands = [{
             "description": "The index of the uniform surface (material), used when materialFrom3D is false."
         },
         "boundaryDisplay": {
-            "type": "string",
-            "description": "How the boundary contours are displayed.",
-            "enum": [
-                "UncutContours",
-                "NoContours",
-                "OverrideContours"
-            ]
+            "$ref": "#/Document3DBoundaryDisplay"
         },
         "boundaryPen": {
             "type": "integer",
@@ -30539,25 +29737,7 @@ var gCommands = [{
             "description": "The index of the line type of the boundary contours, used with OverrideContours."
         },
         "attributeOptions": {
-            "type": "object",
-            "description": "The uniform attribute options (cut and uncut surfaces, shading, hidden edges).",
-            "properties": {
-                "shouldUseUniformCutAttributes": { "type": "boolean", "description": "Use uniform attributes on the cut surfaces." },
-                "uniformLineType": { "type": "integer", "description": "The index of the uniform line type of the cut surfaces." },
-                "uniformFillPen": { "type": "integer", "description": "The uniform fill pen of the cut surfaces." },
-                "uniformFillBkgPen": { "type": "integer", "description": "The uniform fill background pen of the cut surfaces." },
-                "shouldUseUncutSurfaceFill": { "type": "boolean", "description": "Fill the uncut surfaces." },
-                "uncutSurfaceBkgPen": { "type": "integer", "description": "The background pen of the uncut surfaces." },
-                "shouldUseElemPen": { "type": "boolean", "description": "Use a uniform pen for the element contours." },
-                "elemPen": { "type": "integer", "description": "The uniform pen of the element contours." },
-                "shadFillPen": { "type": "integer", "description": "The pen of the shadow fill." },
-                "shadFill": { "type": "integer", "description": "The index of the shadow fill." },
-                "shadFillBkgPen": { "type": "integer", "description": "The background pen of the shadow fill." },
-                "shadContPen": { "type": "integer", "description": "The pen of the shadow contours." },
-                "hiddenEdgeLineType": { "type": "integer", "description": "The index of the line type of the hidden edges." },
-                "hiddenEdgeLinePen": { "type": "integer", "description": "The pen of the hidden edges." }
-            },
-            "additionalProperties": false
+            "$ref": "#/Document3DAttributeOptions"
         }
 
     },
@@ -30691,7 +29871,7 @@ var gCommands = [{
 }
             },{
                 "name": "Get3DDocumentSettings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the settings of a 3D Document, given by its navigator item: the element and story filter, the 3D cut, the projection, the window and zoom, the uniform cut and uncut surface attributes, the source and the boundary contours, with the field names of API_DocumentFrom3DType.",
                 "inputScheme": {
     "type": "object",
@@ -30873,7 +30053,7 @@ var gCommands = [{
 }
             },{
                 "name": "Set3DDocumentSettings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Changes the given settings of a 3D Document, given by its navigator item, in the form Get3DDocumentSettings returns; the settings not given are kept. Returns the settings read back after the change.",
                 "inputScheme": {
     "type": "object",
@@ -31410,7 +30590,7 @@ var gCommands = [{
             },{
                 "name": "CreateSections",
                 "version": "1.5.0",
-                "description": "Creates Section elements on the floor plan. A section looks to the left of its start to end direction, with its depth line that far on that side. GetDetailsOfElements reads the geometry of existing sections back.",
+                "description": "Creates Section elements on the floor plan. A section looks to the left of its start to end direction, with its depth line that far on that side. GetDetailsOfElements reads the geometry of existing sections back. The floor plan must be the active window: creation fails while a Section or Elevation window is active.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -31428,7 +30608,8 @@ var gCommands = [{
                             "type": "string",
                             "description": "Optional name of a Section favorite to base the new section on, marker included. Its settings are applied first, then the explicitly given fields override them. The Section tool defaults are restored afterwards."
                         },
-                        "floorIndex": { "type": "integer" }
+                        "floorIndex": { "type": "integer" },
+                        "details": { "$ref": "#/SectionElevationSettableDetails" }
                     },
                     "additionalProperties": false,
                     "required": ["startCoordinate", "endCoordinate"]
@@ -31450,7 +30631,7 @@ var gCommands = [{
     }
             },{
                 "name": "ModifySections",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Changes the name and the reference ID of Section and Elevation elements, which the Project Map and the markers show. GetDetailsOfElements reads those of a Section back as name and idStr.",
                 "inputScheme": {
         "type": "object",
@@ -31500,6 +30681,104 @@ var gCommands = [{
         },
         "additionalProperties": false,
         "required": ["elements"]
+    }
+            },{
+                "name": "CreateElevations",
+                "version": "2.0.0",
+                "description": "Creates Elevation elements on the floor plan. The floor plan must be the active window: creation fails while a Section or Elevation window is active.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elevationsData": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "startCoordinate": { "$ref": "#/Coordinate2D" },
+                        "endCoordinate": { "$ref": "#/Coordinate2D" },
+                        "depth": { "type": "number" },
+                        "name": { "type": "string" },
+                        "id": { "type": "string", "description": "The reference ID shown in the elevation marker and in the Project Map. Without it the elevation takes the ID of the Elevation tool defaults." },
+                        "floorIndex": { "type": "integer" },
+                        "details": { "$ref": "#/SectionElevationSettableDetails" }
+                    },
+                    "additionalProperties": false,
+                    "required": ["startCoordinate", "endCoordinate"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elevationsData"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/ElementIdsOrErrors"
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements"]
+    }
+            },{
+                "name": "GetSectionsAndElevationsDetails",
+                "version": "2.0.0",
+                "description": "Gets every configurable setting of the given Section and Elevation elements, with their name and reference ID.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elements": {
+                "$ref": "#/Elements"
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elements"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "detailsOfElements": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/SectionElevationDetailsOrError"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["detailsOfElements"]
+    }
+            },{
+                "name": "SetSectionsAndElevationsDetails",
+                "version": "2.0.0",
+                "description": "Sets settings of the given Section and Elevation elements: pens, line types, horizontal and vertical range, model effects, story handles and markers. The name and the reference ID are changed with ModifySections.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementsWithDetails": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "elementId": { "$ref": "#/ElementId" },
+                        "details": { "$ref": "#/SectionElevationSettableDetails" }
+                    },
+                    "additionalProperties": false,
+                    "required": ["elementId", "details"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["elementsWithDetails"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "executionResults": {
+                "$ref": "#/ExecutionResults"
+            }
+        },
+        "additionalProperties": false,
+        "required": ["executionResults"]
     }
             },{
                 "name": "MoveNavigatorItem",
@@ -31602,6 +30881,47 @@ var gCommands = [{
         },
         "additionalProperties": false,
         "required": ["navigatorItemTree"]
+    }
+            },{
+                "name": "GetSchedules",
+                "version": "2.0.0",
+                "description": "Returns the Interactive Schedules of the Project Map: navigator item id, name, ID and the folders they are in. Archicad's API does not give the rows of a schedule nor export it; to export one, put it in a publisher set with a spreadsheet format in Archicad and run PublishPublisherSet.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "schedules": {
+                "type": "array",
+                "description": "The Interactive Schedules of the Project Map, in navigator order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "navigatorItemId": {
+                            "$ref": "#/NavigatorItemId"
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the schedule."
+                        },
+                        "uiId": {
+                            "type": "string",
+                            "description": "The ID of the schedule, shown before its name in the navigator."
+                        },
+                        "folderPath": {
+                            "type": "array",
+                            "description": "The names of the Project Map items the schedule is in, from the top down, without the project itself (e.g. Schedules, Element). Archicad's API does not say whether a schedule lists elements, components or surfaces; the default Project Map shows it by these folders.",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["navigatorItemId", "name", "uiId", "folderPath"]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["schedules"]
     }
             },{
                 "name": "GetNavigatorParentItems",
@@ -31771,50 +31091,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "viewpointId": {
-                                    "type": "object",
-                                    "description": "The identifier of the add-on viewpoint item.",
-                                    "properties": {
-                                        "guid": { "$ref": "#/Guid" }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": ["guid"]
-                                },
-                                "parentViewpointId": {
-                                    "type": "object",
-                                    "description": "The identifier of the root or group the item is in. Missing when Archicad reports no parent, as for a root.",
-                                    "properties": {
-                                        "guid": { "$ref": "#/Guid" }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": ["guid"]
-                                },
-                                "itemType": {
-                                    "type": "string",
-                                    "description": "Whether the item is a root, a group or a leaf node.",
-                                    "enum": ["Root", "Group", "Leaf", "Undefined"]
-                                },
-                                "displayId": {
-                                    "type": "string",
-                                    "description": "The ID shown for the item in the Project Map."
-                                },
-                                "displayName": {
-                                    "type": "string",
-                                    "description": "The name shown for the item in the Project Map."
-                                },
-                                "viewSettingsFlags": {
-                                    "type": "integer",
-                                    "description": "The view settings flags of the item, as Archicad stores them (a bit field)."
-                                },
-                                "data": {
-                                    "type": "string",
-                                    "description": "The data the add-on attached to the item, base64 encoded. Empty when there is none."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": ["viewpointId", "itemType", "displayId", "displayName", "viewSettingsFlags", "data"]
+                            "$ref": "#/AddOnViewpointDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -31840,9 +31117,7 @@ var gCommands = [{
                     "type": "object",
                     "properties": {
                         "itemType": {
-                            "type": "string",
-                            "description": "Whether to create a root, a group or a leaf node. Roots and groups can't be created in a Teamwork project.",
-                            "enum": ["Root", "Group", "Leaf"]
+                            "$ref": "#/AddOnViewpointType"
                         },
                         "parentViewpointId": {
                             "type": "object",
@@ -31926,38 +31201,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The add-on viewpoint items to change. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "viewpointId": {
-                            "type": "object",
-                            "description": "The identifier of the add-on viewpoint item to change.",
-                            "properties": {
-                                "guid": { "$ref": "#/Guid" }
-                            },
-                            "additionalProperties": false,
-                            "required": ["guid"]
-                        },
-                        "displayId": {
-                            "type": "string",
-                            "description": "The ID shown for the item in the Project Map."
-                        },
-                        "displayName": {
-                            "type": "string",
-                            "description": "The name shown for the item in the Project Map."
-                        },
-                        "viewSettingsFlags": {
-                            "type": "integer",
-                            "description": "The view settings flags of the item, as Archicad stores them (a bit field).",
-                            "minimum": 0,
-                            "maximum": 4294967295
-                        },
-                        "data": {
-                            "type": "string",
-                            "description": "Data to attach to the item, base64 encoded. It replaces the attached data; an empty string removes it."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": ["viewpointId"]
+                    "$ref": "#/AddOnViewpointModificationData"
                 }
             }
         },
@@ -31976,7 +31220,7 @@ var gCommands = [{
     }
             },{
                 "name": "ReorderNavigatorItems",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Reorders the children of a navigator item to match the given order. Works around MoveNavigatorItem being unable to reposition an item within its current parent, by bouncing it through a sibling.",
                 "inputScheme": {
         "type": "object",
@@ -32228,7 +31472,7 @@ var gCommands = [{
             },{
                 "name": "DeleteIssue",
                 "version": "1.0.2",
-                "description": "Deletes the specified issue.",
+                "description": "Deletes the specified issue. With dryRun true nothing is deleted and no undo step is created: the response has dryRun set to true, and wouldDelete when the issue exists.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -32238,6 +31482,9 @@ var gCommands = [{
             "acceptAllElements": {
                 "type": "boolean",
                 "description": "Accept all creation/deletion/modification of the deleted issue. By default false."
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -32246,7 +31493,27 @@ var gCommands = [{
         ]
     },
                 "outputScheme": {
-        "$ref": "#/ExecutionResult"
+        "type": "object",
+        "description": "The result of the execution: success, with error when it failed. A dry run also answers dryRun, and wouldDelete when the issue exists.",
+        "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
+            "success": {
+                "type": "boolean"
+            },
+            "error": {
+                "$ref": "#/Error"
+            },
+            "wouldDelete": {
+                "type": "boolean",
+                "enum": [ true ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "success"
+        ]
     }
             },{
                 "name": "GetIssues",
@@ -33538,7 +32805,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetHotlinkDesignOptionTables",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Retrieves the design option table of the given hotlink nodes and placed hotlink instances: the filter mode (main model only, by options or by combination), the design option sets, options and combinations of the hotlinked module and which of them are active. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -33667,7 +32934,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetHotlinkDesignOptionTables",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets the filter mode, the active combination and the active option of sets in the design option table of the given placed hotlink instances. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -33935,7 +33202,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetDesignOptionCombinationOfViews",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Retrieves which design option combination the given views show: only the main model, a combination, a custom set of design options or a deleted combination. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -34003,7 +33270,7 @@ var gCommands = [{
     }
             },{
                 "name": "SetDesignOptionCombinationOfViews",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Sets the design option combination the given views show, or makes them show only the main model. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -34811,7 +34078,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetModulData",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Gets the module data Tapir stored in the project with StoreModulData: the given names, or all of them, with their data version and, unless includeContent is false, their content. Module data are the custom data sections of Archicad's ModulData Manager: text saved in the project file under a name, kept apart from project data (SetProjectData).",
                 "inputScheme": {
         "type": "object",
@@ -34875,7 +34142,7 @@ var gCommands = [{
     }
             },{
                 "name": "StoreModulData",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates or overwrites module data: text (for example JSON) saved in the project under a name, with an optional data version. Prefix the names with the name of your tool (for example 'my-tool/settings') so scripts do not overwrite each other's data. Storing module data is not an undoable step.",
                 "inputScheme": {
         "type": "object",
@@ -34926,7 +34193,7 @@ var gCommands = [{
     }
             },{
                 "name": "DeleteModulData",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Deletes the module data with the given names. Deleting module data is not an undoable step.",
                 "inputScheme": {
         "type": "object",
@@ -35105,95 +34372,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create MEP routing elements.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "domain": {
-                            "$ref": "#/MEPDomain"
-                        },
-                        "nodeCoordinates": {
-                            "type": "array",
-                            "description": "The corner points of the route polyline.",
-                            "items": {
-                                "$ref": "#/Coordinate3D"
-                            },
-                            "minItems": 2
-                        },
-                        "crossSectionWidth": {
-                            "type": "number",
-                            "description": "Optional cross section width applied to all segments."
-                        },
-                        "crossSectionHeight": {
-                            "type": "number",
-                            "description": "Optional cross section height applied to all segments."
-                        },
-                        "crossSectionShape": {
-                            "$ref": "#/MEPCrossSectionShape",
-                            "description": "Optional; applied to all segments."
-                        },
-                        "crossSectionReferenceId": {
-                            "type": "integer",
-                            "description": "Optional cross section reference id of the segment preference table (used for circular cross sections). Resolved against preferenceTableId if given, otherwise against the table of the current routing tool default."
-                        },
-                        "preferenceTableId": {
-                            "$ref": "#/Guid",
-                            "description": "Optional guid of the segment preference table (see GetMEPPreferenceTables) applied to all segments. Not applicable to the CableCarrier domain."
-                        },
-                        "mepSystemId": {
-                            "$ref": "#/AttributeId",
-                            "description": "Optional MEP system attribute."
-                        },
-                        "layerIndex": {
-                            "type": "integer",
-                            "description": "Optional layer attribute index of the routing element and all its parts (routing segments, rigid segments, elbows and transitions). Only a positive index takes effect; otherwise the routing tool default layer is used. A layer that does not exist or is locked gives an error for the item, and nothing is placed."
-                        },
-                        "floorIndex": {
-                            "type": "integer",
-                            "description": "Optional home story index (as returned by GetStories) of the routing element and all its parts. The node coordinates stay absolute: the route is placed at them, then moved to this home story. Without it, Archicad picks the home story, which follows the active story. A story that does not exist gives an error for the item, and nothing is placed."
-                        },
-                        "defaults": {
-                            "type": "object",
-                            "description": "Optional changes to the routing tool default of the domain before the route is placed. Only what is placed changes, not the routing tool's settings. A value that cannot be set gives an error for the item, and nothing is placed.",
-                            "properties": {
-                                "routingNode": {
-                                    "type": "object",
-                                    "description": "The routing node default: the elbows and transitions placed at the nodes of the route. Available from Archicad 29.",
-                                    "properties": {
-                                        "elbow": {
-                                            "type": "object",
-                                            "properties": {
-                                                "preferenceTableId": {
-                                                    "$ref": "#/Guid",
-                                                    "description": "The guid of an elbow preference table of the domain (see GetMEPPreferenceTables with includeFittingTables)."
-                                                },
-                                                "factorRadius": {
-                                                    "type": "number",
-                                                    "description": "The radius factor of the elbows placed at the nodes."
-                                                }
-                                            },
-                                            "additionalProperties": false
-                                        },
-                                        "transition": {
-                                            "type": "object",
-                                            "properties": {
-                                                "preferenceTableId": {
-                                                    "$ref": "#/Guid",
-                                                    "description": "The guid of a transition preference table of the domain (see GetMEPPreferenceTables with includeFittingTables)."
-                                                }
-                                            },
-                                            "additionalProperties": false
-                                        }
-                                    },
-                                    "additionalProperties": false
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "domain",
-                        "nodeCoordinates"
-                    ]
+                    "$ref": "#/MEPRoutingElementData"
                 }
             }
         },
@@ -35225,104 +34404,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create MEP elements.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "$ref": "#/MEPComponentType"
-                        },
-                        "domain": {
-                            "$ref": "#/MEPDomain",
-                            "description": "Required for all types except Equipment. For Equipment it only selects the ports that mepSystemId is applied to."
-                        },
-                        "position": {
-                            "$ref": "#/Coordinate3D"
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "Optional library part to place instead of the one in the tool's settings, as listed by GetAvailableLibraryParts. Its ports replace the default ones, so 'ports' refers to the ports of this library part. Its ports keep the MEP system of the library part, which may be none, so give 'mepSystemId' with it to connect it. If it is not found, the item fails and nothing is placed."
-                        },
-                        "xSize": {
-                            "type": "number",
-                            "description": "Optional size along the local x axis in meters. Available from Archicad 30. Some library parts calculate their own size and keep it."
-                        },
-                        "ySize": {
-                            "type": "number",
-                            "description": "Optional size along the local y axis in meters. Available from Archicad 30. Some library parts calculate their own size and keep it."
-                        },
-                        "mepSystemId": {
-                            "$ref": "#/AttributeId",
-                            "description": "Optional MEP system of the ports of the element's domain (of every port when an Equipment item has no domain). The 'mepSystemId' of an entry of 'ports' overrides it for that port."
-                        },
-                        "ports": {
-                            "type": "array",
-                            "description": "Optional changes to single ports of the element before it is placed. The values are in meters.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "portIndex": {
-                                        "type": "integer",
-                                        "description": "Zero-based index of the port in the library part."
-                                    },
-                                    "mepSystemId": {
-                                        "$ref": "#/AttributeId",
-                                        "description": "The MEP system of the port."
-                                    },
-                                    "shape": {
-                                        "$ref": "#/MEPCrossSectionShape",
-                                        "description": "The shape of the port."
-                                    },
-                                    "width": {
-                                        "type": "number",
-                                        "description": "The width of the port."
-                                    },
-                                    "height": {
-                                        "type": "number",
-                                        "description": "The height of a ventilation or cable carrier port."
-                                    },
-                                    "diameter": {
-                                        "type": "number",
-                                        "description": "The diameter of a piping port."
-                                    }
-                                },
-                                "additionalProperties": false,
-                                "required": [
-                                    "portIndex"
-                                ]
-                            }
-                        },
-                        "orientationDirection": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "Optional direction vector of the orientation. Defaults to (1, 0, 0)."
-                        },
-                        "orientationRotation": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "Optional rotation vector of the orientation. Defaults to (0, 1, 0)."
-                        },
-                        "floorIndex": {
-                            "type": "integer",
-                            "description": "Optional home story index (as returned by GetStories). The position stays absolute: the element is placed at it, then moved to this home story. Without it, Archicad picks the home story, which follows the active story. A story that does not exist gives an error for the item, and nothing is placed."
-                        },
-                        "defaults": {
-                            "type": "object",
-                            "description": "Optional changes to the tool default before the element is placed. Only what is placed changes, not the tool's settings. A value that cannot be set gives an error for the item, and nothing is placed.",
-                            "properties": {
-                                "insulationThickness": {
-                                    "type": "number",
-                                    "description": "The insulation thickness in meters."
-                                },
-                                "removeInsulation": {
-                                    "type": "boolean",
-                                    "description": "If true, the element is placed without insulation. Cannot be combined with insulationThickness."
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "type",
-                        "position"
-                    ]
+                    "$ref": "#/MEPElementData"
                 }
             }
         },
@@ -35354,99 +34436,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify MEP routing elements. Only provided fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "mepSystemId": {
-                            "$ref": "#/AttributeId"
-                        },
-                        "crossSectionWidth": {
-                            "type": "number",
-                            "description": "New cross section width applied to all segments."
-                        },
-                        "crossSectionHeight": {
-                            "type": "number",
-                            "description": "New cross section height applied to all segments."
-                        },
-                        "crossSectionShape": {
-                            "$ref": "#/MEPCrossSectionShape",
-                            "description": "The new shape is applied to all segments."
-                        },
-                        "crossSectionReferenceId": {
-                            "type": "integer",
-                            "description": "New cross section reference id of the segment preference table applied to all segments (used for circular cross sections). Resolved against preferenceTableId if given, otherwise against the table the segments already use."
-                        },
-                        "preferenceTableId": {
-                            "$ref": "#/Guid",
-                            "description": "New segment preference table (guid as returned by GetMEPPreferenceTables) applied to all segments. Not applicable to the CableCarrier domain."
-                        },
-                        "branchPreferenceTableId": {
-                            "$ref": "#/Guid",
-                            "description": "New branch preference table (guid as returned by GetMEPPreferenceTables) of the routing element."
-                        },
-                        "anchor": {
-                            "$ref": "#/MEPRoutingAnchor",
-                            "description": "Applied to all segments of the routing element."
-                        },
-                        "referenceLineOffsetX": {
-                            "type": "number",
-                            "description": "New horizontal offset of the reference line from the anchor point, applied to all segments."
-                        },
-                        "referenceLineOffsetY": {
-                            "type": "number",
-                            "description": "New vertical offset of the reference line from the anchor point, applied to all segments."
-                        },
-                        "wallThickness": {
-                            "type": "number",
-                            "description": "New wall thickness applied to all segments."
-                        },
-                        "flangeSize": {
-                            "type": "number",
-                            "description": "New flange size applied to all segments. Needs the Flanged connection style, which can be set in the same call."
-                        },
-                        "insulationThickness": {
-                            "type": "number",
-                            "minimum": 0,
-                            "description": "New insulation thickness of the route, as Insulation in its settings: applied to the rigid segments of all segments and to the elbows (bends in Archicad 28) and transitions at all nodes. 0 removes the insulation. Not applicable to the CableCarrier domain."
-                        },
-                        "connectionStyle": {
-                            "$ref": "#/MEPConnectionStyle",
-                            "description": "New connection style applied to all segments."
-                        },
-                        "preferredTransitionPlacement": {
-                            "$ref": "#/MEPPreferredTransitionPlacement",
-                            "description": "New preferred transition placement applied to all nodes."
-                        },
-                        "cutPlanePosition": {
-                            "$ref": "#/MEPCutPlanePosition",
-                            "description": "New cut plane position of the routing element. Available from Archicad 29."
-                        },
-                        "floorPlanDisplayOption": {
-                            "$ref": "#/MEPFloorPlanDisplayOption",
-                            "description": "New floor plan display option of the routing element. Available from Archicad 29."
-                        },
-                        "showProjection": {
-                            "$ref": "#/MEPShowProjection",
-                            "description": "New show projection setting of the routing element. Available from Archicad 29."
-                        },
-                        "onStoryVisibility": {
-                            "$ref": "#/MEPOnStoryVisibility",
-                            "description": "New on-story visibility of the routing element. Available from Archicad 29."
-                        },
-                        "nodePositions": {
-                            "type": "array",
-                            "description": "New positions of the routing nodes. The size must match the number of nodes of the route.",
-                            "items": {
-                                "$ref": "#/Coordinate3D"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/MEPRoutingElementModificationData"
                 }
             }
         },
@@ -35478,37 +34468,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify MEP ports. Only provided fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "portId": {
-                            "$ref": "#/Guid",
-                            "description": "The port to modify, as returned by GetMEPPorts."
-                        },
-                        "shape": {
-                            "$ref": "#/MEPCrossSectionShape",
-                            "description": "New shape of the port."
-                        },
-                        "connectionStyle": {
-                            "$ref": "#/MEPConnectionStyle",
-                            "description": "New connection style of the port. Available from Archicad 30."
-                        },
-                        "flowDirection": {
-                            "$ref": "#/MEPFlowDirection",
-                            "description": "New flow direction of a piping or ventilation port."
-                        },
-                        "outerDiameter": {
-                            "type": "number",
-                            "description": "New outer diameter of a piping port."
-                        },
-                        "nominalSize": {
-                            "type": "string",
-                            "description": "New nominal size of a piping port. Available from Archicad 30."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "portId"
-                    ]
+                    "$ref": "#/MEPPortModificationData"
                 }
             }
         },
@@ -35540,22 +34500,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of connections to create.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "routingElementId": {
-                            "$ref": "#/ElementId",
-                            "description": "The routing element to connect to. When connecting two routes, the first or last node of the 'connectToId' route must lie exactly on this route (on its centerline, not within a tolerance). For a tee, this is the main route, which is split and gets the branch element."
-                        },
-                        "connectToId": {
-                            "$ref": "#/ElementId",
-                            "description": "The MEP element or routing element connected to 'routingElementId'. For a tee, this is the branch route, whose first or last node lies on the main route. Two routes must have the same domain and MEP system; an MEP element's port must match the route in domain and MEP system, lie on its first or last node and point in the opposite direction."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "routingElementId",
-                        "connectToId"
-                    ]
+                    "$ref": "#/MEPConnectionData"
                 }
             }
         },
@@ -35587,22 +34532,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The pairs of ports to check.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "portId": {
-                            "$ref": "#/Guid",
-                            "description": "The port to check, as returned by GetMEPPorts."
-                        },
-                        "otherPortId": {
-                            "$ref": "#/Guid",
-                            "description": "The port to connect it to, as returned by GetMEPPorts."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "portId",
-                        "otherPortId"
-                    ]
+                    "$ref": "#/MEPPortPair"
                 }
             }
         },
@@ -35621,17 +34551,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "isConnectable": {
-                                    "type": "boolean",
-                                    "description": "Whether the port can be connected to the other port."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "isConnectable"
-                            ]
+                            "$ref": "#/MEPPortConnectability"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -35653,7 +34573,8 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "domain": {
-                "$ref": "#/MEPPreferenceTableDomain"
+                "$ref": "#/MEPPreferenceTableDomain",
+                "description": "The MEP domain of the segment preference tables."
             },
             "includeFittingTables": {
                 "type": "boolean",
@@ -35728,23 +34649,14 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "domain": {
-                "$ref": "#/MEPPreferenceTableDomain"
+                "$ref": "#/MEPPreferenceTableDomain",
+                "description": "The MEP domain of the segment preference tables."
             },
             "tablesToAdd": {
                 "type": "array",
                 "description": "New tables to add to the domain, before the other changes.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "$ref": "#/MEPPreferenceTableType"
-                        },
-                        "name": {
-                            "type": "string"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": ["type", "name"]
+                    "$ref": "#/MEPPreferenceTableAddition"
                 }
             },
             "tables": {
@@ -35867,16 +34779,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create system groups.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name"
-                    ]
+                    "$ref": "#/MEPSystemGroupData"
                 }
             }
         },
@@ -35911,29 +34814,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create physical systems.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "systemGroupId": {
-                            "$ref": "#/MEPSystemGroupId",
-                            "description": "The system group the new physical system belongs to."
-                        },
-                        "name": {
-                            "type": "string"
-                        },
-                        "rootElementId": {
-                            "$ref": "#/ElementId",
-                            "description": "The MEP element the system starts from. Archicad keeps it only while it is part of an MEP network: the root of a stand-alone element is cleared when the MEP networks are recalculated."
-                        },
-                        "mepSystemId": {
-                            "$ref": "#/AttributeId",
-                            "description": "The MEP system attribute used as the category of the physical system."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "systemGroupId",
-                        "name"
-                    ]
+                    "$ref": "#/MEPPhysicalSystemData"
                 }
             }
         },
@@ -35968,21 +34849,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify system groups.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "systemGroupId": {
-                            "$ref": "#/MEPSystemGroupId"
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The new name of the system group."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "systemGroupId",
-                        "name"
-                    ]
+                    "$ref": "#/MEPSystemGroupModificationData"
                 }
             }
         },
@@ -36014,28 +34881,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify physical systems. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "physicalSystemId": {
-                            "$ref": "#/MEPPhysicalSystemId"
-                        },
-                        "name": {
-                            "type": "string",
-                            "description": "The new name of the physical system."
-                        },
-                        "rootElementId": {
-                            "$ref": "#/ElementId",
-                            "description": "The MEP element the system starts from. Archicad keeps it only while it is part of an MEP network: the root of a stand-alone element is cleared when the MEP networks are recalculated."
-                        },
-                        "mepSystemId": {
-                            "$ref": "#/AttributeId",
-                            "description": "The MEP system attribute used as the category of the physical system."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "physicalSystemId"
-                    ]
+                    "$ref": "#/MEPPhysicalSystemModificationData"
                 }
             }
         },
@@ -36067,16 +34913,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The physical systems to remove from their system groups. Their member elements are not deleted.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "physicalSystemId": {
-                            "$ref": "#/MEPPhysicalSystemId"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "physicalSystemId"
-                    ]
+                    "$ref": "#/MEPPhysicalSystemIdArrayItem"
                 }
             }
         },
@@ -36099,7 +34936,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetMEPToolDefaults",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Retrieves the current settings of the MEP tools per domain, without changing them: the routing tool (MEP system, branch preference table, floor plan display settings from Archicad 29, and its segment, node, elbow (Archicad 27 and from Archicad 29) and transition defaults), its rigid segment and branch defaults, the flexible segment tool, the library part, insulation and port settings of the terminal, accessory, fitting and equipment tools, and from Archicad 30 the electrical panel tool with its number of circuit defaults. Archicad 27 gives fewer settings, and only the shape of the ports. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -36130,36 +34967,7 @@ var gCommands = [{
                 "description": "The default of the Equipment tool, which has no domain. Left out when Archicad gives none."
             },
             "electricalPanel": {
-                "type": "object",
-                "description": "The default of the Electrical Panel tool, which has no domain. Available from Archicad 30.",
-                "properties": {
-                    "libraryPartId": {
-                        "$ref": "#/LibPartUnId",
-                        "description": "The library part the tool places."
-                    },
-                    "panelName": {
-                        "type": "string"
-                    },
-                    "circuitNamePrefix": {
-                        "type": "string"
-                    },
-                    "circuitIdStyle": {
-                        "type": "integer",
-                        "description": "The index of the circuit id style."
-                    },
-                    "circuitDefaultCount": {
-                        "type": "integer",
-                        "description": "The number of circuit defaults of the panel default."
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "libraryPartId",
-                    "panelName",
-                    "circuitNamePrefix",
-                    "circuitIdStyle",
-                    "circuitDefaultCount"
-                ]
+                "$ref": "#/ElectricalPanelToolDefaults"
             }
         },
         "additionalProperties": false,
@@ -36169,7 +34977,7 @@ var gCommands = [{
     }
             },{
                 "name": "TransferMEPSettings",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Picks up the settings of an MEP element and injects them into other MEP elements of the same type and domain, like Archicad's pick up and inject parameters. Works for routing elements, terminals, accessories, equipment, fittings, flexible segments, branches, take-offs and (from Archicad 30) electrical panels and devices. Each target is changed in its own undoable step. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -36203,7 +35011,7 @@ var gCommands = [{
     }
             },{
                 "name": "GetMEPPhysicalSystemsOfElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Returns the physical systems each of the given MEP elements is part of. Available from Archicad 29.",
                 "inputScheme": {
         "type": "object",
@@ -36224,20 +35032,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The physical systems of each given element, in the order of the elements.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "physicalSystemIds": {
-                            "type": "array",
-                            "description": "The physical systems the element is part of. Empty for an element of no physical system.",
-                            "items": {
-                                "$ref": "#/MEPPhysicalSystemId"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "physicalSystemIds"
-                    ]
+                    "$ref": "#/MEPPhysicalSystemsOfElement"
                 }
             }
         },
@@ -36248,7 +35043,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateMEPFlexibleSegments",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates MEP flexible segments through the given control points, or along a polyline of alternating line and spline parts (Piping), with the current settings of the Flexible Segment tool of their domain, optionally with the orientation (control points) or direction (polyline) at both ends. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -36257,44 +35052,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to place MEP flexible segments with the current settings of the Flexible Segment tool of their domain (see GetMEPToolDefaults).",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "domain": {
-                            "$ref": "#/MEPDomain"
-                        },
-                        "controlPoints": {
-                            "type": "array",
-                            "description": "The control points of the flexible segment, from its beginning to its end. Give either 'controlPoints' or 'polyline'.",
-                            "items": {
-                                "$ref": "#/Coordinate3D"
-                            },
-                            "minItems": 2
-                        },
-                        "startOrientation": {
-                            "$ref": "#/MEPOrientation",
-                            "description": "Optional orientation at the beginning, with 'controlPoints'. Defaults to the direction from the first control point to the second one, with a horizontal rotation vector perpendicular to it."
-                        },
-                        "endOrientation": {
-                            "$ref": "#/MEPOrientation",
-                            "description": "Optional orientation at the end, with 'controlPoints'. Defaults to the direction from the last but one control point to the last one, with a horizontal rotation vector perpendicular to it."
-                        },
-                        "polyline": {
-                            "$ref": "#/MEPFlexibleSegmentPolyline",
-                            "description": "The flexible segment as alternating line and spline parts that connect at their ends, instead of 'controlPoints'. Archicad places polyline flexible segments in the Piping domain only."
-                        },
-                        "startDirection": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "Optional direction vector at the beginning, with 'polyline'. Only when the first part is a spline."
-                        },
-                        "endDirection": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "Optional direction vector at the end, with 'polyline'. Only when the last part is a spline."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "domain"
-                    ]
+                    "$ref": "#/MEPFlexibleSegmentCreationData"
                 }
             }
         },
@@ -36317,7 +35075,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateMEPTakeOffs",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates MEP take-offs on the given routing segments, at a distance from the beginning of the segment (not more than its length) and optionally rotated around its axis by a multiple of 90 degrees, with the current settings of the Take-Off tool of their domain (by default the domain of the segment's routing element), optionally with their length and without insulation, which apply only to what is created. Archicad only has Ventilation take-offs. Available from Archicad 28.",
                 "inputScheme": {
         "type": "object",
@@ -36326,47 +35084,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create MEP take-offs on routing segments with the current settings of the Take-Off tool of their domain.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "domain": {
-                            "$ref": "#/MEPDomain",
-                            "description": "Optional domain of the Take-Off tool whose settings are used. Defaults to the domain of the segment's routing element. Archicad currently only has Ventilation take-offs."
-                        },
-                        "segmentId": {
-                            "$ref": "#/ElementId",
-                            "description": "The routing segment to place the take-off on (the elementId of an item of 'segments' returned by GetMEPRoutingElements)."
-                        },
-                        "distanceFromBeginning": {
-                            "type": "number",
-                            "description": "The distance of the take-off from the beginning of the segment, in meters. Must not be negative or more than the length of the segment.",
-                            "minimum": 0
-                        },
-                        "rotationAroundMainAxis": {
-                            "type": "number",
-                            "description": "Optional rotation of the take-off around the axis of the segment, in radians. Archicad places take-offs only at quarter turns, so it must be a multiple of pi/2 (negative values and full turns are allowed). Defaults to 0, which places the take-off facing left relative to the segment's direction; pi/2 faces up, pi faces right, 3*pi/2 (or -pi/2) faces down."
-                        },
-                        "length": {
-                            "type": "number",
-                            "description": "Optional length of the take-off in meters, set after placing it; must be positive. The length of the Take-Off tool when not given.",
-                            "exclusiveMinimum": 0
-                        },
-                        "defaults": {
-                            "type": "object",
-                            "description": "Optional changes to the settings of the Take-Off tool before the take-off is placed. Only what is placed changes, not the tool's settings. A value that cannot be set gives an error for the item, and nothing is placed. The insulation thickness of a take-off cannot be set (Archicad stops with a fatal error).",
-                            "properties": {
-                                "removeInsulation": {
-                                    "type": "boolean",
-                                    "description": "If true, the take-off is placed without insulation."
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "segmentId",
-                        "distanceFromBeginning"
-                    ]
+                    "$ref": "#/MEPTakeOffCreationData"
                 }
             }
         },
@@ -36389,7 +35107,7 @@ var gCommands = [{
     }
             },{
                 "name": "ModifyMEPElements",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Modifies placed MEP elements: the anchor point, orientation and library part of terminals, accessories, equipment, fittings and flexible segments, the control points, polyline (Piping, from Archicad 28), and width and height of flexible segments. Only the given fields are changed, in one undo step with one execution result per element; an item with a field that does not fit its element changes nothing. Archicad reports a 'libraryPartId' it does not find only after the item's other changes were made, so that item's error says which changes stayed. Available from Archicad 27.",
                 "inputScheme": {
         "type": "object",
@@ -36398,48 +35116,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The MEP elements to modify, each with the fields to change. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "anchorPoint": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "The new anchor point of a terminal, accessory, equipment, fitting or flexible segment."
-                        },
-                        "orientation": {
-                            "$ref": "#/MEPOrientation",
-                            "description": "The new orientation of a terminal, accessory, equipment, fitting or flexible segment."
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "The library part a terminal, accessory, equipment or fitting uses, as listed by GetAvailableLibraryParts. If it is not found, the element keeps its library part and the item fails."
-                        },
-                        "controlPoints": {
-                            "type": "array",
-                            "description": "The new control points of a flexible segment, from its beginning to its end. Not together with 'polyline'.",
-                            "items": {
-                                "$ref": "#/Coordinate3D"
-                            },
-                            "minItems": 2
-                        },
-                        "polyline": {
-                            "$ref": "#/MEPFlexibleSegmentPolyline",
-                            "description": "The new geometry of a Piping flexible segment as alternating line and spline parts that connect at their ends. Not together with 'controlPoints'. Available from Archicad 28."
-                        },
-                        "width": {
-                            "type": "number",
-                            "description": "The new width of a flexible segment."
-                        },
-                        "height": {
-                            "type": "number",
-                            "description": "The new height of a flexible segment."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/MEPElementModificationData"
                 }
             }
         },
@@ -36487,114 +35164,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elementId": {
-                                    "$ref": "#/ElementId"
-                                },
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "RoutingElement",
-                                        "RoutingNode",
-                                        "RoutingSegment"
-                                    ]
-                                },
-                                "routingNodeParameters": {
-                                    "type": "object",
-                                    "description": "The routing node default parameters of a routing element (RoutingElement::GetRoutingNodeDefaultParameters). The elbow is given from Archicad 29.",
-                                    "properties": {
-                                        "preferredTransitionPlacement": {
-                                            "type": "string",
-                                            "enum": [
-                                                "SmallToLarge",
-                                                "LargeToSmall"
-                                            ]
-                                        },
-                                        "elbow": {
-    "type": "object",
-    "description": "Elbow parameters. Archicad 29 or newer.",
-    "properties": {
-        "factorRadius": { "type": "number" },
-        "preferenceTableId": { "$ref": "#/Guid" }
-    },
-    "additionalProperties": false,
-    "required": []
-},
-                                        "transition": {
-    "type": "object",
-    "description": "Transition parameters. preferenceTableId is given from Archicad 29.",
-    "properties": {
-        "angle": { "type": "number" },
-        "offsetY": { "type": "number" },
-        "offsetZ": { "type": "number" },
-        "preferenceTableId": { "$ref": "#/Guid" }
-    },
-    "additionalProperties": false,
-    "required": []
-}
-                                    },
-                                    "additionalProperties": false,
-                                    "required": []
-                                },
-                                "routingSegmentParameters": {
-    "type": "object",
-    "description": "The routing segment default parameters of the routing element (RoutingElement::GetRoutingSegmentDefaultParameters).",
-    "properties": {
-        "crossSectionShape": { "$ref": "#/MEPCrossSectionShape" },
-        "crossSectionWidth": { "type": "number" },
-        "crossSectionHeight": { "type": "number" },
-        "crossSectionReferenceId": { "type": "integer" },
-        "preferenceTableId": { "$ref": "#/Guid" },
-        "anchor": { "type": "string" },
-        "referenceLineOffsetX": { "type": "number" },
-        "referenceLineOffsetY": { "type": "number" },
-        "wallThickness": { "type": "number" },
-        "flangeSize": { "type": "number" },
-        "connectionStyle": { "type": "string", "enum": [ "SimpleBody", "Flanged", "Welded" ] }
-    },
-    "additionalProperties": false,
-    "required": []
-},
-                                "elbowParameters": {
-    "type": "object",
-    "description": "Elbow parameters. Archicad 29 or newer.",
-    "properties": {
-        "factorRadius": { "type": "number" },
-        "preferenceTableId": { "$ref": "#/Guid" }
-    },
-    "additionalProperties": false,
-    "required": []
-},
-                                "transitionParameters": {
-    "type": "object",
-    "description": "Transition parameters. preferenceTableId is given from Archicad 29.",
-    "properties": {
-        "angle": { "type": "number" },
-        "offsetY": { "type": "number" },
-        "offsetZ": { "type": "number" },
-        "preferenceTableId": { "$ref": "#/Guid" }
-    },
-    "additionalProperties": false,
-    "required": []
-},
-                                "rigidSegmentParameters": {
-                                    "type": "object",
-                                    "description": "The rigid segment default parameters of a routing segment (RoutingSegment::GetRigidSegmentDefaultParameters). Archicad 28 only.",
-                                    "properties": {
-                                        "width": { "type": "number" },
-                                        "height": { "type": "number" },
-                                        "shape": { "$ref": "#/MEPCrossSectionShape" }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": []
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elementId",
-                                "type"
-                            ]
+                            "$ref": "#/MEPRoutingParameters"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -36619,91 +35189,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The routing parameters to change. Only the given keys are changed. An item gives either routingNodeParameters and/or routingSegmentParameters for a routing element, or elbowParameters and/or transitionParameters for a routing node.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "routingNodeParameters": {
-                            "type": "object",
-                            "description": "The routing node default parameters of a routing element (RoutingElement::Modifier::SetRoutingNodeDefaultParameters). Archicad 29 or newer.",
-                            "properties": {
-                                "elbow": {
-                                    "type": "object",
-                                    "properties": {
-                                        "factorRadius": { "type": "number" },
-                                        "preferenceTableId": {
-                                            "$ref": "#/Guid",
-                                            "description": "An elbow preference table, as returned by GetMEPPreferenceTables."
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": []
-                                },
-                                "transition": {
-                                    "type": "object",
-                                    "properties": {
-                                        "preferenceTableId": {
-                                            "$ref": "#/Guid",
-                                            "description": "A transition preference table, as returned by GetMEPPreferenceTables."
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": []
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": []
-                        },
-                        "routingSegmentParameters": {
-                            "type": "object",
-                            "description": "The routing segment default parameters of a routing element (RoutingElement::Modifier::SetRoutingSegmentDefaultParameters).",
-                            "properties": {
-                                "crossSectionShape": { "$ref": "#/MEPCrossSectionShape" },
-                                "crossSectionWidth": { "type": "number" },
-                                "crossSectionHeight": { "type": "number" },
-                                "crossSectionReferenceId": {
-                                    "type": "integer",
-                                    "description": "Cross section reference id of the segment preference table. Resolved against preferenceTableId if given, otherwise against the table already set."
-                                },
-                                "preferenceTableId": {
-                                    "$ref": "#/Guid",
-                                    "description": "A segment preference table, as returned by GetMEPPreferenceTables."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": []
-                        },
-                        "elbowParameters": {
-                            "type": "object",
-                            "description": "The elbow parameters of a routing node (RoutingNode::Modifier::SetElbowDefaultParameters). Archicad 29 or newer.",
-                            "properties": {
-                                "factorRadius": { "type": "number" },
-                                "preferenceTableId": {
-                                    "$ref": "#/Guid",
-                                    "description": "An elbow preference table, as returned by GetMEPPreferenceTables."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": []
-                        },
-                        "transitionParameters": {
-                            "type": "object",
-                            "description": "The transition parameters of a routing node (RoutingNode::Modifier::SetTransitionDefaultParameters). Archicad 29 or newer.",
-                            "properties": {
-                                "preferenceTableId": {
-                                    "$ref": "#/Guid",
-                                    "description": "A transition preference table, as returned by GetMEPPreferenceTables."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": []
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/ElementMEPRoutingParameters"
                 }
             }
         },
@@ -36836,41 +35322,13 @@ var gCommands = [{
             "wiringTypes": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        },
-                        "crossSectionalArea": {
-                            "type": "number",
-                            "description": "The cross-sectional area of the wire in square millimeters."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "crossSectionalArea"
-                    ]
+                    "$ref": "#/ElectricalWiringType"
                 }
             },
             "loadClassifications": {
                 "type": "array",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        },
-                        "demandFactor": {
-                            "type": "number",
-                            "description": "The demand factor, between 0 and 1."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "demandFactor"
-                    ]
+                    "$ref": "#/ElectricalLoadClassification"
                 }
             }
         },
@@ -36892,49 +35350,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create electrical panels. The fields that are not given are taken from the default settings of the Electrical Panel tool.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "position": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "The anchor point of the new panel."
-                        },
-                        "orientation": {
-                            "$ref": "#/MEPOrientation",
-                            "description": "Defaults to the direction (1, 0, 0) and the rotation (0, 1, 0)."
-                        },
-                        "rotation": {
-                            "type": "number",
-                            "description": "The base rotation in radians."
-                        },
-                        "isReflected": {
-                            "type": "boolean"
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "The library part to use, as listed by GetAvailableLibraryParts."
-                        },
-                        "xSize": {
-                            "type": "number",
-                            "description": "The size along the local x axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "ySize": {
-                            "type": "number",
-                            "description": "The size along the local y axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "panelName": {
-                            "type": "string"
-                        },
-                        "circuitNamePrefix": {
-                            "type": "string"
-                        },
-                        "circuitIdStyle": {
-                            "type": "integer"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "position"
-                    ]
+                    "$ref": "#/ElectricalPanelData"
                 }
             }
         },
@@ -36966,56 +35382,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create electrical devices. The fields that are not given are taken from the default settings of the Electrical Device tool.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "position": {
-                            "$ref": "#/Coordinate3D",
-                            "description": "The anchor point of the new device."
-                        },
-                        "orientation": {
-                            "$ref": "#/MEPOrientation",
-                            "description": "Defaults to the direction (1, 0, 0) and the rotation (0, 1, 0)."
-                        },
-                        "rotation": {
-                            "type": "number",
-                            "description": "The base rotation in radians."
-                        },
-                        "isReflected": {
-                            "type": "boolean"
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "The library part to use, as listed by GetAvailableLibraryParts."
-                        },
-                        "xSize": {
-                            "type": "number",
-                            "description": "The size along the local x axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "ySize": {
-                            "type": "number",
-                            "description": "The size along the local y axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "apparentPower": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "The apparent power in VA."
-                        },
-                        "isApparentPowerEnabled": {
-                            "type": "boolean"
-                        },
-                        "loadClassificationName": {
-                            "type": "string",
-                            "description": "One of the load classifications of the electrical project settings, or an empty string for none."
-                        },
-                        "circuitId": {
-                            "$ref": "#/ElementId",
-                            "description": "The circuit to connect the new device to."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "position"
-                    ]
+                    "$ref": "#/ElectricalDeviceData"
                 }
             }
         },
@@ -37047,50 +35414,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify electrical panels. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "panelName": {
-                            "type": "string"
-                        },
-                        "circuitNamePrefix": {
-                            "type": "string"
-                        },
-                        "circuitIdStyle": {
-                            "type": "integer"
-                        },
-                        "anchorPoint": {
-                            "$ref": "#/Coordinate3D"
-                        },
-                        "orientation": {
-                            "$ref": "#/MEPOrientation"
-                        },
-                        "rotation": {
-                            "type": "number",
-                            "description": "The base rotation in radians."
-                        },
-                        "isReflected": {
-                            "type": "boolean"
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "The library part to use, as listed by GetAvailableLibraryParts."
-                        },
-                        "xSize": {
-                            "type": "number",
-                            "description": "The size along the local x axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "ySize": {
-                            "type": "number",
-                            "description": "The size along the local y axis. Some library parts calculate their own size, then the item fails."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/ElectricalPanelModificationData"
                 }
             }
         },
@@ -37122,36 +35446,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to create electrical circuits. Each item adds one circuit to the given panel.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "electricalPanelId": {
-                            "$ref": "#/ElementId",
-                            "description": "The panel to add the new circuit to."
-                        },
-                        "description": {
-                            "type": "string"
-                        },
-                        "voltage": {
-                            "type": "number"
-                        },
-                        "wiringTypeName": {
-                            "type": "string",
-                            "description": "One of the wiring types of the electrical project settings, or an empty string for none."
-                        },
-                        "isPhaseAUsed": {
-                            "type": "boolean"
-                        },
-                        "isPhaseBUsed": {
-                            "type": "boolean"
-                        },
-                        "isPhaseCUsed": {
-                            "type": "boolean"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "electricalPanelId"
-                    ]
+                    "$ref": "#/ElectricalCircuitData"
                 }
             }
         },
@@ -37212,35 +35507,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify electrical circuits. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "description": {
-                            "type": "string"
-                        },
-                        "voltage": {
-                            "type": "number"
-                        },
-                        "wiringTypeName": {
-                            "type": "string",
-                            "description": "One of the wiring types of the electrical project settings, or an empty string for none."
-                        },
-                        "isPhaseAUsed": {
-                            "type": "boolean"
-                        },
-                        "isPhaseBUsed": {
-                            "type": "boolean"
-                        },
-                        "isPhaseCUsed": {
-                            "type": "boolean"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/ElectricalCircuitModificationData"
                 }
             }
         },
@@ -37272,53 +35539,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of data to modify electrical devices. Only the given fields are changed.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "apparentPower": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "The apparent power in VA."
-                        },
-                        "isApparentPowerEnabled": {
-                            "type": "boolean"
-                        },
-                        "loadClassificationName": {
-                            "type": "string",
-                            "description": "One of the load classifications of the electrical project settings, or an empty string for none."
-                        },
-                        "anchorPoint": {
-                            "$ref": "#/Coordinate3D"
-                        },
-                        "orientation": {
-                            "$ref": "#/MEPOrientation"
-                        },
-                        "rotation": {
-                            "type": "number",
-                            "description": "The base rotation in radians."
-                        },
-                        "isReflected": {
-                            "type": "boolean"
-                        },
-                        "libraryPartId": {
-                            "$ref": "#/LibPartUnId",
-                            "description": "The library part to use, as listed by GetAvailableLibraryParts."
-                        },
-                        "xSize": {
-                            "type": "number",
-                            "description": "The size along the local x axis. Some library parts calculate their own size, then the item fails."
-                        },
-                        "ySize": {
-                            "type": "number",
-                            "description": "The size along the local y axis. Some library parts calculate their own size, then the item fails."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId"
-                    ]
+                    "$ref": "#/ElectricalDeviceModificationData"
                 }
             }
         },
@@ -37350,22 +35571,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "Array of electrical devices or panels and the circuits to connect them to. A panel connected to a circuit becomes a sub-panel of the panel of that circuit.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId",
-                            "description": "An electrical device or an electrical panel."
-                        },
-                        "circuitId": {
-                            "$ref": "#/ElementId",
-                            "description": "The electrical circuit to connect to."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "circuitId"
-                    ]
+                    "$ref": "#/ElectricalCircuitConnectionData"
                 }
             }
         },
@@ -37488,84 +35694,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elementId": {
-                                    "$ref": "#/ElementId"
-                                },
-                                "type": {
-                                    "$ref": "#/MEPElementType"
-                                },
-                                "domain": {
-                                    "type": "string",
-                                    "description": "The MEP domain (Ventilation, Piping or CableCarrier), empty if the element has none."
-                                },
-                                "insulationThickness": {
-                                    "type": "number",
-                                    "description": "The insulation thickness. RigidSegment, Elbow, Branch and Transition."
-                                },
-                                "routingSegmentId": {
-                                    "$ref": "#/ElementId",
-                                    "description": "The routing segment the rigid segment belongs to (see GetMEPRoutingElements). RigidSegment."
-                                },
-                                "routingNodeId": {
-                                    "$ref": "#/ElementId",
-                                    "description": "The routing node the elbow or transition belongs to (see GetMEPRoutingElements). Elbow and Transition."
-                                },
-                                "controlPoints": {
-                                    "type": "array",
-                                    "description": "The control points of the flexible segment. FlexibleSegment.",
-                                    "items": {
-                                        "$ref": "#/Coordinate3D"
-                                    }
-                                },
-                                "polyline": {
-                                    "$ref": "#/MEPFlexibleSegmentPolyline",
-                                    "description": "The line and spline parts of the flexible segment, when Archicad gives them (a flexible segment placed as a polyline, see CreateMEPFlexibleSegments). FlexibleSegment."
-                                },
-                                "factorRadius": {
-                                    "type": "number",
-                                    "description": "The radius factor of the elbow (Elbow::GetFactorRadius). Elbow, from Archicad 29."
-                                },
-                                "preferenceTableId": {
-                                    "$ref": "#/Guid",
-                                    "description": "The guid of the elbow or transition preference table (see GetMEPPreferenceTables). Elbow and Transition, from Archicad 29."
-                                },
-                                "branchAngle": {
-                                    "type": "number",
-                                    "description": "The angle of the branch, as returned by Branch::GetBranchAngle. Branch."
-                                },
-                                "branchLength": {
-                                    "type": "number",
-                                    "description": "The length of the branch. Branch."
-                                },
-                                "offsetY": {
-                                    "type": "number",
-                                    "description": "The Y offset of the transition (Transition::GetOffsetY). Transition."
-                                },
-                                "offsetZ": {
-                                    "type": "number",
-                                    "description": "The Z offset of the transition (Transition::GetOffsetZ). Transition."
-                                },
-                                "widerPortId": {
-                                    "$ref": "#/Guid",
-                                    "description": "The port at the wider end of the transition (see GetMEPPorts). Transition."
-                                },
-                                "narrowerPortId": {
-                                    "$ref": "#/Guid",
-                                    "description": "The port at the narrower end of the transition (see GetMEPPorts). Transition."
-                                },
-                                "isControlledByPreference": {
-                                    "type": "boolean",
-                                    "description": "Whether the transition is controlled by its preference table. Transition, from Archicad 29."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elementId",
-                                "type",
-                                "domain"
-                            ]
+                            "$ref": "#/MEPElementDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -37590,67 +35719,15 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "tableId": {
-                "type": "object",
-                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/MEPPreferenceTableId",
+                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers."
             },
             "keys": {
                 "type": "array",
                 "description": "The keys of the rows to get.",
                 "items": {
-                "type": "object",
-                "description": "The key of a row. Segment tables: referenceId. Elbow tables: referenceId and angle. Branch tables: mainAxisReferenceId, branchAxisReferenceId and branchAxisAngle. Transition tables: beginReferenceId and endReferenceId. The angles are as GetMEPPreferenceTables returns them; Archicad 28 finds the rows by their reference ids only and rejects a key with an angle. Archicad 27: shape and index (AddMEPPreferenceTableRows: shape only).",
-                "properties": {
-                    "shape": {
-                        "type": "string",
-                        "description": "Archicad 27 only: the shape whose list of values the row is in.",
-                        "enum": [
-                            "Circular",
-                            "Rectangular"
-                        ]
-                    },
-                    "index": {
-                        "type": "integer",
-                        "description": "Archicad 27 only: the index of the row in the list of its shape, from 0.",
-                        "minimum": 0
-                    },
-                    "referenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "mainAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisAngle": {
-                        "type": "number"
-                    },
-                    "beginReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "endReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                },
-                "additionalProperties": false
-            }
+                    "$ref": "#/MEPPreferenceRowKey"
+                }
             }
         },
         "additionalProperties": false,
@@ -37689,112 +35766,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "key": {
-                "type": "object",
-                "description": "The key of a row. Segment tables: referenceId. Elbow tables: referenceId and angle. Branch tables: mainAxisReferenceId, branchAxisReferenceId and branchAxisAngle. Transition tables: beginReferenceId and endReferenceId. The angles are as GetMEPPreferenceTables returns them; Archicad 28 finds the rows by their reference ids only and rejects a key with an angle. Archicad 27: shape and index (AddMEPPreferenceTableRows: shape only).",
-                "properties": {
-                    "shape": {
-                        "type": "string",
-                        "description": "Archicad 27 only: the shape whose list of values the row is in.",
-                        "enum": [
-                            "Circular",
-                            "Rectangular"
-                        ]
-                    },
-                    "index": {
-                        "type": "integer",
-                        "description": "Archicad 27 only: the index of the row in the list of its shape, from 0.",
-                        "minimum": 0
-                    },
-                    "referenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "mainAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisAngle": {
-                        "type": "number"
-                    },
-                    "beginReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "endReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                },
-                "additionalProperties": false
-            },
-                                "valid": {
-                                    "type": "boolean",
-                                    "description": "Whether the row is valid. Archicad 27: whether the list of the shape has a row with the index."
-                                },
-                                "values": {
-                "type": "object",
-                "description": "The values of a row, lengths in meters. Segment tables: diameter, wallThickness and description. Elbow tables: diameter, radius and description. Branch tables: mainAxisDiameter, branchAxisDiameter, length, branchOffset, connectionLength and description. Pipe transition tables: beginDiameter, endDiameter, length and description. Duct transition tables: beginDiameter, endDiameter, angle and description. Archicad 27: value and description.",
-                "properties": {
-                    "value": {
-                        "type": "number",
-                        "description": "Archicad 27 only: the value of the row."
-                    },
-                    "diameter": {
-                        "type": "number"
-                    },
-                    "wallThickness": {
-                        "type": "number"
-                    },
-                    "radius": {
-                        "type": "number"
-                    },
-                    "mainAxisDiameter": {
-                        "type": "number"
-                    },
-                    "branchAxisDiameter": {
-                        "type": "number"
-                    },
-                    "length": {
-                        "type": "number"
-                    },
-                    "branchOffset": {
-                        "type": "number"
-                    },
-                    "connectionLength": {
-                        "type": "number"
-                    },
-                    "beginDiameter": {
-                        "type": "number"
-                    },
-                    "endDiameter": {
-                        "type": "number"
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "description": {
-                        "type": "string"
-                    }
-                },
-                "additionalProperties": false
-            }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "key",
-                                "valid",
-                                "values"
-                            ]
+                            "$ref": "#/MEPPreferenceRowDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -37817,123 +35789,14 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "tableId": {
-                "type": "object",
-                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/MEPPreferenceTableId",
+                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers."
             },
             "rows": {
                 "type": "array",
                 "description": "The rows to change. Only the given values are set.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "key": {
-                "type": "object",
-                "description": "The key of a row. Segment tables: referenceId. Elbow tables: referenceId and angle. Branch tables: mainAxisReferenceId, branchAxisReferenceId and branchAxisAngle. Transition tables: beginReferenceId and endReferenceId. The angles are as GetMEPPreferenceTables returns them; Archicad 28 finds the rows by their reference ids only and rejects a key with an angle. Archicad 27: shape and index (AddMEPPreferenceTableRows: shape only).",
-                "properties": {
-                    "shape": {
-                        "type": "string",
-                        "description": "Archicad 27 only: the shape whose list of values the row is in.",
-                        "enum": [
-                            "Circular",
-                            "Rectangular"
-                        ]
-                    },
-                    "index": {
-                        "type": "integer",
-                        "description": "Archicad 27 only: the index of the row in the list of its shape, from 0.",
-                        "minimum": 0
-                    },
-                    "referenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "mainAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisAngle": {
-                        "type": "number"
-                    },
-                    "beginReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "endReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                },
-                "additionalProperties": false
-            },
-                        "values": {
-                "type": "object",
-                "description": "The values of a row, lengths in meters. Segment tables: diameter, wallThickness and description. Elbow tables: diameter, radius and description. Branch tables: mainAxisDiameter, branchAxisDiameter, length, branchOffset, connectionLength and description. Pipe transition tables: beginDiameter, endDiameter, length and description. Duct transition tables: beginDiameter, endDiameter, angle and description. Archicad 27: value and description.",
-                "properties": {
-                    "value": {
-                        "type": "number",
-                        "description": "Archicad 27 only: the value of the row."
-                    },
-                    "diameter": {
-                        "type": "number"
-                    },
-                    "wallThickness": {
-                        "type": "number"
-                    },
-                    "radius": {
-                        "type": "number"
-                    },
-                    "mainAxisDiameter": {
-                        "type": "number"
-                    },
-                    "branchAxisDiameter": {
-                        "type": "number"
-                    },
-                    "length": {
-                        "type": "number"
-                    },
-                    "branchOffset": {
-                        "type": "number"
-                    },
-                    "connectionLength": {
-                        "type": "number"
-                    },
-                    "beginDiameter": {
-                        "type": "number"
-                    },
-                    "endDiameter": {
-                        "type": "number"
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "description": {
-                        "type": "string"
-                    }
-                },
-                "additionalProperties": false
-            }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "key",
-                        "values"
-                    ]
+                    "$ref": "#/MEPPreferenceRowUpdate"
                 }
             }
         },
@@ -37952,21 +35815,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "success": {
-                                    "type": "boolean",
-                                    "enum": [ true ]
-                                },
-                                "index": {
-                                    "type": "integer",
-                                    "description": "Archicad 27 only: the index of the row after the call, which can differ from the index of its key when setting a value moves rows. The keys are the indices before the call."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "success"
-                            ]
+                            "$ref": "#/MEPPreferenceRowUpdateResult"
                         },
                         {
                             "$ref": "#/FailedExecutionResult"
@@ -37988,122 +35837,14 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "tableId": {
-                "type": "object",
-                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/MEPPreferenceTableId",
+                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers."
             },
             "rows": {
                 "type": "array",
                 "description": "The rows to add, with their key and optionally their values. Branch tables from Archicad 28, elbow and transition tables from Archicad 29. Segment tables have a row for each reference id, so no row can be added to them. Archicad 27: the key has the shape only, the table gives the index.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "key": {
-                "type": "object",
-                "description": "The key of a row. Segment tables: referenceId. Elbow tables: referenceId and angle. Branch tables: mainAxisReferenceId, branchAxisReferenceId and branchAxisAngle. Transition tables: beginReferenceId and endReferenceId. The angles are as GetMEPPreferenceTables returns them; Archicad 28 finds the rows by their reference ids only and rejects a key with an angle. Archicad 27: shape and index (AddMEPPreferenceTableRows: shape only).",
-                "properties": {
-                    "shape": {
-                        "type": "string",
-                        "description": "Archicad 27 only: the shape whose list of values the row is in.",
-                        "enum": [
-                            "Circular",
-                            "Rectangular"
-                        ]
-                    },
-                    "index": {
-                        "type": "integer",
-                        "description": "Archicad 27 only: the index of the row in the list of its shape, from 0.",
-                        "minimum": 0
-                    },
-                    "referenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "mainAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisAngle": {
-                        "type": "number"
-                    },
-                    "beginReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "endReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                },
-                "additionalProperties": false
-            },
-                        "values": {
-                "type": "object",
-                "description": "The values of a row, lengths in meters. Segment tables: diameter, wallThickness and description. Elbow tables: diameter, radius and description. Branch tables: mainAxisDiameter, branchAxisDiameter, length, branchOffset, connectionLength and description. Pipe transition tables: beginDiameter, endDiameter, length and description. Duct transition tables: beginDiameter, endDiameter, angle and description. Archicad 27: value and description.",
-                "properties": {
-                    "value": {
-                        "type": "number",
-                        "description": "Archicad 27 only: the value of the row."
-                    },
-                    "diameter": {
-                        "type": "number"
-                    },
-                    "wallThickness": {
-                        "type": "number"
-                    },
-                    "radius": {
-                        "type": "number"
-                    },
-                    "mainAxisDiameter": {
-                        "type": "number"
-                    },
-                    "branchAxisDiameter": {
-                        "type": "number"
-                    },
-                    "length": {
-                        "type": "number"
-                    },
-                    "branchOffset": {
-                        "type": "number"
-                    },
-                    "connectionLength": {
-                        "type": "number"
-                    },
-                    "beginDiameter": {
-                        "type": "number"
-                    },
-                    "endDiameter": {
-                        "type": "number"
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "description": {
-                        "type": "string"
-                    }
-                },
-                "additionalProperties": false
-            }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "key"
-                    ]
+                    "$ref": "#/MEPPreferenceRowAddition"
                 }
             }
         },
@@ -38122,22 +35863,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "success": {
-                                    "type": "boolean",
-                                    "enum": [ true ]
-                                },
-                                "index": {
-                                    "type": "integer",
-                                    "description": "The index of the new row in the table. Archicad 27: in the list of its shape, after the call."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "success",
-                                "index"
-                            ]
+                            "$ref": "#/MEPPreferenceRowAdditionResult"
                         },
                         {
                             "$ref": "#/FailedExecutionResult"
@@ -38159,67 +35885,15 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "tableId": {
-                "type": "object",
-                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
+                "$ref": "#/MEPPreferenceTableId",
+                "description": "The guid of a preference table, as returned by GetMEPPreferenceTables (the branch, elbow and transition tables with includeFittingTables): a pipe or circular duct segment table, a branch or elbow table of the Piping or Ventilation domain, or, from Archicad 29, a transition table. Rectangular duct and cable carrier segment tables are found too, but their rows have no key. Archicad 27: any preference table, as returned by GetMEPPreferenceTableContainers."
             },
             "keys": {
                 "type": "array",
                 "description": "The keys of the rows to delete. Segment tables, and the elbow tables of Archicad 28, have a row for each reference id, which is emptied instead. Archicad 27: the indices are those before the call; the rows are deleted from the highest index down.",
                 "items": {
-                "type": "object",
-                "description": "The key of a row. Segment tables: referenceId. Elbow tables: referenceId and angle. Branch tables: mainAxisReferenceId, branchAxisReferenceId and branchAxisAngle. Transition tables: beginReferenceId and endReferenceId. The angles are as GetMEPPreferenceTables returns them; Archicad 28 finds the rows by their reference ids only and rejects a key with an angle. Archicad 27: shape and index (AddMEPPreferenceTableRows: shape only).",
-                "properties": {
-                    "shape": {
-                        "type": "string",
-                        "description": "Archicad 27 only: the shape whose list of values the row is in.",
-                        "enum": [
-                            "Circular",
-                            "Rectangular"
-                        ]
-                    },
-                    "index": {
-                        "type": "integer",
-                        "description": "Archicad 27 only: the index of the row in the list of its shape, from 0.",
-                        "minimum": 0
-                    },
-                    "referenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "angle": {
-                        "type": "number"
-                    },
-                    "mainAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "branchAxisAngle": {
-                        "type": "number"
-                    },
-                    "beginReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    },
-                    "endReferenceId": {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                },
-                "additionalProperties": false
-            }
+                    "$ref": "#/MEPPreferenceRowKey"
+                }
             }
         },
         "additionalProperties": false,
@@ -38251,14 +35925,9 @@ var gCommands = [{
                 "type": "array",
                 "description": "The domains whose preference tables to list. Defaults to all three.",
                 "items": {
-                "type": "string",
-                "description": "The MEP domain of a preference table container.",
-                "enum": [
-                    "Piping",
-                    "Ventilation",
-                    "CableCarrier"
-                ]
-            }
+                    "$ref": "#/MEPPreferenceTableDomain",
+                    "description": "The MEP domain of a preference table container."
+                }
             }
         },
         "additionalProperties": false
@@ -38272,75 +35941,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "domain": {
-                "type": "string",
-                "description": "The MEP domain of a preference table container.",
-                "enum": [
-                    "Piping",
-                    "Ventilation",
-                    "CableCarrier"
-                ]
-            },
-                                "exists": {
-                                    "type": "boolean",
-                                    "description": "Whether the container exists."
-                                },
-                                "tables": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "tableId": {
-                "type": "object",
-                "description": "The id of a preference table, for the tableId of the preference table row commands.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
-            },
-                                            "name": {
-                                                "type": "string"
-                                            },
-                                            "exists": {
-                                                "type": "boolean"
-                                            },
-                                            "sizes": {
-                                                "type": "object",
-                                                "description": "The number of rows of each shape.",
-                                                "properties": {
-                                                    "Circular": {
-                                                        "type": "integer"
-                                                    },
-                                                    "Rectangular": {
-                                                        "type": "integer"
-                                                    }
-                                                },
-                                                "additionalProperties": false
-                                            }
-                                        },
-                                        "additionalProperties": false,
-                                        "required": [
-                                            "tableId",
-                                            "name",
-                                            "exists",
-                                            "sizes"
-                                        ]
-                                    }
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "domain",
-                                "exists",
-                                "tables"
-                            ]
+                            "$ref": "#/MEPPreferenceTableContainer"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -38362,13 +35963,8 @@ var gCommands = [{
         "type": "object",
         "properties": {
             "domain": {
-                "type": "string",
-                "description": "The MEP domain of a preference table container.",
-                "enum": [
-                    "Piping",
-                    "Ventilation",
-                    "CableCarrier"
-                ]
+                "$ref": "#/MEPPreferenceTableDomain",
+                "description": "The MEP domain of a preference table container."
             },
             "tables": {
                 "type": "array",
@@ -38402,31 +35998,7 @@ var gCommands = [{
                 "items": {
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "success": {
-                                    "type": "boolean",
-                                    "enum": [ true ]
-                                },
-                                "tableId": {
-                "type": "object",
-                "description": "The id of a preference table, for the tableId of the preference table row commands.",
-                "properties": {
-                    "guid": {
-                        "$ref": "#/Guid"
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "guid"
-                ]
-            }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "success",
-                                "tableId"
-                            ]
+                            "$ref": "#/MEPPreferenceTableCreationResult"
                         },
                         {
                             "$ref": "#/FailedExecutionResult"
@@ -38756,28 +36328,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load groups to create.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        },
-                        "groupType": {
-                            "$ref": "#/AnalyticalLoadGroupType"
-                        },
-                        "relation": {
-                            "$ref": "#/AnalyticalLoadGroupRelation"
-                        },
-                        "loadType": {
-                            "type": "string",
-                            "description": "The load type of the group as free text. Empty when it is omitted."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "groupType",
-                        "relation"
-                    ]
+                    "$ref": "#/AnalyticalLoadGroupData"
                 }
             }
         },
@@ -38796,16 +36347,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "loadGroupId": {
-                                    "$ref": "#/GuidId"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "loadGroupId"
-                            ]
+                            "$ref": "#/AnalyticalLoadGroupIdArrayItem"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -38830,36 +36372,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load cases to create.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Empty when it is omitted."
-                        },
-                        "actionType": {
-                            "$ref": "#/AnalyticalLoadCaseActionType"
-                        },
-                        "loadGroupId": {
-                            "$ref": "#/GuidId",
-                            "description": "The identifier of the load group the load case belongs to."
-                        },
-                        "loadType": {
-                            "$ref": "#/AnalyticalLoadCaseLoadType"
-                        },
-                        "duration": {
-                            "$ref": "#/AnalyticalLoadCaseDuration"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "actionType",
-                        "loadGroupId",
-                        "loadType"
-                    ]
+                    "$ref": "#/AnalyticalLoadCaseData"
                 }
             }
         },
@@ -38878,16 +36391,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "loadCaseId": {
-                                    "$ref": "#/GuidId"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "loadCaseId"
-                            ]
+                            "$ref": "#/AnalyticalLoadCaseIdArrayItem"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -38912,37 +36416,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load combinations to create.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string"
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Empty when it is omitted."
-                        },
-                        "category": {
-                            "$ref": "#/AnalyticalLoadCombinationCategory"
-                        },
-                        "nationalStandard": {
-                            "$ref": "#/AnalyticalLoadCombinationNationalStandard"
-                        },
-                        "type": {
-                            "$ref": "#/AnalyticalLoadCombinationType"
-                        },
-                        "loadFactors": {
-                            "type": "array",
-                            "description": "The load cases of the combination with their factors.",
-                            "items": {
-                                "$ref": "#/AnalyticalLoadFactor"
-                            }
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "category"
-                    ]
+                    "$ref": "#/AnalyticalLoadCombinationData"
                 }
             }
         },
@@ -38961,16 +36435,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "loadCombinationId": {
-                                    "$ref": "#/GuidId"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "loadCombinationId"
-                            ]
+                            "$ref": "#/AnalyticalLoadCombinationIdArrayItem"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -38995,16 +36460,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load groups to delete.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "loadGroupId": {
-                            "$ref": "#/GuidId"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "loadGroupId"
-                    ]
+                    "$ref": "#/AnalyticalLoadGroupIdArrayItem"
                 }
             }
         },
@@ -39036,16 +36492,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load cases to delete.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "loadCaseId": {
-                            "$ref": "#/GuidId"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "loadCaseId"
-                    ]
+                    "$ref": "#/AnalyticalLoadCaseIdArrayItem"
                 }
             }
         },
@@ -39077,16 +36524,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The load combinations to delete.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "loadCombinationId": {
-                            "$ref": "#/GuidId"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "loadCombinationId"
-                    ]
+                    "$ref": "#/AnalyticalLoadCombinationIdArrayItem"
                 }
             }
         },
@@ -39211,62 +36649,13 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "curveMember": {
-                                    "$ref": "#/AnalyticalCurveMember"
-                                },
-                                "connections": {
-                                    "$ref": "#/AnalyticalMemberConnections"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "curveMember",
-                                "connections"
-                            ]
+                            "$ref": "#/AnalyticalCurveMemberDetails"
                         },
                         {
-                            "type": "object",
-                            "properties": {
-                                "surfaceMember": {
-                                    "$ref": "#/AnalyticalSurfaceMember"
-                                },
-                                "idMapping": {
-                                    "$ref": "#/AnalyticalExportIdMapping"
-                                },
-                                "connections": {
-                                    "$ref": "#/AnalyticalMemberConnections"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "surfaceMember",
-                                "connections"
-                            ]
+                            "$ref": "#/AnalyticalSurfaceMemberDetails"
                         },
                         {
-                            "type": "object",
-                            "properties": {
-                                "segmentedSurfaceMembers": {
-                                    "type": "array",
-                                    "description": "The segments of the surface member.",
-                                    "items": {
-                                        "$ref": "#/AnalyticalSurfaceMember"
-                                    }
-                                },
-                                "idMapping": {
-                                    "$ref": "#/AnalyticalExportIdMapping"
-                                },
-                                "connections": {
-                                    "$ref": "#/AnalyticalMemberConnections"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "segmentedSurfaceMembers",
-                                "connections"
-                            ]
+                            "$ref": "#/AnalyticalSegmentedSurfaceMemberDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -39344,20 +36733,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The element and its new release, as GetAnalyticalReleases returns it. The release replaces the element's release as a whole.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "release": {
-                            "$ref": "#/AnalyticalRelease"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "release"
-                    ]
+                    "$ref": "#/ElementAnalyticalRelease"
                 }
             }
         },
@@ -39404,22 +36780,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "begAdditionalLength": {
-                                    "type": "number",
-                                    "description": "The length added to the curve member at its start."
-                                },
-                                "endAdditionalLength": {
-                                    "type": "number",
-                                    "description": "The length added to the curve member at its end."
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "begAdditionalLength",
-                                "endAdditionalLength"
-                            ]
+                            "$ref": "#/AnalyticalCurveMemberStretch"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -39444,26 +36805,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The element of the curve member and the lengths to add to it.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "elementId": {
-                            "$ref": "#/ElementId"
-                        },
-                        "begAdditionalLength": {
-                            "type": "number",
-                            "description": "The length added to the curve member at its start."
-                        },
-                        "endAdditionalLength": {
-                            "type": "number",
-                            "description": "The length added to the curve member at its end."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "elementId",
-                        "begAdditionalLength",
-                        "endAdditionalLength"
-                    ]
+                    "$ref": "#/AnalyticalCurveMemberStretchUpdate"
                 }
             }
         },
@@ -39495,20 +36837,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The member parts to get the local coordinate system of.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "memberPartRef": {
-                            "$ref": "#/AnalyticalMemberPartRef"
-                        },
-                        "intersectingMemberPartRef": {
-                            "$ref": "#/AnalyticalMemberPartRef",
-                            "description": "When given, the local coordinate system of memberPartRef in its intersection with this member part is returned."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                        "memberPartRef"
-                    ]
+                    "$ref": "#/AnalyticalMemberCoordinateSystemRequest"
                 }
             }
         },
@@ -39649,20 +36978,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "support": {
-                                    "$ref": "#/AnalyticalSupport"
-                                },
-                                "geometry": {
-                                    "$ref": "#/AnalyticalSupportGeometry"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "support",
-                                "geometry"
-                            ]
+                            "$ref": "#/AnalyticalSupportDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -39706,20 +37022,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "link": {
-                                    "$ref": "#/AnalyticalLink"
-                                },
-                                "geometry": {
-                                    "$ref": "#/AnalyticalLinkGeometry"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "link",
-                                "geometry"
-                            ]
+                            "$ref": "#/AnalyticalLinkDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -39880,69 +37183,13 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "pointLoad": {
-                                    "$ref": "#/AnalyticalPointLoad"
-                                },
-                                "geometry": {
-                                    "type": "object",
-                                    "properties": {
-                                        "coordinate": {
-                                            "$ref": "#/Coordinate3D"
-                                        }
-                                    },
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "coordinate"
-                                    ]
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "pointLoad",
-                                "geometry"
-                            ]
+                            "$ref": "#/AnalyticalPointLoadDetails"
                         },
                         {
-                            "type": "object",
-                            "properties": {
-                                "edgeLoad": {
-                                    "$ref": "#/AnalyticalEdgeLoad"
-                                },
-                                "customData": {
-                                    "$ref": "#/AnalyticalEdgeLoadCustomData"
-                                },
-                                "geometry": {
-                                    "$ref": "#/AnalyticalEdgeLoadCustomData"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "edgeLoad",
-                                "customData",
-                                "geometry"
-                            ]
+                            "$ref": "#/AnalyticalEdgeLoadDetails"
                         },
                         {
-                            "type": "object",
-                            "properties": {
-                                "surfaceLoad": {
-                                    "$ref": "#/AnalyticalSurfaceLoad"
-                                },
-                                "customData": {
-                                    "$ref": "#/AnalyticalSurfaceLoadCustomData"
-                                },
-                                "geometry": {
-                                    "$ref": "#/AnalyticalSurfaceLoadCustomData"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "surfaceLoad",
-                                "customData",
-                                "geometry"
-                            ]
+                            "$ref": "#/AnalyticalSurfaceLoadDetails"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -40036,7 +37283,7 @@ var gCommands = [{
     }
             },{
                 "name": "CreateElementsFromAnalyticalMembers",
-                "version": "1.8.1",
+                "version": "2.0.0",
                 "description": "Creates elements (beams, columns, walls, slabs, roofs) from the given curve, surface or segmented surface members, in the form GetAnalyticalMemberDetails returns them, optionally with the settings of a favorite, in one undo step. Returns the new elements and, from Archicad 26, the mapping of their edges and vertices to member parts.",
                 "inputScheme": {
         "type": "object",
@@ -40045,47 +37292,7 @@ var gCommands = [{
                 "type": "array",
                 "description": "The analytical members to create elements from, in the form GetAnalyticalMemberDetails returns them, so a member read there can be passed on as it is. The elemGuid of a member is ignored. A curve member needs analyticalMemberType and curve, a surface member (or segment) analyticalMemberType and contour; the other fields are zero when left out.",
                 "items": {
-                    "type": "object",
-                    "properties": {
-                        "curveMember": {
-                            "$ref": "#/AnalyticalCurveMember",
-                            "description": "A curve member, creating a beam or a column."
-                        },
-                        "surfaceMember": {
-                            "$ref": "#/AnalyticalSurfaceMember",
-                            "description": "A surface member, creating a wall, a slab or a roof."
-                        },
-                        "segmentedSurfaceMembers": {
-                            "type": "array",
-                            "description": "The segments of a segmented surface member (a curved wall), creating one element.",
-                            "items": {
-                                "$ref": "#/AnalyticalSurfaceMember"
-                            },
-                            "minItems": 1
-                        },
-                        "favoriteName": {
-                            "type": "string",
-                            "description": "The name of the favorite whose settings the new element gets."
-                        }
-                    },
-                    "additionalProperties": false,
-                    "oneOf": [
-                        {
-                            "required": [
-                                "curveMember"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "surfaceMember"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "segmentedSurfaceMembers"
-                            ]
-                        }
-                    ]
+                    "$ref": "#/ElementFromAnalyticalMemberData"
                 }
             }
         },
@@ -40104,19 +37311,7 @@ var gCommands = [{
                     "type": "object",
                     "oneOf": [
                         {
-                            "type": "object",
-                            "properties": {
-                                "elementId": {
-                                    "$ref": "#/ElementId"
-                                },
-                                "idMapping": {
-                                    "$ref": "#/AnalyticalImportIdMapping"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "elementId"
-                            ]
+                            "$ref": "#/ElementFromAnalyticalMember"
                         },
                         {
                             "$ref": "#/ErrorItem"
@@ -40168,7 +37363,7 @@ var gCommands = [{
             },{
                 "name": "RemoveSolidElementLinks",
                 "version": "1.5.4",
-                "description": "Removes solid element operation links between target and operator elements.",
+                "description": "Removes solid element operation links between target and operator elements. With dryRun true nothing is removed and no undo step is created: the response has dryRun set to true, and each link that exists gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -40178,6 +37373,9 @@ var gCommands = [{
                 "items": {
                     "$ref": "#/SolidLinkReference"
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -40188,8 +37386,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input link, in the order of the input. On a dry run a link that exists (the operator is linked to the target) gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -40304,17 +37506,17 @@ var gCommands = [{
             },{
                 "name": "TrimElements",
                 "version": "1.5.9",
-                "description": "Trims construction elements with a roof or shell: the roofs and shells in the list, or one given trimming element with a trim type.",
+                "description": "Trims construction elements with a roof or shell: the roofs and shells in the list, or one given trimming element with a trim type. With several roofs or shells in the list Archicad decides which of them trims which element (they may also trim each other), so not every element is necessarily trimmed by each; to trim each element with each roof or shell, call it once per roof or shell with trimmingElement, and check the result with GetElementTrims.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elements": {
                 "$ref": "#/Elements",
-                "description": "The construction elements to trim. Without trimmingElement the roofs and shells among them do the trimming."
+                "description": "The construction elements to trim. Without trimmingElement the roofs and shells among them do the trimming: Archicad decides which roof or shell trims which element and with which trim type, and may trim the roofs and shells with each other, so not every element is necessarily trimmed by every roof or shell. The call reports no result per pair; read them back with GetElementTrims. For a known result, use trimmingElement and call the command once per roof or shell."
             },
             "trimmingElement": {
                 "$ref": "#/ElementId",
-                "description": "Optional. The roof or shell that trims every element in the list."
+                "description": "Optional. The roof or shell that trims every element in the list, with trimType."
             },
             "trimType": {
                 "$ref": "#/TrimType",
@@ -40332,13 +37534,13 @@ var gCommands = [{
             },{
                 "name": "RemoveElementTrims",
                 "version": "1.5.9",
-                "description": "Removes the trim between an element and the roof or shell trimming it.",
+                "description": "Removes the trim between an element and the roof or shell trimming it. The Archicad API removes the trimming connection between the two elements, so when they trim each other (two roofs or shells) both directions are removed; trim the other direction again with TrimElements to keep it. With dryRun true nothing is removed and no undo step is created: the response has dryRun set to true, and each pair whose element is trimmed by its trimming element gets wouldDelete.",
                 "inputScheme": {
         "type": "object",
         "properties": {
             "elementPairs": {
                 "type": "array",
-                "description": "The trimmed element and the roof or shell trimming it, per pair.",
+                "description": "The trimmed element and the roof or shell trimming it, per pair. The trimming connection between the two is removed: when they trim each other, both directions are removed.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -40355,6 +37557,9 @@ var gCommands = [{
                         "trimmingElementId"
                     ]
                 }
+            },
+            "dryRun": {
+                "$ref": "#/DryRun"
             }
         },
         "additionalProperties": false,
@@ -40365,8 +37570,12 @@ var gCommands = [{
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "dryRun": {
+                "$ref": "#/DryRunFlag"
+            },
             "executionResults": {
-                "$ref": "#/ExecutionResults"
+                "$ref": "#/DeletionExecutionResults",
+                "description": "One result for each input pair, in the order of the input. On a dry run a pair whose element is trimmed by the trimming element gets wouldDelete."
             }
         },
         "additionalProperties": false,
@@ -40509,7 +37718,7 @@ var gCommands = [{
             "commands": [{
                 "name": "ShowScriptUI",
                 "version": "1.5.4",
-                "description": "Shows the given HTML content in a native Archicad palette (a tkinter alternative for Python scripts).",
+                "description": "Shows the given HTML content in a native Archicad palette (a tkinter alternative for Python scripts) and returns the uiId of its window. Each script can have its own window, picked by uiId or scriptId; without them the first window is used.",
                 "inputScheme": {
         "type": "object",
         "properties": {
@@ -40568,6 +37777,17 @@ var gCommands = [{
             "autoHeight": {
                 "type": "boolean",
                 "description": "Automatically resizes the palette's height to fit the page content as it changes. Defaults to false."
+            },
+            "uiId": {
+                "type": "integer",
+                "description": "The window to use, as returned by ShowScriptUI (1 to 8). Takes precedence over scriptId.",
+                "minimum": 1,
+                "maximum": 8
+            },
+            "scriptId": {
+                "type": "string",
+                "description": "Any text that identifies the calling script, so it uses its own window: ShowScriptUI gives a script without a window a free one, preferring the closed windows. The Tapir palette gives each script it starts its own id in the TAPIR_SCRIPT_ID environment variable, which aclib passes here automatically; that script's window is titled with its name and is freed when it ends. Without uiId and scriptId the first window is used.",
+                "minLength": 1
             }
         },
         "additionalProperties": false,
@@ -40576,16 +37796,58 @@ var gCommands = [{
         ]
     },
                 "outputScheme": {
-        "$ref": "#/ExecutionResult"
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "enum": [ true ]
+                    },
+                    "uiId": {
+                        "type": "integer",
+                        "description": "The window the page is shown in (1 to 8). Pass it to GetScriptUIResult, or to a later ShowScriptUI to replace the page."
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "success",
+                    "uiId"
+                ]
+            },
+            {
+                "$ref": "#/FailedExecutionResult"
+            }
+        ]
     }
             },{
                 "name": "GetScriptUIResult",
                 "version": "1.5.4",
-                "description": "Retrieves and clears the result last submitted from the Script UI palette's page (via window.ACAPI.SubmitResult), if any, and reports whether the palette is still open, so a waiting script can stop when the user closes it.",
-                "inputScheme": null,
+                "description": "Retrieves and clears the result last submitted from a Script UI window's page (via window.ACAPI.SubmitResult), if any, and reports whether the window is still open, so a waiting script can stop when the user closes it. The window is picked by uiId or scriptId; without them the first window is used.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "uiId": {
+                "type": "integer",
+                "description": "The window to use, as returned by ShowScriptUI (1 to 8). Takes precedence over scriptId.",
+                "minimum": 1,
+                "maximum": 8
+            },
+            "scriptId": {
+                "type": "string",
+                "description": "Any text that identifies the calling script, so it uses its own window: ShowScriptUI gives a script without a window a free one, preferring the closed windows. The Tapir palette gives each script it starts its own id in the TAPIR_SCRIPT_ID environment variable, which aclib passes here automatically; that script's window is titled with its name and is freed when it ends. Without uiId and scriptId the first window is used.",
+                "minLength": 1
+            }
+        },
+        "additionalProperties": false
+    },
                 "outputScheme": {
         "type": "object",
         "properties": {
+            "uiId": {
+                "type": "integer",
+                "description": "The window the result was read from (1 to 8). Missing when scriptId was given and that script has no window."
+            },
             "hasResult": {
                 "type": "boolean",
                 "description": "True if the Script UI page has submitted a result since the last call."
@@ -40604,6 +37866,349 @@ var gCommands = [{
             "hasResult",
             "isOpen"
         ]
+    }
+            },{
+                "name": "OpenSettingsDialog",
+                "version": "2.0.0",
+                "description": "Opens Archicad's settings dialog of the selected elements or the current tool (Archicad 28 and later), or the default settings dialog of the given element type, waits for the user and reports whether the dialog was closed with OK or Cancel.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementType": {
+                "$ref": "#/ElementType",
+                "description": "Opens the default settings dialog of this tool. Without it, Archicad 28 and later open the settings of the selected elements, or of the current tool when nothing is selected; Archicad 25 to 27 open the default settings of the current tool."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user closed the dialog with Cancel, false when with OK."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickLibraryPart",
+                "version": "2.0.0",
+                "description": "Opens Archicad's Object, Lamp, Window or Door Settings dialog, optionally limited to a library part subtype, lets the user pick a library part and set its parameters, and returns the chosen library part with its GDL parameters, or that the user cancelled. Places nothing.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "elementType": {
+                "type": "string",
+                "enum": ["Object", "Lamp", "Window", "Door"],
+                "description": "Whose settings dialog to open: the Object, Lamp, Window or Door tool's. Without a subtypeUnID the dialog lists the library parts of that tool. Object by default."
+            },
+            "subtypeUnID": {
+                "type": "string",
+                "description": "Limits the dialog to the library parts of this subtype: the unique ID of the subtype library part, its main and revision GUID in the form {main}-{revision}."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user closed the dialog with Cancel; then nothing else is returned."
+            },
+            "libPart": {
+                "$ref": "#/LibPartDetails",
+                "description": "The library part the user chose. Absent when it could not be read."
+            },
+            "subtypeUnID": {
+                "type": "string",
+                "description": "The unique ID of the chosen library part's subtype, as Archicad returned it."
+            },
+            "parameters": {
+                "type": "array",
+                "description": "The GDL parameters of the chosen library part, with the values set in the dialog. Present when the user pressed OK.",
+                "items": {
+                    "$ref": "#/StoredGDLParameter"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickLibraryPartFile",
+                "version": "2.0.0",
+                "description": "Opens Archicad's Open Library Part dialog, waits for the user and returns the location of the chosen library part, or reports that the user cancelled.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "generalGDLObjectsOnly": {
+                "type": "boolean",
+                "description": "Sets the dialog's file filter to General GDL Objects. Default: false."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user cancelled the dialog or chose no valid library part."
+            },
+            "path": {
+                "type": "string",
+                "description": "The location of the chosen library part. Only when cancelled is false."
+            },
+            "openedInExternalEditor": {
+                "type": "boolean",
+                "description": "True when Archicad opened the chosen file in an external editor (Archicad 26 and later; always false in Archicad 25). Only when cancelled is false."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickPictureFile",
+                "version": "2.0.0",
+                "description": "Opens Archicad's Open Picture dialog (the one of the texture settings), waits for the user and returns the location of the chosen picture, or reports that the user cancelled. Archicad adds the chosen picture to the embedded library when it is not in it yet.",
+                "inputScheme": null,
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user cancelled the dialog or chose no valid picture."
+            },
+            "path": {
+                "type": "string",
+                "description": "The location of the chosen picture. Archicad adds the picture to the embedded library when it is not in it yet. Only when cancelled is false."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickZoneStampOrLabelFile",
+                "version": "2.0.0",
+                "description": "Opens Archicad's dialog for opening a zone stamp or label library part, waits for the user and returns the location of the chosen file, or reports that the user cancelled.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "objectType": {
+                "type": "string",
+                "enum": ["Label", "ZoneStamp"],
+                "description": "The type of library part the dialog lets the user open. Default: Label."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user cancelled the dialog or chose no valid zone stamp or label."
+            },
+            "path": {
+                "type": "string",
+                "description": "The location of the chosen zone stamp or label. Only when cancelled is false."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickLibraryPartSaveLocation",
+                "version": "2.0.0",
+                "description": "Opens Archicad's Save Library Part dialog (object, door or window), waits for the user and returns the location chosen to save the library part to, or reports that the user cancelled. Nothing is saved.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "defaultPath": {
+                "type": "string",
+                "description": "The location (library folder and file name) the dialog starts from. Default: <libraryPartType>.gsm in the embedded library of the project."
+            },
+            "libraryPartType": {
+                "type": "string",
+                "enum": ["Object", "Door", "Window"],
+                "description": "Which Save Library Part dialog to open. Default: Object."
+            },
+            "browseForFolder": {
+                "type": "boolean",
+                "description": "Lets the user save outside the embedded library. Default: false."
+            },
+            "title": {
+                "type": "string",
+                "description": "The title of the dialog. Default: Archicad's own title."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user cancelled the dialog."
+            },
+            "path": {
+                "type": "string",
+                "description": "The location the user chose to save the library part to. Nothing is saved there. Only when cancelled is false."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickLibraryFolder",
+                "version": "2.0.0",
+                "description": "Opens Archicad's dialog for choosing or creating a library folder, waits for the user and returns the location of the folder, or reports that the user cancelled. The folder is not added to the libraries of the project.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "defaultName": {
+                "type": "string",
+                "description": "The default name the dialog offers for a new library folder. Default: New Library."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user cancelled the dialog."
+            },
+            "path": {
+                "type": "string",
+                "description": "The location of the chosen or created folder. It is not added to the libraries of the project; use AddLibraries for that. Only when cancelled is false."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "ShowIFCExportSettings",
+                "version": "2.0.0",
+                "description": "Opens Archicad's IFC export settings dialog, where the user picks a view and an IFC export translator, waits for the user and returns the chosen view and translator, or cancelled. Available from Archicad 28.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "navigatorItemId": {
+                "$ref": "#/NavigatorItemId",
+                "description": "Optional: the view (an item of the View Map) the dialog starts with."
+            },
+            "translatorName": {
+                "type": "string",
+                "description": "Optional: the name of the IFC export translator the dialog starts with, as GetIFCExportTranslators lists them."
+            }
+        },
+        "additionalProperties": false
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user closed the dialog with Cancel; then no other field is given."
+            },
+            "navigatorItemId": {
+                "$ref": "#/NavigatorItemId",
+                "description": "The view the user chose."
+            },
+            "viewName": {
+                "type": "string",
+                "description": "The name of the chosen view, when Archicad finds it in the navigator."
+            },
+            "translatorName": {
+                "type": "string",
+                "description": "The name of the IFC export translator the user chose, as IFCFileOperation's translatorName takes it."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickAttribute",
+                "version": "2.0.0",
+                "description": "Opens a small dialog with Archicad's attribute picker for the given attribute type (layer, building material, composite, profile or surface; fill and line from Archicad 27), waits for the user and returns the chosen attribute, or cancelled. Available from Archicad 26.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "attributeType": {
+                "type": "string",
+                "description": "The type of the attribute to pick. Fill and Line need Archicad 27 or newer. Composite lists the composites only.",
+                "enum": ["Layer", "BuildingMaterial", "Composite", "Profile", "Surface", "Fill", "Line"]
+            },
+            "attributeId": {
+                "$ref": "#/AttributeId",
+                "description": "The attribute selected when the dialog opens. Without it the picker starts empty and OK is enabled once the user has picked an attribute."
+            },
+            "title": {
+                "type": "string",
+                "description": "The title of the dialog. Default: Pick Attribute."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["attributeType"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user closed the dialog with Cancel, false when with OK."
+            },
+            "attributeType": {
+                "$ref": "#/AttributeType",
+                "description": "The type of the chosen attribute, the attributeType of the input. Only when not cancelled."
+            },
+            "attributeId": {
+                "$ref": "#/AttributeId",
+                "description": "The chosen attribute. Only when not cancelled."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
+    }
+            },{
+                "name": "PickAttributeFolder",
+                "version": "2.0.0",
+                "description": "Opens a small dialog with Archicad's attribute folder picker for the given attribute type, waits for the user and returns the chosen folder as its path from the root folder, or cancelled. Available from Archicad 26.",
+                "inputScheme": {
+        "type": "object",
+        "properties": {
+            "attributeType": {
+                "type": "string",
+                "description": "The type of the attributes whose folders the picker lists. Fill and Line need Archicad 27 or newer.",
+                "enum": ["Layer", "BuildingMaterial", "Composite", "Profile", "Surface", "Fill", "Line"]
+            },
+            "title": {
+                "type": "string",
+                "description": "The title of the dialog. Default: Pick Attribute Folder."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["attributeType"]
+    },
+                "outputScheme": {
+        "type": "object",
+        "properties": {
+            "cancelled": {
+                "type": "boolean",
+                "description": "True when the user closed the dialog with Cancel, false when with OK."
+            },
+            "attributeFolder": {
+                "$ref": "#/AttributeFolder",
+                "description": "The chosen folder; its path works as the targetFolder of MoveAttributesAndFolders. Only when not cancelled."
+            }
+        },
+        "additionalProperties": false,
+        "required": ["cancelled"]
     }
             }]
         },{

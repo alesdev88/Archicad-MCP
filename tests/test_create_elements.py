@@ -41,7 +41,7 @@ class Plan:
 
     def __init__(self, types=None, refused=(), favorites=None, window="FloorPlan",
                  missing_commands=(), elsewhere=(), library=None, pictures=(),
-                 unread=(), archicad=29, tapir_version="1.8.2", walls=None,
+                 unread=(), archicad=29, tapir_version="2.0.0", walls=None,
                  parameter_error=None, levels=(0.0, 3.0, 6.0), act_story=0,
                  wall_details=None):
         self.types = dict(types or {})
@@ -921,7 +921,7 @@ def test_doors_by_part_name_warn_that_their_parameters_are_out_of_reach(element_
     assert not [w for w in from_favorite["warnings"] if "neither read nor written" in w]
 
 
-@pytest.mark.parametrize("version", ["1.8.1", "1.8.2", "2.0.0"])
+@pytest.mark.parametrize("version", ["2.0.0", "2.1.0"])
 @pytest.mark.parametrize("element_type", ["door", "window"])
 def test_doors_by_part_name_do_not_warn_on_a_tapir_newer_than_1_8_0(element_type, version):
     # Tapir's main after 1.8.0 sets the part on the created opening only: the tool's
@@ -929,8 +929,20 @@ def test_doors_by_part_name_do_not_warn_on_a_tapir_newer_than_1_8_0(element_type
     plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version=version,
                 favorites={"Door": ["Generic"], "Window": ["Generic"]})
     result = create_elements(plan.connection(), element_type,
-                             [door(W1, libraryPartName="Door", sillHeight=0.0)])
+                             [door(W1, libraryPartName="Door", sillHeight=0.0, width=0.9)])
     assert result["warnings"] == []
+
+
+@pytest.mark.parametrize("element_type, tool", [("door", "Door tool"), ("window", "Window tool")])
+def test_a_named_part_without_a_width_warns_that_it_takes_the_tool_width(element_type, tool):
+    # Live 09.11.2026 (AC 29, Tapir 2.0.0): Empty Door, whose own A is 1.2 m, came in at the
+    # Door tool's 0.9 m. The tool's own part stayed as it was.
+    plan = Plan(types={W1: "Wall"}, library=["Door"], tapir_version="2.0.0",
+                favorites={"Door": ["Generic"], "Window": ["Generic"]})
+    result = create_elements(plan.connection(), element_type,
+                             [door(W1, libraryPartName="Door", sillHeight=0.0)])
+    [warning] = result["warnings"]
+    assert "width" in warning and tool in warning and "not the part's own" in warning
 
 
 def test_doors_by_part_name_still_warn_on_a_tapir_of_unknown_version():
@@ -1403,6 +1415,17 @@ def test_a_marker_is_placed_from_any_drawing_window(element_type, command, key, 
     assert create_elements(conn, element_type, [MARKER])["warnings"] == []
     create_elements(conn, element_type, [MARKER], dry_run=False)
     assert plan.sent(command) == [{key: [MARKER]}]
+
+
+def test_an_elevation_is_placed_from_the_floor_plan():
+    item = {"startCoordinate": {"x": 0, "y": 0}, "endCoordinate": {"x": 5, "y": 0}}
+    plan = Plan()
+    conn = plan.connection()
+    assert create_elements(conn, "elevation", [item])["warnings"] == []
+    create_elements(conn, "elevation", [item], dry_run=False)
+    assert plan.sent("CreateElevations") == [{"elevationsData": [item]}]
+    result = create_elements(Plan(window="Section").connection(), "elevation", [item])
+    assert any("floor plan" in w for w in result["warnings"])
 
 
 def test_a_shell_is_placed_from_the_floor_plan():

@@ -238,6 +238,7 @@ CREATE_TYPES: dict[str, CreateType] = {
                                      archicad=30),
     # Markers placed on the floor plan
     "section": CreateType("CreateSections", "sectionsData"),
+    "elevation": CreateType("CreateElevations", "elevationsData"),
     "interior_elevation": CreateType("CreateInteriorElevations", "interiorElevationsData"),
     "hotlink_instance": CreateType("CreateHotlinkInstances", "hotlinkInstances"),
     # In the active floor plan, section or elevation, each with a new viewpoint.
@@ -471,13 +472,20 @@ def _library_part_checks(library: LoadedParts, items: list[dict],
 def _object_warnings(name: str, items: list[dict], ready: list[int]) -> list[str]:
     sill_tool = _TOOL_SILL.get(name)
     if sill_tool is not None:
-        unsilled = [i for i in ready
-                    if "sillHeight" not in items[i] and "favoriteName" not in items[i]]
-        if not unsilled:
-            return []
-        return [f"No sillHeight on {_named(unsilled)}: a {name} without one takes the "
-                f"{sill_tool}'s current sill height. Send sillHeight in metres (0 for a "
-                "door on the floor)."]
+        own = [i for i in ready if "favoriteName" not in items[i]]
+        warnings = []
+        unsilled = [i for i in own if "sillHeight" not in items[i]]
+        if unsilled:
+            warnings.append(f"No sillHeight on {_named(unsilled)}: a {name} without one takes "
+                            f"the {sill_tool}'s current sill height. Send sillHeight in "
+                            "metres (0 for a door on the floor).")
+        # Live 09.11.2026 (Tapir 2.0.0): Empty Door, 1.2 m of its own, came in at the tool's 0.9.
+        unwide = [i for i in own if "libraryPartName" in items[i] and "width" not in items[i]]
+        if unwide:
+            warnings.append(f"No width on {_named(unwide)}: a {name} named by libraryPartName "
+                            f"without one takes the {sill_tool}'s current width, not the "
+                            "part's own. Send width in metres.")
+        return warnings
     tool = _TOOL_SIZED.get(name)
     if tool is None:
         return []

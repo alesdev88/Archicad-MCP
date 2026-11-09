@@ -41,7 +41,7 @@ claude mcp add archicad -- archicad-mcp --mode full
 
 **Tapir:** most tools need the Tapir add-on in Archicad. Ask the client to
 **install Tapir**, or run `archicad-mcp install-tapir`. It puts the pinned Tapir
-1.8.0 into Archicad's Add-Ons folder, checked by sha256, and never replaces an
+2.0.0 into Archicad's Add-Ons folder, checked by sha256, and never replaces an
 existing one unless told to. Restart Archicad afterwards.
 
 Intel Macs, a hand-written Claude Desktop config, ChatGPT, Codex and all the

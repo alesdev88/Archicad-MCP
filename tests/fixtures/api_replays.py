@@ -213,7 +213,7 @@ TAPIR = {
                        "isTeamwork": False,
                        "projectLocation": "/Users/tester/Test House.pln",
                        "projectPath": "/Users/tester/Test House.pln"},
-    "GetAddOnVersion": {"version": "1.8.2"},
+    "GetAddOnVersion": {"version": "2.0.0"},
     # Archicad changes only elements of the active window's database.
     "GetCurrentWindowType": {"currentWindowType": "FloorPlan"},
     # Tapir sees the whole plan; the official API.GetAllElements sees model
