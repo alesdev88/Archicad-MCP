@@ -51,7 +51,7 @@ def parse_obj(path: str | Path) -> Mesh:
     uvs: list[tuple[float, float]] = []
     groups: dict[str, list[Face]] = {}
     current = "default"
-    for raw in Path(path).read_text(errors="replace").splitlines():
+    for raw in Path(path).read_text(errors="replace", encoding="utf-8").splitlines():
         line = raw.strip()
         if line.startswith("v "):
             _, x, y, z = line.split()[:4]

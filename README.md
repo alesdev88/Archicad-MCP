@@ -29,8 +29,8 @@ nothing else to install.
 
 | Platform | File |
 |---|---|
-| Windows | `archicad-mcp-1.0.0-win32.mcpb` |
-| macOS (Apple silicon) | `archicad-mcp-1.0.0-darwin-arm64.mcpb` |
+| Windows | `archicad-mcp-1.0.1-win32.mcpb` |
+| macOS (Apple silicon) | `archicad-mcp-1.0.1-darwin-arm64.mcpb` |
 
 To update, ask Claude to **update the extension**: it downloads the newest
 release, checks it and opens Claude Desktop's install dialog.

@@ -1,6 +1,7 @@
 """Mesh parsing for the GDL pipeline: OBJ, synthetic 3DS, welding, units."""
 
 import struct
+from pathlib import Path
 
 from archicad_mcp.gdl.mesh import parse_3ds, parse_obj, triangulate
 
@@ -98,3 +99,15 @@ def test_parse_obj_uv_corners(tmp_path):
     face = mesh.groups["wood"][0]
     assert [c[1] for c in face] == [0, 1, 2, 3]
     assert len(triangulate(face)) == 2
+
+
+def test_obj_group_names_are_read_as_utf8_where_the_system_default_is_not(tmp_path, monkeypatch):
+    real = Path.read_text
+
+    def windows_default(self, encoding=None, errors=None):
+        return real(self, encoding=encoding or "cp1252", errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", windows_default)
+    obj = tmp_path / "miza.obj"
+    obj.write_bytes("v 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl Črna\nf 1 2 3\n".encode())
+    assert list(parse_obj(obj).groups) == ["Črna"]

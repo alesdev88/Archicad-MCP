@@ -1,10 +1,12 @@
 import json
+from pathlib import PureWindowsPath
 
 import pytest
 from fastmcp import Client
 
 import archicad_mcp.server as server_mod
 from archicad_mcp.connection import ArchicadConnection
+from archicad_mcp.core import issues
 from archicad_mcp.server import build_server
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
@@ -155,3 +157,32 @@ async def test_publish_lets_archicad_judge_when_the_sets_cannot_be_read(core):
     # No canned GetPublisherSets: it fails the way the transport does.
     payload = await call("publish", {"publisher_set_name": "IFC Export"})
     assert payload == {"published": "IFC Export"}
+
+
+class _WindowsPath(PureWindowsPath):
+    """What Path is on Windows, on any machine, for how it prints separators."""
+
+    def expanduser(self):
+        return self
+
+
+class _RecordingConnection:
+    def __init__(self):
+        self.calls = []
+
+    def tapir(self, command, params=None):
+        self.calls.append((command, params))
+        return {}
+
+
+@pytest.mark.parametrize("call, command, key", [
+    (issues.export_issues_bcf, "ExportIssuesToBCF", "exportPath"),
+    (issues.import_issues_bcf, "ImportIssuesFromBCF", "importPath"),
+])
+def test_a_bcf_path_reaches_archicad_with_native_separators(monkeypatch, call, command, key):
+    monkeypatch.setattr(issues, "Path", _WindowsPath, raising=False)
+    conn = _RecordingConnection()
+    out = call(conn, "C:/Projects/Model/issues.bcf")
+    assert [c for c, _ in conn.calls] == [command]
+    assert conn.calls[0][1][key] == r"C:\Projects\Model\issues.bcf"
+    assert r"C:\Projects\Model\issues.bcf" in out.values()

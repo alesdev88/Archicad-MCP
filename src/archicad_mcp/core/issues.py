@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import element_payload
 
@@ -37,9 +39,15 @@ def attach_elements_to_issue(conn: ArchicadConnection, issue_id: str,
     return {"attached": len(guids)}
 
 
+def _native(path: str) -> str:
+    """The path with this system's separators: on Windows C:/a/b.bcf becomes C:\\a\\b.bcf."""
+    return str(Path(path).expanduser())
+
+
 def export_issues_bcf(conn: ArchicadConnection, bcf_path: str) -> dict:
     if not bcf_path:
         return {"error": "export_issues_bcf requires 'bcf_path'."}
+    bcf_path = _native(bcf_path)
     conn.tapir("ExportIssuesToBCF", {"exportPath": bcf_path, "useExternalId": False,
                                      "alignBySurveyPoint": True})
     return {"exported": bcf_path}
@@ -48,6 +56,7 @@ def export_issues_bcf(conn: ArchicadConnection, bcf_path: str) -> dict:
 def import_issues_bcf(conn: ArchicadConnection, bcf_path: str) -> dict:
     if not bcf_path:
         return {"error": "import_issues_bcf requires 'bcf_path'."}
+    bcf_path = _native(bcf_path)
     conn.tapir("ImportIssuesFromBCF", {"importPath": bcf_path,
                                        "alignBySurveyPoint": True})
     return {"imported": bcf_path}
