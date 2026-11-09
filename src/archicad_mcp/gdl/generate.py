@@ -338,8 +338,8 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
     # ---- write HSF ----
     scripts = hsf_dir / "scripts"
     scripts.mkdir(parents=True, exist_ok=True)
-    (scripts / "3d.gdl").write_text("\n".join(gdl3d) + "\n")
-    (scripts / "2d.gdl").write_text("\n".join(gdl2d) + "\n")
+    (scripts / "3d.gdl").write_text("\n".join(gdl3d) + "\n", encoding="utf-8")
+    (scripts / "2d.gdl").write_text("\n".join(gdl2d) + "\n", encoding="utf-8")
 
     vl_lines = []
     if variants:
@@ -352,7 +352,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
         vl_lines.append(f'values{{2}} "frame_finish"\t{pairs}')
     vl_section = ""
     if vl_lines:
-        (scripts / "vl.gdl").write_text("\n".join(vl_lines) + "\n")
+        (scripts / "vl.gdl").write_text("\n".join(vl_lines) + "\n", encoding="utf-8")
         vl_section = '\n\t<Script_VL SectVersion="20" SectionFlags="0" SubIdent="0"/>'
 
     # texture image files ship NEXT TO the .gsm, not inside it (see module
@@ -385,14 +385,14 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
 \t<Script_2D SectVersion="20" SectionFlags="0" SubIdent="0"/>
 \t<Script_3D SectVersion="20" SectionFlags="0" SubIdent="0"/>{pict_xml}
 </LibpartData>
-""")
+""", encoding="utf-8")
 
     ancestry = "\n".join(f"\t<MainGUID>{g}</MainGUID>" for g in ANCESTRY_GUIDS)
     (hsf_dir / "ancestry.xml").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <Ancestry>
 {ancestry}
 </Ancestry>
-""")
+""", encoding="utf-8")
 
     (hsf_dir / "libpartdocs.xml").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <libpartdocs>
@@ -469,7 +469,7 @@ def build_hsf(mesh: Mesh, cfg: ObjectConfig, name: str, hsf_dir: str | Path,
 {extra_params}{chr(10).join(surf_params)}
 \t</Parameters>
 </ParamSection>
-""")
+""", encoding="utf-8")
 
     return BuildResult(hsf_dir=hsf_dir, guid=main_guid, a=a0, b=b0, h=h0,
                        groups=group_summaries, textures=texture_files,

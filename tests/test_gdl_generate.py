@@ -1,6 +1,7 @@
 """HSF generation: edge statuses, manifold splitting, scripts, manifests."""
 
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
@@ -111,6 +112,31 @@ def test_author_from_the_config_is_escaped(tmp_path):
     build_hsf(_cube_mesh(), cfg, "Test Object", tmp_path / "hsf",
               textures_dir=tmp_path / "tex")
     assert _author(tmp_path / "hsf") == "Aleš & Co"
+
+
+def test_hsf_files_are_utf8_where_the_system_default_is_not(tmp_path, monkeypatch):
+    # On Windows Python's default is cp1252, which has no Č, and the XML says UTF-8.
+    real = Path.write_text
+
+    def windows_default(self, data, encoding=None, errors=None, newline=None):
+        return real(self, data, encoding=encoding or "cp1252", errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", windows_default)
+    cfg = ObjectConfig(
+        name="Miza Črna", author="Aleš",
+        variants=[("Črna", {"top": (0.1, 0.1, 0.1)}), ("Bela", {"top": (0.9, 0.9, 0.9)})],
+        frame_variants=[("Črno jeklo", (0.1, 0.1, 0.1)), ("Sivo jeklo", (0.7, 0.7, 0.7))],
+        groups={"steel": GroupSpec(label="Okvir č", texture="@frame"),
+                "wood": GroupSpec(label="Plošča", texture="top")},
+    )
+    mesh = _cube_mesh()
+    mesh.groups["wood"] = [[(0, None), (1, None), (2, None)]]
+    build_hsf(mesh, cfg, "Miza Črna", tmp_path / "hsf", textures_dir=tmp_path / "tex")
+    hsf = tmp_path / "hsf"
+    assert "`Črna`" in (hsf / "scripts/vl.gdl").read_text(encoding="utf-8")
+    for name in ("libpartdata.xml", "ancestry.xml", "libpartdocs.xml", "paramlist.xml"):
+        ET.parse(hsf / name)
+    assert "Plošča" in (hsf / "paramlist.xml").read_text(encoding="utf-8")
 
 
 def test_finish_dropdowns_and_materials(built):

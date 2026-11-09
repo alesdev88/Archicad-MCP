@@ -241,7 +241,7 @@ def decimate(mesh: Mesh, targets: dict[str, int]) -> Mesh:
     with tempfile.TemporaryDirectory() as tmp:
         inter = Path(tmp) / "in.obj"
         outer = Path(tmp) / "out.obj"
-        inter.write_text("\n".join(lines) + "\n")
+        inter.write_text("\n".join(lines) + "\n", encoding="utf-8")
         result = subprocess.run(
             [str(blender), "--background", "--python-expr", _BLENDER_SCRIPT,
              "--", str(inter), str(outer), json.dumps(by_alias)],
