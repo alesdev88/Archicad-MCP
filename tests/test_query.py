@@ -12,6 +12,9 @@ from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.query import find_elements
 from tests.conftest import FakeCore
 from tests.fixtures import api_replays
+from tests.test_property_fallback import (
+    _OFFICIAL_ROWS, _REFUSED_DEFINITION, _fake, _tapir_answer,
+)
 
 
 def make_conn(tapir=True, **official_overrides):
@@ -234,3 +237,64 @@ def test_malformed_groups_return_an_error_before_any_call():
     assert "error" in find_elements(conn, [])
     assert "error" in find_elements(conn, [{"comparisons": [prop("x", "equal")]}])
     assert conn._core.calls == []
+
+
+# ---------- the Tapir fallback and not_read ----------
+
+def _fallback_conn(elements, official_rows, version="2.0.0", values=_tapir_answer):
+    """A project where the official read refuses what `official_rows` says and
+    Tapir `version` lists `elements` ({type: [guid]}) and answers `values`."""
+    core = _fake(official_rows=official_rows, version=version, values=values)
+    core.official_responses["API.GetPropertyDefinitionAvailability"] = {
+        "propertyDefinitionAvailabilityList": [
+            {"propertyDefinitionAvailability": {"availableClassifications": []}}
+            for _ in range(2)]}
+    core.tapir_responses["GetElementsByType"] = lambda p: {"elements": [
+        {"elementId": {"guid": g}} for g in elements.get(p["elementType"], [])]}
+    return ArchicadConnection(19723, core=core)
+
+
+def _locked(operator, value=None):
+    return prop("General_Locked", operator, value)
+
+
+def test_a_property_of_a_2d_element_is_read_through_tapir():
+    conn = _fallback_conn({"Label": ["label-1"]}, {"label-1": _OFFICIAL_ROWS["label-1"]},
+                          values=lambda p: {
+                              "propertyValuesForElements": [{"propertyValues": [
+                                  {"propertyValue": {"value": "False"}, "isAvailable": True}]}]})
+    result = find_elements(conn, [{"element_types": ["Label"], "comparisons": [
+        _locked("equal", False)]}])
+    assert result["count"] == 1 and "not_read" not in result
+    assert result["property_reads"] == 2  # one official, one through Tapir
+
+
+def test_without_tapir_2_the_gap_is_reported_and_matches_nothing():
+    conn = _fallback_conn({"Label": ["label-1"]}, {"label-1": _OFFICIAL_ROWS["label-1"]},
+                          version="1.8.0")
+    result = find_elements(conn, [{"element_types": ["Label"], "comparisons": [
+        _locked("equal", False)]}])
+    assert result["count"] == 0
+    assert result["not_read"] == [{"reason": extract.NOT_READ_ELEMENT,
+                                   "properties": ["General_Locked"], "cells": 1}]
+    assert result["property_reads"] == 1
+
+
+def test_not_available_does_not_match_a_cell_that_was_not_read():
+    rows = {"w-1": {"propertyValues": [_REFUSED_DEFINITION]}}
+    conn = _fallback_conn({"Wall": ["w-1"]}, rows, version="1.8.0")
+    result = find_elements(conn, [{"element_types": ["Wall"], "comparisons": [
+        _locked("not_available")]}])
+    assert result["count"] == 0
+    assert result["not_read"][0]["reason"] == extract.NOT_READ_DEFINITION
+
+
+def test_an_or_group_is_still_decided_by_its_other_comparison():
+    answered = {"propertyValue": {"type": "string", "status": "normal", "value": "A-WALL"}}
+    rows = {"w-1": {"propertyValues": [_REFUSED_DEFINITION, answered]}}
+    conn = _fallback_conn({"Wall": ["w-1"]}, rows, version="1.8.0")
+    result = find_elements(conn, [{"element_types": ["Wall"], "logical_operator": "or",
+                                   "comparisons": [_locked("not_available"),
+                                                   prop("X/Layer", "equal", "A-WALL")]}])
+    assert result["count"] == 1
+    assert result["not_read"][0]["cells"] == 1
