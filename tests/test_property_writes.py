@@ -446,3 +446,27 @@ def test_the_property_dry_run_runs_the_full_plan():
         {"guid": "d-1", "property": "D/Pozicija", "current": 0, "new": 12}]
     assert [s["property"] for s in out["skipped"]] == ["D/Finish"]
     assert not any(c == "API.SetPropertyValuesOfElements" for c, _ in core.calls)
+
+
+def _refusing_conn():
+    from tests import test_property_fallback as fb
+    core = fb._fake(official_rows={
+        "w-1": {"propertyValues": [fb._REFUSED_DEFINITION]}})
+    return ArchicadConnection(19723, core=core), core
+
+
+def test_a_write_on_a_refused_definition_is_skipped_with_that_reason():
+    from archicad_mcp import extract
+    conn, _ = _refusing_conn()
+    planned, skipped = plan_property_writes(conn, [
+        {"guid": "w-1", "property": "X/Layer", "value": "A"}], refusals={})
+    assert planned == []
+    assert skipped == [{"guid": "w-1", "property": "X/Layer",
+                        "reason": extract.NOT_READ_DEFINITION}]
+
+
+def test_write_planning_never_asks_tapir_for_values():
+    conn, core = _refusing_conn()
+    plan_property_writes(conn, [
+        {"guid": "w-1", "property": "X/Layer", "value": "A"}], refusals={})
+    assert [c for c, _ in core.calls if c == "GetPropertyValuesOfElements"] == []

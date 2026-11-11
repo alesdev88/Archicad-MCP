@@ -1,4 +1,6 @@
 """get_element_data reads every kind through one address syntax."""
+from archicad_mcp import extract
+from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.element_data import WILDCARD_ELEMENT_LIMIT, get_element_data
 from tests.element_data_fakes import DOOR, OBJ, WALL, FakeModel
 
@@ -107,3 +109,61 @@ def test_kinds_are_read_only_when_asked_for():
 def test_a_blank_address_reads_none_as_before():
     element = _one(FakeModel(), OBJ, ["", "Office/Status"])
     assert element["properties"] == {"": None, "Office/Status": "old"}
+
+
+# --- properties the official API cannot read: Tapir 2.0.0, or the reason ---
+
+def _refused_model(version="2.0.0"):
+    """label-1 is outside the official read (a 2D element); Tapir answers by `version`."""
+    from archicad_mcp import extract
+    from tests import test_property_fallback as fb
+
+    layer = {"propertyId": {"guid": f"PID-{extract.BUILTIN_LAYER.upper()}"},
+             "propertyValueType": "String", "propertyCollectionType": "Single",
+             "propertyMeasureType": "Default"}
+    core = fb._fake(
+        official_rows={"label-1": fb._REFUSED_ELEMENT},
+        version=version,
+        definitions={"properties": [*fb._DEFINITIONS["properties"], layer]},
+        values=lambda params: {"propertyValuesForElements": [
+            {"propertyValues": [
+                {"propertyValue": {"value": {**fb._TAPIR_VALUES,
+                                             f"pid-{extract.BUILTIN_LAYER}": "A-ANNO"}[
+                    p["propertyId"]["guid"]]}, "isAvailable": True}
+                for p in params["properties"]]} for _ in params["elements"]]})
+    core.official_responses["API.GetTypesOfElements"] = lambda params: {"typesOfElements": [
+        {"typeOfElement": {"elementType": "Label"}} for _ in params["elements"]]}
+    return core
+
+
+def _read_refused(version="2.0.0"):
+    core = _refused_model(version)
+    conn = ArchicadConnection(19723, core=core)
+    return get_element_data(conn, ["label-1"], ["General_Locked"])["elements"][0]
+
+
+def test_a_2d_element_property_comes_through_tapir():
+    item = _read_refused()
+    assert item["properties"]["General_Locked"] is True
+    assert item["layer"] == "A-ANNO"
+    assert "unreadable" not in item
+
+
+def test_without_tapir_2_the_reason_is_given_instead_of_a_value():
+    item = _read_refused(version="1.8.0")
+    assert item["properties"]["General_Locked"] is None
+    assert item["layer"] is None
+    assert item["unreadable"] == {"General_Locked": extract.NOT_READ_ELEMENT,
+                                  "layer": extract.NOT_READ_ELEMENT}
+
+
+def test_an_official_answer_is_returned_unchanged_beside_a_gap():
+    from tests import test_property_fallback as fb
+    core = _refused_model()
+    core.official_responses["API.GetPropertyValuesOfElements"] = lambda params: {
+        "propertyValuesForElements": [
+            {"propertyValues": [fb._ANSWERED, fb._ANSWERED]} for _ in params["elements"]]}
+    item = get_element_data(ArchicadConnection(19723, core=core), ["label-1"],
+                            ["General_Locked"])["elements"][0]
+    assert item["properties"]["General_Locked"] is False
+    assert "unreadable" not in item

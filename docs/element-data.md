@@ -59,6 +59,11 @@ be read for it (a wall has no GDL parameters, a door without a marker, a Tapir
 too old for the command). `include_classifications` still adds every system's
 item GUID.
 
+A property the official API cannot read (a 2D element such as a label, or a
+property definition it does not support) comes through Tapir 2.0.0 or newer.
+Without it the value is `null` and `unreadable` gives the reason under the
+address you used; an unread layer appears under `layer`.
+
 ## Writing
 
 ```
@@ -95,7 +100,8 @@ back:
 
 ## Requirements and limits
 
-- Properties and classifications work without Tapir (classifications use Tapir
+- Properties and classifications work without Tapir, except the properties the
+  official API cannot read, which need Tapir 2.0.0 (classifications use Tapir
   when present, which also reaches curtain wall, stair and railing parts).
 - GDL parameters need Tapir 1.5.7, marker parameters Tapir 1.7.1.
 - A and B of an object or lamp need Tapir 1.6.0: older versions write them in
