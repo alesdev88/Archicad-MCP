@@ -337,9 +337,9 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "'coverage' ('whole-plan' with Tapir, 'model-elements-only' without: "
         "then 2D elements are invisible and 0 is not proof of absence). "
         "'not_read' lists the properties nothing could read on some elements, with "
-        "the reason (the official API refuses them and Tapir 2.0.0 was not there to "
-        "read them); such a pair matches no operator, so check it before trusting a "
-        "count. Property comparisons read values in the server (no API filters by "
+        "the reason (the official API refuses them, and Tapir 2.0.0 or newer was not "
+        "there or did not answer); such a pair matches no operator, so check it before "
+        "trusting a count. Property comparisons read values in the server (no API filters by "
         "property); a read spanning more than the element ceiling is refused, "
         "so narrow with element_types, story or classification first."),
               **_tool_meta("Find elements by criteria", read_only=True, destructive=False))
@@ -416,7 +416,7 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "(a GDL Parameter Script can); 'failed', Archicad's refusals grouped by code "
         "and message with a count and sample GUIDs; 'skipped', changes not sent, "
         "with the reason (value type, enum, unknown parameter, a property the official "
-        "API cannot read cannot be written, or an element "
+        "API cannot read, or an element "
         "Archicad would refuse: in another view's database than the active window's, "
         "on a hidden or locked layer, inside a hotlinked module, locked with Edit > "
         "Locking, or not reserved in Teamwork); 'not_sent' and 'stopped' if a batch "
