@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from archicad_mcp.criteria import (
     BRANCH_OPERATORS,
@@ -10,7 +11,7 @@ from archicad_mcp.criteria import (
     comparison_matches,
     parse_comparison,
 )
-from archicad_mcp.rules.types import ElementInfo, RuleConfigError, Severity
+from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, RuleConfigError, RuleResult, Severity
 
 _SEVERITIES = ("error", "warning")
 
@@ -93,3 +94,23 @@ def common_fields(cfg: dict) -> tuple[str, Severity, frozenset[str], AppliesTo]:
 def is_missing(value: object) -> bool:
     """The has_no_value sense of the criteria language, for plain values."""
     return not Cell.from_value(value).usable
+
+
+def unread_skip(rule, snapshot: ModelSnapshot, names: Iterable[str]) -> RuleResult | None:
+    """A skipped result when a property the rule needs could not be read on an element of
+    a type its applies_to accepts, else None. The `where` comparisons are not evaluated:
+    they may be the very values that were not read. The first name in sorted order with an
+    unread element decides the message."""
+    wanted = rule.applies_to.element_type
+    accepted = [e for e in snapshot.elements
+                if wanted in (None, "*") or e.element_type == wanted]
+    for name in sorted(set(names)):
+        unread = [e for e in accepted if name in e.not_read]
+        if unread:
+            return RuleResult(
+                rule_id=rule.rule_id, passed=False, severity=rule.severity,
+                message=f"Not checked: '{name}' could not be read on some elements",
+                skipped=True,
+                skip_reason=f"{len(unread)} element(s) could not be read for "
+                            f"'{name}': {unread[0].not_read[name]}")
+    return None

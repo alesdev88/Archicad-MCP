@@ -274,3 +274,68 @@ def test_values_of_cells_not_read_are_none():
     conn = _refusal_conn([_REFUSED_ELEMENT])
     assert fetch_property_values(conn, ["label-1"], ["General_Locked"]) == {
         "label-1": {"General_Locked": None}}
+
+
+# ---------- the snapshot reads through Tapir and records what stays unread ----------
+
+_LOCKED_AND_LAYER = {"properties": [
+    {"propertyId": {"guid": "PID-GENERAL_LOCKED"}, "propertyValueType": "Boolean",
+     "propertyCollectionType": "Single", "propertyMeasureType": "Default"},
+    {"propertyId": {"guid": "PID-MODELVIEW_LAYERNAME"}, "propertyValueType": "String",
+     "propertyCollectionType": "Single", "propertyMeasureType": "Default"},
+]}
+_TAPIR_LOCKED_AND_LAYER = {"pid-General_Locked": "True", "pid-ModelView_LayerName": "A-ANNO"}
+_ANSWERED_CELLS = {"propertyValues": [
+    {"propertyValue": {"type": "boolean", "status": "normal", "value": False}},
+    {"propertyValue": {"type": "string", "status": "normal", "value": "A-WALL"}}]}
+
+
+def _label_conn(version="2.0.0"):
+    """A project with a wall the official read answers and a label it refuses."""
+    from tests.test_property_fallback import _REFUSED_ELEMENT, _fake
+
+    def tapir_values(params):
+        row = {"propertyValues": [
+            {"propertyValue": {"value": _TAPIR_LOCKED_AND_LAYER[p["propertyId"]["guid"]]},
+             "isAvailable": True} for p in params["properties"]]}
+        return {"propertyValuesForElements": [row for _ in params["elements"]]}
+
+    core = _fake(official_rows={"label-1": _REFUSED_ELEMENT, "w-1": _ANSWERED_CELLS},
+                 version=version, values=tapir_values, definitions=_LOCKED_AND_LAYER)
+    core.official_responses["API.GetTypesOfElements"] = lambda p: {"typesOfElements": [
+        {"typeOfElement": {"elementId": e["elementId"], "elementType": "Wall"}}
+        if e["elementId"]["guid"] == "w-1" else
+        {"error": {"code": 7203, "message": "Element not supported"}}
+        for e in p["elements"]]}
+    core.official_responses["API.GetAllElements"] = {
+        "elements": [{"elementId": {"guid": "w-1"}}, {"elementId": {"guid": "label-1"}}]}
+    core.tapir_responses["GetAllElements"] = core.official_responses["API.GetAllElements"]
+    core.tapir_responses["GetDetailsOfElements"] = lambda p: {"detailsOfElements": [
+        {"type": "Label"} for _ in p["elements"]]}
+    core.official_responses["API.GetAttributesByType"] = {"attributeIds": []}
+    return ArchicadConnection(19723, core=core)
+
+
+_LABEL_NEEDS = frozenset({"elements", "properties", "layers"})
+
+
+def test_the_snapshot_reads_gaps_through_tapir_and_records_what_stays_unread():
+    snap = build_snapshot(_label_conn(), needs=_LABEL_NEEDS,
+                          property_names=frozenset({"General_Locked"}))
+    by_guid = {e.guid: e for e in snap.elements}
+    label = by_guid["label-1"]
+    assert label.element_type == "Label"
+    assert label.properties["General_Locked"] is True and label.not_read == {}
+    assert label.layer == "A-ANNO"
+    assert "ModelView_LayerName" not in label.properties
+    assert by_guid["w-1"].layer == "A-WALL" and by_guid["w-1"].not_read == {}
+
+
+def test_without_tapir_2_the_snapshot_records_the_reasons():
+    snap = build_snapshot(_label_conn(version="1.8.0"), needs=_LABEL_NEEDS,
+                          property_names=frozenset({"General_Locked"}))
+    label = {e.guid: e for e in snap.elements}["label-1"]
+    assert label.not_read == {"General_Locked": extract.NOT_READ_ELEMENT,
+                              "layer": extract.NOT_READ_ELEMENT}
+    assert label.layer is None
+    assert label.properties["General_Locked"] is None

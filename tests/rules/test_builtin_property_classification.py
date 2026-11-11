@@ -62,3 +62,28 @@ def test_classification_required_flags_unclassified():
     assert result.passed is False
     assert set(result.failing_guids) == {"e-2", "e-3"}
     assert rule.needs == frozenset({"elements", "classifications"})
+
+
+def test_property_required_skips_when_its_property_was_not_read():
+    unread = ElementInfo(guid="w-9", element_type="Wall", properties={"Fire Rating": None},
+                         not_read={"Fire Rating": "because"})
+    result = make_prop_rule().check(ModelSnapshot(elements=(WALL_OK, unread)))
+    assert result.skipped is True and result.passed is False
+    assert result.skip_reason == "1 element(s) could not be read for 'Fire Rating': because"
+
+
+def test_property_required_runs_when_only_another_type_was_not_read():
+    label = ElementInfo(guid="l-1", element_type="Label", not_read={"Fire Rating": "because"})
+    result = make_prop_rule().check(ModelSnapshot(elements=(WALL_OK, label)))
+    assert result.skipped is False and result.passed is True
+
+
+def test_classification_required_skips_when_a_where_property_was_not_read():
+    rule = ClassificationRequiredRule.from_config(
+        {"id": "c", "type": "classification-required", "system": "Uniclass",
+         "applies_to": {"element_type": "Wall",
+                        "where": [{"property": "Fire Rating", "operator": "has_value"}]}})
+    unread = ElementInfo(guid="w-9", element_type="Wall", not_read={"Fire Rating": "why"})
+    result = rule.check(ModelSnapshot(elements=(unread,)))
+    assert result.skipped is True
+    assert result.skip_reason == "1 element(s) could not be read for 'Fire Rating': why"

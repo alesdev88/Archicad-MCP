@@ -39,6 +39,12 @@ audit over the element ceiling and get refused. See
 A value counts as **missing** when it is `null`, an empty string or an empty
 list. That is the `has_no_value` sense of the [criteria language](query.md).
 
+A rule that reads a property or the layer reports `skipped`, with the reason, when
+that value could not be read on one of the element types it applies to, rather than
+count the gap as a failure. The official API cannot read 2D elements or some
+property definitions; Tapir 2.0.0 or newer reads what it cannot, so with an older
+Tapir the rule skips for those elements. A skipped rule does not count in the score.
+
 ### `applies_to.where`
 
 `where` narrows the scope further with a list of criteria, all of which must

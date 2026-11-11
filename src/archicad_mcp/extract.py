@@ -8,7 +8,7 @@ from typing import Iterable
 from multiconn_archicad.errors import APIErrorBase, TapirCommandError
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
+from archicad_mcp.rules.types import LAYER_KEY, ElementInfo, ModelSnapshot, ZoneInfo
 from archicad_mcp.tapir_requirements import _key, installed_version
 
 # Verified against a live Archicad 29.0 model (2026-07-16):
@@ -698,8 +698,13 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
         prop_names = set(property_names)
         if needs & {"properties", "layers"}:
             prop_names |= {BUILTIN_LAYER}
-        values = (fetch_property_values(conn, guids, sorted(prop_names))
-                  if "properties" in needs or "layers" in needs else {g: {} for g in guids})
+        cells = (fetch_property_cells(conn, guids, sorted(prop_names), tapir_fallback=True)
+                 if "properties" in needs or "layers" in needs else {g: {} for g in guids})
+        values = {g: {name: cell.get("value") for name, cell in per_name.items()}
+                  for g, per_name in cells.items()}
+        unread = {g: {(LAYER_KEY if name == BUILTIN_LAYER else name): cell.get("reason")
+                      for name, cell in per_name.items() if cell.get("status") == "notRead"}
+                  for g, per_name in cells.items()}
         classif = (_fetch_classifications(conn, guids)
                    if "classifications" in needs else {g: {} for g in guids})
         floors = _fetch_floor_indices(conn, guids) if "story" in needs else {}
@@ -712,6 +717,7 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                 classifications=classif.get(g, {}),
                 properties={k: v for k, v in values.get(g, {}).items()
                             if k != BUILTIN_LAYER},
+                not_read=unread.get(g, {}),
             )
             for g in guids
         )

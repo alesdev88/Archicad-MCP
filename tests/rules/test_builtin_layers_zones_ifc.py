@@ -62,3 +62,14 @@ def test_ifc_rule_skips_without_tapir():
     result = rule.check(ModelSnapshot(elements=(ElementInfo(guid="w-1"),), ifc_properties=None))
     assert result.skipped is True
     assert "too old" in result.skip_reason and "Tapir" in result.skip_reason
+
+
+def test_layer_compliance_skips_when_a_layer_was_not_read():
+    rule = LayerComplianceRule.from_config(
+        {"id": "layers-std", "type": "layer-compliance", "allowed": ["A-WALL"]})
+    els = (ElementInfo(guid="e-1", layer="A-WALL"),
+           ElementInfo(guid="e-2", layer=None, not_read={"layer": "because"}),
+           ElementInfo(guid="e-3", layer=None, not_read={"layer": "other"}))
+    result = rule.check(ModelSnapshot(elements=els))
+    assert result.skipped is True and "'layer'" in result.skip_reason
+    assert result.skip_reason == "2 element(s) could not be read for 'layer': because"

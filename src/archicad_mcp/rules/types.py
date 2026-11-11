@@ -5,6 +5,10 @@ from typing import Literal
 
 Severity = Literal["error", "warning"]
 
+# The key under which ElementInfo.not_read names the layer, which is held in
+# ElementInfo.layer rather than in properties.
+LAYER_KEY = "layer"
+
 
 class RuleConfigError(Exception):
     """A rule definition (YAML or plugin) is invalid."""
@@ -18,6 +22,8 @@ class ElementInfo:
     story: int | None = None
     classifications: dict[str, str | None] = field(default_factory=dict)
     properties: dict[str, object] = field(default_factory=dict)
+    # property name (LAYER_KEY for the layer) -> why no API could read it on this element
+    not_read: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

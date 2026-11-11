@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archicad_mcp.rules.builtin.base import AppliesTo, common_fields, is_missing
+from archicad_mcp.rules.builtin.base import AppliesTo, common_fields, is_missing, unread_skip
 from archicad_mcp.rules.types import ModelSnapshot, RuleConfigError, RuleResult, Severity
 
 TYPE_NAME = "classification-required"
@@ -33,6 +33,9 @@ class ClassificationRequiredRule:
         return cls(rule_id, severity, tags, applies_to, system)
 
     def check(self, snapshot: ModelSnapshot) -> RuleResult:
+        skipped = unread_skip(self, snapshot, self.applies_to.needed_properties)
+        if skipped is not None:
+            return skipped
         failing = tuple(
             e.guid for e in snapshot.elements
             if self.applies_to.matches(e) and is_missing(e.classifications.get(self.system))
