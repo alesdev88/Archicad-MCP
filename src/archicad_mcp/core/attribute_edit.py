@@ -40,7 +40,7 @@ from archicad_mcp.core.attributes import (
     named_references,
     read_records,
 )
-from archicad_mcp.core.definition_edit import Definitions, group_by_error
+from archicad_mcp.core.definition_edit import Definitions
 from archicad_mcp.core.element_data import cap_list, error_fields
 
 TOOL = "edit_attributes"

@@ -621,8 +621,8 @@ def _absolute_height_warnings(conn: ArchicadConnection, name: str, items: list[d
     more = len(off) - INDICES_NAMED
     return [f"{field} is an absolute elevation for a {name}, even with floorIndex, and it "
             f"lies off the story it names ({shown}" + (f"; and {more} more" if more > 0 else "")
-            + f"). If it was meant as an offset above the story, send the story's level "
-            f"plus the offset."]
+            + "). If it was meant as an offset above the story, send the story's level "
+            "plus the offset."]
 
 
 # Where a flight lies across its baseline, in flight widths to the right of it.

@@ -158,7 +158,6 @@ def test_emit_survives_a_discovery_failure(capsys, monkeypatch):
 
 
 def test_banner_with_gdl_workspace_set(tmp_path):
-    from pathlib import Path
     banner = format_startup_banner("full", 3, [WITH_TAPIR], gdl_workspace=tmp_path)
     assert "GDL workspace" in banner
     assert str(tmp_path) in banner

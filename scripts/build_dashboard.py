@@ -13,7 +13,6 @@ Output: docs/api-dashboard.html (open it directly, or serve the folder with
 from __future__ import annotations
 
 import datetime
-import html
 import json
 import re
 import subprocess

@@ -72,7 +72,7 @@ def test_blender_windows_double_digit_version(tmp_path, monkeypatch):
     """Pick Blender 10.0 over 9.0 using numeric comparison, not lexicographic sort."""
     monkeypatch.delenv("BLENDER", raising=False)
     monkeypatch.setattr(toolchain.sys, "platform", "win32")
-    v9 = _touch(tmp_path / "Blender Foundation" / "Blender 9.0" / "blender.exe")
+    _touch(tmp_path / "Blender Foundation" / "Blender 9.0" / "blender.exe")
     v10 = _touch(tmp_path / "Blender Foundation" / "Blender 10.0" / "blender.exe")
     monkeypatch.setattr(toolchain, "_blender_roots", lambda: [tmp_path])
     assert toolchain.find_blender() == v10

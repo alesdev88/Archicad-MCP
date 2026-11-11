@@ -1,6 +1,5 @@
 """archicad-gdl build-source prints the build and each validation."""
 
-from pathlib import Path
 
 from archicad_mcp.gdl import cli, source
 

@@ -1,7 +1,6 @@
 """show_elements: find where elements live, pick the view, then show them."""
 from __future__ import annotations
 
-import pytest
 
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core import views

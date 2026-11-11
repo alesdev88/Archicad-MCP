@@ -14,7 +14,7 @@ from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.extract import build_snapshot
 from archicad_mcp.rules.builtin.ifc_structure import IfcSpatialStructureRule
 from archicad_mcp.rules.builtin.library_parts import LibraryPartsLoadedRule
-from archicad_mcp.rules.engine import data_needs, ifc_story_types, run_rules
+from archicad_mcp.rules.engine import data_needs, ifc_story_types
 from archicad_mcp.rules.loader import RULE_TYPES
 from archicad_mcp.rules.types import IfcStructure, MissingParts, ModelSnapshot, RuleConfigError
 from archicad_mcp.server import build_server
@@ -198,7 +198,7 @@ def test_unread_entries_past_the_last_part_are_no_parts():
     assert result.skipped is False and result.failing_guids == (LAMP,)
 
 
-def test_it_skips_on_a_tapir_without_the_command():
+def test_the_parts_rule_skips_on_a_tapir_without_the_command():
     result = parts_rule().check(parts_snapshot(Project(missing=["GetMissingLibPartNames"])))
     assert result.skipped is True and "GetMissingLibPartNames" in result.skip_reason
 
@@ -272,7 +272,7 @@ def test_a_misspelt_element_type_is_a_load_error():
         ifc_rule(element_types=["Wal"])
 
 
-def test_it_skips_on_a_tapir_without_the_command():
+def test_the_ifc_rule_skips_on_a_tapir_without_the_command():
     rule = ifc_rule()
     result = rule.check(ifc_snapshot(Project(missing=["GetIFCSpatialStructure"]), rule))
     assert result.skipped is True and "GetIFCSpatialStructure" in result.skip_reason
