@@ -75,6 +75,13 @@ NOT_READ_ELEMENT = (
     "the official API reads no property of this element (2D and annotation "
     "elements are outside it); Tapir 2.0.0 or newer reads them")
 
+# The Tapir read that fills those notRead cells (see _fill_from_tapir). Tapir
+# 2.0.0 is the first whose GetPropertyValuesOfElements answers 2D elements and
+# takes includeAvailability and useSIUnits.
+TAPIR_VALUE_FALLBACK_SINCE = (2, 0, 0)
+NOT_READ_UNKNOWN_ID = "the property id is not among the project's definitions"
+NOT_READ_TAPIR_ELEMENT = "Tapir could not read this element either: "
+
 # What an enumeration actually covered. Only Tapir sees the whole plan; the
 # official API.GetAllElements returns model elements only, so every 2D /
 # annotation / viewpoint type is missing from it. Measured live on AC 29.0/4006:
@@ -350,11 +357,117 @@ def _not_read(reason: str) -> dict:
     return {"status": "notRead", "reason": reason}
 
 
-def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, dict]]:
+def _is_not_read(cell: dict) -> bool:
+    return cell.get("status") == "notRead"
+
+
+def _tapir_definitions(conn) -> dict[str, dict]:
+    """Lower-cased property GUID -> Tapir's definition, or {} when the fallback
+    may not run (no Tapir, one older than TAPIR_VALUE_FALLBACK_SINCE) or
+    GetAllProperties fails."""
+    if not conn.tapir_available():
+        return {}
+    if _key(installed_version(conn) or "") < TAPIR_VALUE_FALLBACK_SINCE:
+        return {}
+    try:
+        response = conn.tapir("GetAllProperties")
+    except APIErrorBase:
+        return {}
+    out: dict[str, dict] = {}
+    for definition in response.get("properties") or []:
+        if not isinstance(definition, dict):
+            continue
+        guid = (definition.get("propertyId") or {}).get("guid")
+        if isinstance(guid, str):
+            out[guid.lower()] = definition
+    return out
+
+
+def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
+                     names: list[str], ids: dict[str, dict],
+                     definitions: dict[str, dict] | None,
+                     report: dict | None) -> dict[str, dict] | None:
+    """Fill this chunk's notRead cells from one Tapir GetPropertyValuesOfElements.
+
+    `definitions` is None until a chunk first has a gap; then the gate and
+    GetAllProperties are asked once, and the result ({} when closed) is
+    returned for the following chunks. A gap whose id is not among the
+    definitions is marked NOT_READ_UNKNOWN_ID and never sent, because one
+    unknown id fails every element of a Tapir call. Only elements with a gap
+    on a sendable property, and only properties with such a gap, are sent.
+    A cell the official read answered is never replaced; a Tapir answer that
+    is missing or malformed leaves its cell as it was.
+    """
+    gaps = {guid: [n for n in names if _is_not_read(out[guid].get(n, {}))]
+            for guid in chunk if guid in out}
+    gaps = {guid: gap for guid, gap in gaps.items() if gap}
+    if not gaps:
+        return definitions
+    if definitions is None:
+        definitions = _tapir_definitions(conn)
+    if not definitions:
+        return definitions
+
+    def definition_of(name: str) -> dict | None:
+        guid = ids[name].get("guid")
+        return definitions.get(guid.lower()) if isinstance(guid, str) else None
+
+    for guid, gap in gaps.items():
+        for name in gap:
+            if definition_of(name) is None:
+                out[guid][name] = _not_read(NOT_READ_UNKNOWN_ID)
+    gaps = {guid: [n for n in gap if definition_of(n) is not None] for guid, gap in gaps.items()}
+    gaps = {guid: gap for guid, gap in gaps.items() if gap}
+    if not gaps:
+        return definitions
+    elements = list(gaps)
+    sent = [n for n in names if any(n in gap for gap in gaps.values())]
+
+    if report is not None:
+        report["tapir_elements"] += len(elements)
+    try:
+        response = conn.tapir("GetPropertyValuesOfElements", {
+            "elements": element_payload(elements),
+            "properties": [{"propertyId": ids[n]} for n in sent],
+            "includeAvailability": True,
+            "useSIUnits": True,
+        })
+    except APIErrorBase:
+        return definitions
+
+    rows = response.get("propertyValuesForElements")
+    for guid, row in zip(elements, rows if isinstance(rows, list) else []):
+        if not isinstance(row, dict):
+            continue
+        cells = out[guid]
+        error = row.get("error")
+        if isinstance(error, dict):
+            reason = NOT_READ_TAPIR_ELEMENT + str(error.get("message") or "")
+            for name in gaps[guid]:
+                cells[name] = _not_read(reason)
+            continue
+        items = row.get("propertyValues")
+        for name, item in zip(sent, items if isinstance(items, list) else []):
+            if name not in gaps[guid] or not isinstance(item, dict):
+                continue
+            if "error" not in item and not isinstance(item.get("propertyValue", {}), dict):
+                continue
+            cells[name] = tapir_cell(item, definition_of(name))
+    return definitions
+
+
+def fetch_property_cells(conn, guids: list[str], names: list[str], *,
+                         tapir_fallback: bool = False,
+                         report: dict | None = None) -> dict[str, dict[str, dict]]:
     """guid -> {property name -> the raw propertyValue dict (or {})}.
 
     A cell the official read refused (an unsupported element or definition) is
     {"status": "notRead", "reason": ...}; any other failure stays {}.
+
+    With `tapir_fallback`, and a Tapir of TAPIR_VALUE_FALLBACK_SINCE or newer,
+    the notRead cells of each chunk are filled from Tapir (see
+    _fill_from_tapir); those cells carry "via": "tapir". When `report` is
+    given, report["tapir_elements"] counts the elements sent to Tapir.
 
     The raw cell carries `type` ("string", "singleEnum", …) and `status`
     ("normal", "userUndefined", …) alongside `value`. Writers need the type,
@@ -365,6 +478,8 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
     Archicad API bridge); the per-chunk results are merged. If the element set
     exceeds MAX_PROPERTY_FETCH_ELEMENTS this refuses rather than risk a crash.
     """
+    if report is not None:
+        report["tapir_elements"] = 0
     if not guids or not names:
         return {g: {} for g in guids}
     if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
@@ -379,6 +494,7 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
     resolved = [n for n in names if n in ids]
     property_payload = [{"propertyId": ids[n]} for n in resolved]
     out: dict[str, dict[str, object]] = {}
+    definitions: dict[str, dict] | None = None
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
         chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
         response = conn.official("API.GetPropertyValuesOfElements", {
@@ -399,12 +515,15 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
             for name in names:
                 cells.setdefault(name, {})
             out[guid] = cells
+        if tapir_fallback:
+            definitions = _fill_from_tapir(conn, chunk, out, resolved, ids, definitions, report)
     return out
 
 
-def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, object]]:
+def fetch_property_values(conn, guids: list[str], names: list[str], *,
+                          tapir_fallback: bool = False) -> dict[str, dict[str, object]]:
     """guid -> {property name -> value or None}. Thin view over the raw cells."""
-    cells = fetch_property_cells(conn, guids, names)
+    cells = fetch_property_cells(conn, guids, names, tapir_fallback=tapir_fallback)
     return {guid: {name: cell.get("value") for name, cell in per_name.items()}
             for guid, per_name in cells.items()}
 
