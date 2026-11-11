@@ -63,6 +63,46 @@ Consequences:
   properties have no such check. The result reports `property_reads` so the
   blast radius of a query is visible. See [Finding elements](query.md).
 
+### The pre-check spike of 11.11.2026
+
+A spike on MCP-Test (Archicad 29 build 5101, stock Tapir 2.0.0) asked whether Tapir's
+`GetPropertyEditability` could pre-check built-in properties the way classification
+availability pre-checks user-defined ones. One element of each type in the project (wall,
+window, door, object, slab, mesh, label, polyline) was asked about all 1856 property
+definitions (1646 built-in, 210 user-defined), and every pair was then read.
+
+- **It is not a pre-check for built-in properties.** `visible` is true on every pair, so it
+  says nothing. `editable` does not follow applicability either way: of the 220 built-in pairs
+  it calls editable, 123 read a value, 87 are refused as unsupported and 10 are `notAvailable`
+  (Column Top Offset on a wall, for one); of the pairs it calls not editable, 607 read a value.
+- **For user-defined properties `editable` matched availability exactly:** 1121 pairs not
+  editable and all `notAvailable`, 139 editable and all with a value or `userUndefined`. Every
+  user-defined definition in MCP-Test is editable, so a read-only one is untested. It adds
+  nothing over the classification pre-check `find_elements` already has.
+- **The crash did not reproduce on build 5101.** All 11,136 pairs on the six model elements
+  read without an abort, in calls of 100 properties on one element. So did the original
+  trigger: each of the 210 user-defined properties read alone on a slab created a moment
+  before, then all 210 in one call (185 `notAvailable`, 22 `userUndefined`, 3 values). This is
+  one project and one build. It does not show the fault is fixed, and the advice above stands.
+- **890 of the 1856 definitions are never readable through the official API.** They answer
+  error 6702, "Property definition not supported", on every element, so it is a fact about the
+  definition and not about the pair. General Parameters / Layer and the classification system
+  properties are among them.
+- **The official read refuses 2D elements one by one.** The label and the polyline answer
+  error 7203, "Element not supported", for the whole element, without an abort.
+- **Tapir's own `GetPropertyValuesOfElements` reads more.** It agreed with the official read
+  on every pair both answered (a value where the official status is `normal` or
+  `userUndefined`, the error "Not available or not evaluated property" where it is
+  `notAvailable` or `notEvaluated`). It also returned a value on 787 of the pairs the official
+  API refuses as unsupported, and on 265 pairs of the label and the polyline, Locked and Layer
+  Name among them. It does not tell `userUndefined` from a value, and whether it shares the
+  crash is unknown. The server does not use it yet, so a property in either gap reads as
+  not available: `find_elements` with `General_Locked equal false` matched neither label nor
+  polyline. [The design of 11.11.2026](superpowers/specs/2026-11-11-tapir-property-read-fallback-design.md)
+  proposes it as a fallback for the two gaps.
+
+The probe and its raw answers are kept outside the repository, with the project's notes.
+
 ## Element coverage: the official API sees only model elements
 
 The official `API.GetAllElements` returns **model elements only**. Everything 2D
