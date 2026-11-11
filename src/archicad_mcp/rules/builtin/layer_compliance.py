@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from archicad_mcp.rules.builtin.base import AppliesTo, common_fields, unread_skip
+from archicad_mcp.rules.builtin.base import AppliesTo, checked_result, common_fields, split_unread
 from archicad_mcp.rules.types import LAYER_KEY, ModelSnapshot, RuleConfigError, RuleResult, Severity
 
 TYPE_NAME = "layer-compliance"
@@ -50,19 +50,10 @@ class LayerComplianceRule:
         return False
 
     def check(self, snapshot: ModelSnapshot) -> RuleResult:
-        skipped = unread_skip(
-            self, snapshot, {LAYER_KEY} | self.applies_to.needed_properties)
-        if skipped is not None:
-            return skipped
+        split = split_unread(self, snapshot, {LAYER_KEY} | self.applies_to.needed_properties)
         failing = tuple(
-            e.guid for e in snapshot.elements
+            e.guid for e in split.readable
             if self.applies_to.matches(e) and not self._layer_ok(e.layer)
         )
-        return RuleResult(
-            rule_id=self.rule_id,
-            passed=not failing,
-            severity=self.severity,
-            message=f"{len(failing)} element(s) on non-compliant layers",
-            failure_count=len(failing),
-            failing_guids=failing,
-        )
+        return checked_result(
+            self, split, failing, f"{len(failing)} element(s) on non-compliant layers")
