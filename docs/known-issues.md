@@ -118,14 +118,15 @@ elements), saved before the first read and after the last cleanup. What was foun
 - **Lists.** Tapir filled 1148 integer list cells, 736 text list cells and 2 real list cells with
   values. Building Materials (All) on a wall came as `"51; 59"` and reads `[51, 59]`; Building
   Material ID came as `"EC-00; ST-00"` and reads `["EC-00", "ST-00"]`; a label's Font Size came as
-  `"3"` and reads `[3.0]`. An empty text reads as an empty list.
+  `"3"` and reads `[3.0]`. Another 473 text list cells and 188 integer list cells came from Tapir
+  with status `normal` and no item.
 - **General Parameters / Layer is an integer.** `GetAllProperties` declares it Integer, and Tapir
-  answers the layer's index (`"33"` on both walls, whose layer is Structural - Bearing). It is not
-  the layer's name; `ModelView_LayerName` is.
+  answers a number (`"33"` on both walls), not a name. `get_element_data` gives the first wall's
+  layer as Structural - Bearing; the name is in `ModelView_LayerName`.
 - **Speed.** All 149 elements with General_Locked, General Parameters / Layer, Building Materials
-  (All) and `ModelView_LayerName` (149 elements with a gap, in one chunk): 0.11 s with the official
-  read alone, 0.42 to 0.53 s with the fallback, which adds one `GetAllProperties` call and one
-  Tapir read. Every gap was filled; 4 Building Materials (All) cells, on the 2D elements, are
+  (All) and `ModelView_LayerName` (149 elements with a gap, in one chunk): about 0.11 s with the
+  official read alone, with one run of 0.64 s, and 0.42 to 0.53 s with the fallback, which sent all
+  149 elements to Tapir. Every gap was filled; 4 Building Materials (All) cells, on the 2D elements, are
   `notAvailable`.
 - **Sub-elements.** A stair and a curtain wall made for the check listed 115 sub-elements (20
   treads, 20 risers, 1 structure, 1 segment, 52 frames, 21 panels). The official API refuses a
@@ -142,9 +143,9 @@ elements), saved before the first read and after the last cleanup. What was foun
   `ComposeResult` abort was seen, so it sits beside that path. Whether the C++ read shares the
   fault underneath is not known.
 
-Not run: an Archicad in another language (only INT is installed; the source says the boolean and
-undefined words are not translated, but `ACAPI_Property_GetPropertyValueString` text was not seen
-in another language), 500 elements (MCP-Test has 149), a real list of more than one item, a
+Not run: an Archicad in another language (only one Archicad, in INT, was running, and none was
+started; Tapir's source hard-codes the English words `"True"`, `"False"` and `"<Undefined>"`, but
+nothing was read on another language), 500 elements (MCP-Test has 149), a real list of more than one item, a
 length or angle list with a value, and a multiple-choice enumeration with a value (none in
 MCP-Test).
 
