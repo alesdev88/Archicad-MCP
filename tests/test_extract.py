@@ -224,16 +224,17 @@ _ANSWERED = {"propertyValue": {"type": "boolean", "status": "normal", "value": F
 def test_a_refused_element_is_not_read_with_its_reason():
     conn = _refusal_conn([_REFUSED_ELEMENT])
     cells = extract.fetch_property_cells(conn, ["label-1"], ["General_Locked", "X/Layer"])
-    assert cells["label-1"] == {
-        "General_Locked": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT},
-        "X/Layer": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT}}
+    refused = {"status": "notRead", "reason": extract.NOT_READ_ELEMENT,
+               "cause": extract.NOT_READ_ELEMENT_CAUSE}
+    assert cells["label-1"] == {"General_Locked": refused, "X/Layer": refused}
 
 
 def test_a_refused_element_keeps_an_unresolved_name_empty():
     conn = _refusal_conn([_REFUSED_ELEMENT], resolvable=("General_Locked",))
     cells = extract.fetch_property_cells(conn, ["label-1"], ["General_Locked", "Nope"])
     assert cells["label-1"] == {
-        "General_Locked": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT},
+        "General_Locked": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT,
+                           "cause": extract.NOT_READ_ELEMENT_CAUSE},
         "Nope": {}}
 
 
@@ -241,7 +242,8 @@ def test_a_refused_definition_is_not_read_with_its_reason():
     conn = _refusal_conn([{"propertyValues": [_ANSWERED, _REFUSED_DEFINITION]}])
     cells = extract.fetch_property_cells(conn, ["w-1"], ["General_Locked", "X/Layer"])
     assert cells["w-1"]["X/Layer"] == {
-        "status": "notRead", "reason": extract.NOT_READ_DEFINITION}
+        "status": "notRead", "reason": extract.NOT_READ_DEFINITION,
+        "cause": extract.NOT_READ_DEFINITION_CAUSE}
     assert cells["w-1"]["General_Locked"] == {
         "type": "boolean", "status": "normal", "value": False}
 
@@ -262,12 +264,19 @@ def test_another_row_error_is_still_empty_cells():
 def test_error_codes_and_reasons_are_the_agreed_ones():
     assert extract.OFFICIAL_UNSUPPORTED_DEFINITION == 6702
     assert extract.OFFICIAL_UNSUPPORTED_ELEMENT == 7203
-    assert extract.NOT_READ_DEFINITION == (
-        "the official API does not support this property definition; "
-        "Tapir 2.0.0 or newer reads it")
-    assert extract.NOT_READ_ELEMENT == (
+    assert extract.NOT_READ_DEFINITION_CAUSE == (
+        "the official API does not support this property definition")
+    assert extract.NOT_READ_ELEMENT_CAUSE == (
         "the official API reads no property of this element (2D and annotation "
-        "elements are outside it); Tapir 2.0.0 or newer reads them")
+        "elements, and sub-elements such as stair treads and curtain wall panels, "
+        "are outside it)")
+    assert extract.NOT_READ_DEFINITION == (
+        extract.NOT_READ_DEFINITION_CAUSE + "; Tapir 2.0.0 or newer reads it")
+    assert extract.NOT_READ_ELEMENT == (
+        extract.NOT_READ_ELEMENT_CAUSE + "; Tapir 2.0.0 or newer reads them")
+    assert extract.NOT_READ_TAPIR_SILENT == "; Tapir did not answer it either"
+    assert extract.NOT_READ_WRITE == (
+        "; property writes go through the official API, so it cannot be written")
 
 
 def test_values_of_cells_not_read_are_none():

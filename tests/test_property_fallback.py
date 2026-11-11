@@ -68,6 +68,20 @@ def _fake(official_rows=None, version="2.0.0", tapir=True, values=_tapir_answer,
     }, tapir=tapir_responses)
 
 
+# What the official read leaves when Tapir may not fill it, and when Tapir was asked and
+# did not answer.
+_CLOSED_ELEMENT = {"status": "notRead", "reason": extract.NOT_READ_ELEMENT,
+                   "cause": extract.NOT_READ_ELEMENT_CAUSE}
+_CLOSED_DEFINITION = {"status": "notRead", "reason": extract.NOT_READ_DEFINITION,
+                      "cause": extract.NOT_READ_DEFINITION_CAUSE}
+_SILENT_ELEMENT = {"status": "notRead",
+                   "reason": extract.NOT_READ_ELEMENT_CAUSE + extract.NOT_READ_TAPIR_SILENT,
+                   "cause": extract.NOT_READ_ELEMENT_CAUSE}
+_SILENT_DEFINITION = {"status": "notRead",
+                      "reason": extract.NOT_READ_DEFINITION_CAUSE + extract.NOT_READ_TAPIR_SILENT,
+                      "cause": extract.NOT_READ_DEFINITION_CAUSE}
+
+
 def _conn(core):
     return ArchicadConnection(19723, core=core)
 
@@ -133,9 +147,8 @@ def test_without_the_gate_tapir_is_not_asked(setup):
                                  tapir_fallback=setup != "flag_off")
     assert tapir_calls(core) == []
     assert "GetAllProperties" not in [c for c, _ in core.calls]
-    assert cells["label-1"]["General_Locked"] == {
-        "status": "notRead", "reason": extract.NOT_READ_ELEMENT}
-    assert cells["w-1"]["X/Layer"] == {"status": "notRead", "reason": extract.NOT_READ_DEFINITION}
+    assert cells["label-1"]["General_Locked"] == _CLOSED_ELEMENT
+    assert cells["w-1"]["X/Layer"] == _CLOSED_DEFINITION
 
 
 def test_no_gap_means_no_tapir_call_at_all():
@@ -193,6 +206,7 @@ def test_a_tapir_error_for_one_element_names_it():
     assert cells["label-1"]["General_Locked"] == {
         "status": "notRead",
         "reason": extract.NOT_READ_TAPIR_ELEMENT + "Failed to get property values for element"}
+    assert "cause" not in cells["label-1"]["X/Layer"]
     assert cells["w-1"]["X/Layer"]["status"] == "normal"
     assert cells["w-1"]["General_Locked"] == {"type": "boolean", "status": "normal", "value": False}
 
@@ -213,7 +227,7 @@ def _raises(params):
 
 
 @pytest.mark.parametrize("failing", ["values", "definitions", "definitions_missing"])
-def test_tapir_failing_keeps_the_official_answers_and_raises_nothing(failing):
+def test_tapir_failing_keeps_the_official_answers_and_says_tapir_was_silent(failing):
     core = {"values": _fake(values=_raises),
             "definitions": _fake(definitions=_raises),
             "definitions_missing": _fake(definitions=None)}[failing]
@@ -221,8 +235,8 @@ def test_tapir_failing_keeps_the_official_answers_and_raises_nothing(failing):
     cells = fetch_property_cells(_conn(core), ["label-1", "w-1"], NAMES, tapir_fallback=True,
                                  report=report)
     assert cells["w-1"]["General_Locked"]["value"] is False
-    assert cells["label-1"]["General_Locked"] == {"status": "notRead", "reason": extract.NOT_READ_ELEMENT}
-    assert cells["w-1"]["X/Layer"] == {"status": "notRead", "reason": extract.NOT_READ_DEFINITION}
+    assert cells["label-1"]["General_Locked"] == _SILENT_ELEMENT
+    assert cells["w-1"]["X/Layer"] == _SILENT_DEFINITION
     if failing != "values":
         assert tapir_calls(core) == []
         assert report == {"tapir_elements": 0}
@@ -241,7 +255,7 @@ def test_a_short_tapir_answer_in_rows_leaves_the_rest_not_read():
     cells = fetch_property_cells(_conn(_fake(values=answer)), ["label-1", "w-1"], NAMES,
                                  tapir_fallback=True)
     assert cells["label-1"]["X/Layer"]["status"] == "normal"
-    assert cells["w-1"]["X/Layer"] == {"status": "notRead", "reason": extract.NOT_READ_DEFINITION}
+    assert cells["w-1"]["X/Layer"] == _SILENT_DEFINITION
 
 
 def test_a_short_tapir_answer_in_values_leaves_the_rest_not_read():
@@ -252,8 +266,8 @@ def test_a_short_tapir_answer_in_values_leaves_the_rest_not_read():
     cells = fetch_property_cells(_conn(_fake(values=answer)), ["label-1", "w-1"], NAMES,
                                  tapir_fallback=True)
     assert cells["label-1"]["General_Locked"]["status"] == "normal"
-    assert cells["label-1"]["X/Layer"] == {"status": "notRead", "reason": extract.NOT_READ_ELEMENT}
-    assert cells["w-1"]["X/Layer"]["status"] == "notRead"
+    assert cells["label-1"]["X/Layer"] == _SILENT_ELEMENT
+    assert cells["w-1"]["X/Layer"] == _SILENT_DEFINITION
 
 
 @pytest.mark.parametrize("answer", [
@@ -266,9 +280,9 @@ def test_a_short_tapir_answer_in_values_leaves_the_rest_not_read():
 def test_a_malformed_tapir_answer_leaves_the_gaps_not_read(answer):
     cells = fetch_property_cells(_conn(_fake(values=answer)), ["label-1", "w-1"], NAMES,
                                  tapir_fallback=True)
-    assert cells["label-1"]["General_Locked"]["status"] == "notRead"
-    assert cells["label-1"]["X/Layer"]["status"] == "notRead"
-    assert cells["w-1"]["X/Layer"]["status"] == "notRead"
+    assert cells["label-1"]["General_Locked"] == _SILENT_ELEMENT
+    assert cells["label-1"]["X/Layer"] == _SILENT_ELEMENT
+    assert cells["w-1"]["X/Layer"] == _SILENT_DEFINITION
 
 
 def test_the_report_counts_elements_sent_to_tapir():
@@ -282,3 +296,24 @@ def test_fetch_property_values_passes_the_flag():
     conn = _conn(_fake())
     assert fetch_property_values(conn, ["label-1"], ["General_Locked"], tapir_fallback=True) == {
         "label-1": {"General_Locked": True}}
+
+
+def test_a_gate_closed_reason_names_the_tapir_that_would_read_it():
+    cells = fetch_property_cells(_conn(_fake(version="1.8.0")), ["label-1", "w-1"], NAMES,
+                                 tapir_fallback=True)
+    assert cells["label-1"]["General_Locked"]["reason"].endswith("; Tapir 2.0.0 or newer reads them")
+    assert cells["w-1"]["X/Layer"]["reason"].endswith("; Tapir 2.0.0 or newer reads it")
+
+
+def test_with_the_gate_open_a_filled_cell_carries_no_reason():
+    cells = fetch_property_cells(_conn(_fake()), ["label-1", "w-1"], NAMES, tapir_fallback=True)
+    assert "reason" not in cells["label-1"]["General_Locked"]
+    assert "cause" not in cells["w-1"]["X/Layer"]
+
+
+def test_a_silent_tapir_does_not_say_tapir_would_read_it():
+    cells = fetch_property_cells(_conn(_fake(values=_raises)), ["label-1"], NAMES,
+                                 tapir_fallback=True)
+    reason = cells["label-1"]["General_Locked"]["reason"]
+    assert reason.endswith("; Tapir did not answer it either")
+    assert "Tapir 2.0.0" not in reason

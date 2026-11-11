@@ -29,6 +29,7 @@ from archicad_mcp.core.element_values import read_value
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     MAX_PROPERTY_FETCH_ELEMENTS,
+    NOT_READ_WRITE,
     PROPERTY_FETCH_CHUNK,
     PropertyFetchTooWideError,
     _fetch_classifications,
@@ -150,7 +151,9 @@ def plan_property_writes(conn: ArchicadConnection, changes: list[dict],
         elif guid in refusals:
             reason = refusals[guid]
         elif cell.get("status") == "notRead":
-            reason = cell.get("reason")
+            # The cause alone: the Tapir remedy is for reading, and a write cannot use it.
+            reason = (cell["cause"] + NOT_READ_WRITE if "cause" in cell
+                      else cell.get("reason"))
         elif value_type is None:
             reason = ("could not determine the property's value type "
                       "(is it available on this element?)")

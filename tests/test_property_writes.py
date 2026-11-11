@@ -462,7 +462,32 @@ def test_a_write_on_a_refused_definition_is_skipped_with_that_reason():
         {"guid": "w-1", "property": "X/Layer", "value": "A"}], refusals={})
     assert planned == []
     assert skipped == [{"guid": "w-1", "property": "X/Layer",
-                        "reason": extract.NOT_READ_DEFINITION}]
+                        "reason": extract.NOT_READ_DEFINITION_CAUSE + extract.NOT_READ_WRITE}]
+    assert "Tapir" not in skipped[0]["reason"]
+
+
+def test_a_write_on_a_refused_element_says_it_cannot_be_written():
+    from archicad_mcp import extract
+    from tests import test_property_fallback as fb
+    core = fb._fake(official_rows={"label-1": fb._REFUSED_ELEMENT})
+    planned, skipped = plan_property_writes(ArchicadConnection(19723, core=core), [
+        {"guid": "label-1", "property": "X/Layer", "value": "A"}], refusals={})
+    assert planned == []
+    assert skipped[0]["reason"] == (
+        "the official API reads no property of this element (2D and annotation elements, "
+        "and sub-elements such as stair treads and curtain wall panels, are outside it)"
+        "; property writes go through the official API, so it cannot be written")
+
+
+def test_a_write_on_a_not_read_cell_without_a_cause_keeps_its_reason(monkeypatch):
+    from archicad_mcp import extract
+    from archicad_mcp.core import element_data
+    conn, _ = _refusing_conn()
+    monkeypatch.setattr(element_data, "fetch_property_cells", lambda *a, **k: {
+        "w-1": {"X/Layer": {"status": "notRead", "reason": extract.NOT_READ_UNKNOWN_ID}}})
+    _, skipped = plan_property_writes(conn, [
+        {"guid": "w-1", "property": "X/Layer", "value": "A"}], refusals={})
+    assert skipped[0]["reason"] == extract.NOT_READ_UNKNOWN_ID
 
 
 def test_write_planning_never_asks_tapir_for_values():

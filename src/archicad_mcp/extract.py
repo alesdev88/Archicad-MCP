@@ -68,12 +68,18 @@ ELEMENT_NOT_SUPPORTED = 7203
 # the reason, so a Tapir read can fill exactly those cells.
 OFFICIAL_UNSUPPORTED_DEFINITION = 6702
 OFFICIAL_UNSUPPORTED_ELEMENT = ELEMENT_NOT_SUPPORTED
-NOT_READ_DEFINITION = (
-    "the official API does not support this property definition; "
-    "Tapir 2.0.0 or newer reads it")
-NOT_READ_ELEMENT = (
+# A notRead cell carries its cause beside the reason, because the remedy is true
+# only where the cell is read: a write cannot take it (NOT_READ_WRITE), and a
+# Tapir that was asked and did not answer cannot be the remedy (NOT_READ_TAPIR_SILENT).
+NOT_READ_DEFINITION_CAUSE = "the official API does not support this property definition"
+NOT_READ_ELEMENT_CAUSE = (
     "the official API reads no property of this element (2D and annotation "
-    "elements are outside it); Tapir 2.0.0 or newer reads them")
+    "elements, and sub-elements such as stair treads and curtain wall panels, "
+    "are outside it)")
+NOT_READ_DEFINITION = NOT_READ_DEFINITION_CAUSE + "; Tapir 2.0.0 or newer reads it"
+NOT_READ_ELEMENT = NOT_READ_ELEMENT_CAUSE + "; Tapir 2.0.0 or newer reads them"
+NOT_READ_TAPIR_SILENT = "; Tapir did not answer it either"
+NOT_READ_WRITE = "; property writes go through the official API, so it cannot be written"
 
 # The Tapir read that fills those notRead cells (see _fill_from_tapir). Tapir
 # 2.0.0 is the first whose GetPropertyValuesOfElements answers 2D elements and
@@ -353,26 +359,34 @@ def _error_code(item: dict) -> int | None:
     return (item.get("error") or {}).get("code")
 
 
-def _not_read(reason: str) -> dict:
-    return {"status": "notRead", "reason": reason}
+def _not_read(reason: str, cause: str | None = None) -> dict:
+    cell = {"status": "notRead", "reason": reason}
+    if cause is not None:
+        cell["cause"] = cause
+    return cell
 
 
 def _is_not_read(cell: dict) -> bool:
     return cell.get("status") == "notRead"
 
 
-def _tapir_definitions(conn) -> dict[str, dict]:
-    """Lower-cased property GUID -> Tapir's definition, or {} when the fallback
-    may not run (no Tapir, one older than TAPIR_VALUE_FALLBACK_SINCE) or
-    GetAllProperties fails."""
+# What _tapir_definitions answers when it has no definitions to give.
+_GATE_CLOSED = "gate closed"
+_DEFINITIONS_UNREAD = "definitions unread"
+
+
+def _tapir_definitions(conn) -> dict[str, dict] | str:
+    """Lower-cased property GUID -> Tapir's definition. _GATE_CLOSED when the
+    fallback may not run (no Tapir, one older than TAPIR_VALUE_FALLBACK_SINCE);
+    _DEFINITIONS_UNREAD when GetAllProperties fails or lists none."""
     if not conn.tapir_available():
-        return {}
+        return _GATE_CLOSED
     if _key(installed_version(conn) or "") < TAPIR_VALUE_FALLBACK_SINCE:
-        return {}
+        return _GATE_CLOSED
     try:
         response = conn.tapir("GetAllProperties")
     except APIErrorBase:
-        return {}
+        return _DEFINITIONS_UNREAD
     out: dict[str, dict] = {}
     for definition in response.get("properties") or []:
         if not isinstance(definition, dict):
@@ -380,23 +394,36 @@ def _tapir_definitions(conn) -> dict[str, dict]:
         guid = (definition.get("propertyId") or {}).get("guid")
         if isinstance(guid, str):
             out[guid.lower()] = definition
-    return out
+    return out or _DEFINITIONS_UNREAD
+
+
+def _mark_silent(out: dict[str, dict[str, dict]], gaps: dict[str, list[str]]) -> None:
+    """Tapir was asked and gave no value: an official refusal still unread now
+    says so, rather than offer Tapir 2.0.0 as the remedy."""
+    for guid, gap in gaps.items():
+        for name in gap:
+            cell = out[guid][name]
+            if _is_not_read(cell) and "cause" in cell:
+                out[guid][name] = _not_read(cell["cause"] + NOT_READ_TAPIR_SILENT, cell["cause"])
 
 
 def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
                      names: list[str], ids: dict[str, dict],
-                     definitions: dict[str, dict] | None,
-                     report: dict | None) -> dict[str, dict] | None:
+                     definitions: dict[str, dict] | str | None,
+                     report: dict | None) -> dict[str, dict] | str | None:
     """Fill this chunk's notRead cells from one Tapir GetPropertyValuesOfElements.
 
     `definitions` is None until a chunk first has a gap; then the gate and
-    GetAllProperties are asked once, and the result ({} when closed) is
-    returned for the following chunks. A gap whose id is not among the
+    GetAllProperties are asked once, and the result (see _tapir_definitions)
+    is returned for the following chunks. A gap whose id is not among the
     definitions is marked NOT_READ_UNKNOWN_ID and never sent, because one
     unknown id fails every element of a Tapir call. Only elements with a gap
     on a sendable property, and only properties with such a gap, are sent.
-    A cell the official read answered is never replaced; a Tapir answer that
-    is missing or malformed leaves its cell as it was.
+    A cell the official read answered is never replaced. With the gate
+    closed a gap keeps its reason. With it open, a gap Tapir gave no value
+    for (the definitions or the value call failed, or the answer was short
+    or malformed) says Tapir did not answer it either; a row Tapir refused
+    names Tapir's message.
     """
     gaps = {guid: [n for n in names if _is_not_read(out[guid].get(n, {}))]
             for guid in chunk if guid in out}
@@ -405,7 +432,10 @@ def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
         return definitions
     if definitions is None:
         definitions = _tapir_definitions(conn)
-    if not definitions:
+    if definitions == _GATE_CLOSED:
+        return definitions
+    if definitions == _DEFINITIONS_UNREAD:
+        _mark_silent(out, gaps)
         return definitions
 
     def definition_of(name: str) -> dict | None:
@@ -433,6 +463,7 @@ def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
             "useSIUnits": True,
         })
     except APIErrorBase:
+        _mark_silent(out, gaps)
         return definitions
 
     rows = response.get("propertyValuesForElements")
@@ -453,6 +484,7 @@ def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
             if "error" not in item and not isinstance(item.get("propertyValue", {}), dict):
                 continue
             cells[name] = tapir_cell(item, definition_of(name))
+    _mark_silent(out, gaps)
     return definitions
 
 
@@ -462,7 +494,8 @@ def fetch_property_cells(conn, guids: list[str], names: list[str], *,
     """guid -> {property name -> the raw propertyValue dict (or {})}.
 
     A cell the official read refused (an unsupported element or definition) is
-    {"status": "notRead", "reason": ...}; any other failure stays {}.
+    {"status": "notRead", "reason": ..., "cause": ...}: the cause alone, and the
+    reason, which adds what is true where it is read. Any other failure stays {}.
 
     With `tapir_fallback`, and a Tapir of TAPIR_VALUE_FALLBACK_SINCE or newer,
     the notRead cells of each chunk are filled from Tapir (see
@@ -494,7 +527,7 @@ def fetch_property_cells(conn, guids: list[str], names: list[str], *,
     resolved = [n for n in names if n in ids]
     property_payload = [{"propertyId": ids[n]} for n in resolved]
     out: dict[str, dict[str, object]] = {}
-    definitions: dict[str, dict] | None = None
+    definitions: dict[str, dict] | str | None = None
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
         chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
         response = conn.official("API.GetPropertyValuesOfElements", {
@@ -506,10 +539,10 @@ def fetch_property_cells(conn, guids: list[str], names: list[str], *,
             cells: dict[str, dict] = {}
             if _error_code(row) == OFFICIAL_UNSUPPORTED_ELEMENT:
                 for name in resolved:
-                    cells[name] = _not_read(NOT_READ_ELEMENT)
+                    cells[name] = _not_read(NOT_READ_ELEMENT, NOT_READ_ELEMENT_CAUSE)
             for name, cell in zip(resolved, row.get("propertyValues", [])):
                 if _error_code(cell) == OFFICIAL_UNSUPPORTED_DEFINITION:
-                    cells[name] = _not_read(NOT_READ_DEFINITION)
+                    cells[name] = _not_read(NOT_READ_DEFINITION, NOT_READ_DEFINITION_CAUSE)
                 else:
                     cells[name] = cell.get("propertyValue") or {}
             for name in names:

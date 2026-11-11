@@ -111,6 +111,20 @@ async def test_the_descriptions_say_what_learning_cannot_do_on_tapir_1_7_2():
     assert "rotated" in learn and "placed by coordinates" in learn
 
 
+async def test_the_descriptions_say_what_could_not_be_read():
+    text = {name: " ".join(t.split()) for name, t in (await _descriptions()).items()}
+    assert ("'not_read' lists the properties nothing could read on some elements, with the "
+            "reason (the official API refuses them and Tapir 2.0.0 was not there to read "
+            "them); such a pair matches no operator, so check it before trusting a count."
+            ) in text["find_elements"]
+    assert ("What could not be read for an element (a kind, a property or the layer) is "
+            "named in its 'unreadable' with the reason; a property the official API refuses "
+            "(on 2D elements and sub-elements, and definitions it does not support) is read "
+            "through Tapir 2.0.0 or newer.") in text["get_element_data"]
+    assert "named in its 'unreadable'. " not in text["get_element_data"]
+    assert "a property the official API cannot read cannot be written" in text["set_element_data"]
+
+
 async def test_one_head_convention_in_every_text_that_names_it():
     text = await _descriptions()
     rule = "the end that goes against the wall: a bed's pillow end, a chair's or sofa's back"
