@@ -129,6 +129,16 @@ elements), saved before the first read and after the last cleanup. What was foun
   official read alone, with one run of 0.64 s, and 0.42 to 0.53 s with the fallback, which sent
   all 149 elements to Tapir. Every gap was filled; 4 Building Materials (All) cells, on the 2D
   elements, are `notAvailable`.
+- **Over the chunk size.** A later run the same day added 251 polylines and 100 columns, not
+  saved, which made 600 elements: each column brings a column segment, and the official API
+  refuses that whole too. One fetch of the same four properties over all 600 (two chunks, of 500
+  and 100; 355 elements refused whole, every element with a gap) took 0.16 to 0.17 s with the
+  official read alone and 0.97, 0.63 and 0.58 s with the fallback, which sent all 600 to Tapir
+  in two calls. Every gap was filled: 600 Layer cells, 355 lock and 355 layer-name cells, and
+  for Building Materials (All) 345 values and 255 `notAvailable`, none unparsed. Asked apart,
+  the version takes 0.02 to 0.04 s and the 1856 definitions 0.11 to 0.14 s, once per fetch.
+  `find_elements` with `General_Locked equal false` over the 253 polylines found all 253 in
+  0.42 s. The added elements were deleted and the project is back at 149 elements.
 - **Sub-elements.** A stair and a curtain wall made for the check listed 115 sub-elements (20
   treads, 20 risers, 1 structure, 1 segment, 52 frames, 21 panels). The official API refuses a
   tread and a panel whole (7203), as it does a 2D element. Tapir read Locked, Layer Name, Element
@@ -147,9 +157,9 @@ elements), saved before the first read and after the last cleanup. What was foun
 
 Not run: an Archicad in another language (only one Archicad, in INT, was running, and none was
 started; Tapir's source hard-codes the English words `"True"`, `"False"` and `"<Undefined>"`,
-but nothing was read on another language), 500 elements (MCP-Test has 149), a real list of more
-than one item, a length or angle list with a value, and a multiple-choice enumeration with a
-value (none in MCP-Test).
+but nothing was read on another language), a real list of more than one item, a length or angle
+list with a value, and a multiple-choice enumeration with a value (none in MCP-Test). Nothing
+larger than 600 elements was read through the fallback.
 
 ## Element coverage: the official API sees only model elements
 
