@@ -26,13 +26,14 @@ client to run `save_project` (it is confirm-gated, and on Teamwork it saves the
 local copy without sending).
 
 `modify_elements` reads one built-in property, `General_Locked` (the element
-lock, which no Tapir command reads), on every element it plans that is not
-inside a hotlinked module or on a locked layer. `move_elements`,
-`delete_elements` and `set_element_data` read it only on the elements
-`IsEditable` refused that neither of those explains, to name the lock. Built-in
-properties are the read class that has not crashed Archicad, and it read cleanly
-on slabs, objects and meshes in MCP-Test on 19.10.2026, but it has not been read
-live on texts, labels, dimensions or other 2D elements yet.
+lock), on every element it plans that is not inside a hotlinked module or on a
+locked layer. `move_elements`, `delete_elements` and `set_element_data` read it
+only on the elements `IsEditable` refused that neither of those explains, to
+name the lock. On a 2D element or a sub-element the official API refuses the
+read and Tapir 2.0.0 or newer answers it. Built-in properties are the read class
+that has not crashed Archicad, and it read cleanly on slabs, objects and meshes
+in MCP-Test on 19.10.2026, and on a label and a polyline through Tapir on
+11.11.2026. Whether Tapir's read shares the fault is not known.
 
 ### The element ceiling is blast-radius control, not a fix
 
@@ -110,44 +111,45 @@ The fallback was run on MCP-Test (Archicad 29 build 5101, language INT, stock Ta
 elements), saved before the first read and after the last cleanup. What was found:
 
 - **Locks on 2D elements.** Nothing was locked. With one label and one polyline locked through
-  Tapir's `LockElements`, `find_elements` with `General_Locked equal true` found exactly those two,
-  over the two types and over all 149 elements, and `equal false` found the other label and
+  Tapir's `LockElements`, `find_elements` with `General_Locked equal true` found exactly those
+  two, over the two types and over all 149 elements, and `equal false` found the other label and
   polyline. Both cells came from Tapir as booleans. `move_elements` has no dry run: without
   `confirm` it refuses before reading anything. The check it runs before sending, `refusals`,
   named both as "locked with Edit > Locking". Both were unlocked after.
 - **Lists.** Tapir filled 1148 integer list cells, 736 text list cells and 2 real list cells with
   values. Building Materials (All) on a wall came as `"51; 59"` and reads `[51, 59]`; Building
-  Material ID came as `"EC-00; ST-00"` and reads `["EC-00", "ST-00"]`; a label's Font Size came as
-  `"3"` and reads `[3.0]`. Another 473 text list cells and 188 integer list cells came from Tapir
-  with status `normal` and no item.
+  Material ID came as `"EC-00; ST-00"` and reads `["EC-00", "ST-00"]`; a label's Font Size came
+  as `"3"` and reads `[3.0]`. Another 473 text list cells and 188 integer list cells came from
+  Tapir with status `normal` and no item.
 - **General Parameters / Layer is an integer.** `GetAllProperties` declares it Integer, and Tapir
   answers a number (`"33"` on both walls), not a name. `get_element_data` gives the first wall's
   layer as Structural - Bearing; the name is in `ModelView_LayerName`.
 - **Speed.** All 149 elements with General_Locked, General Parameters / Layer, Building Materials
   (All) and `ModelView_LayerName` (149 elements with a gap, in one chunk): about 0.11 s with the
-  official read alone, with one run of 0.64 s, and 0.42 to 0.53 s with the fallback, which sent all
-  149 elements to Tapir. Every gap was filled; 4 Building Materials (All) cells, on the 2D elements, are
-  `notAvailable`.
+  official read alone, with one run of 0.64 s, and 0.42 to 0.53 s with the fallback, which sent
+  all 149 elements to Tapir. Every gap was filled; 4 Building Materials (All) cells, on the 2D
+  elements, are `notAvailable`.
 - **Sub-elements.** A stair and a curtain wall made for the check listed 115 sub-elements (20
   treads, 20 risers, 1 structure, 1 segment, 52 frames, 21 panels). The official API refuses a
   tread and a panel whole (7203), as it does a 2D element. Tapir read Locked, Layer Name, Element
   ID, General Parameters / Layer and Building Materials (All) on both, and `get_element_data`
-  returns them. The not read reason for such an element says 2D and annotation elements, which
-  does not name sub-elements. Both were deleted after.
+  returns them. At the check, the not read reason for such an element named only 2D and
+  annotation elements; since the review of 11.11.2026 it names sub-elements too. Both were
+  deleted after.
 - **Tapir's source at 2.0.0.** `GetPropertyValuesOfElements` reads each element with the C++ call
-  `ACAPI_Element_GetPropertyValuesByGuid` and makes the text itself: `"<Undefined>"`, `"True"` and
-  `"False"` are fixed English words in its code, integers and reals under `useSIUnits` are
+  `ACAPI_Element_GetPropertyValuesByGuid` and makes the text itself: `"<Undefined>"`, `"True"`
+  and `"False"` are fixed English words in its code, integers and reals under `useSIUnits` are
   formatted by Tapir and joined with `"; "`, and text lists, enumerations and the rest go through
-  `ACAPI_Property_GetPropertyValueString`. Availability is `ACAPI_Element_IsPropertyDefinitionAvailable`.
-  It does not go through the official JSON command or its result composition, where the
-  `ComposeResult` abort was seen, so it sits beside that path. Whether the C++ read shares the
-  fault underneath is not known.
+  `ACAPI_Property_GetPropertyValueString`. Availability is
+  `ACAPI_Element_IsPropertyDefinitionAvailable`. It does not go through the official JSON
+  command or its result composition, where the `ComposeResult` abort was seen, so it sits beside
+  that path. Whether the C++ read shares the fault underneath is not known.
 
 Not run: an Archicad in another language (only one Archicad, in INT, was running, and none was
-started; Tapir's source hard-codes the English words `"True"`, `"False"` and `"<Undefined>"`, but
-nothing was read on another language), 500 elements (MCP-Test has 149), a real list of more than one item, a
-length or angle list with a value, and a multiple-choice enumeration with a value (none in
-MCP-Test).
+started; Tapir's source hard-codes the English words `"True"`, `"False"` and `"<Undefined>"`,
+but nothing was read on another language), 500 elements (MCP-Test has 149), a real list of more
+than one item, a length or angle list with a value, and a multiple-choice enumeration with a
+value (none in MCP-Test).
 
 ## Element coverage: the official API sees only model elements
 

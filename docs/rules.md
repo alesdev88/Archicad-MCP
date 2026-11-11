@@ -298,6 +298,13 @@ evaluate a `find_elements`-style comparison over an `ElementInfo` with
 `Cell.from_value` and `comparison_matches`, which is what `applies_to.where`
 does, so a plugin rule and a YAML rule agree on what "empty" or "equal" means.
 
+`ElementInfo.not_read` names, per element, the properties (and `layer` for the
+layer) that could not be read, with the reason. A plugin rule that reads
+`e.properties` or `e.layer` should use the shared helper of the built-in rules,
+`split_unread` and `checked_result` in `archicad_mcp.rules.builtin.base`, so an
+unread value is not checked as missing and the rule fails or skips as the
+built-in rules do.
+
 Plugin import failures are caught and reported through `list_rules`; user code
 never takes the server down.
 

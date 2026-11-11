@@ -57,8 +57,8 @@ _CAUSE = {
 # of it (API_Elem_Head.lockId is never read in its source, 1.5.9 to 1.7.1).
 # Live on MCP-Test 19.10.2026: true after LockElements, false after
 # UnlockElements, and FilterElements IsEditable false while locked, so this
-# names the cause of a refusal IsEditable already makes. On a 2D element the
-# official API refuses the read; Tapir 2.0.0 or newer answers it.
+# names the cause of a refusal IsEditable already makes. On a 2D element or a
+# sub-element the official API refuses the read; Tapir 2.0.0 or newer answers it.
 ELEMENT_LOCK_PROPERTY = "General_Locked"
 
 # What lock_reasons() reads of an element: hotlinkId arrived with `fields` in

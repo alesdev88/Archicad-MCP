@@ -164,7 +164,8 @@ Convert before calling: 3000 mm is `3`, 45° is `0.7854`. Booleans are `true` /
   from the definition's availability, without a read.
 - `not_read`: present only when some (element, property) pairs could not be
   read by anything. The official API cannot read the properties of 2D elements
-  (labels, dimensions, markers) and does not support every definition. With
+  (labels, dimensions, markers) or of sub-elements (stair treads, curtain wall
+  panels) and does not support every definition. With
   Tapir 2.0.0 or newer, `find_elements` asks Tapir for exactly those values and
   uses them. What stays unread, for example on an older Tapir, is listed here:
   one entry per reason, with the sorted property names and the number of
@@ -194,9 +195,15 @@ Convert before calling: 3000 mm is `3`, 45° is `0.7854`. Booleans are `true` /
    Elements that can take different subsets of the requested properties are
    read in separate requests so no request asks for a pair the definition
    excludes.
+5. **Tapir's read**, on Tapir 2.0.0 or newer, for the pairs the official read
+   refused: 2D elements, sub-elements and definitions it does not support.
+   Only those elements and properties are sent, in the same chunks and under
+   the same ceiling. What Tapir does not answer stays in `not_read`.
 
 Steps 3 and 4 are aimed at the hypothesised crash trigger, a property read on an
-element the property does not apply to. Every recorded crash was a
+element the property does not apply to. Step 5 is not: it reads through
+Tapir's own C++ call, beside the official command where the crash was seen, and
+whether it shares the fault is not known. Every recorded crash was a
 user-defined property read, and the pre-check predicted availability correctly
 on every definition it was checked against. It is bounding, not proof: built-in
 properties have no such pre-check, and the ceiling remains the last line.

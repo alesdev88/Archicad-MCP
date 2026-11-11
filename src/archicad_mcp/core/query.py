@@ -21,9 +21,9 @@ as small as it can be:
    the hypothesised trigger, but it is bounding, not proof of safety.
 4. The property fetch ceiling (ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS) still refuses
    an oversized read outright.
-5. Values the official API refuses (2D elements, unsupported definitions) are
-   read through Tapir 2.0.0 or newer; what nothing could read is reported in
-   `not_read` and matches no operator.
+5. Values the official API refuses (2D elements, sub-elements, unsupported
+   definitions) are read through Tapir 2.0.0 or newer; what nothing could read
+   is reported in `not_read` and matches no operator.
 """
 from __future__ import annotations
 

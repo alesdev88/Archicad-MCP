@@ -97,7 +97,9 @@ class Cell:
         """From a propertyValue dict as GetPropertyValuesOfElements returns it.
 
         An error cell ({} after extract.fetch_property_cells strips the error
-        envelope) means the property is not available on that element.
+        envelope) means the property is not available on that element. That
+        holds for errors other than the two refusals (an unsupported element or
+        definition), which arrive as notRead cells with their reason.
         """
         if not raw or "status" not in raw:
             return cls("notAvailable")

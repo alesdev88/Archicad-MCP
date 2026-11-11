@@ -59,10 +59,14 @@ be read for it (a wall has no GDL parameters, a door without a marker, a Tapir
 too old for the command). `include_classifications` still adds every system's
 item GUID.
 
-A property the official API cannot read (a 2D element such as a label, or a
-property definition it does not support) comes through Tapir 2.0.0 or newer.
+A property the official API cannot read (a 2D element such as a label, a
+sub-element such as a stair tread or a curtain wall panel, or a property
+definition it does not support) comes through Tapir 2.0.0 or newer.
 Without it the value is `null` and `unreadable` gives the reason under the
-address you used; an unread layer appears under `layer`.
+address you used; an unread layer appears under `layer`. Tapir answers in text,
+which the server converts by the definition's type: an enumeration comes as its
+display text, and General Parameters / Layer as the layer's index, not its
+name.
 
 ## Writing
 
@@ -80,7 +84,8 @@ The dry run (the default) reads every value it would change and shows
 replace the value (a parameter locked by its script, a value outside the
 parameter's list). Changes that cannot be sent are listed under `skipped` with
 the reason: a value that does not fit, an unknown parameter, a GDL write on a
-wall, a door without a marker, or an element Archicad would refuse (in another
+wall, a door without a marker, a property the official API cannot read (it
+cannot be written either), or an element Archicad would refuse (in another
 view's database, on a hidden or locked layer, inside a hotlinked module, locked
 with Edit > Locking, not reserved in Teamwork).
 
@@ -101,8 +106,9 @@ back:
 ## Requirements and limits
 
 - Properties and classifications work without Tapir, except the properties the
-  official API cannot read, which need Tapir 2.0.0 (classifications use Tapir
-  when present, which also reaches curtain wall, stair and railing parts).
+  official API cannot read, which need Tapir 2.0.0 to be read and cannot be
+  written: property writes go through the official API (classifications use
+  Tapir when present, which also reaches curtain wall, stair and railing parts).
 - GDL parameters need Tapir 1.5.7, marker parameters Tapir 1.7.1.
 - A and B of an object or lamp need Tapir 1.6.0: older versions write them in
   the wrong unit when the object's size is not fixed.

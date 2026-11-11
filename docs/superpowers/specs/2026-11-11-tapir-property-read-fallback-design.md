@@ -188,3 +188,22 @@ Each on MCP-Test, and each changes the code if it comes out otherwise.
   parsing in section 2, and it is worth raising, but the fallback does not wait for it.
 - Reading IFC properties, which go through other commands.
 - Lifting the element ceiling.
+
+## Amended after the whole-branch review, 11.11.2026
+
+- **Rules.** This replaces "a rule that reads such a cell skips". An element of a type the rule
+  applies to on which a value it needs could not be read is left out. The rule checks the rest:
+  if one fails, the rule fails, and its message ends with how many elements could not be read
+  and were not checked; if none fails and some were left out, the rule skips, naming the
+  property, the count and the reason. All four rules that read properties or the layer use one
+  shared helper, `ifc-property-required` included.
+- **Reasons.** A refused cell carries its cause beside the reason. The causes are "the official
+  API does not support this property definition" and "the official API reads no property of
+  this element (2D and annotation elements, and sub-elements such as stair treads and curtain
+  wall panels, are outside it)". With the gate closed the reason adds "; Tapir 2.0.0 or newer
+  reads it" (or "reads them"). With the gate open, a cell Tapir gave no value for adds "; Tapir
+  did not answer it either". A write on such a cell is skipped with the cause and "; property
+  writes go through the official API, so it cannot be written".
+- **Sub-elements.** The official API also refuses sub-elements (stair treads, curtain wall
+  panels) whole, as it does 2D elements, and Tapir reads them.
+- **General Parameters / Layer** is an integer, the layer's index, not its name.

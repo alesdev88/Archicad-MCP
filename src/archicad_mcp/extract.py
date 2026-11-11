@@ -81,9 +81,9 @@ NOT_READ_ELEMENT = NOT_READ_ELEMENT_CAUSE + "; Tapir 2.0.0 or newer reads them"
 NOT_READ_TAPIR_SILENT = "; Tapir did not answer it either"
 NOT_READ_WRITE = "; property writes go through the official API, so it cannot be written"
 
-# The Tapir read that fills those notRead cells (see _fill_from_tapir). Tapir
-# 2.0.0 is the first whose GetPropertyValuesOfElements answers 2D elements and
-# takes includeAvailability and useSIUnits.
+# The Tapir read that fills those notRead cells (see _fill_from_tapir). The
+# gate is on useSIUnits, which Tapir's GetPropertyValuesOfElements takes since
+# 2.0.0; includeAvailability is older.
 TAPIR_VALUE_FALLBACK_SINCE = (2, 0, 0)
 NOT_READ_UNKNOWN_ID = "the property id is not among the project's definitions"
 NOT_READ_TAPIR_ELEMENT = "Tapir could not read this element either: "
@@ -319,7 +319,9 @@ def _tapir_item(text: str, value_type: str, measure: str):
 
 
 def tapir_cell(raw: dict, definition: dict) -> dict:
-    """Turn one item of Tapir's propertyValues into a typed cell. Never raises."""
+    """Turn one item of Tapir's propertyValues into a typed cell. It never raises
+    on the text. It assumes `raw`, and `raw["propertyValue"]` where present, are
+    dicts; its one caller, _fill_from_tapir, guards both."""
     if "error" in raw or "propertyValue" not in raw:
         status = "notEvaluated" if raw.get("isAvailable", False) else "notAvailable"
         return {"status": status, "via": "tapir"}

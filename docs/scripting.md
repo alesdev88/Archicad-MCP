@@ -72,7 +72,9 @@ changeset; rerun the script.
 | `ac.set_props([(guid, "Group/Name", value), ...])` | `{"planned": n, "skipped": m}` |
 | `ac.port` | the Archicad port |
 
-`ac.props` also reads 2D elements and the property definitions the official API does not support, through Tapir 2.0.0 or newer. Where nothing read a value, it returns `None`.
+`ac.props` also reads 2D elements, sub-elements and the property definitions
+the official API does not support, through Tapir 2.0.0 or newer. Where nothing
+read a value, it returns `None`.
 
 Refusals from Archicad raise `ac.ArchicadError` (`.code`, `.message`).
 
