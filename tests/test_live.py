@@ -437,3 +437,39 @@ def test_live_edit_attributes_canary_round_trip(definition_model):
         edit_attributes(conn, [{"delete": t, "attribute": n} for t, n in canaries
                                if (t, n) in present], dry_run=False)
     assert table() == before
+
+
+# ---------- Property reads through Tapir (Tapir 2.0.0 or newer) ----------
+
+LAYER_DEFINITION = "25826253-26F2-4D30-BE1B-0FFBB1314903"  # General Parameters / Layer
+
+
+def _first_of_types(conn, wanted):
+    from archicad_mcp.extract import _fetch_types, get_all_element_ids
+    types = _fetch_types(conn, get_all_element_ids(conn))
+    return next((g for g, t in types.items() if t in wanted), None)
+
+
+def test_live_a_2d_element_property_is_read_through_tapir(conn):
+    """The official read refuses a 2D element whole (7203); Tapir reads its lock."""
+    from archicad_mcp.extract import fetch_property_cells
+    guid = _first_of_types(conn, {"Label", "PolyLine"})
+    if guid is None:
+        pytest.skip("test model has no label or polyline")
+    cells = fetch_property_cells(conn, [guid], ["General_Locked"], tapir_fallback=True)
+    assert cells[guid]["General_Locked"]["via"] == "tapir"
+    assert cells[guid]["General_Locked"]["type"] == "boolean"
+
+
+def test_live_a_definition_the_official_api_refuses_is_read_through_tapir(conn):
+    """The official read refuses General Parameters / Layer on every element (6702).
+    GetAllProperties declares it Integer, and Tapir answers the layer's index
+    ("33" on the walls of MCP-Test, live 11.11.2026), so the cell is an integer."""
+    from archicad_mcp.extract import fetch_property_cells
+    guid = _first_of_types(conn, {"Wall"})
+    if guid is None:
+        pytest.skip("test model has no wall")
+    cell = fetch_property_cells(conn, [guid], [LAYER_DEFINITION],
+                                tapir_fallback=True)[guid][LAYER_DEFINITION]
+    assert cell["status"] == "normal" and cell["type"] == "integer" and cell["via"] == "tapir"
+    assert isinstance(cell["value"], int)

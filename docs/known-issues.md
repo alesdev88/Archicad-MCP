@@ -96,12 +96,57 @@ definitions (1646 built-in, 210 user-defined), and every pair was then read.
   `notAvailable` or `notEvaluated`). It also returned a value on 787 of the pairs the official
   API refuses as unsupported, and on 265 pairs of the label and the polyline, Locked and Layer
   Name among them. It does not tell `userUndefined` from a value, and whether it shares the
-  crash is unknown. The server does not use it yet, so a property in either gap reads as
-  not available: `find_elements` with `General_Locked equal false` matched neither label nor
-  polyline. [The design of 11.11.2026](superpowers/specs/2026-11-11-tapir-property-read-fallback-design.md)
-  proposes it as a fallback for the two gaps.
+  crash is unknown. Before the fallback a property in either gap read as not available:
+  `find_elements` with `General_Locked equal false` matched neither label nor polyline. The
+  server now uses Tapir's read as a fallback for the two gaps on Tapir 2.0.0 or newer
+  ([the design of 11.11.2026](superpowers/specs/2026-11-11-tapir-property-read-fallback-design.md)),
+  and reports a pair it cannot read as not read, with the reason. See the live check below.
 
 The probe and its raw answers are kept outside the repository, with the project's notes.
+
+### Property reads through Tapir: the live check of 11.11.2026
+
+The fallback was run on MCP-Test (Archicad 29 build 5101, language INT, stock Tapir 2.0.0, 149
+elements), saved before the first read and after the last cleanup. What was found:
+
+- **Locks on 2D elements.** Nothing was locked. With one label and one polyline locked through
+  Tapir's `LockElements`, `find_elements` with `General_Locked equal true` found exactly those two,
+  over the two types and over all 149 elements, and `equal false` found the other label and
+  polyline. Both cells came from Tapir as booleans. `move_elements` has no dry run: without
+  `confirm` it refuses before reading anything. The check it runs before sending, `refusals`,
+  named both as "locked with Edit > Locking". Both were unlocked after.
+- **Lists.** Tapir filled 1148 integer list cells, 736 text list cells and 2 real list cells with
+  values. Building Materials (All) on a wall came as `"51; 59"` and reads `[51, 59]`; Building
+  Material ID came as `"EC-00; ST-00"` and reads `["EC-00", "ST-00"]`; a label's Font Size came as
+  `"3"` and reads `[3.0]`. An empty text reads as an empty list.
+- **General Parameters / Layer is an integer.** `GetAllProperties` declares it Integer, and Tapir
+  answers the layer's index (`"33"` on both walls, whose layer is Structural - Bearing). It is not
+  the layer's name; `ModelView_LayerName` is.
+- **Speed.** All 149 elements with General_Locked, General Parameters / Layer, Building Materials
+  (All) and `ModelView_LayerName` (149 elements with a gap, in one chunk): 0.11 s with the official
+  read alone, 0.42 to 0.53 s with the fallback, which adds one `GetAllProperties` call and one
+  Tapir read. Every gap was filled; 4 Building Materials (All) cells, on the 2D elements, are
+  `notAvailable`.
+- **Sub-elements.** A stair and a curtain wall made for the check listed 115 sub-elements (20
+  treads, 20 risers, 1 structure, 1 segment, 52 frames, 21 panels). The official API refuses a
+  tread and a panel whole (7203), as it does a 2D element. Tapir read Locked, Layer Name, Element
+  ID, General Parameters / Layer and Building Materials (All) on both, and `get_element_data`
+  returns them. The not read reason for such an element says 2D and annotation elements, which
+  does not name sub-elements. Both were deleted after.
+- **Tapir's source at 2.0.0.** `GetPropertyValuesOfElements` reads each element with the C++ call
+  `ACAPI_Element_GetPropertyValuesByGuid` and makes the text itself: `"<Undefined>"`, `"True"` and
+  `"False"` are fixed English words in its code, integers and reals under `useSIUnits` are
+  formatted by Tapir and joined with `"; "`, and text lists, enumerations and the rest go through
+  `ACAPI_Property_GetPropertyValueString`. Availability is `ACAPI_Element_IsPropertyDefinitionAvailable`.
+  It does not go through the official JSON command or its result composition, where the
+  `ComposeResult` abort was seen, so it sits beside that path. Whether the C++ read shares the
+  fault underneath is not known.
+
+Not run: an Archicad in another language (only INT is installed; the source says the boolean and
+undefined words are not translated, but `ACAPI_Property_GetPropertyValueString` text was not seen
+in another language), 500 elements (MCP-Test has 149), a real list of more than one item, a
+length or angle list with a value, and a multiple-choice enumeration with a value (none in
+MCP-Test).
 
 ## Element coverage: the official API sees only model elements
 
