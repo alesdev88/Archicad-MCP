@@ -62,6 +62,19 @@ UNTYPED = "Unknown"
 # parts, beam and column segments, and native MEP elements.
 ELEMENT_NOT_SUPPORTED = 7203
 
+# The two refusals of API.GetPropertyValuesOfElements (live, AC 29): 7203 on a
+# whole row means the element is outside the official property read, 6702 on a
+# cell means the property definition is. Both are kept as notRead cells, with
+# the reason, so a Tapir read can fill exactly those cells.
+OFFICIAL_UNSUPPORTED_DEFINITION = 6702
+OFFICIAL_UNSUPPORTED_ELEMENT = ELEMENT_NOT_SUPPORTED
+NOT_READ_DEFINITION = (
+    "the official API does not support this property definition; "
+    "Tapir 2.0.0 or newer reads it")
+NOT_READ_ELEMENT = (
+    "the official API reads no property of this element (2D and annotation "
+    "elements are outside it); Tapir 2.0.0 or newer reads them")
+
 # What an enumeration actually covered. Only Tapir sees the whole plan; the
 # official API.GetAllElements returns model elements only, so every 2D /
 # annotation / viewpoint type is missing from it. Measured live on AC 29.0/4006:
@@ -329,8 +342,19 @@ def tapir_cell(raw: dict, definition: dict) -> dict:
     return {"status": "normal", "type": cell_type, "value": values, "via": "tapir"}
 
 
+def _error_code(item: dict) -> int | None:
+    return (item.get("error") or {}).get("code")
+
+
+def _not_read(reason: str) -> dict:
+    return {"status": "notRead", "reason": reason}
+
+
 def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, dict]]:
     """guid -> {property name -> the raw propertyValue dict (or {})}.
+
+    A cell the official read refused (an unsupported element or definition) is
+    {"status": "notRead", "reason": ...}; any other failure stays {}.
 
     The raw cell carries `type` ("string", "singleEnum", …) and `status`
     ("normal", "userUndefined", …) alongside `value`. Writers need the type,
@@ -364,8 +388,14 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
         rows = response.get("propertyValuesForElements", [])
         for guid, row in zip(chunk, rows):
             cells: dict[str, dict] = {}
+            if _error_code(row) == OFFICIAL_UNSUPPORTED_ELEMENT:
+                for name in resolved:
+                    cells[name] = _not_read(NOT_READ_ELEMENT)
             for name, cell in zip(resolved, row.get("propertyValues", [])):
-                cells[name] = cell.get("propertyValue") or {}
+                if _error_code(cell) == OFFICIAL_UNSUPPORTED_DEFINITION:
+                    cells[name] = _not_read(NOT_READ_DEFINITION)
+                else:
+                    cells[name] = cell.get("propertyValue") or {}
             for name in names:
                 cells.setdefault(name, {})
             out[guid] = cells

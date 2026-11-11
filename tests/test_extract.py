@@ -199,3 +199,78 @@ def test_parse_ifc_response_matches_by_position_and_keeps_errors():
     assert extract.parse_ifc_response(["w-1", "gone"], response) == {
         "w-1": {"Pset_WallCommon.FireRating": "EI60"},
         "gone": "The given element was not found"}
+
+
+def _refusal_conn(rows, resolvable=("General_Locked", "X/Layer", "Other")):
+    """A connection whose official read answers `rows` (one per requested element)."""
+    def property_ids(params):
+        out = []
+        for item in params["properties"]:
+            name = item.get("nonLocalizedName") or "/".join(item["localizedName"])
+            out.append({"propertyId": {"guid": f"pid-{name}"}} if name in resolvable
+                       else {"error": {"code": 6702, "message": "no such property"}})
+        return {"properties": out}
+    return ArchicadConnection(19723, core=FakeCore(official={
+        "API.GetPropertyIds": property_ids,
+        "API.GetPropertyValuesOfElements": {"propertyValuesForElements": rows},
+    }))
+
+
+_REFUSED_ELEMENT = {"error": {"code": 7203, "message": "Element not supported"}}
+_REFUSED_DEFINITION = {"error": {"code": 6702, "message": "Property definition not supported"}}
+_ANSWERED = {"propertyValue": {"type": "boolean", "status": "normal", "value": False}}
+
+
+def test_a_refused_element_is_not_read_with_its_reason():
+    conn = _refusal_conn([_REFUSED_ELEMENT])
+    cells = extract.fetch_property_cells(conn, ["label-1"], ["General_Locked", "X/Layer"])
+    assert cells["label-1"] == {
+        "General_Locked": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT},
+        "X/Layer": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT}}
+
+
+def test_a_refused_element_keeps_an_unresolved_name_empty():
+    conn = _refusal_conn([_REFUSED_ELEMENT], resolvable=("General_Locked",))
+    cells = extract.fetch_property_cells(conn, ["label-1"], ["General_Locked", "Nope"])
+    assert cells["label-1"] == {
+        "General_Locked": {"status": "notRead", "reason": extract.NOT_READ_ELEMENT},
+        "Nope": {}}
+
+
+def test_a_refused_definition_is_not_read_with_its_reason():
+    conn = _refusal_conn([{"propertyValues": [_ANSWERED, _REFUSED_DEFINITION]}])
+    cells = extract.fetch_property_cells(conn, ["w-1"], ["General_Locked", "X/Layer"])
+    assert cells["w-1"]["X/Layer"] == {
+        "status": "notRead", "reason": extract.NOT_READ_DEFINITION}
+    assert cells["w-1"]["General_Locked"] == {
+        "type": "boolean", "status": "normal", "value": False}
+
+
+def test_another_error_is_still_an_empty_cell():
+    other = {"error": {"code": 4002, "message": "Something else"}}
+    conn = _refusal_conn([{"propertyValues": [_ANSWERED, other]}])
+    cells = extract.fetch_property_cells(conn, ["w-1"], ["General_Locked", "Other"])
+    assert cells["w-1"]["Other"] == {}
+
+
+def test_another_row_error_is_still_empty_cells():
+    conn = _refusal_conn([{"error": {"code": 7204, "message": "Element not found"}}])
+    cells = extract.fetch_property_cells(conn, ["gone"], ["General_Locked"])
+    assert cells["gone"] == {"General_Locked": {}}
+
+
+def test_error_codes_and_reasons_are_the_agreed_ones():
+    assert extract.OFFICIAL_UNSUPPORTED_DEFINITION == 6702
+    assert extract.OFFICIAL_UNSUPPORTED_ELEMENT == 7203
+    assert extract.NOT_READ_DEFINITION == (
+        "the official API does not support this property definition; "
+        "Tapir 2.0.0 or newer reads it")
+    assert extract.NOT_READ_ELEMENT == (
+        "the official API reads no property of this element (2D and annotation "
+        "elements are outside it); Tapir 2.0.0 or newer reads them")
+
+
+def test_values_of_cells_not_read_are_none():
+    conn = _refusal_conn([_REFUSED_ELEMENT])
+    assert fetch_property_values(conn, ["label-1"], ["General_Locked"]) == {
+        "label-1": {"General_Locked": None}}
