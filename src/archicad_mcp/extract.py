@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 from typing import Iterable
@@ -260,6 +261,72 @@ def _fetch_tapir_types(conn, guids: list[str]) -> dict[str, str]:
             if isinstance(item, dict) and item.get("type"):
                 out[guid] = item["type"]
     return out
+
+
+# Tapir's GetPropertyValuesOfElements answers every value as text.
+TAPIR_UNDEFINED_TEXT = "<Undefined>"
+TAPIR_LIST_SEPARATOR = "; "
+
+_TAPIR_REAL = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+_TAPIR_INTEGER = re.compile(r"[+-]?\d+")
+_TAPIR_MEASURE_TYPES = {"Length": "length", "Area": "area", "Volume": "volume", "Angle": "angle"}
+
+
+def _tapir_item(text: str, value_type: str, measure: str):
+    """One item of Tapir's text as (parsed, value); parsed is False when it does not parse."""
+    if value_type == "Real":
+        if not _TAPIR_REAL.fullmatch(text):
+            return False, None
+        number = float(text)
+        if not math.isfinite(number):
+            return False, None
+        return True, math.radians(number) if measure == "Angle" else number
+    if value_type == "Integer":
+        if not _TAPIR_INTEGER.fullmatch(text):
+            return False, None
+        return True, int(text)
+    if value_type == "Boolean":
+        if text in ("True", "False"):
+            return True, text == "True"
+        return False, None
+    return True, text
+
+
+def tapir_cell(raw: dict, definition: dict) -> dict:
+    """Turn one item of Tapir's propertyValues into a typed cell. Never raises."""
+    if "error" in raw or "propertyValue" not in raw:
+        status = "notEvaluated" if raw.get("isAvailable", False) else "notAvailable"
+        return {"status": status, "via": "tapir"}
+    text = raw["propertyValue"].get("value")
+    if not isinstance(text, str):
+        return {"status": "notAvailable", "via": "tapir"}
+    if text == TAPIR_UNDEFINED_TEXT:
+        return {"status": "userUndefined", "via": "tapir"}
+
+    value_type = definition.get("propertyValueType")
+    collection = definition.get("propertyCollectionType")
+    measure = definition.get("propertyMeasureType")
+    if value_type not in ("Real", "Integer", "Boolean", "String", "Guid"):
+        value_type = "String"
+    is_list = collection in ("List", "MultipleChoiceEnumeration")
+
+    if value_type == "Real":
+        base = _TAPIR_MEASURE_TYPES.get(measure, "number")
+    else:
+        base = {"Integer": "integer", "Boolean": "boolean"}.get(value_type, "string")
+
+    texts = ([] if text == "" else text.split(TAPIR_LIST_SEPARATOR)) if is_list else [text]
+    values = []
+    for item in texts:
+        parsed, value = _tapir_item(item, value_type, measure)
+        if not parsed:
+            return {"status": "normal", "type": "string", "value": text,
+                    "unparsed": True, "via": "tapir"}
+        values.append(value)
+    if not is_list:
+        return {"status": "normal", "type": base, "value": values[0], "via": "tapir"}
+    cell_type = "multiEnum" if collection == "MultipleChoiceEnumeration" else base + "List"
+    return {"status": "normal", "type": cell_type, "value": values, "via": "tapir"}
 
 
 def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, dict]]:
