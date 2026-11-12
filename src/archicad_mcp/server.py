@@ -1261,9 +1261,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "the installed version with the latest release on GitHub and says what it would "
         "do. confirm=true downloads the bundle for this computer, checks its sha256 and "
         "opens it, so Claude Desktop shows its own install dialog; nothing is installed "
-        "until the user accepts there. Never downgrades. Reaches GitHub only when "
-        "called. A server not installed as a Claude Desktop bundle gets the upgrade "
-        "command instead. Needs no running Archicad."),
+        "until the user accepts there. On macOS it opens in the Claude Desktop this "
+        "server runs in, named in opened_in. Never downgrades. Reaches GitHub only when "
+        "called, checking its certificate against the system's certificate store. A "
+        "server not installed as a Claude Desktop bundle gets the upgrade command "
+        "instead. Needs no running Archicad."),
         **_tool_meta("Update this extension", read_only=False, destructive=True))
     def update_extension(confirm: bool = False) -> dict:
         from archicad_mcp import extension_update as _extension_update

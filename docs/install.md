@@ -38,6 +38,19 @@ dialog. Nothing is installed until you accept there. Afterwards, check that the
 office rules folder is still set. To do it by hand, drag the newest bundle into
 **Settings > Extensions**, over the installed one.
 
+On macOS the bundle is opened in the Claude Desktop the extension runs in, and
+the result names it as `opened_in`. That matters with two installs, a personal
+and a work one: they share one file handler, so a double-clicked bundle goes to
+whichever is the default. When the app cannot be told, the file goes to the
+default handler as before.
+
+`update_extension` and `install_tapir` download from GitHub and check its
+certificate against the operating system's certificate store. On a network that
+inspects traffic, the office's certificate has to be installed there (on macOS
+in the System keychain), as it is for a browser, or named in `SSL_CERT_FILE`.
+Up to 1.1.0 they trusted only the list shipped with the extension, and failed on
+such a network with `CERTIFICATE_VERIFY_FAILED`.
+
 Bundles up to 0.13.0 declared themselves a Python extension, so on a machine
 without Python the install dialog marked Python red although the bundle never
 used it. From 0.13.1 the bundle is declared a self-contained binary

@@ -286,8 +286,8 @@ shows which commands have a tool of their own.
 
 `update_extension` moves the Claude Desktop bundle to the newest release. A dry
 run compares the versions; `confirm=true` downloads the bundle, checks its sha256
-and opens Desktop's install dialog
-([Install](install.md#claude-desktop-extension)).
+and opens Desktop's install dialog, on macOS in the Claude Desktop the extension
+runs in ([Install](install.md#claude-desktop-extension)).
 
 `run_script` and `apply_changeset` are off by default. `run_script` runs a short
 Python script next to Archicad and returns what it returns; its writes are
