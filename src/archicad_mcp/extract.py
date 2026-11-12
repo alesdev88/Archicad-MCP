@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 from typing import Iterable
@@ -7,7 +8,7 @@ from typing import Iterable
 from multiconn_archicad.errors import APIErrorBase, TapirCommandError
 
 from archicad_mcp.connection import ArchicadConnection, ArchicadUnavailableError
-from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, ZoneInfo
+from archicad_mcp.rules.types import LAYER_KEY, ElementInfo, ModelSnapshot, ZoneInfo
 from archicad_mcp.tapir_requirements import _key, installed_version
 
 # Verified against a live Archicad 29.0 model (2026-07-16):
@@ -60,6 +61,32 @@ UNTYPED = "Unknown"
 # label, line, polyline, dimension and marker, curtain wall, stair and railing
 # parts, beam and column segments, and native MEP elements.
 ELEMENT_NOT_SUPPORTED = 7203
+
+# The two refusals of API.GetPropertyValuesOfElements (live, AC 29): 7203 on a
+# whole row means the element is outside the official property read, 6702 on a
+# cell means the property definition is. Both are kept as notRead cells, with
+# the reason, so a Tapir read can fill exactly those cells.
+OFFICIAL_UNSUPPORTED_DEFINITION = 6702
+OFFICIAL_UNSUPPORTED_ELEMENT = ELEMENT_NOT_SUPPORTED
+# A notRead cell carries its cause beside the reason, because the remedy is true
+# only where the cell is read: a write cannot take it (NOT_READ_WRITE), and a
+# Tapir that was asked and did not answer cannot be the remedy (NOT_READ_TAPIR_SILENT).
+NOT_READ_DEFINITION_CAUSE = "the official API does not support this property definition"
+NOT_READ_ELEMENT_CAUSE = (
+    "the official API reads no property of this element (2D and annotation "
+    "elements, and sub-elements such as stair treads and curtain wall panels, "
+    "are outside it)")
+NOT_READ_DEFINITION = NOT_READ_DEFINITION_CAUSE + "; Tapir 2.0.0 or newer reads it"
+NOT_READ_ELEMENT = NOT_READ_ELEMENT_CAUSE + "; Tapir 2.0.0 or newer reads them"
+NOT_READ_TAPIR_SILENT = "; Tapir did not answer it either"
+NOT_READ_WRITE = "; property writes go through the official API, so it cannot be written"
+
+# The Tapir read that fills those notRead cells (see _fill_from_tapir). The
+# gate is on useSIUnits, which Tapir's GetPropertyValuesOfElements takes since
+# 2.0.0; includeAvailability is older.
+TAPIR_VALUE_FALLBACK_SINCE = (2, 0, 0)
+NOT_READ_UNKNOWN_ID = "the property id is not among the project's definitions"
+NOT_READ_TAPIR_ELEMENT = "Tapir could not read this element either: "
 
 # What an enumeration actually covered. Only Tapir sees the whole plan; the
 # official API.GetAllElements returns model elements only, so every 2D /
@@ -262,8 +289,220 @@ def _fetch_tapir_types(conn, guids: list[str]) -> dict[str, str]:
     return out
 
 
-def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, dict]]:
+# Tapir's GetPropertyValuesOfElements answers every value as text.
+TAPIR_UNDEFINED_TEXT = "<Undefined>"
+TAPIR_LIST_SEPARATOR = "; "
+
+_TAPIR_REAL = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+_TAPIR_INTEGER = re.compile(r"[+-]?\d+")
+_TAPIR_MEASURE_TYPES = {"Length": "length", "Area": "area", "Volume": "volume", "Angle": "angle"}
+
+
+def _tapir_item(text: str, value_type: str, measure: str):
+    """One item of Tapir's text as (parsed, value); parsed is False when it does not parse."""
+    if value_type == "Real":
+        if not _TAPIR_REAL.fullmatch(text):
+            return False, None
+        number = float(text)
+        if not math.isfinite(number):
+            return False, None
+        return True, math.radians(number) if measure == "Angle" else number
+    if value_type == "Integer":
+        if not _TAPIR_INTEGER.fullmatch(text):
+            return False, None
+        return True, int(text)
+    if value_type == "Boolean":
+        if text in ("True", "False"):
+            return True, text == "True"
+        return False, None
+    return True, text
+
+
+def tapir_cell(raw: dict, definition: dict) -> dict:
+    """Turn one item of Tapir's propertyValues into a typed cell. It never raises
+    on the text. It assumes `raw`, and `raw["propertyValue"]` where present, are
+    dicts; its one caller, _fill_from_tapir, guards both."""
+    if "error" in raw or "propertyValue" not in raw:
+        status = "notEvaluated" if raw.get("isAvailable", False) else "notAvailable"
+        return {"status": status, "via": "tapir"}
+    text = raw["propertyValue"].get("value")
+    if not isinstance(text, str):
+        return {"status": "notAvailable", "via": "tapir"}
+    if text == TAPIR_UNDEFINED_TEXT:
+        return {"status": "userUndefined", "via": "tapir"}
+
+    value_type = definition.get("propertyValueType")
+    collection = definition.get("propertyCollectionType")
+    measure = definition.get("propertyMeasureType")
+    if value_type not in ("Real", "Integer", "Boolean", "String", "Guid"):
+        value_type = "String"
+    is_list = collection in ("List", "MultipleChoiceEnumeration")
+
+    if value_type == "Real":
+        base = _TAPIR_MEASURE_TYPES.get(measure, "number")
+    else:
+        base = {"Integer": "integer", "Boolean": "boolean"}.get(value_type, "string")
+
+    texts = ([] if text == "" else text.split(TAPIR_LIST_SEPARATOR)) if is_list else [text]
+    values = []
+    for item in texts:
+        parsed, value = _tapir_item(item, value_type, measure)
+        if not parsed:
+            return {"status": "normal", "type": "string", "value": text,
+                    "unparsed": True, "via": "tapir"}
+        values.append(value)
+    if not is_list:
+        return {"status": "normal", "type": base, "value": values[0], "via": "tapir"}
+    cell_type = "multiEnum" if collection == "MultipleChoiceEnumeration" else base + "List"
+    return {"status": "normal", "type": cell_type, "value": values, "via": "tapir"}
+
+
+def _error_code(item: dict) -> int | None:
+    return (item.get("error") or {}).get("code")
+
+
+def _not_read(reason: str, cause: str | None = None) -> dict:
+    cell = {"status": "notRead", "reason": reason}
+    if cause is not None:
+        cell["cause"] = cause
+    return cell
+
+
+def _is_not_read(cell: dict) -> bool:
+    return cell.get("status") == "notRead"
+
+
+# What _tapir_definitions answers when it has no definitions to give.
+_GATE_CLOSED = "gate closed"
+_DEFINITIONS_UNREAD = "definitions unread"
+
+
+def _tapir_definitions(conn) -> dict[str, dict] | str:
+    """Lower-cased property GUID -> Tapir's definition. _GATE_CLOSED when the
+    fallback may not run (no Tapir, one older than TAPIR_VALUE_FALLBACK_SINCE);
+    _DEFINITIONS_UNREAD when GetAllProperties fails or lists none."""
+    if not conn.tapir_available():
+        return _GATE_CLOSED
+    if _key(installed_version(conn) or "") < TAPIR_VALUE_FALLBACK_SINCE:
+        return _GATE_CLOSED
+    try:
+        response = conn.tapir("GetAllProperties")
+    except APIErrorBase:
+        return _DEFINITIONS_UNREAD
+    out: dict[str, dict] = {}
+    for definition in response.get("properties") or []:
+        if not isinstance(definition, dict):
+            continue
+        guid = (definition.get("propertyId") or {}).get("guid")
+        if isinstance(guid, str):
+            out[guid.lower()] = definition
+    return out or _DEFINITIONS_UNREAD
+
+
+def _mark_silent(out: dict[str, dict[str, dict]], gaps: dict[str, list[str]]) -> None:
+    """Tapir was asked and gave no value: an official refusal still unread now
+    says so, rather than offer Tapir 2.0.0 as the remedy."""
+    for guid, gap in gaps.items():
+        for name in gap:
+            cell = out[guid][name]
+            if _is_not_read(cell) and "cause" in cell:
+                out[guid][name] = _not_read(cell["cause"] + NOT_READ_TAPIR_SILENT, cell["cause"])
+
+
+def _fill_from_tapir(conn, chunk: list[str], out: dict[str, dict[str, dict]],
+                     names: list[str], ids: dict[str, dict],
+                     definitions: dict[str, dict] | str | None,
+                     report: dict | None) -> dict[str, dict] | str | None:
+    """Fill this chunk's notRead cells from one Tapir GetPropertyValuesOfElements.
+
+    `definitions` is None until a chunk first has a gap; then the gate and
+    GetAllProperties are asked once, and the result (see _tapir_definitions)
+    is returned for the following chunks. A gap whose id is not among the
+    definitions is marked NOT_READ_UNKNOWN_ID and never sent, because one
+    unknown id fails every element of a Tapir call. Only elements with a gap
+    on a sendable property, and only properties with such a gap, are sent.
+    A cell the official read answered is never replaced. With the gate
+    closed a gap keeps its reason. With it open, a gap Tapir gave no value
+    for (the definitions or the value call failed, or the answer was short
+    or malformed) says Tapir did not answer it either; a row Tapir refused
+    names Tapir's message.
+    """
+    gaps = {guid: [n for n in names if _is_not_read(out[guid].get(n, {}))]
+            for guid in chunk if guid in out}
+    gaps = {guid: gap for guid, gap in gaps.items() if gap}
+    if not gaps:
+        return definitions
+    if definitions is None:
+        definitions = _tapir_definitions(conn)
+    if definitions == _GATE_CLOSED:
+        return definitions
+    if definitions == _DEFINITIONS_UNREAD:
+        _mark_silent(out, gaps)
+        return definitions
+
+    def definition_of(name: str) -> dict | None:
+        guid = ids[name].get("guid")
+        return definitions.get(guid.lower()) if isinstance(guid, str) else None
+
+    for guid, gap in gaps.items():
+        for name in gap:
+            if definition_of(name) is None:
+                out[guid][name] = _not_read(NOT_READ_UNKNOWN_ID)
+    gaps = {guid: [n for n in gap if definition_of(n) is not None] for guid, gap in gaps.items()}
+    gaps = {guid: gap for guid, gap in gaps.items() if gap}
+    if not gaps:
+        return definitions
+    elements = list(gaps)
+    sent = [n for n in names if any(n in gap for gap in gaps.values())]
+
+    if report is not None:
+        report["tapir_elements"] += len(elements)
+    try:
+        response = conn.tapir("GetPropertyValuesOfElements", {
+            "elements": element_payload(elements),
+            "properties": [{"propertyId": ids[n]} for n in sent],
+            "includeAvailability": True,
+            "useSIUnits": True,
+        })
+    except APIErrorBase:
+        _mark_silent(out, gaps)
+        return definitions
+
+    rows = response.get("propertyValuesForElements")
+    for guid, row in zip(elements, rows if isinstance(rows, list) else []):
+        if not isinstance(row, dict):
+            continue
+        cells = out[guid]
+        error = row.get("error")
+        if isinstance(error, dict):
+            reason = NOT_READ_TAPIR_ELEMENT + str(error.get("message") or "")
+            for name in gaps[guid]:
+                cells[name] = _not_read(reason)
+            continue
+        items = row.get("propertyValues")
+        for name, item in zip(sent, items if isinstance(items, list) else []):
+            if name not in gaps[guid] or not isinstance(item, dict):
+                continue
+            if "error" not in item and not isinstance(item.get("propertyValue", {}), dict):
+                continue
+            cells[name] = tapir_cell(item, definition_of(name))
+    _mark_silent(out, gaps)
+    return definitions
+
+
+def fetch_property_cells(conn, guids: list[str], names: list[str], *,
+                         tapir_fallback: bool = False,
+                         report: dict | None = None) -> dict[str, dict[str, dict]]:
     """guid -> {property name -> the raw propertyValue dict (or {})}.
+
+    A cell the official read refused (an unsupported element or definition) is
+    {"status": "notRead", "reason": ..., "cause": ...}: the cause alone, and the
+    reason, which adds what is true where it is read. Any other failure stays {}.
+
+    With `tapir_fallback`, and a Tapir of TAPIR_VALUE_FALLBACK_SINCE or newer,
+    the notRead cells of each chunk are filled from Tapir (see
+    _fill_from_tapir); those cells carry "via": "tapir". When `report` is
+    given, report["tapir_elements"] counts the elements sent to Tapir.
 
     The raw cell carries `type` ("string", "singleEnum", …) and `status`
     ("normal", "userUndefined", …) alongside `value`. Writers need the type,
@@ -274,6 +513,8 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
     Archicad API bridge); the per-chunk results are merged. If the element set
     exceeds MAX_PROPERTY_FETCH_ELEMENTS this refuses rather than risk a crash.
     """
+    if report is not None:
+        report["tapir_elements"] = 0
     if not guids or not names:
         return {g: {} for g in guids}
     if len(guids) > MAX_PROPERTY_FETCH_ELEMENTS:
@@ -288,6 +529,7 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
     resolved = [n for n in names if n in ids]
     property_payload = [{"propertyId": ids[n]} for n in resolved]
     out: dict[str, dict[str, object]] = {}
+    definitions: dict[str, dict] | str | None = None
     for start in range(0, len(guids), PROPERTY_FETCH_CHUNK):
         chunk = guids[start:start + PROPERTY_FETCH_CHUNK]
         response = conn.official("API.GetPropertyValuesOfElements", {
@@ -297,17 +539,26 @@ def fetch_property_cells(conn, guids: list[str], names: list[str]) -> dict[str, 
         rows = response.get("propertyValuesForElements", [])
         for guid, row in zip(chunk, rows):
             cells: dict[str, dict] = {}
+            if _error_code(row) == OFFICIAL_UNSUPPORTED_ELEMENT:
+                for name in resolved:
+                    cells[name] = _not_read(NOT_READ_ELEMENT, NOT_READ_ELEMENT_CAUSE)
             for name, cell in zip(resolved, row.get("propertyValues", [])):
-                cells[name] = cell.get("propertyValue") or {}
+                if _error_code(cell) == OFFICIAL_UNSUPPORTED_DEFINITION:
+                    cells[name] = _not_read(NOT_READ_DEFINITION, NOT_READ_DEFINITION_CAUSE)
+                else:
+                    cells[name] = cell.get("propertyValue") or {}
             for name in names:
                 cells.setdefault(name, {})
             out[guid] = cells
+        if tapir_fallback:
+            definitions = _fill_from_tapir(conn, chunk, out, resolved, ids, definitions, report)
     return out
 
 
-def fetch_property_values(conn, guids: list[str], names: list[str]) -> dict[str, dict[str, object]]:
+def fetch_property_values(conn, guids: list[str], names: list[str], *,
+                          tapir_fallback: bool = False) -> dict[str, dict[str, object]]:
     """guid -> {property name -> value or None}. Thin view over the raw cells."""
-    cells = fetch_property_cells(conn, guids, names)
+    cells = fetch_property_cells(conn, guids, names, tapir_fallback=tapir_fallback)
     return {guid: {name: cell.get("value") for name, cell in per_name.items()}
             for guid, per_name in cells.items()}
 
@@ -482,8 +733,13 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
         prop_names = set(property_names)
         if needs & {"properties", "layers"}:
             prop_names |= {BUILTIN_LAYER}
-        values = (fetch_property_values(conn, guids, sorted(prop_names))
-                  if "properties" in needs or "layers" in needs else {g: {} for g in guids})
+        cells = (fetch_property_cells(conn, guids, sorted(prop_names), tapir_fallback=True)
+                 if "properties" in needs or "layers" in needs else {g: {} for g in guids})
+        values = {g: {name: cell.get("value") for name, cell in per_name.items()}
+                  for g, per_name in cells.items()}
+        unread = {g: {(LAYER_KEY if name == BUILTIN_LAYER else name): cell.get("reason")
+                      for name, cell in per_name.items() if cell.get("status") == "notRead"}
+                  for g, per_name in cells.items()}
         classif = (_fetch_classifications(conn, guids)
                    if "classifications" in needs else {g: {} for g in guids})
         floors = _fetch_floor_indices(conn, guids) if "story" in needs else {}
@@ -496,6 +752,7 @@ def build_snapshot(conn: ArchicadConnection, needs: frozenset[str],
                 classifications=classif.get(g, {}),
                 properties={k: v for k, v in values.get(g, {}).items()
                             if k != BUILTIN_LAYER},
+                not_read=unread.get(g, {}),
             )
             for g in guids
         )

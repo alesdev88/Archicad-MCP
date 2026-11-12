@@ -26,13 +26,14 @@ client to run `save_project` (it is confirm-gated, and on Teamwork it saves the
 local copy without sending).
 
 `modify_elements` reads one built-in property, `General_Locked` (the element
-lock, which no Tapir command reads), on every element it plans that is not
-inside a hotlinked module or on a locked layer. `move_elements`,
-`delete_elements` and `set_element_data` read it only on the elements
-`IsEditable` refused that neither of those explains, to name the lock. Built-in
-properties are the read class that has not crashed Archicad, and it read cleanly
-on slabs, objects and meshes in MCP-Test on 19.10.2026, but it has not been read
-live on texts, labels, dimensions or other 2D elements yet.
+lock), on every element it plans that is not inside a hotlinked module or on a
+locked layer. `move_elements`, `delete_elements` and `set_element_data` read it
+only on the elements `IsEditable` refused that neither of those explains, to
+name the lock. On a 2D element or a sub-element the official API refuses the
+read and Tapir 2.0.0 or newer answers it. Built-in properties are the read class
+that has not crashed Archicad, and it read cleanly on slabs, objects and meshes
+in MCP-Test on 19.10.2026, and on a label and a polyline through Tapir on
+11.11.2026. Whether Tapir's read shares the fault is not known.
 
 ### The element ceiling is blast-radius control, not a fix
 
@@ -62,6 +63,103 @@ Consequences:
   of 228 custom definitions checked live, but it is bounding, not a fix: built-in
   properties have no such check. The result reports `property_reads` so the
   blast radius of a query is visible. See [Finding elements](query.md).
+
+### The pre-check spike of 11.11.2026
+
+A spike on MCP-Test (Archicad 29 build 5101, stock Tapir 2.0.0) asked whether Tapir's
+`GetPropertyEditability` could pre-check built-in properties the way classification
+availability pre-checks user-defined ones. One element of each type in the project (wall,
+window, door, object, slab, mesh, label, polyline) was asked about all 1856 property
+definitions (1646 built-in, 210 user-defined), and every pair was then read.
+
+- **It is not a pre-check for built-in properties.** `visible` is true on every pair, so it
+  says nothing. `editable` does not follow applicability either way: of the 220 built-in pairs
+  it calls editable, 123 read a value, 87 are refused as unsupported and 10 are `notAvailable`
+  (Column Top Offset on a wall, for one); of the pairs it calls not editable, 607 read a value.
+- **For user-defined properties `editable` matched availability exactly:** 1121 pairs not
+  editable and all `notAvailable`, 139 editable and all with a value or `userUndefined`. Every
+  user-defined definition in MCP-Test is editable, so a read-only one is untested. It adds
+  nothing over the classification pre-check `find_elements` already has.
+- **The crash did not reproduce on build 5101.** All 11,136 pairs on the six model elements
+  read without an abort, in calls of 100 properties on one element. So did the original
+  trigger: each of the 210 user-defined properties read alone on a slab created a moment
+  before, then all 210 in one call (185 `notAvailable`, 22 `userUndefined`, 3 values). This is
+  one project and one build. It does not show the fault is fixed, and the advice above stands.
+- **890 of the 1856 definitions are never readable through the official API.** They answer
+  error 6702, "Property definition not supported", on every element, so it is a fact about the
+  definition and not about the pair. General Parameters / Layer and the classification system
+  properties are among them.
+- **The official read refuses 2D elements one by one.** The label and the polyline answer
+  error 7203, "Element not supported", for the whole element, without an abort.
+- **Tapir's own `GetPropertyValuesOfElements` reads more.** It agreed with the official read
+  on every pair both answered (a value where the official status is `normal` or
+  `userUndefined`, the error "Not available or not evaluated property" where it is
+  `notAvailable` or `notEvaluated`). It also returned a value on 787 of the pairs the official
+  API refuses as unsupported, and on 265 pairs of the label and the polyline, Locked and Layer
+  Name among them. It does not tell `userUndefined` from a value, and whether it shares the
+  crash is unknown. Before the fallback a property in either gap read as not available:
+  `find_elements` with `General_Locked equal false` matched neither label nor polyline. The
+  server now uses Tapir's read as a fallback for the two gaps on Tapir 2.0.0 or newer
+  ([the design of 11.11.2026](superpowers/specs/2026-11-11-tapir-property-read-fallback-design.md)),
+  and reports a pair it cannot read as not read, with the reason. See the live check below.
+
+The probe and its raw answers are kept outside the repository, with the project's notes.
+
+### Property reads through Tapir: the live check of 11.11.2026
+
+The fallback was run on MCP-Test (Archicad 29 build 5101, language INT, stock Tapir 2.0.0, 149
+elements), saved before the first read and after the last cleanup. What was found:
+
+- **Locks on 2D elements.** Nothing was locked. With one label and one polyline locked through
+  Tapir's `LockElements`, `find_elements` with `General_Locked equal true` found exactly those
+  two, over the two types and over all 149 elements, and `equal false` found the other label and
+  polyline. Both cells came from Tapir as booleans. `move_elements` has no dry run: without
+  `confirm` it refuses before reading anything. The check it runs before sending, `refusals`,
+  named both as "locked with Edit > Locking". Both were unlocked after.
+- **Lists.** Tapir filled 1148 integer list cells, 736 text list cells and 2 real list cells with
+  values. Building Materials (All) on a wall came as `"51; 59"` and reads `[51, 59]`; Building
+  Material ID came as `"EC-00; ST-00"` and reads `["EC-00", "ST-00"]`; a label's Font Size came
+  as `"3"` and reads `[3.0]`. Another 473 text list cells and 188 integer list cells came from
+  Tapir with status `normal` and no item.
+- **General Parameters / Layer is an integer.** `GetAllProperties` declares it Integer, and Tapir
+  answers a number (`"33"` on both walls), not a name. `get_element_data` gives the first wall's
+  layer as Structural - Bearing; the name is in `ModelView_LayerName`.
+- **Speed.** All 149 elements with General_Locked, General Parameters / Layer, Building Materials
+  (All) and `ModelView_LayerName` (149 elements with a gap, in one chunk): about 0.11 s with the
+  official read alone, with one run of 0.64 s, and 0.42 to 0.53 s with the fallback, which sent
+  all 149 elements to Tapir. Every gap was filled; 4 Building Materials (All) cells, on the 2D
+  elements, are `notAvailable`.
+- **Over the chunk size.** A later run the same day added 251 polylines and 100 columns, not
+  saved, which made 600 elements: each column brings a column segment, and the official API
+  refuses that whole too. One fetch of the same four properties over all 600 (two chunks, of 500
+  and 100; 355 elements refused whole, every element with a gap) took 0.16 to 0.17 s with the
+  official read alone and 0.97, 0.63 and 0.58 s with the fallback, which sent all 600 to Tapir
+  in two calls. Every gap was filled: 600 Layer cells, 355 lock and 355 layer-name cells, and
+  for Building Materials (All) 345 values and 255 `notAvailable`, none unparsed. Asked apart,
+  the version takes 0.02 to 0.04 s and the 1856 definitions 0.11 to 0.14 s, once per fetch.
+  `find_elements` with `General_Locked equal false` over the 253 polylines found all 253 in
+  0.42 s. The added elements were deleted and the project is back at 149 elements.
+- **Sub-elements.** A stair and a curtain wall made for the check listed 115 sub-elements (20
+  treads, 20 risers, 1 structure, 1 segment, 52 frames, 21 panels). The official API refuses a
+  tread and a panel whole (7203), as it does a 2D element. Tapir read Locked, Layer Name, Element
+  ID, General Parameters / Layer and Building Materials (All) on both, and `get_element_data`
+  returns them. At the check, the not read reason for such an element named only 2D and
+  annotation elements; since the review of 11.11.2026 it names sub-elements too. Both were
+  deleted after.
+- **Tapir's source at 2.0.0.** `GetPropertyValuesOfElements` reads each element with the C++ call
+  `ACAPI_Element_GetPropertyValuesByGuid` and makes the text itself: `"<Undefined>"`, `"True"`
+  and `"False"` are fixed English words in its code, integers and reals under `useSIUnits` are
+  formatted by Tapir and joined with `"; "`, and text lists, enumerations and the rest go through
+  `ACAPI_Property_GetPropertyValueString`. Availability is
+  `ACAPI_Element_IsPropertyDefinitionAvailable`. It does not go through the official JSON
+  command or its result composition, where the `ComposeResult` abort was seen, so it sits beside
+  that path. Whether the C++ read shares the fault underneath is not known.
+
+Not run: an Archicad in another language (only one Archicad, in INT, was running, and none was
+started; Tapir's source hard-codes the English words `"True"`, `"False"` and `"<Undefined>"`,
+but nothing was read on another language), a real list of more than one item, a length or angle
+list with a value, and a multiple-choice enumeration with a value (none in MCP-Test). Nothing
+larger than 600 elements was read through the fallback.
 
 ## Element coverage: the official API sees only model elements
 

@@ -29,12 +29,12 @@ from archicad_mcp.core.element_values import read_value
 from archicad_mcp.extract import (
     BUILTIN_LAYER,
     MAX_PROPERTY_FETCH_ELEMENTS,
+    NOT_READ_WRITE,
     PROPERTY_FETCH_CHUNK,
     PropertyFetchTooWideError,
     _fetch_classifications,
     _fetch_types,
     fetch_property_cells,
-    fetch_property_values,
     resolve_property_ids,
 )
 
@@ -150,6 +150,10 @@ def plan_property_writes(conn: ArchicadConnection, changes: list[dict],
             reason = "property name did not resolve"
         elif guid in refusals:
             reason = refusals[guid]
+        elif cell.get("status") == "notRead":
+            # The cause alone: the Tapir remedy is for reading, and a write cannot use it.
+            reason = (cell["cause"] + NOT_READ_WRITE if "cause" in cell
+                      else cell.get("reason"))
         elif value_type is None:
             reason = ("could not determine the property's value type "
                       "(is it available on this element?)")
@@ -327,7 +331,7 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
         check_width(guids)
     names = [a.key for a in addresses if a.kind == PROPERTY]
     types = _fetch_types(conn, guids)
-    values = fetch_property_values(conn, guids, [BUILTIN_LAYER, *names])
+    cells = fetch_property_cells(conn, guids, [BUILTIN_LAYER, *names], tapir_fallback=True)
     classif = _fetch_classifications(conn, guids) if include_classifications else {}
 
     systems: dict[str, str] = {}
@@ -355,13 +359,19 @@ def get_element_data(conn: ArchicadConnection, guids: list[str],
 
     elements = []
     for g in guids:
+        own = cells.get(g, {})
         item = {"guid": g, "type": types.get(g, ""),
-                "layer": values.get(g, {}).get(BUILTIN_LAYER), "properties": {}}
+                "layer": own.get(BUILTIN_LAYER, {}).get("value"), "properties": {}}
         labels: dict[str, str] = {}
         unreadable: dict[str, str] = {}
+        if own.get(BUILTIN_LAYER, {}).get("status") == "notRead":
+            unreadable["layer"] = own[BUILTIN_LAYER]["reason"]
         for a in addresses:
             if a.kind == PROPERTY:
-                item["properties"][a.text] = values.get(g, {}).get(a.key)
+                cell = own.get(a.key, {})
+                item["properties"][a.text] = cell.get("value")
+                if cell.get("status") == "notRead":
+                    unreadable[a.text] = cell["reason"]
             elif a.kind == CLASSIFICATION:
                 read = classes.get(g, {})
                 if a.wildcard:

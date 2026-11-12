@@ -336,7 +336,10 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "Returns GUIDs, counts, how many elements had properties read, and "
         "'coverage' ('whole-plan' with Tapir, 'model-elements-only' without: "
         "then 2D elements are invisible and 0 is not proof of absence). "
-        "Property comparisons read values in the server (no API filters by "
+        "'not_read' lists the properties nothing could read on some elements, with "
+        "the reason (the official API refuses them, and Tapir 2.0.0 or newer was not "
+        "there or did not answer); such a pair matches no operator, so check it before "
+        "trusting a count. Property comparisons read values in the server (no API filters by "
         "property); a read spanning more than the element ceiling is refused, "
         "so narrow with element_types, story or classification first."),
               **_tool_meta("Find elements by criteria", read_only=True, destructive=False))
@@ -384,8 +387,11 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "metres, angles in radians, attribute-typed GDL parameters as attribute "
         "indexes. 'gdl:*', 'marker:*', 'ifc:*' and 'classification:*' read every "
         "value, with display names in 'labels'; at most 20 elements per wildcard "
-        "call. A kind that cannot be read for an element is named in its "
-        "'unreadable'. include_classifications adds every system's item GUID."),
+        "call. What could not be read for an element (a kind, a property or the "
+        "layer) is named in its 'unreadable' with the reason; a property the official "
+        "API refuses (on 2D elements and sub-elements, and definitions it does not "
+        "support) is read through Tapir 2.0.0 or newer. include_classifications adds "
+        "every system's item GUID."),
               **_tool_meta("Read element data", read_only=True, destructive=False))
     @_guarded
     def get_element_data(guids: list[str], properties: list[str] | None = None,
@@ -409,7 +415,8 @@ def _register_full_mode_tools(mcp: FastMCP, default_port: int | None) -> None:
         "'not_applied', changes Archicad answered success for but kept or replaced "
         "(a GDL Parameter Script can); 'failed', Archicad's refusals grouped by code "
         "and message with a count and sample GUIDs; 'skipped', changes not sent, "
-        "with the reason (value type, enum, unknown parameter, or an element "
+        "with the reason (value type, enum, unknown parameter, a property the official "
+        "API cannot read, or an element "
         "Archicad would refuse: in another view's database than the active window's, "
         "on a hidden or locked layer, inside a hotlinked module, locked with Edit > "
         "Locking, or not reserved in Teamwork); 'not_sent' and 'stopped' if a batch "

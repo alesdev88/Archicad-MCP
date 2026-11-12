@@ -7,6 +7,7 @@ from multiconn_archicad.errors import StandardAPIError
 from archicad_mcp.connection import ArchicadConnection
 from archicad_mcp.core.attributes import layer_table, tapir_attributes
 from archicad_mcp.core.editability import (
+    ELEMENT_LOCK_REASON,
     HIDDEN,
     LOCKED,
     NOT_FOUND,
@@ -110,6 +111,23 @@ def test_lock_reasons_skips_the_element_lock_when_the_property_does_not_resolve(
     conn, _ = _lock_conn(general_locked={"E"}, property_resolves=False)
     out = lock_reasons(conn, ENTRIES, layer_table(conn))
     assert set(out) == {"H"}       # the hotlink still shows; the element lock is left out
+
+
+LABEL = {"label-1": {"type": "Label", "layerIndex": 1}}
+
+
+def test_lock_reasons_names_the_lock_of_a_2d_element_through_tapir():
+    from tests import test_property_fallback as fb
+    core = fb._fake(official_rows={"label-1": fb._REFUSED_ELEMENT})
+    reasons = lock_reasons(ArchicadConnection(19723, core=core), LABEL, {})
+    assert reasons == {"label-1": ELEMENT_LOCK_REASON}
+
+
+def test_lock_reasons_stays_silent_when_the_lock_was_not_read():
+    from tests import test_property_fallback as fb
+    core = fb._fake(official_rows={"label-1": fb._REFUSED_ELEMENT}, version="1.8.0")
+    reasons = lock_reasons(ArchicadConnection(19723, core=core), LABEL, {})
+    assert reasons == {}
 
 
 def test_layer_table_from_recorded_answers():

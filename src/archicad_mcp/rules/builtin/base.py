@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from archicad_mcp.criteria import (
     BRANCH_OPERATORS,
@@ -10,7 +11,7 @@ from archicad_mcp.criteria import (
     comparison_matches,
     parse_comparison,
 )
-from archicad_mcp.rules.types import ElementInfo, RuleConfigError, Severity
+from archicad_mcp.rules.types import ElementInfo, ModelSnapshot, RuleConfigError, RuleResult, Severity
 
 _SEVERITIES = ("error", "warning")
 
@@ -93,3 +94,52 @@ def common_fields(cfg: dict) -> tuple[str, Severity, frozenset[str], AppliesTo]:
 def is_missing(value: object) -> bool:
     """The has_no_value sense of the criteria language, for plain values."""
     return not Cell.from_value(value).usable
+
+
+@dataclass(frozen=True)
+class ReadSplit:
+    """The snapshot's elements for one rule: those it can evaluate, and those of a type
+    its applies_to accepts on which one of its names could not be read."""
+    readable: tuple[ElementInfo, ...]
+    unread: tuple[ElementInfo, ...]
+    names: frozenset[str]
+
+
+def split_unread(rule, snapshot: ModelSnapshot, names: Iterable[str]) -> ReadSplit:
+    """Split the snapshot's elements for a rule that reads `names` (property names, or
+    LAYER_KEY for the layer). An element is unread when its type is accepted by
+    applies_to.element_type and one of the names is in its not_read. Its `where`
+    comparisons are not evaluated: they may be the very values that were not read."""
+    wanted = rule.applies_to.element_type
+    names = frozenset(names)
+    readable, unread = [], []
+    for e in snapshot.elements:
+        accepted = wanted in (None, "*") or e.element_type == wanted
+        (unread if accepted and names & e.not_read.keys() else readable).append(e)
+    return ReadSplit(tuple(readable), tuple(unread), names)
+
+
+def checked_result(rule, split: ReadSplit, failing: tuple[str, ...],
+                   message: str) -> RuleResult:
+    """The result of a rule that evaluated split.readable. A failure stands, and says how
+    many elements were not checked. With no failure, an unread element makes the rule
+    skip: the first name in sorted order that is unread anywhere decides the reason."""
+    if failing:
+        if split.unread:
+            message += (f"; {len(split.unread)} element(s) could not be read "
+                        "and were not checked")
+        return RuleResult(rule_id=rule.rule_id, passed=False, severity=rule.severity,
+                          message=message, failure_count=len(failing),
+                          failing_guids=failing)
+    if split.unread:
+        for name in sorted(split.names):
+            unread = [e for e in split.unread if name in e.not_read]
+            if unread:
+                return RuleResult(
+                    rule_id=rule.rule_id, passed=False, severity=rule.severity,
+                    message=f"Not checked: '{name}' could not be read on some elements",
+                    skipped=True,
+                    skip_reason=f"'{name}' could not be read on {len(unread)} "
+                                f"element(s): {unread[0].not_read[name]}")
+    return RuleResult(rule_id=rule.rule_id, passed=True, severity=rule.severity,
+                      message=message)

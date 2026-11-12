@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from archicad_mcp.rules.engine import data_needs, filter_by_tag, property_needs, run_rules
 from archicad_mcp.rules.types import ModelSnapshot, RuleResult

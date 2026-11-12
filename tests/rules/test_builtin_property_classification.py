@@ -62,3 +62,72 @@ def test_classification_required_flags_unclassified():
     assert result.passed is False
     assert set(result.failing_guids) == {"e-2", "e-3"}
     assert rule.needs == frozenset({"elements", "classifications"})
+
+
+def test_property_required_skips_when_its_property_was_not_read():
+    unread = ElementInfo(guid="w-9", element_type="Wall", properties={"Fire Rating": None},
+                         not_read={"Fire Rating": "because"})
+    result = make_prop_rule().check(ModelSnapshot(elements=(WALL_OK, unread)))
+    assert result.skipped is True and result.passed is False
+    assert result.skip_reason == "'Fire Rating' could not be read on 1 element(s): because"
+
+
+def test_property_required_runs_when_only_another_type_was_not_read():
+    label = ElementInfo(guid="l-1", element_type="Label", not_read={"Fire Rating": "because"})
+    result = make_prop_rule().check(ModelSnapshot(elements=(WALL_OK, label)))
+    assert result.skipped is False and result.passed is True
+
+
+def test_classification_required_skips_when_a_where_property_was_not_read():
+    rule = ClassificationRequiredRule.from_config(
+        {"id": "c", "type": "classification-required", "system": "Uniclass",
+         "applies_to": {"element_type": "Wall",
+                        "where": [{"property": "Fire Rating", "operator": "has_value"}]}})
+    unread = ElementInfo(guid="w-9", element_type="Wall", not_read={"Fire Rating": "why"})
+    result = rule.check(ModelSnapshot(elements=(unread,)))
+    assert result.skipped is True
+    assert result.skip_reason == "'Fire Rating' could not be read on 1 element(s): why"
+
+
+def test_property_required_fails_on_a_readable_wall_despite_an_unread_label():
+    label = ElementInfo(guid="l-1", element_type="Label", not_read={"Fire Rating": "because"})
+    result = make_prop_rule(applies_to={}).check(ModelSnapshot(elements=(WALL_MISSING, label)))
+    assert result.skipped is False and result.passed is False
+    assert result.failing_guids == ("w-2",) and result.failure_count == 1
+    assert result.message.endswith("; 1 element(s) could not be read and were not checked")
+
+
+def test_property_required_skips_on_an_unread_label_when_nothing_readable_fails():
+    label = ElementInfo(guid="l-1", element_type="Label", not_read={"Fire Rating": "because"})
+    result = make_prop_rule(applies_to={}).check(ModelSnapshot(elements=(WALL_OK, label)))
+    assert result.skipped is True and result.passed is False
+    assert result.skip_reason == "'Fire Rating' could not be read on 1 element(s): because"
+
+
+def test_property_required_skip_counts_the_first_name_and_takes_its_first_reason():
+    rule = make_prop_rule(applies_to={
+        "where": [{"property": "Acoustic Rating", "operator": "has_value"}]})
+    first = ElementInfo(guid="l-1", element_type="Label",
+                        not_read={"Fire Rating": "one", "Acoustic Rating": "a"})
+    second = ElementInfo(guid="l-2", element_type="Label", not_read={"Acoustic Rating": "b"})
+    result = rule.check(ModelSnapshot(elements=(first, second)))
+    assert result.skipped is True
+    assert result.skip_reason == "'Acoustic Rating' could not be read on 2 element(s): a"
+
+
+def test_property_required_fails_without_a_note_when_nothing_was_unread():
+    result = make_prop_rule().check(ModelSnapshot(elements=(WALL_MISSING,)))
+    assert result.passed is False
+    assert "could not be read" not in result.message
+
+
+def test_classification_required_fails_on_a_readable_element_despite_an_unread_one():
+    rule = ClassificationRequiredRule.from_config(
+        {"id": "c", "type": "classification-required", "system": "Uniclass",
+         "applies_to": {"where": [{"property": "Fire Rating", "operator": "has_value"}]}})
+    wall = ElementInfo(guid="w-1", element_type="Wall", properties={"Fire Rating": "EI60"})
+    label = ElementInfo(guid="l-1", element_type="Label", not_read={"Fire Rating": "why"})
+    result = rule.check(ModelSnapshot(elements=(wall, label)))
+    assert result.skipped is False and result.passed is False
+    assert result.failing_guids == ("w-1",)
+    assert result.message.endswith("; 1 element(s) could not be read and were not checked")

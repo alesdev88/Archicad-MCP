@@ -21,13 +21,15 @@ A comparison addresses one of three kinds of element data through a single
 Live-verified value semantics (AC 29, JSON API schema bundled in gateway/):
 a property cell carries ``status`` normal / userUndefined / notAvailable, and
 only a normal cell has a ``value``. Those three statuses plus "the value is
-empty" are the four senses of empty the unary operators tell apart.
+empty" are the four senses of empty the unary operators tell apart. A fourth
+status, notRead, is ours: the value could not be read, and no operator
+matches it.
 """
 from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
 CLASSIFICATION_PREFIX = "classification:"
@@ -68,12 +70,15 @@ def is_guid(text: str) -> bool:
 class Cell:
     """A normalised value with its availability status.
 
-    status is one of "normal", "userUndefined", "notAvailable". value is only
-    meaningful when status is "normal"; it is already unwrapped: enum values
-    become their display strings, enum lists become string lists.
+    status is one of "normal", "userUndefined", "notAvailable", "notRead".
+    value is only meaningful when status is "normal"; it is already unwrapped:
+    enum values become their display strings, enum lists become string lists.
+    "notRead" means the value could not be read at all (reason says why); no
+    operator matches such a cell.
     """
     status: str
     value: Any = None
+    reason: str | None = None
 
     @property
     def usable(self) -> bool:
@@ -92,11 +97,15 @@ class Cell:
         """From a propertyValue dict as GetPropertyValuesOfElements returns it.
 
         An error cell ({} after extract.fetch_property_cells strips the error
-        envelope) means the property is not available on that element.
+        envelope) means the property is not available on that element. That
+        holds for errors other than the two refusals (an unsupported element or
+        definition), which arrive as notRead cells with their reason.
         """
         if not raw or "status" not in raw:
             return cls("notAvailable")
         status = raw.get("status") or "notAvailable"
+        if status == "notRead":
+            return cls(status, reason=raw.get("reason"))
         if status != "normal":
             return cls(status)
         return cls("normal", _unwrap(raw.get("value")))
@@ -353,7 +362,9 @@ def _string_op(op: str, actual: Any, wanted: Any) -> bool:
 def evaluate_value(op: str, cell: Cell, wanted: Any = None) -> bool:
     """One comparison of a property or story cell. Binary operators need a
     usable value: an element with none matches no binary operator, not_equal
-    and does_not_contain included."""
+    and does_not_contain included. A cell that was not read matches nothing."""
+    if cell.status == "notRead":
+        return False
     if op == "has_value":
         return cell.usable
     if op == "has_no_value":

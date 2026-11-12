@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archicad_mcp.rules.builtin.base import AppliesTo, common_fields, is_missing
+from archicad_mcp.rules.builtin.base import (
+    AppliesTo,
+    checked_result,
+    common_fields,
+    is_missing,
+    split_unread,
+)
 from archicad_mcp.rules.types import ModelSnapshot, RuleConfigError, RuleResult, Severity
 
 TYPE_NAME = "property-required"
@@ -33,16 +39,11 @@ class PropertyRequiredRule:
         return cls(rule_id, severity, tags, applies_to, prop)
 
     def check(self, snapshot: ModelSnapshot) -> RuleResult:
+        split = split_unread(self, snapshot, self.needed_properties)
         failing = tuple(
-            e.guid for e in snapshot.elements
+            e.guid for e in split.readable
             if self.applies_to.matches(e) and is_missing(e.properties.get(self.property_name))
         )
-        return RuleResult(
-            rule_id=self.rule_id,
-            passed=not failing,
-            severity=self.severity,
-            message=f"{len(failing)} element(s) missing required property "
-                    f"'{self.property_name}'",
-            failure_count=len(failing),
-            failing_guids=failing,
-        )
+        return checked_result(
+            self, split, failing,
+            f"{len(failing)} element(s) missing required property '{self.property_name}'")

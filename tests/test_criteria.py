@@ -36,6 +36,24 @@ def test_cell_from_api_maps_the_three_statuses_and_the_error_envelope():
     assert Cell.from_api(None).status == "notAvailable"
 
 
+NOT_READ = Cell("notRead", reason="because")
+
+
+def test_from_api_keeps_a_not_read_cell_and_its_reason():
+    assert Cell.from_api({"status": "notRead", "reason": "because"}) == NOT_READ
+
+
+@pytest.mark.parametrize("op", ["has_value", "has_no_value", "is_user_undefined",
+                                "is_not_user_undefined", "available", "not_available",
+                                "equal", "not_equal", "contains", "does_not_contain"])
+def test_no_operator_matches_a_cell_that_was_not_read(op):
+    assert evaluate_value(op, NOT_READ, "x") is False
+
+
+def test_a_not_read_cell_is_not_usable():
+    assert NOT_READ.usable is False
+
+
 def test_cell_unwraps_enum_ids_to_strings():
     single = Cell.from_api({"type": "singleEnum", "status": "normal",
                             "value": {"displayValue": "On"}})

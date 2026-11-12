@@ -21,6 +21,9 @@ as small as it can be:
    the hypothesised trigger, but it is bounding, not proof of safety.
 4. The property fetch ceiling (ARCHICAD_MCP_MAX_PROPERTY_ELEMENTS) still refuses
    an oversized read outright.
+5. Values the official API refuses (2D elements, sub-elements, unsupported
+   definitions) are read through Tapir 2.0.0 or newer; what nothing could read
+   is reported in `not_read` and matches no operator.
 """
 from __future__ import annotations
 
@@ -178,8 +181,10 @@ def find_elements(conn: ArchicadConnection, groups: list[dict],
 
     read_count = 0
     for names, guids in by_request.items():
-        raw = fetch_property_cells(conn, guids, sorted(names))
-        read_count += len(guids)
+        report: dict = {}
+        raw = fetch_property_cells(conn, guids, sorted(names),
+                                   tapir_fallback=True, report=report)
+        read_count += len(guids) + report.get("tapir_elements", 0)
         for g in guids:
             for name in names:
                 cells[g][name] = Cell.from_api(raw.get(g, {}).get(name))
@@ -195,6 +200,20 @@ def find_elements(conn: ArchicadConnection, groups: list[dict],
             if group_matches(grp, types.get(g, ""), provider, lambda s: trees.get(s)):
                 matched.setdefault(g)
 
+    # ---- what nothing could read: the cells that were evaluated ----
+    unread: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for grp, guids in zip(parsed, survivors):
+        names = {c.property for c in grp.comparisons if c.kind == "property"}
+        for g in guids:
+            for name in names:
+                cell = cells.get(g, {}).get(name)
+                if cell is not None and cell.status == "notRead":
+                    unread[cell.reason][name].add(g)
+    not_read = [{"reason": reason,
+                 "properties": sorted(by_name),
+                 "cells": sum(len(gs) for gs in by_name.values())}
+                for reason, by_name in sorted(unread.items())]
+
     guids_out = list(matched)
     result = {"count": len(guids_out), "guids": guids_out,
               "by_type": dict(Counter(types.get(g, "") for g in guids_out)),
@@ -203,6 +222,8 @@ def find_elements(conn: ArchicadConnection, groups: list[dict],
               **(selection_coverage_of(conn) if selection_only else coverage_of(conn))}
     if skipped:
         result["skipped_not_available"] = skipped
+    if not_read:
+        result["not_read"] = not_read
     if notes:
         result["notes"] = notes
     return result

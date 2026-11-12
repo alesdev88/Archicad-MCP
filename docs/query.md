@@ -151,14 +151,27 @@ Convert before calling: 3000 mm is `3`, 45° is `0.7854`. Booleans are `true` /
 ```json
 {"count": 12, "guids": ["..."], "by_type": {"Wall": 12},
  "candidates": 140, "property_reads": 140, "skipped_not_available": 3,
+ "not_read": [{"reason": "...", "properties": ["..."], "cells": 2}],
  "coverage": "whole-plan", "notes": []}
 ```
 
 - `candidates`: how many elements the type filters left for the criteria to test.
-- `property_reads`: how many elements were sent to `GetPropertyValuesOfElements`.
+- `property_reads`: how many elements were sent to `GetPropertyValuesOfElements`,
+  counting an element again when it was also sent to Tapir's own
+  `GetPropertyValuesOfElements` for the values the official API refused.
   This is the number to watch.
 - `skipped_not_available`: (element, property) pairs answered as `not_available`
   from the definition's availability, without a read.
+- `not_read`: present only when some (element, property) pairs could not be
+  read by anything. The official API cannot read the properties of 2D elements
+  (labels, dimensions, markers) or of sub-elements (stair treads, curtain wall
+  panels) and does not support every definition. With
+  Tapir 2.0.0 or newer, `find_elements` asks Tapir for exactly those values and
+  uses them. What stays unread, for example on an older Tapir, is listed here:
+  one entry per reason, with the sorted property names and the number of
+  (element, property) pairs (`cells`). A pair that was not read matches no
+  operator, `not_available` included, so a count of 0 may only mean the value
+  could not be read; check this field before trusting it.
 - `notes`: an address that did not resolve, a classification system that does
   not exist, or a story comparison without Tapir. Each one names what it
   affected; a silent zero would be worse.
@@ -182,9 +195,15 @@ Convert before calling: 3000 mm is `3`, 45° is `0.7854`. Booleans are `true` /
    Elements that can take different subsets of the requested properties are
    read in separate requests so no request asks for a pair the definition
    excludes.
+5. **Tapir's read**, on Tapir 2.0.0 or newer, for the pairs the official read
+   refused: 2D elements, sub-elements and definitions it does not support.
+   Only those elements and properties are sent, in the same chunks and under
+   the same ceiling. What Tapir does not answer stays in `not_read`.
 
 Steps 3 and 4 are aimed at the hypothesised crash trigger, a property read on an
-element the property does not apply to. Every recorded crash was a
+element the property does not apply to. Step 5 is not: it reads through
+Tapir's own C++ call, beside the official command where the crash was seen, and
+whether it shares the fault is not known. Every recorded crash was a
 user-defined property read, and the pre-check predicted availability correctly
 on every definition it was checked against. It is bounding, not proof: built-in
 properties have no such pre-check, and the ceiling remains the last line.

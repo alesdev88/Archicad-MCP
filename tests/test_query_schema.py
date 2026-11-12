@@ -2,7 +2,6 @@
 so a client validates before sending and a typo never reaches Archicad."""
 import json
 
-import pytest
 from fastmcp import Client
 
 import archicad_mcp.server as server_mod

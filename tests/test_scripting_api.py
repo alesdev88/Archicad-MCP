@@ -39,6 +39,13 @@ def test_props_reads_values(setup):
         "w-1": {"OFFICE/Fire Rating": "EI60"}}
 
 
+def test_props_in_a_script_reads_a_2d_element_through_tapir():
+    from tests import test_property_fallback as fb
+    core = fb._fake(official_rows={"label-1": fb._REFUSED_ELEMENT})
+    ac = ScriptAPI(ArchicadConnection(19723, core=core), build_registry(), Recorder())
+    assert ac.props(["label-1"], ["General_Locked"]) == {"label-1": {"General_Locked": True}}
+
+
 def test_details_are_keyed_by_guid(setup):
     ac, _, _ = setup
     details = ac.details(["w-1", "w-2"])

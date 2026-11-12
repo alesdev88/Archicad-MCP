@@ -1,7 +1,6 @@
 """Config parsing shared by the file loader and the inline tool argument."""
 
 import json
-from pathlib import Path
 
 from archicad_mcp.gdl.config import (
     find_object,

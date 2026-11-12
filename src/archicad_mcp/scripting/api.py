@@ -102,7 +102,8 @@ class ScriptAPI:
 
     @_translated
     def props(self, guids, names) -> dict[str, dict[str, object]]:
-        return fetch_property_values(self._conn, list(guids), list(names))
+        return fetch_property_values(self._conn, list(guids), list(names),
+                                     tapir_fallback=True)
 
     @_translated
     def details(self, guids) -> dict[str, dict]:
