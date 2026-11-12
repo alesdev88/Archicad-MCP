@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -23,6 +25,7 @@ import httpx
 from archicad_mcp.tapir_install.release import (
     Asset,
     InstallError,
+    certificate_advice,
     download,
     make_client,
     verify,
@@ -72,7 +75,8 @@ def _fetch_latest(client: httpx.Client, platform: str) -> _Latest:
         data = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise InstallError(f"Could not read the latest release from GitHub ({exc}). "
-                           f"Releases are listed at {RELEASES_URL}.") from exc
+                           f"Releases are listed at {RELEASES_URL}."
+                           f"{certificate_advice(exc)}") from exc
     version = data["tag_name"].removeprefix("v")
     _version_key(version)
     page = data["html_url"]
@@ -110,12 +114,79 @@ def _fetch_bundle(asset: Asset, folder: Path, client: httpx.Client) -> Path:
     return path
 
 
-def open_bundle(path: Path, platform: str) -> None:
-    """Open the file with its system handler, the same as double-clicking it."""
+DESKTOP_BUNDLE_ID = "com.anthropic.claudefordesktop"
+# Far more parents than a server has; it is what ends a process table that loops.
+_MAX_PARENTS = 16
+
+
+def _parent(pid: int) -> tuple[int, str] | None:
+    """The parent's pid and this process's executable, as ps tells them on macOS."""
+    try:
+        done = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                              check=False, capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    ppid, _, executable = (done.stdout or "").strip().partition(" ")
+    if not ppid.isdigit() or not executable.strip():
+        return None
+    return int(ppid), executable.strip()
+
+
+def _bundle_id(app: Path) -> str | None:
+    try:
+        with (app / "Contents" / "Info.plist").open("rb") as f:
+            return plistlib.load(f).get("CFBundleIdentifier")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+
+
+def host_app(pid: int | None = None, *,
+             parent: Callable[[int], tuple[int, str] | None] = _parent) -> Path | None:
+    """The Claude Desktop app this server runs in, on macOS; None when it cannot be told.
+
+    Two installs of Claude Desktop (a personal and a work one) are the same
+    application to macOS, so a plain open of an .mcpb goes to whichever is the
+    default handler, and the update lands in the other Claude. The server is a
+    child of the app that started it, so the app is read from its parents. An
+    .app that is not Claude Desktop is passed over: Claude Code is one, and so
+    is a terminal.
+    """
+    pid = os.getpid() if pid is None else pid
+    for _ in range(_MAX_PARENTS):
+        found = parent(pid)
+        if found is None:
+            return None
+        pid, executable = found
+        head, marker, _ = executable.partition(".app/Contents/")
+        if marker:
+            app = Path(head + ".app")
+            if _bundle_id(app) == DESKTOP_BUNDLE_ID:
+                return app
+        if pid <= 1:
+            return None
+    return None
+
+
+def open_bundle(path: Path, platform: str) -> Path | None:
+    """Open the file for Claude Desktop to install; the app it went to, when known.
+
+    On macOS that is the app this server runs in. Without one, or when it will
+    not take the file, and on Windows, the file goes to its system handler, the
+    same as double-clicking it, and the answer is None.
+    """
     if platform == "win32":
         os.startfile(str(path))
-    else:
-        subprocess.run(["open", str(path)], check=True, capture_output=True)
+        return None
+    app = host_app()
+    if app is not None:
+        try:
+            subprocess.run(["open", "-a", str(app), str(path)], check=True,
+                           capture_output=True)
+            return app
+        except (OSError, subprocess.SubprocessError):
+            pass
+    subprocess.run(["open", str(path)], check=True, capture_output=True)
+    return None
 
 
 def run(confirm: bool = False, *, prefix: Path | None = None,
@@ -155,11 +226,14 @@ def run(confirm: bool = False, *, prefix: Path | None = None,
             client.close()
     result |= {"sha256_checked": True, "downloaded_to": str(path)}
     try:
-        open_bundle(path, platform)
+        app = open_bundle(path, platform)
     except (OSError, subprocess.SubprocessError) as exc:
         return {**result, "opened": False, "next_step": (
             f"The file is downloaded and checked, but opening it failed ({exc}). Drag {path} "
             "into Claude Desktop's Settings > Extensions to install it.")}
+    if app is not None:
+        result["opened_in"] = str(app)
     return {**result, "opened": True, "next_step": (
-        "Claude Desktop should now show its install dialog. Nothing is installed until "
-        "you accept it there. Afterwards, check that the Office rules folder is still set.")}
+        f"{app.stem if app is not None else 'Claude Desktop'} should now show its install "
+        "dialog. Nothing is installed until you accept it there. Afterwards, check that "
+        "the Office rules folder is still set.")}

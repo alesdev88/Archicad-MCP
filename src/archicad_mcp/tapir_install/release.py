@@ -7,6 +7,8 @@ every add-on asset. A download is untrusted data until it matches both.
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,7 +84,7 @@ def fetch_latest(client: httpx.Client) -> Release:
         raise InstallError(
             f"Could not read the latest Tapir release from GitHub ({exc}). "
             "--latest needs the GitHub API; the pinned version still works "
-            "without --latest.") from exc
+            f"without --latest.{certificate_advice(exc)}") from exc
     assets = {}
     for raw in data.get("assets", []):
         name = raw.get("name", "")
@@ -114,8 +116,68 @@ def _user_agent() -> str:
         return "archicad-mcp"
 
 
+def verify_context() -> ssl.SSLContext | bool:
+    """What a server's certificate is checked against: the operating system's store.
+
+    httpx on its own trusts the list certifi ships, which holds the public
+    authorities and nothing else. A network that inspects TLS signs every site
+    with its own authority, which an office installs in the operating system's
+    store, so every download failed there with CERTIFICATE_VERIFY_FAILED while
+    a browser on the same machine worked. The environment is no way round it
+    for a bundle: Claude Desktop starts the server without the shell's
+    SSL_CERT_FILE.
+
+    SSL_CERT_FILE and SSL_CERT_DIR are still read, as httpx reads them, and are
+    added to the store rather than replacing it. Outside macOS and Windows the
+    "system store" is whatever OpenSSL finds, which can be nothing, so certifi's
+    list is added there. True, httpx's own check, is the answer when there is no
+    system store to ask, so this is never worse than it was.
+    """
+    try:
+        import truststore
+        context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except (ImportError, OSError, ssl.SSLError, ValueError):
+        return True
+    extra = []
+    if sys.platform not in ("darwin", "win32"):
+        import certifi
+        extra.append((certifi.where(), None))
+    cafile, capath = os.environ.get("SSL_CERT_FILE"), os.environ.get("SSL_CERT_DIR")
+    if cafile or capath:
+        extra.append((cafile or None, capath or None))
+    for file, folder in extra:
+        try:
+            context.load_verify_locations(cafile=file, capath=folder)
+        except (OSError, ssl.SSLError, ValueError):
+            pass    # a file that is gone must not cost the store that is there
+    return context
+
+
+UNTRUSTED_CERTIFICATE = (
+    "The server's certificate is signed by an authority this computer does not trust. "
+    "On a network that inspects traffic (an office proxy), its certificate has to be "
+    "in the operating system's certificate store, or named in SSL_CERT_FILE.")
+
+
+def certificate_advice(exc: Exception) -> str:
+    """UNTRUSTED_CERTIFICATE after a space when that is why exc happened, else nothing.
+
+    OpenSSL says CERTIFICATE_VERIFY_FAILED; a system store says it in its own
+    words, so the kind of the error underneath is what is asked first.
+    """
+    seen: list[BaseException] = []
+    cause: BaseException | None = exc
+    while cause is not None and cause not in seen:
+        if (isinstance(cause, ssl.SSLCertVerificationError)
+                or "CERTIFICATE_VERIFY_FAILED" in str(cause)):
+            return f" {UNTRUSTED_CERTIFICATE}"
+        seen.append(cause)
+        cause = cause.__cause__ or cause.__context__
+    return ""
+
+
 def make_client() -> httpx.Client:
-    return httpx.Client(timeout=60.0, follow_redirects=True,
+    return httpx.Client(timeout=60.0, follow_redirects=True, verify=verify_context(),
                         headers={"User-Agent": _user_agent()})
 
 
@@ -143,7 +205,8 @@ def download(asset: Asset, dest_dir: Path, client: httpx.Client) -> Path:
                             "the release file (a proxy page, or a changed release).")
                     out.write(chunk)
     except httpx.HTTPError as exc:
-        raise InstallError(f"Downloading {asset.name} failed: {exc}") from exc
+        raise InstallError(
+            f"Downloading {asset.name} failed: {exc}.{certificate_advice(exc)}") from exc
     return target
 
 

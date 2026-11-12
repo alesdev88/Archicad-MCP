@@ -1,10 +1,13 @@
 import hashlib
 import json
+import ssl
+import sys
 import zipfile
 
 import httpx
 import pytest
 
+from archicad_mcp.tapir_install import release
 from archicad_mcp.tapir_install.release import (
     Asset,
     InstallError,
@@ -163,3 +166,135 @@ def test_check_mac_zip_refuses_a_file_that_is_not_a_zip(tmp_path):
     path.write_bytes(b"<html></html>")
     with pytest.raises(InstallError):
         check_mac_zip(path, 30)
+
+
+# What the client checks a server certificate against. certifi knows the public
+# authorities only; an office network that inspects TLS signs with its own, which
+# is in the operating system's store and nowhere else.
+
+class _FakeContext:
+    def __init__(self, protocol, fail_on_load=False):
+        self.protocol, self.loaded, self._fail = protocol, [], fail_on_load
+
+    def load_verify_locations(self, cafile=None, capath=None):
+        if self._fail:
+            raise FileNotFoundError(cafile)
+        self.loaded.append((cafile, capath))
+
+
+def _fake_truststore(monkeypatch, **kw):
+    import types
+    made = []
+
+    def context(protocol):
+        made.append(_FakeContext(protocol, **kw))
+        return made[-1]
+    monkeypatch.setitem(sys.modules, "truststore", types.SimpleNamespace(SSLContext=context))
+    return made
+
+
+@pytest.fixture
+def no_cert_env(monkeypatch):
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+
+
+def test_certificates_are_checked_against_the_system_store(no_cert_env):
+    import truststore
+    assert isinstance(release.verify_context(), truststore.SSLContext)
+
+
+def test_the_client_is_given_that_context(monkeypatch, no_cert_env):
+    made = _fake_truststore(monkeypatch)
+    seen = {}
+    monkeypatch.setattr(release.httpx, "Client", lambda **kw: seen.update(kw) or "client")
+    assert release.make_client() == "client"
+    assert seen["verify"] is made[0] and made[0].protocol == ssl.PROTOCOL_TLS_CLIENT
+    assert seen["follow_redirects"] is True and seen["timeout"] == 60.0
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_the_system_store_stands_alone_where_it_is_complete(monkeypatch, no_cert_env, platform):
+    made = _fake_truststore(monkeypatch)
+    monkeypatch.setattr(release.sys, "platform", platform)
+    assert release.verify_context() is made[0] and made[0].loaded == []
+
+
+def test_elsewhere_the_bundled_authorities_are_added_to_it(monkeypatch, no_cert_env):
+    # On Linux the "system store" is whatever OpenSSL finds, which can be nothing.
+    import certifi
+    made = _fake_truststore(monkeypatch)
+    monkeypatch.setattr(release.sys, "platform", "linux")
+    assert release.verify_context() is made[0]
+    assert made[0].loaded == [(certifi.where(), None)]
+
+
+def test_a_certificate_file_named_in_the_environment_is_still_trusted(monkeypatch, no_cert_env):
+    made = _fake_truststore(monkeypatch)
+    monkeypatch.setattr(release.sys, "platform", "darwin")
+    monkeypatch.setenv("SSL_CERT_FILE", "/office/ca.pem")
+    monkeypatch.setenv("SSL_CERT_DIR", "/office/certs")
+    release.verify_context()
+    assert made[0].loaded == [("/office/ca.pem", "/office/certs")]
+
+
+def test_a_certificate_file_that_cannot_be_read_does_not_cost_the_system_store(
+        monkeypatch, no_cert_env):
+    made = _fake_truststore(monkeypatch, fail_on_load=True)
+    monkeypatch.setattr(release.sys, "platform", "darwin")
+    monkeypatch.setenv("SSL_CERT_FILE", "/gone/ca.pem")
+    assert release.verify_context() is made[0]
+
+
+def test_without_a_system_store_the_client_checks_as_it_did(monkeypatch, no_cert_env):
+    monkeypatch.setitem(sys.modules, "truststore", None)      # the import fails
+    assert release.verify_context() is True
+
+    import types
+
+    def refuse(protocol):
+        raise OSError("no store")
+    monkeypatch.setitem(sys.modules, "truststore", types.SimpleNamespace(SSLContext=refuse))
+    assert release.verify_context() is True
+
+
+_UNTRUSTED = ("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get "
+              "local issuer certificate (_ssl.c:1010)")
+
+
+def _refusing(message):
+    def handler(request):
+        raise httpx.ConnectError(message)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_an_untrusted_certificate_is_named_as_the_cause():
+    with pytest.raises(InstallError) as exc:
+        fetch_latest(_refusing(_UNTRUSTED))
+    assert release.UNTRUSTED_CERTIFICATE in str(exc.value)
+
+
+def test_a_download_stopped_by_an_untrusted_certificate_says_so_too(tmp_path):
+    with pytest.raises(InstallError) as exc:
+        download(_asset_for(b"x"), tmp_path, _refusing(_UNTRUSTED))
+    assert release.UNTRUSTED_CERTIFICATE in str(exc.value)
+
+
+def test_another_network_failure_gets_no_certificate_advice():
+    with pytest.raises(InstallError) as exc:
+        fetch_latest(_refusing("connection refused"))
+    assert release.UNTRUSTED_CERTIFICATE not in str(exc.value)
+    assert release.certificate_advice(httpx.ConnectError("connection refused")) == ""
+
+
+def test_the_system_stores_own_wording_of_an_untrusted_certificate_is_recognised():
+    # macOS says it in its own words, without OpenSSL's CERTIFICATE_VERIFY_FAILED;
+    # what stays the same is the kind of error underneath.
+    def handler(request):
+        try:
+            raise ssl.SSLCertVerificationError("“api.github.com” certificate is not trusted")
+        except ssl.SSLError as cause:
+            raise httpx.ConnectError(str(cause)) from cause
+    with pytest.raises(InstallError) as exc:
+        fetch_latest(httpx.Client(transport=httpx.MockTransport(handler)))
+    assert release.UNTRUSTED_CERTIFICATE in str(exc.value)

@@ -13,7 +13,7 @@ import pytest
 from fastmcp import Client
 
 from archicad_mcp import extension_update
-from archicad_mcp.extension_update import bundle_version, open_bundle, run
+from archicad_mcp.extension_update import bundle_version, host_app, open_bundle, run
 from archicad_mcp.server import build_server
 from archicad_mcp.tapir_install.release import InstallError
 
@@ -213,15 +213,137 @@ def test_failing_to_open_keeps_the_file_and_says_how_to_install_it(tmp_path, mon
     assert str(path) in result["next_step"] and "Settings > Extensions" in result["next_step"]
 
 
-def test_on_macos_the_file_goes_to_the_system_open_command(tmp_path, monkeypatch):
+def _opens(monkeypatch, refuse=()):
+    """The open commands that were run; one naming an app in refuse fails."""
     seen = []
 
     def fake_run(args, **kw):
-        seen.append((args, kw.get("check")))
+        seen.append(args)
+        assert kw.get("check") is True
+        if any(str(app) in args for app in refuse):
+            raise subprocess.CalledProcessError(1, args)
         return subprocess.CompletedProcess(args, 0)
     monkeypatch.setattr(extension_update.subprocess, "run", fake_run)
-    open_bundle(tmp_path / MAC_FILE, "darwin")
-    assert seen == [(["open", str(tmp_path / MAC_FILE)], True)]
+    return seen
+
+
+def test_on_macos_the_file_goes_to_the_app_this_server_runs_in(tmp_path, monkeypatch):
+    # Two Claude installs share one file handler, and a plain open goes to the
+    # default one whichever asked.
+    app = tmp_path / "Claude Work.app"
+    monkeypatch.setattr(extension_update, "host_app", lambda: app)
+    seen = _opens(monkeypatch)
+    assert open_bundle(tmp_path / MAC_FILE, "darwin") == app
+    assert seen == [["open", "-a", str(app), str(tmp_path / MAC_FILE)]]
+
+
+def test_without_a_known_app_the_file_goes_to_the_system_open_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(extension_update, "host_app", lambda: None)
+    seen = _opens(monkeypatch)
+    assert open_bundle(tmp_path / MAC_FILE, "darwin") is None
+    assert seen == [["open", str(tmp_path / MAC_FILE)]]
+
+
+def test_an_app_that_refuses_the_file_leaves_it_to_the_system_handler(tmp_path, monkeypatch):
+    app = tmp_path / "Claude Work.app"
+    monkeypatch.setattr(extension_update, "host_app", lambda: app)
+    seen = _opens(monkeypatch, refuse=[app])
+    assert open_bundle(tmp_path / MAC_FILE, "darwin") is None
+    assert seen == [["open", "-a", str(app), str(tmp_path / MAC_FILE)],
+                    ["open", str(tmp_path / MAC_FILE)]]
+
+
+def _app(tmp_path, name, bundle_id):
+    import plistlib
+    contents = tmp_path / name / "Contents"
+    contents.mkdir(parents=True)
+    (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": bundle_id}))
+    return tmp_path / name
+
+
+def _processes(table):
+    """A process table as host_app asks it: pid to (parent pid, executable)."""
+    return lambda pid: table.get(pid)
+
+
+def test_the_host_app_is_the_claude_desktop_among_the_parents(tmp_path):
+    work = _app(tmp_path, "Claude Work.app", "com.anthropic.claudefordesktop")
+    table = {10: (9, "/ext/runtime/bin/python3"),
+             9: (8, f"{work}/Contents/Helpers/disclaimer"),
+             8: (1, f"{work}/Contents/MacOS/Claude")}
+    assert host_app(10, parent=_processes(table)) == work
+
+
+def test_another_app_among_the_parents_is_passed_over(tmp_path):
+    # Claude Code ships as an .app too, and a terminal is one: neither installs bundles.
+    code = _app(tmp_path, "claude.app", "com.anthropic.claude-code")
+    work = _app(tmp_path, "Claude Work.app", "com.anthropic.claudefordesktop")
+    table = {10: (9, f"{code}/Contents/MacOS/claude"),
+             9: (1, f"{work}/Contents/MacOS/Claude")}
+    assert host_app(10, parent=_processes(table)) == work
+    assert host_app(10, parent=_processes({10: (1, f"{code}/Contents/MacOS/claude")})) is None
+
+
+def test_no_app_among_the_parents_is_no_host(tmp_path):
+    assert host_app(10, parent=_processes({10: (9, "/bin/zsh"), 9: (1, "/sbin/launchd")})) is None
+    assert host_app(10, parent=_processes({})) is None
+    missing = tmp_path / "Gone.app"
+    assert host_app(10, parent=_processes({10: (1, f"{missing}/Contents/MacOS/Claude")})) is None
+
+
+def test_a_process_table_that_loops_ends(tmp_path):
+    assert host_app(10, parent=_processes({10: (9, "/bin/a"), 9: (10, "/bin/b")})) is None
+
+
+def test_ps_output_is_read_as_parent_and_executable(monkeypatch):
+    def fake_run(args, **kw):
+        assert args == ["ps", "-o", "ppid=,comm=", "-p", "62338"]
+        return subprocess.CompletedProcess(
+            args, 0, stdout="46944 /Users/a/.claude-work-app/Claude Work.app/Contents/MacOS/Claude\n")
+    monkeypatch.setattr(extension_update.subprocess, "run", fake_run)
+    assert extension_update._parent(62338) == (
+        46944, "/Users/a/.claude-work-app/Claude Work.app/Contents/MacOS/Claude")
+
+
+@pytest.mark.parametrize("stdout", ["", "\n", "not a pid /bin/zsh\n", None])
+def test_ps_output_that_is_not_a_process_is_no_parent(monkeypatch, stdout):
+    monkeypatch.setattr(extension_update.subprocess, "run",
+                        lambda args, **kw: subprocess.CompletedProcess(args, 1, stdout=stdout))
+    assert extension_update._parent(1) is None
+
+
+def test_a_ps_that_cannot_run_is_no_parent(monkeypatch):
+    def gone(args, **kw):
+        raise FileNotFoundError("ps")
+    monkeypatch.setattr(extension_update.subprocess, "run", gone)
+    assert extension_update._parent(1) is None
+
+
+def test_the_result_names_the_app_the_file_was_opened_in(tmp_path, monkeypatch):
+    app = tmp_path / "Claude Work.app"
+    monkeypatch.setattr(extension_update, "open_bundle", lambda path, platform: app)
+    client, _ = _github()
+    result = _run(tmp_path, client, confirm=True)
+    assert result["opened"] is True and result["opened_in"] == str(app)
+    assert "Claude Work should now show its install dialog" in result["next_step"]
+
+
+def test_a_file_opened_by_the_system_handler_names_no_app(tmp_path, opened):
+    client, _ = _github()
+    result = _run(tmp_path, client, confirm=True)
+    assert result["opened"] is True and "opened_in" not in result
+    assert "Claude Desktop should now show its install dialog" in result["next_step"]
+
+
+def test_an_untrusted_certificate_is_named_as_the_cause(tmp_path, opened):
+    from archicad_mcp.tapir_install.release import UNTRUSTED_CERTIFICATE
+
+    def handler(request):
+        raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    with pytest.raises(InstallError) as exc:
+        _run(tmp_path, httpx.Client(transport=httpx.MockTransport(handler)))
+    assert UNTRUSTED_CERTIFICATE in str(exc.value)
+    assert "github.com/alesdev88/Archicad-MCP/releases" in str(exc.value)
 
 
 def test_on_windows_the_file_goes_to_startfile(tmp_path, monkeypatch):
